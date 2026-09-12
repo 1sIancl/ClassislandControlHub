@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>ControlHub.Plugin</RootNamespace>
+    <AssemblyName>ControlHub.Plugin</AssemblyName>
+    <Version>1.0.0.0</Version>
+    <ClassIslandPluginSdkVersion>2.1.1.1</ClassIslandPluginSdkVersion>
+    <Description>ClassIsland 集控系统 B 端客户端插件。</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 插件 SDK：运行时程序集由 ClassIsland 提供，故排除 runtime 与 native。 -->
+    <PackageReference Include="ClassIsland.PluginSdk" Version="$(ClassIslandPluginSdkVersion)">
+      <ExcludeAssets>runtime; native</ExcludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 共享通信协议：这是本插件自带的程序集，随插件一起打包。 -->
+    <ProjectReference Include="../ControlHub.Protocol/ControlHub.Protocol.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="manifest.yml" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="README.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="icon.png" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

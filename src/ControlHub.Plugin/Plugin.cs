@@ -1,0 +1,47 @@
+using ClassIsland.Core.Abstractions;
+using ClassIsland.Core.Abstractions.Services;
+using ClassIsland.Core.Attributes;
+using ClassIsland.Core.Extensions.Registry;
+using ControlHub.Plugin.Models;
+using ControlHub.Plugin.Services;
+using ControlHub.Plugin.Views;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+namespace ControlHub.Plugin;
+
+/// <summary>
+/// 集控客户端插件入口。
+/// <para>
+/// 插件在 ClassIsland 内以后台服务方式运行，周期性与集控服务器（A 端）通信：
+/// 注册设备、上报心跳、长轮询等待变更、拉取并应用课表/时间表/科目配置。
+/// </para>
+/// </summary>
+[PluginEntrance]
+public class Plugin : PluginBase
+{
+    /// <inheritdoc />
+    public override void Initialize(HostBuilderContext context, IServiceCollection services)
+    {
+        // 设置存储：延迟解析插件配置目录，避免在 Initialize 早期访问尚未就绪的属性。
+        services.AddSingleton(sp => new HubSettingsStore(() => PluginConfigFolder));
+
+        // 运行状态（供设置页面绑定展示）。
+        services.AddSingleton<HubState>();
+
+        // 核心服务。
+        services.AddSingleton<ServerDiscovery>();
+        services.AddSingleton<HubClient>();
+        services.AddSingleton<ClassIslandAdapter>(sp => new ClassIslandAdapter(
+            sp.GetRequiredService<IProfileService>(),
+            sp.GetRequiredService<ILogger<ClassIslandAdapter>>()));
+        services.AddSingleton<SyncEngine>();
+
+        // 后台同步循环。
+        services.AddHostedService(sp => sp.GetRequiredService<SyncEngine>());
+
+        // 设置页面。
+        services.AddSettingsPage<ControlHubSettingsPage>();
+    }
+}

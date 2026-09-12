@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ControlHub.Plugin/ControlHub.Plugin.csproj" />
+    <Project Path="src/ControlHub.Protocol/ControlHub.Protocol.csproj" />
+    <Project Path="src/ControlHub.Server/ControlHub.Server.csproj" />
+  </Folder>
+</Solution>

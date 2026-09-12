@@ -1,0 +1,8 @@
+id: controlhub.client
+name: 集控客户端（ControlHub）
+description: 接入 ClassIsland 集控服务器，自动接收课表、时间表与科目配置的下发与同步。
+entranceAssembly: "ControlHub.Plugin.dll"
+url: https://github.com/1sIancl/ClassIsland.ControlHub
+version: 1.0.0.0
+apiVersion: 2.1.0.0
+author: 1sIancl

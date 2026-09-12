@@ -1,0 +1,24 @@
+# 构建产物
+bin/
+obj/
+cipx/
+publish/
+dist/
+
+# 运行时数据（SQLite 及 WAL 文件）
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# IDE / 系统
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+Thumbs.db
+.DS_Store
+
+# 日志
+*.log
