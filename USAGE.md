@@ -36,7 +36,7 @@ curl -fsSL https://raw.githubusercontent.com/1sIancl/ClassIsland.ControlHub/main
 前置：安装 [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)。
 
 ```bash
-git clone https://github.com/1sIancl/ClassIsland.ControlHub.git
+git clone https://github.com/1sIancl/IslandManger.git
 cd ClassIsland.ControlHub
 dotnet run --project src/ControlHub.Server -c Release
 ```

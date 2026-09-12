@@ -15,7 +15,7 @@
 set -euo pipefail
 
 REPO_OWNER="1sIancl"
-REPO_NAME="ClassIsland.ControlHub"
+REPO_NAME="IslandManger"
 INSTALL_DIR="/opt/classisland-controlhub"
 SERVICE_NAME="classisland-controlhub"
 HTTP_PORT="${HTTP_PORT:-29800}"
