@@ -2,8 +2,18 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo } from './core/api.js';
-import { h, clear, toast } from './core/ui.js';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo } from './core/api.js?v=6';
+import { h, clear, toast } from './core/ui.js?v=6';
+import {
+  initTheme, getTheme, applyTheme, THEMES,
+  getSidebarCollapsed, setSidebarCollapsed,
+  getDensity, setDensity, applyDensity, DENSITIES,
+} from './core/prefs.js?v=6';
+
+// ── 应用启动早期：应用主题 / 布局偏好（避免主题闪烁） ──
+initTheme();
+applyDensity();
+setSidebarCollapsed(getSidebarCollapsed());
 
 /** 导航结构。新增页面时只需在此登记。 */
 const NAV = [
@@ -38,14 +48,14 @@ const NAV = [
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js'),
-  devices: () => import('./views/devices.js'),
-  groups: () => import('./views/groups.js'),
-  profiles: () => import('./views/profiles.js'),
-  profileEditor: () => import('./views/profileEditor.js'),
-  deploy: () => import('./views/deploy.js'),
-  audit: () => import('./views/audit.js'),
-  settings: () => import('./views/settings.js'),
+  dashboard: () => import('./views/dashboard.js?v=6'),
+  devices: () => import('./views/devices.js?v=6'),
+  groups: () => import('./views/groups.js?v=6'),
+  profiles: () => import('./views/profiles.js?v=6'),
+  profileEditor: () => import('./views/profileEditor.js?v=6'),
+  deploy: () => import('./views/deploy.js?v=6'),
+  audit: () => import('./views/audit.js?v=6'),
+  settings: () => import('./views/settings.js?v=6'),
 };
 
 /** 运行状态。 */
@@ -84,12 +94,53 @@ async function loadServerInfo() {
     const info = await fetchServerInfo();
     session.serverInfo = info;
     session.revision = info.revision;
-
-    document.getElementById('brandServerName').textContent = info.serverName || 'ClassIsland 集控';
-    document.getElementById('loginServerName').textContent = info.serverName || 'ClassIsland 集控服务器';
-    document.title = `${info.serverName || '集控系统'} · 管理后台`;
+    applyBranding(info);
   } catch {
     document.getElementById('loginServerName').textContent = '无法连接到服务器';
+  }
+}
+
+/** 应用站点品牌个性化（名称 / Logo / 图标）。 */
+function applyBranding(info) {
+  const branding = info.branding || {};
+  const siteName = branding.siteName || info.serverName || 'ClassIsland 集控系统';
+  const logoText = branding.logoText || 'CI';
+
+  document.title = `${siteName} · 管理后台`;
+  const ids = ['brandServerName', 'loginServerName', 'loginTitle', 'brandTitle'];
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = siteName;
+  }
+
+  applyBrandMark('brandMark', logoText, branding.logoImage);
+  applyBrandMark('loginBrandMark', logoText, branding.logoImage);
+
+  if (branding.favicon) {
+    let link = document.querySelector('link[rel="icon"]');
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'icon';
+      document.head.appendChild(link);
+    }
+    link.href = branding.favicon;
+  }
+}
+
+/** 更新品牌标识方块：有图片用图片，否则显示 Logo 文字。 */
+function applyBrandMark(id, logoText, logoImage) {
+  const mark = document.getElementById(id);
+  if (!mark) return;
+  mark.textContent = '';
+  if (logoImage) {
+    const img = document.createElement('img');
+    img.src = logoImage;
+    img.style.width = '100%';
+    img.style.height = '100%';
+    img.style.objectFit = 'contain';
+    mark.appendChild(img);
+  } else {
+    mark.textContent = logoText.slice(0, 2).toUpperCase();
   }
 }
 
@@ -186,7 +237,7 @@ function renderNav() {
         },
       },
         h('span.nav-icon', item.icon),
-        h('span', item.label),
+        h('span.nav-label', item.label),
       );
       nav.appendChild(button);
     }
@@ -199,6 +250,32 @@ function bindShellEvents() {
 
   document.getElementById('refreshBtn').addEventListener('click', () => route());
 
+  // 侧边栏折叠 / 展开
+  document.getElementById('collapseBtn').addEventListener('click', () => {
+    setSidebarCollapsed(!getSidebarCollapsed());
+  });
+
+  // 主题 + 密度（外观）下拉
+  const themeBtn = document.getElementById('themeBtn');
+  const themeDropdown = document.getElementById('themeDropdown');
+  renderAppearanceMenu();
+  themeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    themeDropdown.hidden = !themeDropdown.hidden;
+  });
+  themeDropdown.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const { action, value } = btn.dataset;
+    if (action === 'theme') {
+      applyTheme(value);
+    } else if (action === 'density') {
+      setDensity(value);
+    }
+    renderAppearanceMenu();
+    themeDropdown.hidden = true;
+  });
+
   const userBtn = document.getElementById('userBtn');
   const dropdown = document.getElementById('userDropdown');
   userBtn.addEventListener('click', (e) => {
@@ -208,6 +285,7 @@ function bindShellEvents() {
 
   document.addEventListener('click', () => {
     dropdown.hidden = true;
+    themeDropdown.hidden = true;
   });
 
   dropdown.addEventListener('click', (e) => {
@@ -225,6 +303,37 @@ function bindShellEvents() {
   });
 
   window.addEventListener('hashchange', () => route());
+}
+
+/** 渲染「外观」下拉：主题（跟随系统/浅色/深色）+ 密度（舒适/紧凑）。 */
+function renderAppearanceMenu() {
+  const dropdown = document.getElementById('themeDropdown');
+  const themeBtn = document.getElementById('themeBtn');
+  const currentTheme = getTheme();
+  const currentDensity = getDensity();
+  clear(dropdown);
+
+  // 主题按钮图标随当前主题变化
+  const resolved = document.documentElement.dataset.theme;
+  themeBtn.textContent = resolved === 'light' ? '☀' : '☾';
+
+  for (const t of THEMES) {
+    dropdown.appendChild(h('button', { dataset: { action: 'theme', value: t.key } },
+      h('span', { class: `theme-swatch ${t.key}` }, t.icon),
+      h('span', t.label),
+      currentTheme === t.key ? h('span.menu-check', '✓') : null,
+    ));
+  }
+
+  dropdown.appendChild(h('div.menu-sep'));
+
+  for (const d of DENSITIES) {
+    dropdown.appendChild(h('button', { dataset: { action: 'density', value: d.key } },
+      h('span', { style: { width: '18px', textAlign: 'center', flex: 'none', opacity: 0.8 } }, '▤'),
+      h('span', `密度 · ${d.label}`),
+      currentDensity === d.key ? h('span.menu-check', '✓') : null,
+    ));
+  }
 }
 
 // ────────────────────────────── 路由 ──────────────────────────────

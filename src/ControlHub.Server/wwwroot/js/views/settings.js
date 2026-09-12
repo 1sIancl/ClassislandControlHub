@@ -2,11 +2,11 @@
  * 系统设置视图：服务器信息、账号安全与部署提示。
  */
 
-import { api, session } from '../core/api.js';
+import { api, session } from '../core/api.js?v=6';
 import {
   h, clear, formatDateTime, formatDuration, toast, loadingBlock,
   field, modal, copyText,
-} from '../core/ui.js';
+} from '../core/ui.js?v=6';
 
 export const meta = {
   title: '系统设置',
@@ -38,6 +38,7 @@ export async function render(container) {
       renderAccountCard(me),
     ),
     renderAccountsCard(accounts, me),
+    renderBrandingCard(info),
     renderDeployCard(info),
   ));
 }
@@ -216,6 +217,49 @@ function openResetPasswordDialog(account) {
       return true;
     },
   });
+}
+
+function renderBrandingCard(info) {
+  const branding = info.branding || {};
+  const siteNameInput = h('input', { type: 'text', value: branding.siteName || '', placeholder: 'ClassIsland 集控系统' });
+  const logoTextInput = h('input', { type: 'text', value: branding.logoText || '', placeholder: 'CI' });
+  const logoImageInput = h('textarea', { placeholder: '粘贴图片 data URL 或图片地址，留空显示 Logo 文字' });
+  logoImageInput.value = branding.logoImage || '';
+  const faviconInput = h('textarea', { placeholder: '粘贴图片 data URL，留空使用默认图标' });
+  faviconInput.value = branding.favicon || '';
+
+  return h('div.card', { style: { marginTop: '16px' } },
+    h('div.card-head',
+      h('div',
+        h('h3', '品牌个性化'),
+        h('p.card-desc', '替换站点名称、Logo 与浏览器图标，登录页与主界面会同步生效。'),
+      ),
+    ),
+    h('div.form-row',
+      field('站点名称', siteNameInput, '显示在登录页标题、浏览器标题与侧边栏。'),
+      field('Logo 文字', logoTextInput, '显示在品牌标识方块中，留空使用默认「CI」。'),
+    ),
+    field('Logo 图片（可选）', logoImageInput, '填写图片地址或 data URL，会替代 Logo 文字。'),
+    field('浏览器图标（可选）', faviconInput, '填写图片 data URL，会替换浏览器标签页图标。'),
+    h('div.card-actions',
+      h('button.btn.btn-primary.btn-sm', {
+        type: 'button',
+        onClick: async () => {
+          await api('/admin/branding', {
+            method: 'PUT',
+            body: {
+              siteName: siteNameInput.value.trim(),
+              logoText: logoTextInput.value.trim(),
+              logoImage: logoImageInput.value.trim(),
+              favicon: faviconInput.value.trim(),
+            },
+          });
+          toast('ok', '已保存', '品牌设置已生效，正在刷新页面…');
+          setTimeout(() => window.location.reload(), 800);
+        },
+      }, '保存并应用'),
+    ),
+  );
 }
 
 function renderDeployCard(info) {

@@ -2,12 +2,13 @@
  * 设备管理视图：设备清单、状态监控、分组/档案绑定与注册码管理。
  */
 
-import { api } from '../core/api.js';
+import { api } from '../core/api.js?v=6';
 import {
   h, clear, formatDateTime, relativeTime, toast, loadingBlock,
   modal, confirmDialog, deviceStateBadge, syncBadge,
-  emptyState, field, select, copyText,
-} from '../core/ui.js';
+  emptyState, field, select, copyText, append,
+} from '../core/ui.js?v=6';
+import { getLayout, saveLayout } from '../core/prefs.js?v=6';
 
 export const meta = {
   title: '设备管理',
@@ -16,6 +17,68 @@ export const meta = {
 
 let cache = { devices: [], groups: [], profiles: [], codes: [] };
 let filter = { keyword: '', groupId: '', state: '' };
+
+// ── 设备表格列定义（支持显隐配置，操作列固定） ──
+const COLUMN_DEFS = [
+  {
+    key: 'name', label: '设备',
+    cell: (d) => h('td',
+      h('div.cell-main', d.name),
+      h('div.cell-sub', [d.machineName, d.ipAddress].filter(Boolean).join(' · ') || d.id.slice(0, 8)),
+    ),
+  },
+  {
+    key: 'group', label: '分组',
+    cell: (d) => h('td', d.groupName
+      ? h('span.badge.badge-neutral', d.groupName)
+      : h('span', { style: { color: 'var(--text-faint)' } }, '未分组')),
+  },
+  {
+    key: 'state', label: '状态',
+    cell: (d) => h('td',
+      deviceStateBadge(d),
+      d.lastError ? h('div', {
+        title: d.lastError,
+        style: { fontSize: '11px', color: 'var(--danger)', marginTop: '3px', maxWidth: '190px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+      }, d.lastError) : null,
+    ),
+  },
+  {
+    key: 'sync', label: '配置同步',
+    cell: (d) => h('td', syncBadge(d),
+      h('div', { style: { fontSize: '11px', color: 'var(--text-faint)', marginTop: '3px' } },
+        `档案版本 ${d.serverRevision}`)),
+  },
+  {
+    key: 'plan', label: '当前课表',
+    cell: (d) => h('td', d.currentClassPlanName || h('span', { style: { color: 'var(--text-faint)' } }, '—')),
+  },
+  {
+    key: 'version', label: '版本信息',
+    cell: (d) => h('td',
+      h('div', { style: { fontSize: '12px' } }, `CI ${d.classIslandVersion || '—'}`),
+      h('div', { style: { fontSize: '11px', color: 'var(--text-faint)' } }, `插件 ${d.pluginVersion || '—'}`),
+    ),
+  },
+  {
+    key: 'heartbeat', label: '最近心跳',
+    cell: (d) => h('td',
+      h('div', { style: { fontSize: '12.5px' } }, relativeTime(d.lastSeenAt)),
+      h('div', { style: { fontSize: '11px', color: 'var(--text-faint)' } },
+        d.lastSyncAt ? `同步 ${relativeTime(d.lastSyncAt)}` : '尚未同步'),
+    ),
+  },
+];
+
+const COLUMN_KEYS = () => COLUMN_DEFS.map((c) => c.key);
+
+function visibleColumns() {
+  const layout = getLayout('columns.devices', COLUMN_KEYS());
+  return layout
+    .filter((l) => l.enabled !== false)
+    .map((l) => COLUMN_DEFS.find((c) => c.key === l.key))
+    .filter(Boolean);
+}
 
 export async function render(container, params = {}) {
   // 支持从分组页跳转过来时预先筛选该分组。
@@ -72,6 +135,7 @@ function renderToolbar() {
       refreshTable();
     }),
     h('div.spacer'),
+    h('button.btn', { type: 'button', onClick: openColumnCustomize }, '⚙ 列'),
     h('button.btn', { type: 'button', onClick: () => refresh(true) }, '刷新'),
   );
 }
@@ -139,61 +203,68 @@ function renderTable() {
   return h('div#deviceTableHost', h('div.table-wrap',
     h('table.data',
       h('thead', h('tr',
-        h('th', '设备'),
-        h('th', '分组'),
-        h('th', '状态'),
-        h('th', '配置同步'),
-        h('th', '当前课表'),
-        h('th', '版本信息'),
-        h('th', '最近心跳'),
+        ...visibleColumns().map((c) => h('th', c.label)),
         h('th', { style: { textAlign: 'right' } }, '操作'),
       )),
-      h('tbody', ...devices.map(renderRow)),
+      h('tbody', ...devices.map((d) => h('tr',
+        ...visibleColumns().map((c) => c.cell(d)),
+        h('td.actions',
+          h('button.btn.btn-sm', { type: 'button', onClick: () => openEditDialog(d) }, '编辑'),
+          ' ',
+          h('button.btn.btn-sm', { type: 'button', onClick: () => openLogsDialog(d) }, '日志'),
+          ' ',
+          h('button.btn.btn-sm', {
+            type: 'button',
+            onClick: () => toggleRevoke(d),
+          }, d.revoked ? '恢复' : '停用'),
+        ),
+      ))),
     ),
   ));
 }
 
-function renderRow(d) {
-  return h('tr',
-    h('td',
-      h('div.cell-main', d.name),
-      h('div.cell-sub', [d.machineName, d.ipAddress].filter(Boolean).join(' · ') || d.id.slice(0, 8)),
-    ),
-    h('td', d.groupName
-      ? h('span.badge.badge-neutral', d.groupName)
-      : h('span', { style: { color: 'var(--text-faint)' } }, '未分组')),
-    h('td',
-      deviceStateBadge(d),
-      d.lastError ? h('div', {
-        title: d.lastError,
-        style: { fontSize: '11px', color: 'var(--danger)', marginTop: '3px', maxWidth: '190px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-      }, d.lastError) : null,
-    ),
-    h('td', syncBadge(d),
-      h('div', { style: { fontSize: '11px', color: 'var(--text-faint)', marginTop: '3px' } },
-        `档案版本 ${d.serverRevision}`),
-    ),
-    h('td', d.currentClassPlanName || h('span', { style: { color: 'var(--text-faint)' } }, '—')),
-    h('td',
-      h('div', { style: { fontSize: '12px' } }, `CI ${d.classIslandVersion || '—'}`),
-      h('div', { style: { fontSize: '11px', color: 'var(--text-faint)' } }, `插件 ${d.pluginVersion || '—'}`),
-    ),
-    h('td',
-      h('div', { style: { fontSize: '12.5px' } }, relativeTime(d.lastSeenAt)),
-      h('div', { style: { fontSize: '11px', color: 'var(--text-faint)' } },
-        d.lastSyncAt ? `同步 ${relativeTime(d.lastSyncAt)}` : '尚未同步'),
-    ),
-    h('td.actions',
-      h('button.btn.btn-sm', { type: 'button', onClick: () => openEditDialog(d) }, '编辑'),
-      ' ',
-      h('button.btn.btn-sm', { type: 'button', onClick: () => openLogsDialog(d) }, '日志'),
-      ' ',
-      h('button.btn.btn-sm', {
-        type: 'button',
-        onClick: () => toggleRevoke(d),
-      }, d.revoked ? '恢复' : '停用'),
-    ),
-  );
+/** 「列」配置面板：勾选设备表格要显示的列。 */
+function openColumnCustomize() {
+  const container = h('div');
+
+  function toggleColumn(key, enabled) {
+    const layout = getLayout('columns.devices', COLUMN_KEYS());
+    const item = layout.find((l) => l.key === key);
+    if (item) item.enabled = enabled;
+    saveLayout('columns.devices', layout);
+    rerender();
+  }
+
+  function buildPanel() {
+    const layout = getLayout('columns.devices', COLUMN_KEYS());
+    const panel = h('div.config-panel');
+    layout.forEach((item) => {
+      const def = COLUMN_DEFS.find((c) => c.key === item.key);
+      const label = def ? def.label : item.key;
+      panel.appendChild(h('div.config-item' + (item.enabled === false ? '.disabled' : ''),
+        h('span.item-label', label),
+        h('input', { type: 'checkbox', checked: item.enabled !== false, onChange: (e) => toggleColumn(item.key, e.target.checked) }),
+      ));
+    });
+    return panel;
+  }
+
+  function rerender() {
+    clear(container);
+    append(container, buildPanel());
+  }
+
+  rerender();
+
+  modal({
+    title: '自定义设备表格列',
+    body: container,
+    confirmText: '完成',
+    onConfirm: () => {
+      refreshTable();
+      return true;
+    },
+  });
 }
 
 function openEditDialog(device) {

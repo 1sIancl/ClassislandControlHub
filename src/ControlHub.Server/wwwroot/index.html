@@ -7,7 +7,7 @@
   <meta name="color-scheme" content="dark" />
   <title>ClassIsland 集控系统</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%235b9dff'/%3E%3Crect x='7' y='9' width='18' height='3' rx='1.5' fill='%230f1115'/%3E%3Crect x='7' y='15' width='12' height='3' rx='1.5' fill='%230f1115'/%3E%3Crect x='7' y='21' width='15' height='3' rx='1.5' fill='%230f1115'/%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="css/app.css" />
+  <link rel="stylesheet" href="css/app.css?v=6" />
 </head>
 
 <body>
@@ -15,9 +15,9 @@
   <div id="app" class="app-shell" hidden>
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-mark">CI</div>
+        <div class="brand-mark" id="brandMark">CI</div>
         <div class="brand-text">
-          <strong>集控中心</strong>
+          <strong id="brandTitle">集控中心</strong>
           <span id="brandServerName">ClassIsland 集控</span>
         </div>
       </div>
@@ -35,11 +35,18 @@
     <div class="main">
       <header class="topbar">
         <div class="topbar-left">
-          <h1 id="pageTitle">仪表盘</h1>
-          <p id="pageSubtitle" class="page-subtitle"></p>
+          <button class="btn btn-icon btn-ghost" id="collapseBtn" title="折叠 / 展开侧边栏" aria-label="折叠侧边栏">☰</button>
+          <div class="topbar-titles">
+            <h1 id="pageTitle">仪表盘</h1>
+            <p id="pageSubtitle" class="page-subtitle"></p>
+          </div>
         </div>
         <div class="topbar-right">
           <span class="revision-chip" id="revisionChip" title="当前全局配置版本号">版本 —</span>
+          <div class="user-menu">
+            <button class="btn btn-icon btn-ghost" id="themeBtn" title="切换主题" aria-label="切换主题">☾</button>
+            <div class="dropdown theme-menu" id="themeDropdown" hidden></div>
+          </div>
           <button class="btn btn-ghost" id="refreshBtn" title="刷新当前页面">刷新</button>
           <div class="user-menu">
             <button class="btn btn-ghost" id="userBtn">
@@ -62,8 +69,8 @@
   <div id="loginView" class="login-page">
     <div class="login-card">
       <div class="login-head">
-        <div class="brand-mark large">CI</div>
-        <h1>ClassIsland 集控系统</h1>
+        <div class="brand-mark large" id="loginBrandMark">CI</div>
+        <h1 id="loginTitle">ClassIsland 集控系统</h1>
         <p id="loginServerName">正在连接服务器…</p>
       </div>
       <form id="loginForm" class="login-form">
@@ -88,7 +95,7 @@
   <div id="toastHost" class="toast-host"></div>
   <div id="modalHost" class="modal-host" hidden></div>
 
-  <script type="module" src="js/app.js"></script>
+  <script type="module" src="js/app.js?v=6"></script>
 </body>
 
 </html>

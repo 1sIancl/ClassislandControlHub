@@ -4,11 +4,11 @@
  * 所有修改先落在内存对象上，点击「保存并下发」后一次性提交，由服务端做规范化与版本递增。
  */
 
-import { api } from '../core/api.js';
+import { api } from '../core/api.js?v=6';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, select,
   emptyState, formatDateTime, copyText,
-} from '../core/ui.js';
+} from '../core/ui.js?v=6';
 
 export const meta = {
   title: '编辑配置档案',
@@ -29,15 +29,17 @@ const TIME_KINDS = [
   { value: 'action', label: '行动' },
 ];
 
-const WEEKDAYS = [
-  { value: 1, label: '周一' },
-  { value: 2, label: '周二' },
-  { value: 3, label: '周三' },
-  { value: 4, label: '周四' },
-  { value: 5, label: '周五' },
-  { value: 6, label: '周六' },
-  { value: 0, label: '周日' },
-];
+/** 生成唯一 ID：优先 crypto.randomUUID，非安全上下文（HTTP）回退到手写 UUID v4。 */
+function genId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 /** 编辑器状态。 */
 let state = {
@@ -47,6 +49,7 @@ let state = {
   activeTab: 'timeLayouts',
   selectedLayoutId: null,
   selectedPlanId: null,
+  classPlanLayoutId: null,
   dirty: false,
 };
 
@@ -62,6 +65,7 @@ export async function render(container, params) {
     activeTab: state.activeTab,
     selectedLayoutId: profile.content?.timeLayouts?.[0]?.id || null,
     selectedPlanId: profile.content?.classPlans?.[0]?.id || null,
+    classPlanLayoutId: state.classPlanLayoutId || profile.content?.timeLayouts?.[0]?.id || null,
     dirty: false,
   };
 
@@ -214,7 +218,7 @@ function renderTab() {
 }
 
 function repaintTab() {
-  repaint();
+  paint(document.getElementById('content'));
 }
 
 // ────────────────────────────── 时间表 ──────────────────────────────
@@ -395,7 +399,7 @@ function addMinutes(text, minutes) {
 }
 
 function addLayout() {
-  const id = crypto.randomUUID();
+  const id = genId();
   state.content.timeLayouts.push({
     id,
     name: `新时间表 ${state.content.timeLayouts.length + 1}`,
@@ -487,221 +491,120 @@ function generateSchedule(layout) {
 
 // ────────────────────────────── 课表 ──────────────────────────────
 
-function currentPlan() {
-  return state.content.classPlans.find((p) => p.id === state.selectedPlanId) || null;
+const GRID_DAYS = [
+  { value: 1, label: '周一' },
+  { value: 2, label: '周二' },
+  { value: 3, label: '周三' },
+  { value: 4, label: '周四' },
+  { value: 5, label: '周五' },
+  { value: 6, label: '周六' },
+  { value: 0, label: '周日' },
+];
+
+function classPlanLayout() {
+  return state.content.timeLayouts.find((l) => l.id === state.classPlanLayoutId) || null;
 }
 
-function layoutOf(plan) {
-  return state.content.timeLayouts.find((l) => l.id === plan?.timeLayoutId) || null;
-}
-
+/** 课表页：以时间表为框架，渲染「周一到周日 × 节次」的整周排课网格。 */
 function renderClassPlans() {
-  const plans = state.content.classPlans;
-  const plan = currentPlan();
+  const layouts = state.content.timeLayouts;
+  const layout = classPlanLayout();
+
+  const layoutSelect = select(
+    layouts.length === 0
+      ? [{ value: '', label: '（请先创建时间表）' }]
+      : layouts.map((l) => ({ value: l.id, label: `${l.name}（${classCount(l)} 节）` })),
+    layout?.id || '',
+    (v) => {
+      state.classPlanLayoutId = v;
+      repaintTab();
+    },
+  );
+
+  if (!layout) {
+    return h('div',
+      h('div.toolbar', layoutSelect),
+      emptyState('🕐', '还没有时间表',
+        '课程表以时间表的「上课」时间点为基准，横向为周一到周日、纵向为节次。请先创建时间表（作息）。',
+        h('button.btn.btn-sm.btn-primary', {
+          type: 'button',
+          onClick: () => { state.activeTab = 'timeLayouts'; repaintTab(); },
+        }, '先创建时间表')),
+    );
+  }
+
+  const periods = layout.items.filter((i) => i.kind === 'class');
+  if (periods.length === 0) {
+    return h('div',
+      h('div.toolbar', layoutSelect),
+      emptyState('🕐', '时间表还没有「上课」时间点',
+        '请先在「时间表」中添加至少一节课（上课类型），再回来排课。'),
+    );
+  }
 
   return h('div',
     h('div.toolbar',
-      select(
-        plans.length === 0
-          ? [{ value: '', label: '（还没有课表）' }]
-          : plans.map((p) => ({ value: p.id, label: `${p.name}（${(p.slots || []).length} 节）` })),
-        state.selectedPlanId,
-        (v) => {
-          state.selectedPlanId = v;
-          repaintTab();
-        },
+      h('span', { style: { fontSize: '12.5px', color: 'var(--text-dim)' } }, '作息时间表'),
+      layoutSelect,
+      h('div.spacer'),
+      h('span', { style: { fontSize: '12px', color: 'var(--text-faint)' } }, '点击单元格选择该节次该天的科目'),
+    ),
+    h('div.table-wrap', { style: { overflowX: 'auto' } },
+      h('table.data', { style: { minWidth: '880px' } },
+        h('thead', h('tr',
+          h('th', { style: { width: '96px' } }, '节次 / 时间'),
+          ...GRID_DAYS.map((d) => h('th', { style: { textAlign: 'center' } }, d.label)),
+        )),
+        h('tbody', ...periods.map((period, index) => h('tr',
+          h('td', { style: { whiteSpace: 'nowrap' } },
+            h('div.cell-main', `第 ${index + 1} 节`),
+            h('div.cell-sub', `${period.startTime.slice(0, 5)} - ${period.endTime.slice(0, 5)}`),
+          ),
+          ...GRID_DAYS.map((d) => h('td', { style: { padding: '4px' } }, daySubjectSelect(layout, d.value, index))),
+        ))),
       ),
-      h('button.btn.btn-sm.btn-primary', { type: 'button', onClick: addPlan }, '+ 新建课表'),
-      plan ? h('button.btn.btn-sm', { type: 'button', onClick: () => duplicatePlan(plan) }, '复制') : null,
-      plan ? h('button.btn.btn-sm.btn-danger', { type: 'button', onClick: () => removePlan(plan) }, '删除') : null,
     ),
-    !plan
-      ? emptyState('📅', '还没有课表',
-        '课表以时间表的「上课」时间点为基准排列课程。',
-        h('button.btn.btn-primary', { type: 'button', onClick: addPlan }, '新建课表'))
-      : renderPlanEditor(plan),
   );
 }
 
-function renderPlanEditor(plan) {
-  const layout = layoutOf(plan);
-
-  // 基本信息
-  const nameInput = h('input', {
-    type: 'text',
-    value: plan.name,
-    onInput: (e) => {
-      plan.name = e.target.value;
-      state.dirty = true;
-    },
-  });
-
-  const layoutSelect = select(
-    state.content.timeLayouts.map((l) => ({ value: l.id, label: `${l.name}（${classCount(l)} 节）` })),
-    plan.timeLayoutId,
-    (v) => {
-      plan.timeLayoutId = v;
-      markDirtyValues();
-    },
-    state.content.timeLayouts.length === 0 ? '（请先创建时间表）' : undefined,
-  );
-
-  const enabledCheckbox = h('input', {
-    type: 'checkbox',
-    onChange: (e) => {
-      plan.isEnabled = e.target.checked;
-      state.dirty = true;
-    },
-  });
-  enabledCheckbox.checked = plan.isEnabled !== false;
-
-  // 触发规则
-  const dayBoxes = WEEKDAYS.map((d) => {
-    const box = h('input', {
-      type: 'checkbox',
-      onChange: () => {
-        plan.daysOfWeek = dayBoxes
-          .filter((entry) => entry.box.checked)
-          .map((entry) => entry.day);
-        state.dirty = true;
-      },
-    });
-    box.checked = (plan.daysOfWeek || []).includes(d.value);
-    return { day: d.value, box, node: h('label', {
-      style: {
-        display: 'inline-flex', alignItems: 'center', gap: '6px',
-        marginRight: '16px', fontSize: '13px', cursor: 'pointer',
-      },
-    }, box, d.label) };
-  });
-
-  const intervalSelect = select([
-    { value: '0', label: '每周都生效' },
-    { value: '2', label: '每 2 周生效（单双周）' },
-    { value: '3', label: '每 3 周生效' },
-    { value: '4', label: '每 4 周生效' },
-  ], String(plan.weekInterval || 0), (v) => {
-    plan.weekInterval = Number(v);
-    markDirtyValues();
-  });
-
-  const offsetSelect = select([
-    { value: '0', label: '第 1 周' },
-    { value: '1', label: '第 2 周' },
-    { value: '2', label: '第 3 周' },
-    { value: '3', label: '第 4 周' },
-  ], String(plan.weekOffset || 0), (v) => {
-    plan.weekOffset = Number(v);
-    state.dirty = true;
-  });
-
-  // 节次表
-  const periods = layout ? layout.items.filter((i) => i.kind === 'class') : [];
-  const slots = plan.slots || (plan.slots = []);
-
-  const periodTable = !layout
-    ? h('div.notice.notice-danger',
-      h('span.notice-icon', '!'),
-      h('div', '该课表关联的时间表不存在，请先在上方选择一个时间表。'))
-    : periods.length === 0
-      ? h('div.notice.notice-warn',
-        h('span.notice-icon', '!'),
-        h('div', '所选时间表没有任何「上课」时间点，无法排课。请先在「时间表」中添加上课时间点。'))
-      : h('div.table-wrap', { style: { maxHeight: '48vh', overflowY: 'auto' } },
-        h('table.period-table',
-          h('thead', h('tr',
-            h('th', { style: { width: '60px' } }, '节次'),
-            h('th', { style: { width: '140px' } }, '时间'),
-            h('th', '科目'),
-          )),
-          h('tbody', ...periods.map((period, index) => {
-            const slot = slots.find((s) => s.index === index) || { index, subjectId: null, isEnabled: true };
-            if (!slots.includes(slot)) slots.push(slot);
-
-            const subjectSelect = select(
-              [
-                { value: '', label: '（无课 / 空堂）' },
-                ...state.content.subjects.map((s) => ({
-                  value: s.id,
-                  label: s.initial ? `${s.name}（${s.initial}）` : s.name,
-                })),
-              ],
-              slot.subjectId || '',
-              (v) => {
-                slot.subjectId = v || null;
-                state.dirty = true;
-              },
-            );
-
-            return h('tr',
-              h('td.period-index', `第 ${index + 1} 节`),
-              h('td.period-time', `${period.startTime.slice(0, 5)} - ${period.endTime.slice(0, 5)}`),
-              h('td', subjectSelect),
-            );
-          })),
-        ),
-      );
-
-  return h('div',
-    h('div.form-row',
-      field('课表名称', nameInput),
-      field('关联时间表', layoutSelect),
-      field('周次规则', intervalSelect, plan.weekInterval > 0
-        ? '用于单双周 / 多周轮换的课表。'
-        : '设置为多周生效后可进一步选择生效周次。'),
-      plan.weekInterval > 0 ? field('生效周次', offsetSelect) : null,
-    ),
-    h('div', { style: { marginBottom: '14px' } },
-      h('div', { style: { fontSize: '12.5px', color: 'var(--text-dim)', marginBottom: '8px' } },
-        '适用星期（不勾选表示每天生效）'),
-      h('div', ...dayBoxes.map((entry) => entry.node)),
-    ),
-    h('label.checkbox-field', enabledCheckbox, '默认启用（无需触发规则即可生效）'),
-    h('div', { style: { fontSize: '12.5px', color: 'var(--text-dim)', margin: '10px 0 8px' } },
-      `课程安排（共 ${periods.length} 节）`),
-    periodTable,
-  );
-}
-
-function addPlan() {
-  const layout = currentLayout() || state.content.timeLayouts[0];
-  const id = crypto.randomUUID();
-  const plan = {
-    id,
-    name: `新课表 ${state.content.classPlans.length + 1}`,
-    timeLayoutId: layout?.id || '',
-    isEnabled: true,
-    daysOfWeek: [],
-    weekInterval: 0,
-    weekOffset: 0,
-    slots: [],
-  };
-
-  if (layout) {
+/** 取「某一天」的课表；不存在则按当前时间表自动建一张（一张课表 = 一个星期几）。 */
+function getDayPlan(layout, day) {
+  let plan = state.content.classPlans.find((p) => p.timeLayoutId === layout.id
+    && (p.daysOfWeek || []).length === 1 && p.daysOfWeek[0] === day);
+  if (!plan) {
     const periods = layout.items.filter((i) => i.kind === 'class');
-    plan.slots = periods.map((p, index) => ({ index, startTime: p.startTime, subjectId: null, isEnabled: true }));
+    const label = GRID_DAYS.find((d) => d.value === day)?.label || String(day);
+    plan = {
+      id: genId(),
+      name: `${label}课表`,
+      timeLayoutId: layout.id,
+      isEnabled: true,
+      daysOfWeek: [day],
+      weekInterval: 0,
+      weekOffset: 0,
+      slots: periods.map((p, i) => ({ index: i, subjectId: null, isEnabled: true })),
+    };
+    state.content.classPlans.push(plan);
+  }
+  return plan;
+}
+
+function daySubjectSelect(layout, day, index) {
+  const plan = getDayPlan(layout, day);
+  let slot = (plan.slots || []).find((s) => s.index === index);
+  if (!slot) {
+    slot = { index, subjectId: null, isEnabled: true };
+    plan.slots.push(slot);
   }
 
-  state.content.classPlans.push(plan);
-  state.selectedPlanId = id;
-  markDirtyValues();
-}
+  const subjectOptions = [
+    { value: '', label: '—' },
+    ...state.content.subjects.map((s) => ({ value: s.id, label: s.initial || s.name || '?' })),
+  ];
 
-function duplicatePlan(plan) {
-  const copy = JSON.parse(JSON.stringify(plan));
-  copy.id = crypto.randomUUID();
-  copy.name = `${plan.name} 副本`;
-  state.content.classPlans.push(copy);
-  state.selectedPlanId = copy.id;
-  markDirtyValues();
-}
-
-function removePlan(plan) {
-  confirmDialog('删除课表', `确定删除课表「${plan.name}」吗？`, '删除', true).then((ok) => {
-    if (!ok) return;
-    state.content.classPlans = state.content.classPlans.filter((p) => p.id !== plan.id);
-    state.selectedPlanId = state.content.classPlans[0]?.id || null;
-    markDirtyValues();
+  return select(subjectOptions, slot.subjectId || '', (v) => {
+    slot.subjectId = v || null;
+    state.dirty = true;
   });
 }
 
@@ -746,7 +649,7 @@ function renderSubjects() {
         type: 'button',
         onClick: () => {
           state.content.subjects.push({
-            id: crypto.randomUUID(),
+            id: genId(),
             name: '',
             initial: '',
             teacherName: '',

@@ -5,6 +5,7 @@ using ControlHub.Server.Http;
 using ControlHub.Server.Options;
 using ControlHub.Server.Services;
 using Microsoft.Extensions.Options;
+using System.Text.Json;
 
 namespace ControlHub.Server.Endpoints;
 
@@ -34,6 +35,8 @@ public static class AdminEndpoints
         authed.MapGet("/audit", AuditAsync);
         authed.MapGet("/accounts", AccountsAsync);
         authed.MapPost("/accounts/{id}/reset-password", ResetPasswordAsync);
+        authed.MapGet("/branding", GetBrandingAsync);
+        authed.MapPut("/branding", SetBrandingAsync);
     }
 
     /// <summary>服务器基础信息。无需登录即可访问。</summary>
@@ -68,7 +71,27 @@ public static class AdminEndpoints
             DataDirectory = opts.ResolveDataDirectory(environment.ContentRootPath),
             HttpPort = opts.HttpPort,
             DiscoveryPort = opts.DiscoveryPort,
+            Branding = await LoadBrandingAsync(store, cancellationToken),
         });
+    }
+
+    /// <summary>读取品牌个性化配置，缺省返回默认值。</summary>
+    private static async Task<BrandingDto> LoadBrandingAsync(HubStore store, CancellationToken cancellationToken)
+    {
+        var json = await store.GetSettingAsync("branding", null, cancellationToken);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new BrandingDto();
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<BrandingDto>(json) ?? new BrandingDto();
+        }
+        catch
+        {
+            return new BrandingDto();
+        }
     }
 
     /// <summary>管理员登录。</summary>
@@ -233,6 +256,32 @@ public static class AdminEndpoints
             http.GetClientIpAddress(), cancellationToken);
 
         return ApiResult<bool>.Success(true);
+    }
+
+    /// <summary>读取品牌个性化配置。</summary>
+    private static async Task<ApiResult<BrandingDto>> GetBrandingAsync(
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        http.RequireAdminSession();
+        return ApiResult<BrandingDto>.Success(await LoadBrandingAsync(store, cancellationToken));
+    }
+
+    /// <summary>保存品牌个性化配置。</summary>
+    private static async Task<ApiResult<BrandingDto>> SetBrandingAsync(
+        BrandingDto request,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        request.SiteName = (request.SiteName ?? string.Empty).Trim();
+        request.LogoText = (request.LogoText ?? string.Empty).Trim();
+        await store.SetSettingAsync("branding", JsonSerializer.Serialize(request), cancellationToken);
+        await store.AddAuditAsync(session.Username, "branding.updated", "branding", "更新站点品牌配置",
+            http.GetClientIpAddress(), cancellationToken);
+        return ApiResult<BrandingDto>.Success(request);
     }
 
     private static AuditLogDto ToAuditDto(AuditLogRow row) => new()

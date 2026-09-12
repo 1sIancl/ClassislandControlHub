@@ -2,11 +2,11 @@
  * 配置下发视图：查看绑定关系、按范围推送，并跟踪客户端同步进度。
  */
 
-import { api, session } from '../core/api.js';
+import { api, session } from '../core/api.js?v=6';
 import {
   h, clear, relativeTime, toast, loadingBlock, modal, field, select,
   emptyState, confirmDialog, deviceStateBadge, syncBadge,
-} from '../core/ui.js';
+} from '../core/ui.js?v=6';
 
 export const meta = {
   title: '配置下发',
@@ -135,7 +135,7 @@ function renderPushPanel(groups, profiles, devices) {
             return h('label.checkbox-field', box, `${d.name}${d.online ? '' : '（离线）'}`);
           }),
         )),
-      ));
+      );
     }
   }
 

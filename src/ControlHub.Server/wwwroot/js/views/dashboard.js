@@ -1,19 +1,39 @@
 /**
  * 仪表盘视图：总体概览、服务器信息与最近事件。
+ * 统计模块支持自定义（显隐与顺序，持久化于本地偏好 `controlhub.ui.layout.dashboard.stats`）。
  */
 
-import { api, session } from '../core/api.js';
+import { api, session } from '../core/api.js?v=6';
 import {
   h, clear, formatDateTime, formatDuration, relativeTime,
-  toast, loadingBlock,
-} from '../core/ui.js';
+  loadingBlock, modal, append,
+} from '../core/ui.js?v=6';
+import { getLayout, saveLayout } from '../core/prefs.js?v=6';
 
 export const meta = {
   title: '仪表盘',
   subtitle: '集控运行概览',
 };
 
-export async function render(container) {
+// 当前视图容器与参数（供「自定义模块」面板保存后原地刷新）。
+let _container = null;
+let _params = null;
+
+// 统计模块定义：key 用于持久化，label 用于配置面板，build 生成卡片。
+const STAT_DEFS = [
+  { key: 'total', label: '设备总数', build: (s) => stat('设备总数', s.deviceCount, `分 ${s.groupCount} 个组`, '') },
+  { key: 'online', label: '在线设备', build: (s) => stat('在线设备', s.onlineDeviceCount, `在线率 ${Math.round((s.onlineRate || 0) * 100)}%`, 'ok') },
+  { key: 'pending', label: '待同步', build: (s) => stat('待同步', s.pendingDeviceCount, s.pendingDeviceCount > 0 ? '等待客户端拉取' : '全部已同步', s.pendingDeviceCount > 0 ? 'warn' : 'ok') },
+  { key: 'error', label: '同步异常', build: (s) => stat('同步异常', s.errorDeviceCount, s.errorDeviceCount > 0 ? '需查看设备日志' : '无异常', s.errorDeviceCount > 0 ? 'danger' : 'ok') },
+  { key: 'profiles', label: '配置档案', build: (s) => stat('配置档案', s.profileCount, `当前版本 ${s.revision}`, 'info') },
+  { key: 'recent', label: '近 24h 新增', build: (s) => stat('近 24h 新增', s.recentEnrollCount, '新注册设备', '') },
+];
+
+const STAT_KEYS = () => STAT_DEFS.map((d) => d.key);
+
+export async function render(container, params) {
+  _container = container;
+  _params = params;
   clear(container);
   container.appendChild(loadingBlock());
 
@@ -39,25 +59,87 @@ export async function render(container) {
 }
 
 function renderStats(stats) {
-  const onlineRate = Math.round((stats.onlineRate || 0) * 100);
-  return h('div.stat-grid',
-    stat('设备总数', stats.deviceCount, `分 ${stats.groupCount} 个组`, ''),
-    stat('在线设备', stats.onlineDeviceCount, `在线率 ${onlineRate}%`, 'ok'),
-    stat('待同步', stats.pendingDeviceCount, stats.pendingDeviceCount > 0 ? '等待客户端拉取' : '全部已同步',
-      stats.pendingDeviceCount > 0 ? 'warn' : 'ok'),
-    stat('同步异常', stats.errorDeviceCount,
-      stats.errorDeviceCount > 0 ? '需查看设备日志' : '无异常', stats.errorDeviceCount > 0 ? 'danger' : 'ok'),
-    stat('配置档案', stats.profileCount, `当前版本 ${stats.revision}`, 'info'),
-    stat('近 24h 新增', stats.recentEnrollCount, '新注册设备', ''),
+  const layout = getLayout('dashboard.stats', STAT_KEYS());
+  const defs = layout
+    .filter((l) => l.enabled !== false)
+    .map((l) => STAT_DEFS.find((d) => d.key === l.key))
+    .filter(Boolean);
+
+  const customizeBtn = h('button.btn.btn-sm', { onClick: openStatCustomize }, '⚙ 自定义统计模块');
+
+  if (defs.length === 0) {
+    return h('div', { style: { marginBottom: '18px', textAlign: 'right' } }, customizeBtn);
+  }
+
+  return h('div', { style: { marginBottom: '18px' } },
+    h('div', { style: { display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' } }, customizeBtn),
+    h('div.stat-grid', ...defs.map((d) => d.build(stats))),
   );
 }
 
 function stat(label, value, hint, tone) {
   return h(`div.stat${tone ? '.' + tone : ''}`,
-    h('div.stat-label', label),
+    h('div.stat-label', h('span.stat-tone'), label),
     h('div.stat-value', String(value ?? 0)),
     h('div.stat-hint', hint),
   );
+}
+
+/** 「自定义统计模块」面板：勾选显隐 + 上移/下移排序。 */
+function openStatCustomize() {
+  const container = h('div');
+
+  function moveItem(key, delta) {
+    const layout = getLayout('dashboard.stats', STAT_KEYS());
+    const idx = layout.findIndex((l) => l.key === key);
+    const target = idx + delta;
+    if (target < 0 || target >= layout.length) return;
+    [layout[idx], layout[target]] = [layout[target], layout[idx]];
+    saveLayout('dashboard.stats', layout);
+    rerender();
+  }
+
+  function toggleItem(key, enabled) {
+    const layout = getLayout('dashboard.stats', STAT_KEYS());
+    const item = layout.find((l) => l.key === key);
+    if (item) item.enabled = enabled;
+    saveLayout('dashboard.stats', layout);
+    rerender();
+  }
+
+  function buildPanel() {
+    const layout = getLayout('dashboard.stats', STAT_KEYS());
+    const panel = h('div.config-panel');
+    layout.forEach((item, idx) => {
+      const def = STAT_DEFS.find((d) => d.key === item.key);
+      const label = def ? def.label : item.key;
+      panel.appendChild(h('div.config-item' + (item.enabled === false ? '.disabled' : ''),
+        h('span.drag-handle', '⠿'),
+        h('span.item-label', label),
+        h('button.move-btn', { type: 'button', disabled: idx === 0, onClick: () => moveItem(item.key, -1) }, '↑'),
+        h('button.move-btn', { type: 'button', disabled: idx === layout.length - 1, onClick: () => moveItem(item.key, 1) }, '↓'),
+        h('input', { type: 'checkbox', checked: item.enabled !== false, onChange: (e) => toggleItem(item.key, e.target.checked) }),
+      ));
+    });
+    return panel;
+  }
+
+  function rerender() {
+    clear(container);
+    append(container, buildPanel());
+  }
+
+  rerender();
+
+  modal({
+    title: '自定义统计模块',
+    body: container,
+    confirmText: '完成',
+    onConfirm: () => {
+      render(_container, _params);
+      return true;
+    },
+  });
 }
 
 function renderServerCard(info, stats) {

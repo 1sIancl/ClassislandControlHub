@@ -1,23 +1,15 @@
-# ClassIsland 集控系统（ControlHub）
+# IslandManger集控
 
 > **一处配置，全网生效 —— 让每一块教室大屏，都准时、统一、可控。**
 
-面向 **ClassIsland 2.x（.NET 10）** 的班级大屏集中管理系统，分为 A、B 两端：
+**IslandManger集控** 是面向 **ClassIsland 2.x（.NET 10）** 的班级大屏集中管理系统，分为 A、B 两端：
 
-- **A 端 · 集控服务器（ControlHub.Server）**：ASP.NET Core 应用，自带可视化 Web 管理界面。既可作为学校内网本地服务器运行，也可部署到服务器以网页形式访问，负责配置分发与部署管理。
-- **B 端 · 客户端插件（ControlHub.Plugin）**：以 ClassIsland 插件形式运行在教室大屏上，连接 A 端，自动接收并应用**课表、时间表、科目、自定义设置**的下发与同步。
-
-```bash
-# Linux 服务器一键部署（root 执行）
-curl -fsSL https://raw.githubusercontent.com/1sIancl/ClassIsland.ControlHub/main/sh/main.sh -o /tmp/controlhub-install.sh && sudo bash /tmp/controlhub-install.sh
-```
-
-> 详细使用说明见 [USAGE.md](USAGE.md)。
-
+- **A 端 · 集控服务器**：ASP.NET Core 应用，自带可视化 Web 管理界面。可作为学校内网本地服务器运行，也可部署到服务器以网页形式访问，负责课表、时间表、科目的统一下发与设备管理。
+- **B 端 · IslandManger集控接收端**：以 ClassIsland 插件形式运行在教室大屏上，连接 A 端，自动接收并应用**课表、时间表、科目、自定义设置**的下发与同步。
 
 ```
                 ┌───────────────────────────────┐
-                │  A 端 · 集控服务器              │
+                │  A 端 · 集控服务器（Web 管理端）  │
                 │  ASP.NET Core + SQLite + Web UI │
                 │  ┌─────────┐  ┌─────────────┐   │
                 │  │ REST API│  │ UDP 自动发现 │   │
@@ -28,45 +20,69 @@ curl -fsSL https://raw.githubusercontent.com/1sIancl/ClassIsland.ControlHub/main
                         │              │
         ┌───────────────┴───────┬──────▼──────────┐
         │  B 端 · 教室大屏        │  B 端 · 教室大屏  │
-        │  ClassIsland + 插件     │  ClassIsland + 插件│
+        │  ClassIsland + 接收端   │  ClassIsland + 接收端│
         └───────────────────────┴─────────────────┘
 ```
 
-## 目录结构
+## 安装教程
 
-```
-ClassIsland.ControlHub/
-├─ ClassIsland.ControlHub.slnx        解决方案
-├─ docs/
-│  ├─ protocol.md                      通信协议与数据格式（完整规范）
-│  ├─ architecture.md                  架构与数据模型
-│  └─ deployment.md                    部署与使用指南
-├─ HANDOFF.md                          给后续开发/接手的说明
-└─ src/
-   ├─ ControlHub.Protocol/             两端共享的通信协议与数据模型（无外部依赖）
-   ├─ ControlHub.Server/               A 端服务器 + Web 管理界面（wwwroot/）
-   └─ ControlHub.Plugin/               B 端 ClassIsland 插件（产出 .cipx）
-```
+### 一、部署 A 端（集控服务器）
 
-## 快速开始
+**方式 1：Linux 服务器一键部署（推荐）**
 
-### 运行 A 端
+在目标 Linux 服务器（Ubuntu / Debian / CentOS / OpenCloudOS 等，需 root）上执行：
 
 ```bash
-cd src/ControlHub.Server
-dotnet run -c Release
+curl -fsSL https://raw.githubusercontent.com/1sIancl/ClassIsland.ControlHub/main/sh/main.sh -o /tmp/islandmanger-install.sh && sudo bash /tmp/islandmanger-install.sh
 ```
 
-启动后浏览器访问 `http://localhost:29800`。默认管理员账号为 `admin`，初始密码在
-`appsettings.json` 的 `ControlHub:DefaultAdminPassword` 中（默认 `admin123`），登录后请立即修改。
+脚本会自动完成：安装 .NET 10 SDK → 拉取源码 → 编译发布 → 注册 systemd 服务并启动。完成后访问 `http://服务器IP:29800` 即可。
 
-> 局域网访问：服务器默认监听 `0.0.0.0:29800`，同一局域网内用 `http://本机IP:29800` 访问即可。
+**方式 2：Windows / 本地运行**
 
-### 使用 B 端
+前置：安装 [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)。
 
-1. 在 A 端 Web 界面「设备管理 → 生成注册码」。
-2. 在教室电脑的 ClassIsland 中安装插件（把 `src/ControlHub.Plugin/cipx/ControlHub.Plugin.cipx` 放入插件目录，或通过插件市场分发）。
-3. 打开【应用设置 → 集控客户端】，点「自动发现服务器」或手动填写地址，填入注册码，点「立即同步」。
+```bash
+git clone https://github.com/1sIancl/ClassIsland.ControlHub.git
+cd ClassIsland.ControlHub
+dotnet run --project src/ControlHub.Server -c Release
+```
+
+启动后浏览器访问 `http://localhost:29800`，局域网内其它机器用 `http://本机IP:29800` 访问。默认账号 `admin`，密码 `admin123`（登录后请立即修改）。
+
+### 二、安装 B 端（IslandManger集控接收端）
+
+1. 构建插件包（或在 GitHub Releases 下载现成的 `.cipx`）：
+
+   ```bash
+   dotnet build src/ControlHub.Plugin/ControlHub.Plugin.csproj -c Release -p:CreateCipx=true -p:GenerateHashSummary=false
+   # 产物：src/ControlHub.Plugin/cipx/ControlHub.Plugin.cipx
+   ```
+
+2. 在教室电脑安装 ClassIsland（2.1+），把 `.cipx` 放入插件目录，或通过 **ClassIsland 插件市场** 搜索「IslandManger集控接收端」安装。
+3. 回到 A 端 Web 界面「设备管理 → 生成注册码」，复制注册码。
+4. 打开 ClassIsland【应用设置 → IslandManger集控接收端】：
+   - 点「自动发现服务器」（同一局域网），或手动填写服务器地址（如 `http://192.168.1.5:29800`）；
+   - 填入注册码 → 「保存设置」→「立即同步」。
+5. 设备即出现在「设备管理」列表中，配置下发数秒内自动生效。
+
+### 三、开始使用
+
+1. 登录 A 端 → 「配置档案 → 新建示例档案」自动生成标准作息 + 周一至周五课表 + 常用科目。
+2. 按学校实际情况编辑：时间表（作息）、课表（周一到周日的排课网格）、科目。
+3. 建分组（如「高一年级」）并绑定档案，便于批量管理。
+4. 生成注册码，到各教室安装接收端并填入注册码。
+
+## 核心特性
+
+- **配置档案**：时间表 / 课表 / 科目 / 自定义设置，按「设备单独指定 → 分组默认 → 全局默认」优先级下发。
+- **周课表网格**：课表按「周一到周日 × 节次」的表格排课，时间表可被多张课表复用。
+- **版本化同步**：全局配置版本号 + 每设备推送世代号，精确统计「哪些设备还没取到最新配置」。
+- **即时推送**：长轮询机制，管理员保存或推送后客户端数秒内自动同步。
+- **定向下发**：可按分组/设备精准推送，不影响其他终端。
+- **自动发现**：UDP 广播，接收端一键发现局域网内的服务器。
+- **品牌个性化**：自定义站点名称、Logo 与浏览器图标，仿企业级后台质感。
+- **审计与日志**：完整操作审计 + 客户端上报日志。
 
 ## 技术栈
 
@@ -76,18 +92,9 @@ dotnet run -c Release
 | B 端 | ClassIsland 插件 SDK（`ClassIsland.PluginSdk 2.1.1.1`）、Avalonia 12 |
 | 共享 | `ControlHub.Protocol`（net10.0，无外部依赖，System.Text.Json） |
 
-## 核心特性
-
-- **配置档案**：时间表 / 课表 / 科目 / 自定义设置，按「设备单独指定 → 分组默认 → 全局默认」优先级下发。
-- **版本化同步**：全局配置版本号 + 每设备推送世代号，精确统计「哪些设备还没取到最新配置」。
-- **即时推送**：长轮询机制，管理员保存或推送后客户端数秒内自动同步。
-- **定向下发**：可按分组/设备精准推送，不影响其他终端。
-- **自动发现**：UDP 广播，插件一键发现局域网内的服务器。
-- **审计与日志**：完整操作审计 + 客户端上报日志。
-
 ## 文档
 
+- [使用说明](USAGE.md)
 - [通信协议与数据格式](docs/protocol.md)
 - [架构与数据模型](docs/architecture.md)
 - [部署与使用指南](docs/deployment.md)
-- [交接说明（给后续开发）](HANDOFF.md)

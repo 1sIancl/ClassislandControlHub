@@ -110,6 +110,27 @@ public sealed class ServerInfoDto
 
     /// <summary>局域网发现端口。</summary>
     public int DiscoveryPort { get; set; }
+
+    /// <summary>品牌个性化配置（站点名称 / Logo / 图标）。</summary>
+    public BrandingDto Branding { get; set; } = new();
+}
+
+/// <summary>
+/// 站点品牌个性化配置，仿 VoiceHub 站点配置，用于替换站点名称、Logo 与图标。
+/// </summary>
+public sealed class BrandingDto
+{
+    /// <summary>站点名称，显示在登录页标题、浏览器标题与侧边栏品牌区。</summary>
+    public string SiteName { get; set; } = "ClassIsland 集控系统";
+
+    /// <summary>Logo 文字，显示在品牌标识方块中（默认 "CI"）。</summary>
+    public string LogoText { get; set; } = "CI";
+
+    /// <summary>Logo 图片（data URL 或图片 URL），为空时使用 LogoText。</summary>
+    public string LogoImage { get; set; } = string.Empty;
+
+    /// <summary>浏览器标签图标（data URL），为空时使用默认图标。</summary>
+    public string Favicon { get; set; } = string.Empty;
 }
 
 /// <summary>

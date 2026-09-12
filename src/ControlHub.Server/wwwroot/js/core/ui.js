@@ -19,6 +19,13 @@ export function h(tag, attrs = {}, ...children) {
     else if (token.startsWith('#')) el.id = token.slice(1);
   }
 
+  // 兼容旧写法：第二个参数若非「普通属性对象」（字符串 / Node / 数组），
+  // 视为子节点，避免 h('span', '文字') 把字符串当 attrs 遍历导致文字丢失。
+  if (attrs !== null && (typeof attrs !== 'object' || Array.isArray(attrs) || attrs instanceof Node)) {
+    children.unshift(attrs);
+    attrs = {};
+  }
+
   for (const [key, value] of Object.entries(attrs || {})) {
     if (value === undefined || value === null || value === false) continue;
     if (key === 'class' || key === 'className') {
