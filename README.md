@@ -9,7 +9,7 @@
 
 ```bash
 # Linux 服务器一键部署（root 执行）
-sudo bash <(curl -sL https://raw.githubusercontent.com/1sIancl/ClassIsland.ControlHub/main/sh/main.sh)
+curl -fsSL https://raw.githubusercontent.com/1sIancl/ClassIsland.ControlHub/main/sh/main.sh -o /tmp/controlhub-install.sh && sudo bash /tmp/controlhub-install.sh
 ```
 
 > 详细使用说明见 [USAGE.md](USAGE.md)。

@@ -3,10 +3,14 @@
 # ClassIsland.ControlHub · A 端服务器 Linux 一键部署脚本
 #
 # 用法（在目标 Linux 服务器上，用 root 执行）：
-#   sudo bash <(curl -sL https://raw.githubusercontent.com/1sIancl/ClassIsland.ControlHub/main/sh/main.sh)
+#   curl -fsSL https://raw.githubusercontent.com/1sIancl/ClassIsland.ControlHub/main/sh/main.sh -o /tmp/controlhub-install.sh && sudo bash /tmp/controlhub-install.sh
 #
 # 说明：脚本会依次完成——安装 .NET 10 SDK（如缺失）→ 拉取源码 → 编译发布 →
 #       注册并启动 systemd 服务。数据保存在 /opt/classisland-controlhub/server/data。
+#
+# 注意：不要用 `sudo bash <(curl -sL ...)` 形式。进程替换依赖 /dev/fd/N，
+#       sudo 提权后会关闭这些文件描述符，导致 bash 报
+#       `bash: /dev/fd/63: No such file or directory`。
 #
 set -euo pipefail
 
@@ -15,7 +19,7 @@ REPO_NAME="ClassIsland.ControlHub"
 INSTALL_DIR="/opt/classisland-controlhub"
 SERVICE_NAME="classisland-controlhub"
 HTTP_PORT="${HTTP_PORT:-29800}"
-DOTNET_DIR="$HOME/.dotnet"
+DOTNET_DIR="/opt/dotnet"
 DOTNET_CHANNEL="10.0"
 DOTNET_BIN=""
 
@@ -24,7 +28,7 @@ warn() { printf '\033[33m[警告]\033[0m %s\n' "$*"; }
 die()  { printf '\033[31m[错误]\033[0m %s\n' "$*" >&2; exit 1; }
 
 # ── 环境检查 ──────────────────────────────────────────────
-[ "$(id -u)" -eq 0 ] || die "请以 root 运行：sudo bash <(curl -sL https://raw.githubusercontent.com/$REPO_OWNER/$REPO_NAME/main/sh/main.sh)"
+[ "$(id -u)" -eq 0 ] || die "请以 root 运行：curl -fsSL https://raw.githubusercontent.com/$REPO_OWNER/$REPO_NAME/main/sh/main.sh -o /tmp/controlhub-install.sh && sudo bash /tmp/controlhub-install.sh"
 command -v curl >/dev/null || die "缺少 curl，请先安装。"
 command -v git  >/dev/null || {
   info "未检测到 git，尝试安装…"
@@ -47,7 +51,7 @@ install_dotnet() {
 
   info "安装 .NET $DOTNET_CHANNEL SDK 到 $DOTNET_DIR …"
   local script; script="$(mktemp)"
-  curl -sSL https://dot.net/v1/dotnet-install.sh -o "$script"
+  curl -fsSL https://dot.net/v1/dotnet-install.sh -o "$script"
   bash "$script" --channel "$DOTNET_CHANNEL" --install-dir "$DOTNET_DIR" --no-path
   rm -f "$script"
 
@@ -95,6 +99,18 @@ EOF
   systemctl daemon-reload
   systemctl enable "$SERVICE_NAME"
   systemctl restart "$SERVICE_NAME"
+
+  info "等待服务启动并自检…"
+  sleep 2
+  if systemctl is-active --quiet "$SERVICE_NAME"; then
+    if curl -fsS "http://127.0.0.1:$HTTP_PORT/" >/dev/null 2>&1; then
+      info "HTTP 自检通过：http://127.0.0.1:$HTTP_PORT"
+    else
+      warn "服务已启动，但 HTTP 自检未通过（可能仍在初始化）。请稍后重试，或查看日志：journalctl -u $SERVICE_NAME -n 50"
+    fi
+  else
+    warn "服务未能启动，请运行 journalctl -u $SERVICE_NAME -n 50 查看原因。"
+  fi
 }
 
 # ── 主流程 ────────────────────────────────────────────────
@@ -105,7 +121,8 @@ main() {
   publish
   install_service
 
-  local ip; ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  local ip
+  ip="$(hostname -I 2>/dev/null | awk 'NR==1{print $1}')" || true
   ip="${ip:-127.0.0.1}"
 
   cat <<EOF

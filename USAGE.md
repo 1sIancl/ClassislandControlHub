@@ -16,7 +16,7 @@
 在目标 Linux 服务器（Ubuntu / Debian / CentOS 等，需 root）上执行：
 
 ```bash
-sudo bash <(curl -sL https://raw.githubusercontent.com/1sIancl/ClassIsland.ControlHub/main/sh/main.sh)
+curl -fsSL https://raw.githubusercontent.com/1sIancl/ClassIsland.ControlHub/main/sh/main.sh -o /tmp/controlhub-install.sh && sudo bash /tmp/controlhub-install.sh
 ```
 
 脚本会自动完成：安装 .NET 10 SDK → 拉取源码 → 编译发布 → 注册 systemd 服务并启动。
