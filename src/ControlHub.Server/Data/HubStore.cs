@@ -56,6 +56,9 @@ public sealed partial class HubStore
         command.CommandText = SchemaSql;
         await command.ExecuteNonQueryAsync(cancellationToken);
 
+        // 迁移：老版本 profiles 表可能缺少 code 列（四位识别码），这里按需补上。
+        await EnsureColumnAsync(connection, "profiles", "code", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+
         // 确保全局版本号存在，保证任何一次同步请求都能拿到确定值。
         await using var seed = connection.CreateCommand();
         seed.CommandText = """
@@ -66,6 +69,35 @@ public sealed partial class HubStore
             """;
         seed.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
         await seed.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>若表缺少指定列，则补一列（用于老数据库的无损迁移）。</summary>
+    private static async Task EnsureColumnAsync(SqliteConnection connection, string table, string column,
+        string definition, CancellationToken cancellationToken)
+    {
+        var has = false;
+        await using (var check = connection.CreateCommand())
+        {
+            check.CommandText = $"PRAGMA table_info({table});";
+            await using var reader = await check.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+                {
+                    has = true;
+                    break;
+                }
+            }
+        }
+
+        if (has)
+        {
+            return;
+        }
+
+        await using var alter = connection.CreateCommand();
+        alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {definition};";
+        await alter.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private const string SchemaSql = """
@@ -104,6 +136,7 @@ public sealed partial class HubStore
             id          TEXT PRIMARY KEY,
             name        TEXT NOT NULL,
             description TEXT NOT NULL DEFAULT '',
+            code        TEXT NOT NULL DEFAULT '',
             revision    INTEGER NOT NULL DEFAULT 1,
             content     TEXT NOT NULL DEFAULT '{}',
             is_default  INTEGER NOT NULL DEFAULT 0,

@@ -2,11 +2,11 @@
  * 系统设置视图：服务器信息、账号安全与部署提示。
  */
 
-import { api, session } from '../core/api.js?v=7';
+import { api, session } from '../core/api.js?v=10';
 import {
   h, clear, formatDateTime, formatDuration, toast, loadingBlock,
-  field, modal, copyText,
-} from '../core/ui.js?v=7';
+  field, modal, copyText, confirmDialog,
+} from '../core/ui.js?v=10';
 
 export const meta = {
   title: '系统设置',
@@ -17,11 +17,12 @@ export async function render(container) {
   clear(container);
   container.appendChild(loadingBlock());
 
-  const [info, me, accounts, timeOffset] = await Promise.all([
+  const [info, me, accounts, timeOffset, updateState] = await Promise.all([
     api('/server/info', { auth: false }),
     api('/admin/me'),
     api('/admin/accounts'),
     api('/admin/time-offset'),
+    api('/admin/update/state'),
   ]);
 
   session.serverInfo = info;
@@ -41,6 +42,7 @@ export async function render(container) {
     renderAccountsCard(accounts, me),
     renderBrandingCard(info),
     renderTimeCard(timeOffset),
+    renderUpdateCard(updateState),
     renderDeployCard(info),
   ));
 }
@@ -297,6 +299,75 @@ function renderTimeCard(timeOffset) {
           toast('ok', '已保存', '时间偏移已生效，将叠加到后续授时中。');
         },
       }, '保存偏移'),
+    ),
+  );
+}
+
+function renderUpdateCard(update) {
+  const statusText = h('div', { style: { fontSize: '13px', color: 'var(--text-dim)' } }, update.status || '尚未检查更新。');
+  const versionText = h('div', { style: { fontSize: '13px', color: 'var(--text-dim)' } },
+    `当前版本 v${update.currentVersion || '—'}` + (update.latestVersion ? ` · 最新 v${update.latestVersion}` : ''));
+
+  const checkBtn = h('button.btn.btn-sm', {
+    type: 'button',
+    onClick: async () => {
+      checkBtn.disabled = true;
+      checkBtn.textContent = '检查中…';
+      try {
+        const r = await api('/admin/update/check');
+        toast('ok', r.status || '检查完成');
+        await render(document.getElementById('content'));
+      } catch (e) {
+        toast('error', '检查失败', e.message);
+        checkBtn.disabled = false;
+        checkBtn.textContent = '检查更新';
+      }
+    },
+  }, '检查更新');
+
+  const applyBtn = h('button.btn.btn-primary.btn-sm', {
+    type: 'button',
+    onClick: async () => {
+      const ok = await confirmDialog('应用更新',
+        `将下载并安装新版本 v${update.latestVersion}，原有数据会保留，完成后服务自动重启、管理界面短暂不可用。确定继续吗？`,
+        '更新并重启');
+      if (!ok) return;
+      applyBtn.disabled = true;
+      applyBtn.textContent = '更新中…';
+      try {
+        const r = await api('/admin/update/apply', { method: 'POST' });
+        toast('ok', '更新已启动', r.status || '');
+      } catch (e) {
+        toast('error', '更新失败', e.message);
+        applyBtn.disabled = false;
+        applyBtn.textContent = '立即更新';
+      }
+    },
+  }, '立即更新');
+
+  return h('div.card', { style: { marginTop: '16px' } },
+    h('div.card-head',
+      h('div',
+        h('h3', '自动更新'),
+        h('p.card-desc', '从 GitHub Release 检查并安装新版本，更新保留原有数据、不影响已接入的设备。'),
+      ),
+    ),
+    h('div', { style: { display: 'grid', gap: '8px', marginBottom: '14px' } },
+      versionText,
+      statusText,
+      update.hasUpdate && update.releaseNotes
+        ? h('div', {
+          style: {
+            fontSize: '12px', color: 'var(--text-faint)', whiteSpace: 'pre-wrap',
+            maxHeight: '120px', overflowY: 'auto', background: 'var(--bg-panel-2)',
+            padding: '8px 10px', borderRadius: 'var(--radius-sm)',
+          },
+        }, update.releaseNotes)
+        : null,
+    ),
+    h('div.card-actions',
+      checkBtn,
+      update.hasUpdate ? applyBtn : null,
     ),
   );
 }

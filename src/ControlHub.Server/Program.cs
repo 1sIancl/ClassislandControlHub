@@ -84,11 +84,14 @@ builder.Services.AddSingleton<AdminAuthFilter>();
 builder.Services.AddSingleton<DeviceAuthFilter>();
 builder.Services.AddSingleton<NtpClient>();
 builder.Services.AddSingleton<ServerTimeService>();
+builder.Services.AddSingleton<UpdateService>();
 builder.Services.AddHostedService<DiscoveryService>();
 builder.Services.AddHostedService<MaintenanceService>();
 builder.Services.AddHostedService<NtpServer>();
 // ServerTimeService 同时是「可被端点注入的单例」与「后台授时服务」，用工厂引用同一实例。
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ServerTimeService>());
+// UpdateService 同理：单例 + 后台自动检查，用工厂引用同一实例。
+builder.Services.AddHostedService(sp => sp.GetRequiredService<UpdateService>());
 
 builder.Services.AddProblemDetails();
 

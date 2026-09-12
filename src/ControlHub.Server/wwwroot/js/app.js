@@ -2,13 +2,13 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo } from './core/api.js?v=7';
-import { h, clear, toast } from './core/ui.js?v=7';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo } from './core/api.js?v=10';
+import { h, clear, toast } from './core/ui.js?v=10';
 import {
   initTheme, getTheme, applyTheme, THEMES,
   getSidebarCollapsed, setSidebarCollapsed,
   getDensity, setDensity, applyDensity, DENSITIES,
-} from './core/prefs.js?v=7';
+} from './core/prefs.js?v=10';
 
 // ── 应用启动早期：应用主题 / 布局偏好（避免主题闪烁） ──
 initTheme();
@@ -59,14 +59,14 @@ const NAV = [
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=7'),
-  devices: () => import('./views/devices.js?v=7'),
-  groups: () => import('./views/groups.js?v=7'),
-  profiles: () => import('./views/profiles.js?v=7'),
-  profileEditor: () => import('./views/profileEditor.js?v=7'),
-  deploy: () => import('./views/deploy.js?v=7'),
-  audit: () => import('./views/audit.js?v=7'),
-  settings: () => import('./views/settings.js?v=7'),
+  dashboard: () => import('./views/dashboard.js?v=10'),
+  devices: () => import('./views/devices.js?v=10'),
+  groups: () => import('./views/groups.js?v=10'),
+  profiles: () => import('./views/profiles.js?v=10'),
+  profileEditor: () => import('./views/profileEditor.js?v=10'),
+  deploy: () => import('./views/deploy.js?v=10'),
+  audit: () => import('./views/audit.js?v=10'),
+  settings: () => import('./views/settings.js?v=10'),
 };
 
 /** 运行状态。 */

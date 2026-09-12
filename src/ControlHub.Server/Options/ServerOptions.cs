@@ -59,6 +59,18 @@ public sealed class ServerOptions
     /// <summary>内置 NTP 服务器监听端口（标准为 123，需 root/管理员权限）。</summary>
     public int NtpPort { get; set; } = 123;
 
+    /// <summary>自动更新的 GitHub 仓库（owner/repo），用于检查最新 Release。</summary>
+    public string UpdateRepo { get; set; } = "1sIancl/IslandManger";
+
+    /// <summary>是否启用自动检查更新（后台周期性查询 GitHub Release）。</summary>
+    public bool AutoCheckUpdates { get; set; } = true;
+
+    /// <summary>自动检查更新的间隔（小时）。</summary>
+    public int UpdateCheckIntervalHours { get; set; } = 12;
+
+    /// <summary>是否在发现新版本后自动应用更新（谨慎：默认关闭，由管理员在 Web 端手动触发）。</summary>
+    public bool AutoApplyUpdates { get; set; }
+
     /// <summary>超过该秒数未收到心跳即视为离线。</summary>
     public int OnlineTimeoutSeconds { get; set; } = 120;
 

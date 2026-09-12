@@ -69,6 +69,10 @@ public sealed class ProfileRow
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
+
+    /// <summary>四位识别码，用于快速区分档案（创建时自动生成，唯一）。</summary>
+    public string Code { get; set; } = string.Empty;
+
     public long Revision { get; set; }
     public string Content { get; set; } = "{}";
     public bool IsDefault { get; set; }

@@ -129,6 +129,7 @@ public static class ProfileEndpoints
             Id = HubChecksum.NewId(),
             Name = request.Name.Trim(),
             Description = request.Description?.Trim() ?? string.Empty,
+            Code = await GenerateUniqueCodeAsync(store, cancellationToken),
             Revision = 1,
             Content = HubJson.Serialize(content),
             IsDefault = await store.CountProfilesAsync(cancellationToken) == 0,
@@ -327,6 +328,7 @@ public static class ProfileEndpoints
     {
         Id = row.Id,
         Name = row.Name,
+        Code = row.Code,
         Description = row.Description,
         Revision = row.Revision,
         Content = includeContent
@@ -335,4 +337,20 @@ public static class ProfileEndpoints
         IsDefault = row.IsDefault,
         UpdatedAt = row.UpdatedAt,
     };
+
+    /// <summary>生成唯一的四位识别码（去易混淆字符，撞码则重试）。</summary>
+    private static async Task<string> GenerateUniqueCodeAsync(HubStore store, CancellationToken cancellationToken)
+    {
+        for (var i = 0; i < 10; i++)
+        {
+            var code = HubChecksum.NewEnrollCode(4);
+            if (!await store.CodeExistsAsync(code, cancellationToken))
+            {
+                return code;
+            }
+        }
+
+        // 极端情况下退回用 GUID 前 4 位大写，仍保证非空且大概率唯一。
+        return Guid.NewGuid().ToString("N")[..4].ToUpperInvariant();
+    }
 }

@@ -219,6 +219,9 @@ public sealed class ProfileDto
     /// <summary>档案名称，例如「2026 春季学期」。</summary>
     public string Name { get; set; } = string.Empty;
 
+    /// <summary>四位识别码（创建时自动生成，用于快速区分档案）。</summary>
+    public string Code { get; set; } = string.Empty;
+
     /// <summary>备注。</summary>
     public string Description { get; set; } = string.Empty;
 

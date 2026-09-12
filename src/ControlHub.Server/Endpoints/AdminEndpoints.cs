@@ -39,6 +39,9 @@ public static class AdminEndpoints
         authed.MapPut("/branding", SetBrandingAsync);
         authed.MapGet("/time-offset", GetTimeOffsetAsync);
         authed.MapPut("/time-offset", SetTimeOffsetAsync);
+        authed.MapGet("/update/state", GetUpdateStateAsync);
+        authed.MapGet("/update/check", CheckUpdateAsync);
+        authed.MapPost("/update/apply", ApplyUpdateAsync);
     }
 
     /// <summary>服务器基础信息。无需登录即可访问。</summary>
@@ -327,6 +330,43 @@ public static class AdminEndpoints
             offsetSeconds = seconds,
             serverTime = serverTime.GetUtcNow(),
         });
+    }
+
+    /// <summary>获取当前自动更新状态（不触发检查）。</summary>
+    private static ApiResult<UpdateState> GetUpdateStateAsync(
+        HttpContext http,
+        UpdateService update)
+    {
+        http.RequireAdminSession();
+        return ApiResult<UpdateState>.Success(update.GetState());
+    }
+
+    /// <summary>立即检查一次更新并返回最新状态。</summary>
+    private static async Task<ApiResult<UpdateState>> CheckUpdateAsync(
+        HttpContext http,
+        UpdateService update,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var state = await update.CheckForUpdateAsync(cancellationToken);
+        await store.AddAuditAsync(session.Username, "update.check", "更新",
+            $"检查更新：{state.Status}", http.GetClientIpAddress(), cancellationToken);
+        return ApiResult<UpdateState>.Success(state);
+    }
+
+    /// <summary>立即下载并应用更新（保留数据，完成后自动重启）。</summary>
+    private static async Task<ApiResult<UpdateState>> ApplyUpdateAsync(
+        HttpContext http,
+        UpdateService update,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        await store.AddAuditAsync(session.Username, "update.apply", "更新",
+            "发起自动更新。", http.GetClientIpAddress(), cancellationToken);
+        var state = await update.ApplyUpdateAsync(cancellationToken);
+        return ApiResult<UpdateState>.Success(state);
     }
 
     private static AuditLogDto ToAuditDto(AuditLogRow row) => new()

@@ -4,11 +4,11 @@
  * 所有修改先落在内存对象上，点击「保存并下发」后一次性提交，由服务端做规范化与版本递增。
  */
 
-import { api } from '../core/api.js?v=7';
+import { api } from '../core/api.js?v=10';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, select,
   emptyState, formatDateTime, copyText,
-} from '../core/ui.js?v=7';
+} from '../core/ui.js?v=10';
 
 export const meta = {
   title: '编辑配置档案',
@@ -50,6 +50,7 @@ let state = {
   selectedLayoutId: null,
   selectedPlanId: null,
   classPlanLayoutId: null,
+  scheduleSelection: null,
   dirty: false,
 };
 
@@ -66,6 +67,7 @@ export async function render(container, params) {
     selectedLayoutId: profile.content?.timeLayouts?.[0]?.id || null,
     selectedPlanId: profile.content?.classPlans?.[0]?.id || null,
     classPlanLayoutId: state.classPlanLayoutId || profile.content?.timeLayouts?.[0]?.id || null,
+    scheduleSelection: null,
     dirty: false,
   };
 
@@ -505,7 +507,7 @@ function classPlanLayout() {
   return state.content.timeLayouts.find((l) => l.id === state.classPlanLayoutId) || null;
 }
 
-/** 课表页：以时间表为框架，渲染「周一到周日 × 节次」的整周排课网格。 */
+/** 课表页：以时间表为框架，渲染「周一到周日 × 节次」的整周排课网格，右侧科目面板快速录入。 */
 function renderClassPlans() {
   const layouts = state.content.timeLayouts;
   const layout = classPlanLayout();
@@ -517,6 +519,7 @@ function renderClassPlans() {
     layout?.id || '',
     (v) => {
       state.classPlanLayoutId = v;
+      state.scheduleSelection = null;
       repaintTab();
     },
   );
@@ -542,37 +545,49 @@ function renderClassPlans() {
     );
   }
 
+  // 选中格子索引越界时复位。
+  if (state.scheduleSelection && state.scheduleSelection.index >= periods.length) {
+    state.scheduleSelection = null;
+  }
+
   return h('div',
     h('div.toolbar',
       h('span', { style: { fontSize: '12.5px', color: 'var(--text-dim)' } }, '作息时间表'),
       layoutSelect,
       h('div.spacer'),
-      h('span', { style: { fontSize: '12px', color: 'var(--text-faint)' } }, '点击单元格选择该节次该天的科目'),
+      h('span', { style: { fontSize: '12px', color: 'var(--text-faint)' } }, '点击单元格，在右侧选科目，选完自动跳到下一节'),
     ),
-    h('div.table-wrap', { style: { overflowX: 'auto' } },
-      h('table.data', { style: { minWidth: '880px' } },
-        h('thead', h('tr',
-          h('th', { style: { width: '96px' } }, '节次 / 时间'),
-          ...GRID_DAYS.map((d) => h('th', { style: { textAlign: 'center' } }, d.label)),
-        )),
-        h('tbody', ...periods.map((period, index) => h('tr',
-          h('td', { style: { whiteSpace: 'nowrap' } },
-            h('div.cell-main', `第 ${index + 1} 节`),
-            h('div.cell-sub', `${period.startTime.slice(0, 5)} - ${period.endTime.slice(0, 5)}`),
-          ),
-          ...GRID_DAYS.map((d) => h('td', { style: { padding: '4px' } }, daySubjectSelect(layout, d.value, index))),
-        ))),
+    h('div', { style: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 232px', gap: '16px', alignItems: 'start' } },
+      h('div.table-wrap', { style: { overflowX: 'auto' } },
+        h('table.data', { style: { minWidth: '780px' } },
+          h('thead', h('tr',
+            h('th', { style: { width: '96px' } }, '节次 / 时间'),
+            ...GRID_DAYS.map((d) => h('th', { style: { textAlign: 'center' } }, d.label)),
+          )),
+          h('tbody', ...periods.map((period, index) => h('tr',
+            h('td', { style: { whiteSpace: 'nowrap' } },
+              h('div.cell-main', `第 ${index + 1} 节`),
+              h('div.cell-sub', `${period.startTime.slice(0, 5)} - ${period.endTime.slice(0, 5)}`),
+            ),
+            ...GRID_DAYS.map((d) => h('td', { style: { padding: '4px' } }, dayCell(layout, d.value, index))),
+          ))),
+        ),
       ),
+      renderSubjectPanel(layout, periods),
     ),
   );
 }
 
-/** 取「某一天」的课表；不存在则按当前时间表自动建一张（一张课表 = 一个星期几）。 */
+/** 取「某一天」的课表；不存在返回 null（空天保持空，不自动创建）。 */
 function getDayPlan(layout, day) {
-  let plan = state.content.classPlans.find((p) => p.timeLayoutId === layout.id
-    && (p.daysOfWeek || []).length === 1 && p.daysOfWeek[0] === day);
+  return state.content.classPlans.find((p) => p.timeLayoutId === layout.id
+    && (p.daysOfWeek || []).length === 1 && p.daysOfWeek[0] === day) || null;
+}
+
+/** 确保某天的课表存在（用户实际填课时才创建），返回课表对象。 */
+function ensureDayPlan(layout, day) {
+  let plan = getDayPlan(layout, day);
   if (!plan) {
-    const periods = layout.items.filter((i) => i.kind === 'class');
     const label = GRID_DAYS.find((d) => d.value === day)?.label || String(day);
     plan = {
       id: genId(),
@@ -582,30 +597,103 @@ function getDayPlan(layout, day) {
       daysOfWeek: [day],
       weekInterval: 0,
       weekOffset: 0,
-      slots: periods.map((p, i) => ({ index: i, subjectId: null, isEnabled: true })),
+      slots: [],
     };
     state.content.classPlans.push(plan);
   }
   return plan;
 }
 
-function daySubjectSelect(layout, day, index) {
+/** 科目简称：优先 initial，其次 name 首字，最后「未命名」。 */
+function subjectShort(subject) {
+  if (subject.initial) return subject.initial;
+  if (subject.name) return subject.name.slice(0, 1);
+  return '未命名';
+}
+
+/** 单个课表单元格：可点击，显示科目简称；空格/空天保持空白。 */
+function dayCell(layout, day, index) {
   const plan = getDayPlan(layout, day);
-  let slot = (plan.slots || []).find((s) => s.index === index);
-  if (!slot) {
-    slot = { index, subjectId: null, isEnabled: true };
-    plan.slots.push(slot);
+  const slot = plan ? (plan.slots || []).find((s) => s.index === index) : null;
+  const subject = slot?.subjectId ? state.content.subjects.find((s) => s.id === slot.subjectId) : null;
+  const label = subject ? subjectShort(subject) : '';
+
+  const selected = state.scheduleSelection
+    && state.scheduleSelection.day === day
+    && state.scheduleSelection.index === index;
+
+  return h('button', {
+    class: `schedule-cell${selected ? ' selected' : ''}${label ? '' : ' empty'}`,
+    type: 'button',
+    onClick: () => {
+      state.scheduleSelection = { day, index };
+      repaintTab();
+    },
+  }, label);
+}
+
+/** 右侧科目面板：选中单元格后，点科目填入并自动移到下一节。 */
+function renderSubjectPanel(layout, periods) {
+  const sel = state.scheduleSelection;
+  const title = sel
+    ? `第 ${sel.index + 1} 节 · ${GRID_DAYS.find((d) => d.value === sel.day)?.label}`
+    : '快速录入';
+
+  if (!sel) {
+    return h('div.card', { style: { padding: '14px' } },
+      h('div', { style: { fontWeight: '600', fontSize: '13px', marginBottom: '8px' } }, title),
+      h('div', { style: { fontSize: '12.5px', color: 'var(--text-faint)', lineHeight: '1.7' } },
+        '点击左侧网格中的某个单元格，在这里点科目即可填入，并自动跳到下一节。'),
+    );
   }
 
-  const subjectOptions = [
-    { value: '', label: '—' },
-    ...state.content.subjects.map((s) => ({ value: s.id, label: s.initial || s.name || '?' })),
-  ];
+  const plan = getDayPlan(layout, sel.day);
+  const slot = plan ? (plan.slots || []).find((s) => s.index === sel.index) : null;
+  const current = slot?.subjectId ? state.content.subjects.find((s) => s.id === slot.subjectId) : null;
 
-  return select(subjectOptions, slot.subjectId || '', (v) => {
-    slot.subjectId = v || null;
+  const applySubject = (subjectId) => {
+    const p = ensureDayPlan(layout, sel.day);
+    let s = (p.slots || []).find((x) => x.index === sel.index);
+    if (!s) {
+      s = { index: sel.index, subjectId, isEnabled: true };
+      p.slots.push(s);
+    } else {
+      s.subjectId = subjectId;
+    }
     state.dirty = true;
-  });
+    if (sel.index < periods.length - 1) {
+      state.scheduleSelection = { day: sel.day, index: sel.index + 1 };
+    }
+    repaintTab();
+  };
+
+  const clearCell = () => {
+    const p = getDayPlan(layout, sel.day);
+    const s = p ? (p.slots || []).find((x) => x.index === sel.index) : null;
+    if (s) s.subjectId = null;
+    state.dirty = true;
+    repaintTab();
+  };
+
+  const subjectList = state.content.subjects.length === 0
+    ? h('div', { style: { fontSize: '12.5px', color: 'var(--text-faint)' } }, '还没有科目，请先在「科目」标签页添加。')
+    : h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '55vh', overflowY: 'auto' } },
+      ...state.content.subjects.map((subject) => h('button', {
+        class: `subject-btn${current?.id === subject.id ? ' active' : ''}`,
+        type: 'button',
+        onClick: () => applySubject(subject.id),
+      },
+        h('span.subject-initial', subjectShort(subject)),
+        h('span', subject.name || '未命名'),
+      )));
+
+  return h('div.card', { style: { padding: '14px' } },
+    h('div', { style: { fontWeight: '600', fontSize: '13px', marginBottom: '10px' } }, title),
+    subjectList,
+    h('div', { style: { marginTop: '12px' } },
+      h('button.btn.btn-sm.btn-danger', { type: 'button', onClick: clearCell }, '清空该格'),
+    ),
+  );
 }
 
 // ────────────────────────────── 科目 ──────────────────────────────

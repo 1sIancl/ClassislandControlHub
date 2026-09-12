@@ -6,13 +6,14 @@ namespace ControlHub.Server.Data;
 public sealed partial class HubStore
 {
     private const string ProfileColumns =
-        "id, name, description, revision, content, is_default, created_at, updated_at";
+        "id, name, description, code, revision, content, is_default, created_at, updated_at";
 
     private static ProfileRow ReadProfile(SqliteDataReader reader) => new()
     {
         Id = GetString(reader, "id"),
         Name = GetString(reader, "name"),
         Description = GetString(reader, "description"),
+        Code = GetString(reader, "code"),
         Revision = GetInt64(reader, "revision"),
         Content = GetString(reader, "content"),
         IsDefault = GetBool(reader, "is_default"),
@@ -76,18 +77,29 @@ public sealed partial class HubStore
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
             INSERT INTO profiles ({ProfileColumns})
-            VALUES ($id, $name, $description, $revision, $content, $isDefault, $createdAt, $updatedAt);
+            VALUES ($id, $name, $description, $code, $revision, $content, $isDefault, $createdAt, $updatedAt);
             """;
         AddParameters(command,
             ("$id", profile.Id),
             ("$name", profile.Name),
             ("$description", profile.Description),
+            ("$code", profile.Code),
             ("$revision", profile.Revision),
             ("$content", profile.Content),
             ("$isDefault", Bool(profile.IsDefault)),
             ("$createdAt", Ts(profile.CreatedAt)),
             ("$updatedAt", Ts(profile.UpdatedAt)));
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>判断某四位识别码是否已被占用。</summary>
+    public async Task<bool> CodeExistsAsync(string code, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(1) FROM profiles WHERE code = $code;";
+        command.Parameters.AddWithValue("$code", code);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) > 0;
     }
 
     /// <summary>更新配置档案的名称、描述与内容（内容变更会递增该档案的版本号）。</summary>

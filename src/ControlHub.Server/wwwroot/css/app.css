@@ -1204,6 +1204,70 @@ input[type="checkbox"] {
   font-weight: 600;
 }
 
+/* ── 课表快速录入（可点击单元格 + 右侧科目面板） ── */
+.schedule-cell {
+  width: 100%;
+  min-height: 38px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.14s, background 0.14s, box-shadow 0.14s;
+}
+.schedule-cell:hover {
+  border-color: var(--accent-line);
+}
+.schedule-cell.empty {
+  border-style: dashed;
+  background: transparent;
+}
+.schedule-cell.selected {
+  border-color: var(--accent);
+  border-style: solid;
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.subject-btn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.14s, background 0.14s;
+}
+.subject-btn:hover {
+  border-color: var(--accent-line);
+}
+.subject-btn.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.subject-initial {
+  flex: none;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  font-size: 12px;
+}
+
 /* ────────────────────────── 日志视图 ────────────────────────── */
 .log-list {
   font-family: var(--mono);

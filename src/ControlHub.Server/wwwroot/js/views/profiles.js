@@ -3,11 +3,11 @@
  * 档案是集控下发的最小单元：一个档案 = 一套时间表 + 课表 + 科目 + 自定义设置。
  */
 
-import { api } from '../core/api.js?v=7';
+import { api } from '../core/api.js?v=10';
 import {
   h, clear, formatDateTime, toast, loadingBlock, modal, confirmDialog,
   emptyState, field,
-} from '../core/ui.js?v=7';
+} from '../core/ui.js?v=10';
 
 export const meta = {
   title: '配置档案',
@@ -63,6 +63,9 @@ function renderCard(profile) {
     h('div', { style: { flex: '1 1 260px', minWidth: '220px' } },
       h('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', flexWrap: 'wrap' } },
         h('strong', { style: { fontSize: '15px' } }, profile.name),
+        profile.code
+          ? h('span.badge.badge-accent', { style: { fontFamily: 'var(--mono)', letterSpacing: '1px' } }, profile.code)
+          : null,
         profile.isDefault ? h('span.badge.badge-accent', '全局默认') : null,
         h('span.badge.badge-neutral', `内容版本 ${profile.revision}`),
       ),
