@@ -47,6 +47,18 @@ public sealed class ServerOptions
     /// <summary>UDP 发现端口。</summary>
     public int DiscoveryPort { get; set; } = HubProtocol.DefaultDiscoveryPort;
 
+    /// <summary>是否启用服务端授时（周期性从标准 NTP 服务器同步时间）。</summary>
+    public bool EnableNtpSync { get; set; } = true;
+
+    /// <summary>标准 NTP 服务器列表（按顺序尝试）。默认阿里云，国内可达。</summary>
+    public string[] NtpServers { get; set; } = ["ntp.aliyun.com"];
+
+    /// <summary>是否启用内置 NTP 服务器（供教室终端 ClassIsland「精确时间」接入）。</summary>
+    public bool EnableNtpServer { get; set; } = true;
+
+    /// <summary>内置 NTP 服务器监听端口（标准为 123，需 root/管理员权限）。</summary>
+    public int NtpPort { get; set; } = 123;
+
     /// <summary>超过该秒数未收到心跳即视为离线。</summary>
     public int OnlineTimeoutSeconds { get; set; } = 120;
 

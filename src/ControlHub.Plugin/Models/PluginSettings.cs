@@ -44,6 +44,9 @@ public sealed class PluginSettings
     /// <summary>是否允许连接使用自签名/不受信任证书的 HTTPS 服务器。</summary>
     public bool AllowInsecureTls { get; set; }
 
+    /// <summary>是否启用时间同步（把 ClassIsland 精确时间服务器指向集控服务器）。</summary>
+    public bool EnableTimeSync { get; set; } = true;
+
     /// <summary>心跳/同步周期（秒）。</summary>
     public int SyncIntervalSeconds { get; set; } = HubProtocol.DefaultHeartbeatSeconds;
 

@@ -38,6 +38,8 @@ public sealed class HubState : INotifyPropertyChanged
     private string? _announcement;
     private string _currentClassPlanName = string.Empty;
     private bool _respectLock;
+    private DateTimeOffset? _lastTimeSyncAt;
+    private string _lastTimeSyncMessage = string.Empty;
 
     /// <summary>最近日志（保留最近 200 条）。</summary>
     public ObservableCollection<LogLine> Logs { get; } = [];
@@ -113,6 +115,20 @@ public sealed class HubState : INotifyPropertyChanged
     {
         get => _respectLock;
         set => Set(ref _respectLock, value);
+    }
+
+    /// <summary>最近一次时钟同步的时间。</summary>
+    public DateTimeOffset? LastTimeSyncAt
+    {
+        get => _lastTimeSyncAt;
+        set => Set(ref _lastTimeSyncAt, value);
+    }
+
+    /// <summary>最近一次时钟同步的结果描述。</summary>
+    public string LastTimeSyncMessage
+    {
+        get => _lastTimeSyncMessage;
+        set => Set(ref _lastTimeSyncMessage, value);
     }
 
     /// <summary>追加一条日志。</summary>

@@ -16,11 +16,15 @@
 在目标 Linux 服务器（Ubuntu / Debian / CentOS 等，需 root）上执行：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/1sIancl/ClassIsland.ControlHub/main/sh/main.sh -o /tmp/controlhub-install.sh && sudo bash /tmp/controlhub-install.sh
+curl -fsSL https://cdn.jsdelivr.net/gh/1sIancl/IslandManger@main/sh/main.sh -o /tmp/controlhub-install.sh && sudo bash /tmp/controlhub-install.sh
 ```
 
 脚本会自动完成：安装 .NET 10 SDK → 拉取源码 → 编译发布 → 注册 systemd 服务并启动。
 完成后访问 `http://服务器IP:29800` 即可。
+
+> **国内服务器提示**：下载脚本走 jsDelivr CDN（国内有节点），比 raw.githubusercontent.com 快且稳；
+> 若仍失败，换 `https://fastly.jsdelivr.net/gh/1sIancl/IslandManger@main/sh/main.sh`，
+> 或对拉源码步骤显式指定镜像 `GIT_MIRROR=https://kkgithub.com sudo bash /tmp/controlhub-install.sh`。
 
 | 操作 | 命令 |
 |---|---|

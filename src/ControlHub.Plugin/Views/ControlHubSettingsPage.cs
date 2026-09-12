@@ -27,6 +27,7 @@ public partial class ControlHubSettingsPage : SettingsPageBase
     private readonly HubState _state;
     private readonly SyncEngine _engine;
     private readonly ServerDiscovery _discovery;
+    private readonly TimeSyncService _timeSync;
 
     private TextBox _serverUrlBox = null!;
     private TextBox _enrollCodeBox = null!;
@@ -37,6 +38,8 @@ public partial class ControlHubSettingsPage : SettingsPageBase
     private CheckBox _applySettings = null!;
     private CheckBox _autoSync = null!;
     private CheckBox _allowInsecureTls = null!;
+    private CheckBox _enableTimeSync = null!;
+    private TextBlock _timeSyncText = null!;
 
     private TextBlock _statusText = null!;
     private TextBlock _statusDetail = null!;
@@ -51,12 +54,14 @@ public partial class ControlHubSettingsPage : SettingsPageBase
         HubSettingsStore settings,
         HubState state,
         SyncEngine engine,
-        ServerDiscovery discovery)
+        ServerDiscovery discovery,
+        TimeSyncService timeSync)
     {
         _settings = settings;
         _state = state;
         _engine = engine;
         _discovery = discovery;
+        _timeSync = timeSync;
 
         BuildUi();
         LoadFromSettings();
@@ -84,6 +89,7 @@ public partial class ControlHubSettingsPage : SettingsPageBase
         stack.Children.Add(BuildStatusCard());
         stack.Children.Add(BuildServerCard());
         stack.Children.Add(BuildSyncCard());
+        stack.Children.Add(BuildTimeSyncCard());
         stack.Children.Add(BuildLogCard());
 
         Content = root;
@@ -186,6 +192,22 @@ public partial class ControlHubSettingsPage : SettingsPageBase
         );
     }
 
+    private Control BuildTimeSyncCard()
+    {
+        _enableTimeSync = new CheckBox { Content = "启用时钟同步（让 ClassIsland 以集控服务器为时间源）", IsChecked = true };
+        _timeSyncText = new TextBlock { Foreground = Dim(), TextWrapping = TextWrapping.Wrap, Text = "尚未同步。" };
+
+        return Section(
+            "时间同步",
+            "把 ClassIsland 的「精确时间服务器」指向集控服务器并启用精确时间，让大屏时钟以服务器为时间源——修改的是 ClassIsland 的时钟，不修改 Windows 系统时间，无需管理员权限。",
+            _enableTimeSync,
+            _timeSyncText,
+            Row(
+                Button("立即同步", async () => await SyncTimeNowAsync())
+            )
+        );
+    }
+
     private Control BuildLogCard()
     {
         _logPanel = new StackPanel { Spacing = 3 };
@@ -216,6 +238,7 @@ public partial class ControlHubSettingsPage : SettingsPageBase
         _applySubjects.IsChecked = s.ApplySubjects;
         _applySettings.IsChecked = s.ApplySettings;
         _allowInsecureTls.IsChecked = s.AllowInsecureTls;
+        _enableTimeSync.IsChecked = s.EnableTimeSync;
     }
 
     private void SaveSettings()
@@ -231,6 +254,7 @@ public partial class ControlHubSettingsPage : SettingsPageBase
             s.ApplySubjects = _applySubjects.IsChecked ?? true;
             s.ApplySettings = _applySettings.IsChecked ?? true;
             s.AllowInsecureTls = _allowInsecureTls.IsChecked ?? false;
+            s.EnableTimeSync = _enableTimeSync.IsChecked ?? true;
 
             // 服务器地址或注册码变化后，旧令牌不再适用，需重新注册。
             if (!string.Equals(s.ServerUrl, _state.ServerUrl, StringComparison.Ordinal)
@@ -265,6 +289,23 @@ public partial class ControlHubSettingsPage : SettingsPageBase
     {
         _settings.Update(s => s.DeviceToken = string.Empty);
         _state.Log("info", "已清除设备凭证，将在下一次同步时重新注册。");
+        RefreshStatus();
+    }
+
+    private async Task SyncTimeNowAsync()
+    {
+        SaveSettings();
+        try
+        {
+            var message = await _timeSync.SyncOnceAsync();
+            _state.Log("info", message);
+        }
+        catch (Exception ex)
+        {
+            _state.LastTimeSyncMessage = "时间同步失败：" + ex.Message;
+            _state.Log("error", ex.Message);
+        }
+
         RefreshStatus();
     }
 
@@ -304,6 +345,10 @@ public partial class ControlHubSettingsPage : SettingsPageBase
 
         _announcementBanner.IsVisible = !string.IsNullOrWhiteSpace(_state.Announcement);
         _announcementText.Text = _state.Announcement ?? string.Empty;
+
+        _timeSyncText.Text = string.IsNullOrWhiteSpace(_state.LastTimeSyncMessage)
+            ? "尚未同步。"
+            : _state.LastTimeSyncMessage;
     }
 
     private void RefreshLogs()

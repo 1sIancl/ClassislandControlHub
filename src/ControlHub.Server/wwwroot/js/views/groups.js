@@ -2,11 +2,11 @@
  * 分组管理视图：按年级/楼层等维度组织设备，并统一下发默认配置档案。
  */
 
-import { api } from '../core/api.js?v=6';
+import { api } from '../core/api.js?v=7';
 import {
   h, clear, formatDateTime, toast, loadingBlock, modal, confirmDialog,
   emptyState, field, select,
-} from '../core/ui.js?v=6';
+} from '../core/ui.js?v=7';
 
 export const meta = {
   title: '分组管理',

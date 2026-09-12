@@ -88,6 +88,7 @@ HTTP 状态码与业务结果同时生效：`401` 鉴权失败、`404` 资源不
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | POST | `/client/enroll` | 设备注册（无需鉴权） |
+| GET | `/client/time` | 时间同步（无需鉴权，返回服务器 UTC 时间） |
 | POST | `/client/heartbeat` | 心跳上报 |
 | GET | `/client/sync` | 拉取配置（版本一致时 `data = null`） |
 | GET | `/client/wait` | 长轮询等待变更 |
@@ -119,6 +120,8 @@ HTTP 状态码与业务结果同时生效：`401` 鉴权失败、`404` 资源不
 | POST | `/admin/push` | 立即推送（all/group/device） |
 | GET | `/admin/audit` | 审计日志（分页） |
 | GET | `/admin/accounts` | 管理员账号列表 |
+| GET/PUT | `/admin/branding` | 品牌个性化读取 / 保存 |
+| GET/PUT | `/admin/time-offset` | 手动时间偏移读取 / 设置（叠加到授时） |
 
 ## 6. 关键数据格式
 
@@ -174,7 +177,35 @@ HTTP 状态码与业务结果同时生效：`401` 鉴权失败、`404` 资源不
 
 客户端用 `checksum` 做内容去重（避免重复应用），用 `revision`/`pushEpoch` 回传应用结果。
 
-### 6.4 内容包（`ContentBundleDto`）
+### 6.4 时间同步（`GET /client/time` + 内置 NTP 服务器）
+
+用于让 B 端教室终端的 ClassIsland 大屏时钟以服务器为时间源。采用标准 NTP 协议：
+
+- **A 端内置 NTP 服务器**（UDP `NtpPort`，默认 123，`NtpServer`）：标准 NTP 单播响应，回显客户端 T1、返回 T2/T3，时间来自 `ServerTimeService.GetUtcNow()`（NTP 校正 + 手动偏移）。
+- **B 端**：把 ClassIsland 的「精确时间服务器」（`Settings.ExactTimeServer`）指向 A 端主机，启用「使用精确时间」（`IsExactTimeEnabled=true`）并触发同步。此后 ClassIsland 周期性从 A 端 NTP 服务器同步，**修改的是 ClassIsland 的时钟（精确时间），而非 Windows 系统时间**。
+- `GET /client/time` 仍提供 HTTP 方式的服务器时间（匿名可访问），供需要 HTTP 对时的场景使用。
+
+```jsonc
+// GET /client/time 应答（data）
+{ "serverTime": "2026-09-12T03:00:00Z" }
+```
+
+**授时链**：
+
+```
+标准 NTP（ntp.aliyun.com）
+      │  A 端 SNTP 客户端（NtpClient）授时，得到 ntpOffset
+      ▼
+A 端时间 = 系统时间 + ntpOffset + 手动偏移（/admin/time-offset，settings 表 key=timeOffsetSeconds）
+      │  A 端内置 NTP 服务器（UDP 123）下发
+      ▼
+ClassIsland「精确时间」（ExactTimeServer 指向 A 端，IsExactTimeEnabled=true）
+      │
+      ▼
+教室大屏时钟（不改 Windows 系统时间，无需管理员权限）
+```
+
+### 6.5 内容包（`ContentBundleDto`）
 
 ```jsonc
 {

@@ -2,13 +2,13 @@
  * 设备管理视图：设备清单、状态监控、分组/档案绑定与注册码管理。
  */
 
-import { api } from '../core/api.js?v=6';
+import { api } from '../core/api.js?v=7';
 import {
   h, clear, formatDateTime, relativeTime, toast, loadingBlock,
   modal, confirmDialog, deviceStateBadge, syncBadge,
   emptyState, field, select, copyText, append,
-} from '../core/ui.js?v=6';
-import { getLayout, saveLayout } from '../core/prefs.js?v=6';
+} from '../core/ui.js?v=7';
+import { getLayout, saveLayout } from '../core/prefs.js?v=7';
 
 export const meta = {
   title: '设备管理',

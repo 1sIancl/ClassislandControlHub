@@ -3,12 +3,12 @@
  * 统计模块支持自定义（显隐与顺序，持久化于本地偏好 `controlhub.ui.layout.dashboard.stats`）。
  */
 
-import { api, session } from '../core/api.js?v=6';
+import { api, session } from '../core/api.js?v=7';
 import {
   h, clear, formatDateTime, formatDuration, relativeTime,
   loadingBlock, modal, append,
-} from '../core/ui.js?v=6';
-import { getLayout, saveLayout } from '../core/prefs.js?v=6';
+} from '../core/ui.js?v=7';
+import { getLayout, saveLayout } from '../core/prefs.js?v=7';
 
 export const meta = {
   title: '仪表盘',
@@ -19,14 +19,24 @@ export const meta = {
 let _container = null;
 let _params = null;
 
+// 统计模块图标（内联 SVG，描边风格）。
+const STAT_ICONS = {
+  total: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
+  online: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>',
+  pending: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>',
+  error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>',
+  profiles: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>',
+  recent: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>',
+};
+
 // 统计模块定义：key 用于持久化，label 用于配置面板，build 生成卡片。
 const STAT_DEFS = [
-  { key: 'total', label: '设备总数', build: (s) => stat('设备总数', s.deviceCount, `分 ${s.groupCount} 个组`, '') },
-  { key: 'online', label: '在线设备', build: (s) => stat('在线设备', s.onlineDeviceCount, `在线率 ${Math.round((s.onlineRate || 0) * 100)}%`, 'ok') },
-  { key: 'pending', label: '待同步', build: (s) => stat('待同步', s.pendingDeviceCount, s.pendingDeviceCount > 0 ? '等待客户端拉取' : '全部已同步', s.pendingDeviceCount > 0 ? 'warn' : 'ok') },
-  { key: 'error', label: '同步异常', build: (s) => stat('同步异常', s.errorDeviceCount, s.errorDeviceCount > 0 ? '需查看设备日志' : '无异常', s.errorDeviceCount > 0 ? 'danger' : 'ok') },
-  { key: 'profiles', label: '配置档案', build: (s) => stat('配置档案', s.profileCount, `当前版本 ${s.revision}`, 'info') },
-  { key: 'recent', label: '近 24h 新增', build: (s) => stat('近 24h 新增', s.recentEnrollCount, '新注册设备', '') },
+  { key: 'total', label: '设备总数', build: (s) => stat('设备总数', s.deviceCount, `分 ${s.groupCount} 个组`, '', 'total') },
+  { key: 'online', label: '在线设备', build: (s) => stat('在线设备', s.onlineDeviceCount, `在线率 ${Math.round((s.onlineRate || 0) * 100)}%`, 'ok', 'online') },
+  { key: 'pending', label: '待同步', build: (s) => stat('待同步', s.pendingDeviceCount, s.pendingDeviceCount > 0 ? '等待客户端拉取' : '全部已同步', s.pendingDeviceCount > 0 ? 'warn' : 'ok', 'pending') },
+  { key: 'error', label: '同步异常', build: (s) => stat('同步异常', s.errorDeviceCount, s.errorDeviceCount > 0 ? '需查看设备日志' : '无异常', s.errorDeviceCount > 0 ? 'danger' : 'ok', 'error') },
+  { key: 'profiles', label: '配置档案', build: (s) => stat('配置档案', s.profileCount, `当前版本 ${s.revision}`, 'info', 'profiles') },
+  { key: 'recent', label: '近 24h 新增', build: (s) => stat('近 24h 新增', s.recentEnrollCount, '新注册设备', '', 'recent') },
 ];
 
 const STAT_KEYS = () => STAT_DEFS.map((d) => d.key);
@@ -77,9 +87,11 @@ function renderStats(stats) {
   );
 }
 
-function stat(label, value, hint, tone) {
+function stat(label, value, hint, tone, iconKey) {
+  const iconEl = h('span.stat-icon');
+  iconEl.innerHTML = STAT_ICONS[iconKey] || '';
   return h(`div.stat${tone ? '.' + tone : ''}`,
-    h('div.stat-label', h('span.stat-tone'), label),
+    h('div.stat-label', iconEl, h('span.stat-label-text', label)),
     h('div.stat-value', String(value ?? 0)),
     h('div.stat-hint', hint),
   );

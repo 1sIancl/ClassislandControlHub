@@ -37,6 +37,8 @@ public static class AdminEndpoints
         authed.MapPost("/accounts/{id}/reset-password", ResetPasswordAsync);
         authed.MapGet("/branding", GetBrandingAsync);
         authed.MapPut("/branding", SetBrandingAsync);
+        authed.MapGet("/time-offset", GetTimeOffsetAsync);
+        authed.MapPut("/time-offset", SetTimeOffsetAsync);
     }
 
     /// <summary>服务器基础信息。无需登录即可访问。</summary>
@@ -57,7 +59,7 @@ public static class AdminEndpoints
         return ApiResult<ServerInfoDto>.Success(new ServerInfoDto
         {
             ServerName = opts.ServerName,
-            Version = typeof(AdminEndpoints).Assembly.GetName().Version?.ToString() ?? "1.0.0.0",
+            Version = HubProtocol.ProductVersion,
             ProtocolVersion = HubProtocol.Version,
             Revision = revision,
             RequiresEnrollCode = opts.RequireEnrollCode,
@@ -71,6 +73,8 @@ public static class AdminEndpoints
             DataDirectory = opts.ResolveDataDirectory(environment.ContentRootPath),
             HttpPort = opts.HttpPort,
             DiscoveryPort = opts.DiscoveryPort,
+            NtpServerEnabled = opts.EnableNtpServer,
+            NtpPort = opts.NtpPort,
             Branding = await LoadBrandingAsync(store, cancellationToken),
         });
     }
@@ -284,6 +288,47 @@ public static class AdminEndpoints
         return ApiResult<BrandingDto>.Success(request);
     }
 
+    /// <summary>读取手动时间偏移及当前授时状态。</summary>
+    private static ApiResult<object> GetTimeOffsetAsync(
+        HttpContext http,
+        ServerTimeService serverTime)
+    {
+        http.RequireAdminSession();
+        return ApiResult<object>.Success(new
+        {
+            offsetSeconds = serverTime.ManualOffsetSeconds,
+            ntpOffsetSeconds = serverTime.OffsetSeconds,
+            serverTime = serverTime.GetUtcNow(),
+            lastSyncStatus = serverTime.LastSyncStatus,
+            lastSyncAt = serverTime.LastSyncAt,
+        });
+    }
+
+    /// <summary>设置手动时间偏移（秒），立即叠加到对外授时的时间上。</summary>
+    private static async Task<ApiResult<object>> SetTimeOffsetAsync(
+        TimeOffsetRequest request,
+        HttpContext http,
+        HubStore store,
+        ServerTimeService serverTime,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+
+        var seconds = Math.Clamp(request.OffsetSeconds, -86400, 86400); // 限制在 ±24 小时内。
+        await store.SetSettingAsync("timeOffsetSeconds",
+            seconds.ToString("F3", System.Globalization.CultureInfo.InvariantCulture), cancellationToken);
+        serverTime.SetManualOffsetSeconds(seconds);
+
+        await store.AddAuditAsync(session.Username, "timeoffset.updated", "timeOffsetSeconds",
+            $"设置时间偏移 {seconds:F3} 秒。", http.GetClientIpAddress(), cancellationToken);
+
+        return ApiResult<object>.Success(new
+        {
+            offsetSeconds = seconds,
+            serverTime = serverTime.GetUtcNow(),
+        });
+    }
+
     private static AuditLogDto ToAuditDto(AuditLogRow row) => new()
     {
         Id = row.Id,
@@ -294,4 +339,11 @@ public static class AdminEndpoints
         Detail = row.Detail,
         IpAddress = row.IpAddress,
     };
+}
+
+/// <summary>设置手动时间偏移的请求体。</summary>
+public sealed class TimeOffsetRequest
+{
+    /// <summary>时间偏移（秒），正值表示整体提前。</summary>
+    public double OffsetSeconds { get; set; }
 }

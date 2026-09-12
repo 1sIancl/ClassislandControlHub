@@ -33,10 +33,20 @@
 在目标 Linux 服务器（Ubuntu / Debian / CentOS / OpenCloudOS 等，需 root）上执行：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/1sIancl/ClassIsland.ControlHub/main/sh/main.sh -o /tmp/islandmanger-install.sh && sudo bash /tmp/islandmanger-install.sh
+curl -fsSL https://cdn.jsdelivr.net/gh/1sIancl/IslandManger@main/sh/main.sh -o /tmp/islandmanger-install.sh && sudo bash /tmp/islandmanger-install.sh
 ```
 
 脚本会自动完成：安装 .NET 10 SDK → 拉取源码 → 编译发布 → 注册 systemd 服务并启动。完成后访问 `http://服务器IP:29800` 即可。
+
+> **国内服务器提示**：
+> - 下载脚本走 jsDelivr CDN（国内有节点），比 raw.githubusercontent.com 快且稳；若 jsDelivr 也超时，换备选镜像：
+>   ```bash
+>   curl -fsSL https://fastly.jsdelivr.net/gh/1sIancl/IslandManger@main/sh/main.sh -o /tmp/islandmanger-install.sh && sudo bash /tmp/islandmanger-install.sh
+>   ```
+> - 脚本内拉源码已内置 GitHub 镜像自动回退；若仍失败，可显式指定镜像：
+>   ```bash
+>   GIT_MIRROR=https://kkgithub.com sudo bash /tmp/islandmanger-install.sh
+>   ```
 
 **方式 2：Windows / 本地运行**
 
@@ -81,6 +91,7 @@ dotnet run --project src/ControlHub.Server -c Release
 - **即时推送**：长轮询机制，管理员保存或推送后客户端数秒内自动同步。
 - **定向下发**：可按分组/设备精准推送，不影响其他终端。
 - **自动发现**：UDP 广播，接收端一键发现局域网内的服务器。
+- **时间同步（NTP）**：A 端内置 SNTP 客户端从标准 NTP 服务器授时，并支持手动时间偏移；接收端自动与服务器对时，保证所有教室大屏时钟统一。
 - **品牌个性化**：自定义站点名称、Logo 与浏览器图标，仿企业级后台质感。
 - **审计与日志**：完整操作审计 + 客户端上报日志。
 

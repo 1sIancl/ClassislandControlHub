@@ -70,6 +70,16 @@ public sealed class HubClient
         return result.Data!;
     }
 
+    /// <summary>
+    /// 查询服务器 UTC 时间（用于本机时钟同步）。返回响应封套携带的服务器时间。
+    /// </summary>
+    public async Task<DateTimeOffset> GetServerTimeAsync(string baseUrl, CancellationToken cancellationToken = default)
+    {
+        var result = await SendAsync<TimeSyncResponse>(baseUrl, "/client/time", HttpMethod.Get,
+            auth: null, body: null, timeout: TimeSpan.FromSeconds(10), cancellationToken);
+        return result.Data?.ServerTime ?? result.ServerTime;
+    }
+
     /// <summary>注册设备。</summary>
     public async Task<EnrollResponse> EnrollAsync(string baseUrl, EnrollRequest request,
         CancellationToken cancellationToken = default)

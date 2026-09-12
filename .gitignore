@@ -4,9 +4,12 @@ obj/
 cipx/
 publish/
 dist/
+_publish_linux/
+_preview/
 
 # 运行时数据（SQLite 及 WAL 文件）
-data/
+# 注意：不要用裸 `data/` 规则——Windows 下 core.ignorecase=true 会误伤源码目录 Data/（HubStore 等），
+#      导致一键部署 clone 后编译失败。SQLite 数据由下面的 *.db 规则覆盖即可。
 *.db
 *.db-shm
 *.db-wal

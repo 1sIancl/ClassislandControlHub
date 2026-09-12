@@ -10,7 +10,17 @@
     <Version>1.0.0.0</Version>
     <ClassIslandPluginSdkVersion>2.1.1.1</ClassIslandPluginSdkVersion>
     <Description>ClassIsland 集控系统 B 端客户端插件。</Description>
+    <!-- 主程序集本地构建路径（用于编译期引用 SettingsService 修改时钟偏移；运行时由宿主 ClassIsland 提供）。 -->
+    <ClassIslandAssemblyPath>$(MSBuildThisFileDirectory)..\..\..\ClassIsland2_src\ClassIsland\bin\Release\net10.0\ClassIsland.dll</ClassIslandAssemblyPath>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 引用 ClassIsland 主程序集，仅用于编译（Private=false 不打进插件包，运行时宿主已加载）。 -->
+    <Reference Include="ClassIsland">
+      <HintPath>$(ClassIslandAssemblyPath)</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
 
   <ItemGroup>
     <!-- 插件 SDK：运行时程序集由 ClassIsland 提供，故排除 runtime 与 native。 -->

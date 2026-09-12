@@ -37,9 +37,14 @@ public class Plugin : PluginBase
             sp.GetRequiredService<IProfileService>(),
             sp.GetRequiredService<ILogger<ClassIslandAdapter>>()));
         services.AddSingleton<SyncEngine>();
+        services.AddSingleton<ClassIslandClockService>();
+        services.AddSingleton<TimeSyncService>();
 
         // 后台同步循环。
         services.AddHostedService(sp => sp.GetRequiredService<SyncEngine>());
+
+        // 后台时间同步循环。
+        services.AddHostedService(sp => sp.GetRequiredService<TimeSyncService>());
 
         // 设置页面。
         services.AddSettingsPage<ControlHubSettingsPage>();

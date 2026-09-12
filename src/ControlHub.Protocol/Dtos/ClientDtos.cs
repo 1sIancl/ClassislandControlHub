@@ -127,6 +127,15 @@ public sealed class HeartbeatResponse
 }
 
 /// <summary>
+/// 时间同步应答。用于 B 端按 NTP 方式（RTT 补偿）校准本机时钟。
+/// </summary>
+public sealed class TimeSyncResponse
+{
+    /// <summary>服务器 UTC 时间（响应构造时刻，即 NTP 语义中的 T3）。</summary>
+    public DateTimeOffset ServerTime { get; set; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>
 /// 配置同步应答。
 /// </summary>
 public sealed class SyncResponse

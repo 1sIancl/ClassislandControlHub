@@ -312,9 +312,16 @@ code {
 }
 .nav-item .nav-icon {
   width: 18px;
-  text-align: center;
+  height: 18px;
   flex: none;
-  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.nav-item .nav-icon svg {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 .nav-badge {
   margin-left: auto;
@@ -578,7 +585,21 @@ body.dense table.data td {
   color: var(--text-dim);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
+}
+.stat-icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+}
+.stat-icon svg {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 .stat-value {
   font-size: 26px;
@@ -591,17 +612,10 @@ body.dense table.data td {
   font-size: 11.5px;
   color: var(--text-faint);
 }
-.stat-tone {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-.stat.ok .stat-tone { background: var(--ok); }
-.stat.warn .stat-tone { background: var(--warn); }
-.stat.danger .stat-tone { background: var(--danger); }
-.stat.info .stat-tone { background: var(--info); }
+.stat.ok .stat-icon { color: var(--ok); }
+.stat.warn .stat-icon { color: var(--warn); }
+.stat.danger .stat-icon { color: var(--danger); }
+.stat.info .stat-icon { color: var(--info); }
 
 /* ────────────────────────── 表格 ────────────────────────── */
 .table-wrap {
@@ -878,9 +892,25 @@ input[type="checkbox"] {
   place-items: center;
   padding: 24px;
   background:
-    radial-gradient(circle at 18% 12%, var(--accent-soft), transparent 45%),
-    radial-gradient(circle at 82% 88%, var(--info-soft), transparent 45%),
+    radial-gradient(circle at 15% 10%, var(--accent-soft), transparent 42%),
+    radial-gradient(circle at 85% 20%, rgba(30, 144, 255, 0.10), transparent 38%),
+    radial-gradient(circle at 78% 90%, var(--info-soft), transparent 46%),
     var(--bg-base);
+  position: relative;
+  overflow: hidden;
+}
+.login-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--glass-border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--glass-border) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: radial-gradient(circle at 50% 40%, black, transparent 72%);
+  -webkit-mask-image: radial-gradient(circle at 50% 40%, black, transparent 72%);
+  opacity: 0.5;
+  pointer-events: none;
 }
 .login-page[hidden] {
   display: none;
@@ -893,6 +923,10 @@ input[type="checkbox"] {
   border-radius: var(--radius-lg);
   padding: 30px 28px;
   box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(20px) saturate(1.15);
+  -webkit-backdrop-filter: blur(20px) saturate(1.15);
+  position: relative;
+  z-index: 1;
 }
 .login-head {
   text-align: center;

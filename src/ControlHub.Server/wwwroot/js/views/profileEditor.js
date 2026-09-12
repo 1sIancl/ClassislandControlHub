@@ -4,11 +4,11 @@
  * 所有修改先落在内存对象上，点击「保存并下发」后一次性提交，由服务端做规范化与版本递增。
  */
 
-import { api } from '../core/api.js?v=6';
+import { api } from '../core/api.js?v=7';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, select,
   emptyState, formatDateTime, copyText,
-} from '../core/ui.js?v=6';
+} from '../core/ui.js?v=7';
 
 export const meta = {
   title: '编辑配置档案',

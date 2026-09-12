@@ -111,6 +111,12 @@ public sealed class ServerInfoDto
     /// <summary>局域网发现端口。</summary>
     public int DiscoveryPort { get; set; }
 
+    /// <summary>内置 NTP 服务器是否启用。</summary>
+    public bool NtpServerEnabled { get; set; }
+
+    /// <summary>内置 NTP 服务器端口（标准 123）。</summary>
+    public int NtpPort { get; set; }
+
     /// <summary>品牌个性化配置（站点名称 / Logo / 图标）。</summary>
     public BrandingDto Branding { get; set; } = new();
 }

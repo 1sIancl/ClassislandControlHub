@@ -56,6 +56,10 @@ cd dist/server
 | `DataDirectory` | data | 数据目录（SQLite 文件所在） |
 | `RequireEnrollCode` | true | 是否强制注册码 |
 | `EnableDiscovery` | true | 是否开启 UDP 自动发现 |
+| `EnableNtpSync` | true | 是否启用服务端授时（周期性从标准 NTP 同步） |
+| `NtpServers` | `["ntp.aliyun.com"]` | 标准 NTP 服务器列表（按顺序尝试） |
+| `EnableNtpServer` | true | 是否启用内置 NTP 服务器（供教室终端「精确时间」接入） |
+| `NtpPort` | 123 | 内置 NTP 服务器监听端口（需 root/管理员权限，公网需放行该 UDP 端口） |
 | `DefaultAdminUser` / `DefaultAdminPassword` | admin / admin123 | 首次启动创建的管理员 |
 | `EnableHttps` / `HttpsPort` | false / 29801 | 是否启用 HTTPS |
 

@@ -2,11 +2,11 @@
  * 系统设置视图：服务器信息、账号安全与部署提示。
  */
 
-import { api, session } from '../core/api.js?v=6';
+import { api, session } from '../core/api.js?v=7';
 import {
   h, clear, formatDateTime, formatDuration, toast, loadingBlock,
   field, modal, copyText,
-} from '../core/ui.js?v=6';
+} from '../core/ui.js?v=7';
 
 export const meta = {
   title: '系统设置',
@@ -17,10 +17,11 @@ export async function render(container) {
   clear(container);
   container.appendChild(loadingBlock());
 
-  const [info, me, accounts] = await Promise.all([
+  const [info, me, accounts, timeOffset] = await Promise.all([
     api('/server/info', { auth: false }),
     api('/admin/me'),
     api('/admin/accounts'),
+    api('/admin/time-offset'),
   ]);
 
   session.serverInfo = info;
@@ -39,6 +40,7 @@ export async function render(container) {
     ),
     renderAccountsCard(accounts, me),
     renderBrandingCard(info),
+    renderTimeCard(timeOffset),
     renderDeployCard(info),
   ));
 }
@@ -258,6 +260,43 @@ function renderBrandingCard(info) {
           setTimeout(() => window.location.reload(), 800);
         },
       }, '保存并应用'),
+    ),
+  );
+}
+
+function renderTimeCard(timeOffset) {
+  const offsetInput = h('input', {
+    type: 'number', step: '1', value: timeOffset.offsetSeconds ?? 0, placeholder: '0',
+  });
+
+  return h('div.card', { style: { marginTop: '16px' } },
+    h('div.card-head',
+      h('div',
+        h('h3', '时间偏移（授时）'),
+        h('p.card-desc', '设定后，服务器会在 NTP 授时基础上叠加该偏移，再下发给所有教室终端。'),
+      ),
+    ),
+    h('div', { style: { display: 'grid', gap: '10px', fontSize: '13px', marginBottom: '14px' } },
+      row('手动偏移', `${timeOffset.offsetSeconds ?? 0} 秒`),
+      row('NTP 校正偏移', `${timeOffset.ntpOffsetSeconds ?? 0} 秒`),
+      row('当前授时时间', formatDateTime(timeOffset.serverTime)),
+      row('授时状态', timeOffset.lastSyncStatus || '—'),
+    ),
+    field('时间偏移（秒，正值 = 整体提前）', offsetInput,
+      '例如填 180 让所有终端快 3 分钟；填 -60 慢 1 分钟。范围 ±86400 秒。'),
+    h('div.card-actions',
+      h('button.btn.btn-primary.btn-sm', {
+        type: 'button',
+        onClick: async () => {
+          const seconds = Number(offsetInput.value);
+          if (Number.isNaN(seconds)) {
+            toast('warn', '请输入有效数字');
+            return;
+          }
+          await api('/admin/time-offset', { method: 'PUT', body: { offsetSeconds: seconds } });
+          toast('ok', '已保存', '时间偏移已生效，将叠加到后续授时中。');
+        },
+      }, '保存偏移'),
     ),
   );
 }

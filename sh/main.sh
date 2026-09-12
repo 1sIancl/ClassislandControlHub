@@ -3,7 +3,8 @@
 # ClassIsland.ControlHub · A 端服务器 Linux 一键部署脚本
 #
 # 用法（在目标 Linux 服务器上，用 root 执行）：
-#   curl -fsSL https://raw.githubusercontent.com/1sIancl/ClassIsland.ControlHub/main/sh/main.sh -o /tmp/controlhub-install.sh && sudo bash /tmp/controlhub-install.sh
+#   curl -fsSL https://cdn.jsdelivr.net/gh/1sIancl/IslandManger@main/sh/main.sh -o /tmp/controlhub-install.sh && sudo bash /tmp/controlhub-install.sh
+#   （jsDelivr CDN 国内访问快；备选 fastly.jsdelivr.net 或 raw.githubusercontent.com）
 #
 # 说明：脚本会依次完成——安装 .NET 10 SDK（如缺失）→ 拉取源码 → 编译发布 →
 #       注册并启动 systemd 服务。数据保存在 /opt/classisland-controlhub/server/data。
@@ -11,6 +12,9 @@
 # 注意：不要用 `sudo bash <(curl -sL ...)` 形式。进程替换依赖 /dev/fd/N，
 #       sudo 提权后会关闭这些文件描述符，导致 bash 报
 #       `bash: /dev/fd/63: No such file or directory`。
+#
+# 国内服务器：拉取源码时 github.com 直连常超时，脚本会依次尝试内置镜像；也可用 GIT_MIRROR 指定镜像，
+#      例如：GIT_MIRROR=https://kkgithub.com sudo bash /tmp/controlhub-install.sh
 #
 set -euo pipefail
 
@@ -22,6 +26,13 @@ HTTP_PORT="${HTTP_PORT:-29800}"
 DOTNET_DIR="/opt/dotnet"
 DOTNET_CHANNEL="10.0"
 DOTNET_BIN=""
+
+# 国内服务器访问 github.com 常因网络不通而超时（`curl 28 Couldn't connect to server`）。
+# 可通过 GIT_MIRROR 指定可用的镜像前缀，例如：
+#   GIT_MIRROR=https://kkgithub.com  bash install.sh                      # 域名镜像
+#   GIT_MIRROR=https://ghfast.top/https://github.com  bash install.sh     # 前缀代理
+# 未指定时，脚本会依次尝试直连与若干内置镜像，最后一个失败才报错。
+GIT_MIRROR="${GIT_MIRROR:-}"
 
 info() { printf '\033[36m[集控]\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m[警告]\033[0m %s\n' "$*"; }
@@ -62,13 +73,44 @@ install_dotnet() {
 }
 
 # ── 拉取源码 ──────────────────────────────────────────────
+# 依次返回候选的 git 地址：用户镜像优先，其次直连，最后内置镜像兜底。
+clone_urls() {
+  local repo="$REPO_OWNER/$REPO_NAME"
+  [ -n "$GIT_MIRROR" ] && printf '%s\n' "${GIT_MIRROR%/}/$repo.git"
+  printf '%s\n' "https://github.com/$repo.git"
+  printf '%s\n' "https://kkgithub.com/$repo.git"
+  printf '%s\n' "https://ghfast.top/https://github.com/$repo.git"
+  printf '%s\n' "https://gitclone.com/github.com/$repo.git"
+}
+
+# 逐个地址尝试 clone，直到成功。用 lowSpeed 限速让「连不上」快速失败（约 25 秒），
+# 而不是像直连那样干等 133 秒才超时。
+git_clone_with_fallback() {
+  local dest="$1" url ok=0
+  while IFS= read -r url; do
+    [ -z "$url" ] && continue
+    info "尝试拉取：$url"
+    if git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=25 \
+           clone "$url" "$dest"; then
+      ok=1
+      break
+    fi
+    warn "该地址拉取失败，尝试下一个…"
+    rm -rf "$dest" 2>/dev/null || true
+  done <<< "$(clone_urls)"
+  [ "$ok" -eq 1 ] || die "无法拉取源码（所有地址均失败）。可设置 GIT_MIRROR 指定可用镜像后重试。"
+}
+
 fetch_source() {
   info "拉取源码到 $INSTALL_DIR …"
   if [ -d "$INSTALL_DIR/.git" ]; then
-    git -C "$INSTALL_DIR" pull --ff-only
-  else
-    git clone "https://github.com/$REPO_OWNER/$REPO_NAME.git" "$INSTALL_DIR"
+    if git -C "$INSTALL_DIR" pull --ff-only 2>/dev/null; then
+      return 0
+    fi
+    warn "更新失败，改用镜像重新拉取…"
+    rm -rf "$INSTALL_DIR"
   fi
+  git_clone_with_fallback "$INSTALL_DIR"
 }
 
 # ── 编译发布 ──────────────────────────────────────────────

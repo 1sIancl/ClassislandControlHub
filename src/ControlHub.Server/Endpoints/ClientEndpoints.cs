@@ -21,6 +21,7 @@ public static class ClientEndpoints
 
         group.MapPost("/enroll", EnrollAsync).AllowAnonymous();
         group.MapGet("/config", GetConfigAsync).AllowAnonymous();
+        group.MapGet("/time", GetTimeAsync).AllowAnonymous();
 
         var authed = group.MapGroup(string.Empty)
             .AddEndpointFilter<DeviceAuthFilter>();
@@ -119,6 +120,18 @@ public static class ClientEndpoints
     }
 
     /// <summary>
+    /// 时间同步查询。返回经 NTP 授时校正后的服务器 UTC 时间，供 B 端按 NTP 方式（RTT 补偿）校准本机时钟。
+    /// 匿名可访问——时间信息无害，且设备在注册前也应能对时。
+    /// </summary>
+    private static ApiResult<TimeSyncResponse> GetTimeAsync(ServerTimeService serverTime)
+    {
+        return ApiResult<TimeSyncResponse>.Success(new TimeSyncResponse
+        {
+            ServerTime = serverTime.GetUtcNow(),
+        });
+    }
+
+    /// <summary>
     /// 公共配置查询。客户端在注册前即可读取，用于判断服务器是否要求注册码。
     /// </summary>
     private static async Task<ApiResult<ServerInfoDto>> GetConfigAsync(
@@ -138,7 +151,7 @@ public static class ClientEndpoints
         return ApiResult<ServerInfoDto>.Success(new ServerInfoDto
         {
             ServerName = opts.ServerName,
-            Version = typeof(ClientEndpoints).Assembly.GetName().Version?.ToString() ?? "1.0.0.0",
+            Version = HubProtocol.ProductVersion,
             ProtocolVersion = HubProtocol.Version,
             Revision = revision,
             RequiresEnrollCode = opts.RequireEnrollCode,
@@ -152,6 +165,8 @@ public static class ClientEndpoints
             DataDirectory = opts.ResolveDataDirectory(environment.ContentRootPath),
             HttpPort = opts.HttpPort,
             DiscoveryPort = opts.DiscoveryPort,
+            NtpServerEnabled = opts.EnableNtpServer,
+            NtpPort = opts.NtpPort,
         });
     }
 

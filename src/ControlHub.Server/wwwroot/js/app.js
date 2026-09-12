@@ -2,60 +2,71 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo } from './core/api.js?v=6';
-import { h, clear, toast } from './core/ui.js?v=6';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo } from './core/api.js?v=7';
+import { h, clear, toast } from './core/ui.js?v=7';
 import {
   initTheme, getTheme, applyTheme, THEMES,
   getSidebarCollapsed, setSidebarCollapsed,
   getDensity, setDensity, applyDensity, DENSITIES,
-} from './core/prefs.js?v=6';
+} from './core/prefs.js?v=7';
 
 // ── 应用启动早期：应用主题 / 布局偏好（避免主题闪烁） ──
 initTheme();
 applyDensity();
 setSidebarCollapsed(getSidebarCollapsed());
 
+/** 导航图标（内联 SVG，描边风格，跟随文字颜色）。 */
+const ICONS = {
+  dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.6"/><rect x="14" y="3" width="7" height="7" rx="1.6"/><rect x="14" y="14" width="7" height="7" rx="1.6"/><rect x="3" y="14" width="7" height="7" rx="1.6"/></svg>',
+  profiles: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>',
+  devices: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
+  groups: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
+  deploy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg>',
+  audit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>',
+  settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+};
+
 /** 导航结构。新增页面时只需在此登记。 */
 const NAV = [
   {
     label: '概览',
     items: [
-      { key: 'dashboard', label: '仪表盘', icon: '◫', hash: '#/dashboard' },
+      { key: 'dashboard', label: '仪表盘', icon: 'dashboard', hash: '#/dashboard' },
     ],
   },
   {
     label: '配置管理',
     items: [
-      { key: 'profiles', label: '配置档案', icon: '▤', hash: '#/profiles' },
-      { key: 'devices', label: '设备管理', icon: '▣', hash: '#/devices' },
-      { key: 'groups', label: '分组管理', icon: '❐', hash: '#/groups' },
+      { key: 'profiles', label: '配置档案', icon: 'profiles', hash: '#/profiles' },
+      { key: 'devices', label: '设备管理', icon: 'devices', hash: '#/devices' },
+      { key: 'groups', label: '分组管理', icon: 'groups', hash: '#/groups' },
     ],
   },
   {
     label: '下发管理',
     items: [
-      { key: 'deploy', label: '配置下发', icon: '⇅', hash: '#/deploy' },
+      { key: 'deploy', label: '配置下发', icon: 'deploy', hash: '#/deploy' },
     ],
   },
   {
     label: '系统',
     items: [
-      { key: 'audit', label: '审计日志', icon: '☰', hash: '#/audit' },
-      { key: 'settings', label: '系统设置', icon: '⚙', hash: '#/settings' },
+      { key: 'audit', label: '审计日志', icon: 'audit', hash: '#/audit' },
+      { key: 'settings', label: '系统设置', icon: 'settings', hash: '#/settings' },
     ],
   },
 ];
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=6'),
-  devices: () => import('./views/devices.js?v=6'),
-  groups: () => import('./views/groups.js?v=6'),
-  profiles: () => import('./views/profiles.js?v=6'),
-  profileEditor: () => import('./views/profileEditor.js?v=6'),
-  deploy: () => import('./views/deploy.js?v=6'),
-  audit: () => import('./views/audit.js?v=6'),
-  settings: () => import('./views/settings.js?v=6'),
+  dashboard: () => import('./views/dashboard.js?v=7'),
+  devices: () => import('./views/devices.js?v=7'),
+  groups: () => import('./views/groups.js?v=7'),
+  profiles: () => import('./views/profiles.js?v=7'),
+  profileEditor: () => import('./views/profileEditor.js?v=7'),
+  deploy: () => import('./views/deploy.js?v=7'),
+  audit: () => import('./views/audit.js?v=7'),
+  settings: () => import('./views/settings.js?v=7'),
 };
 
 /** 运行状态。 */
@@ -229,6 +240,8 @@ function renderNav() {
   for (const group of NAV) {
     nav.appendChild(h('div.nav-group-label', group.label));
     for (const item of group.items) {
+      const iconEl = h('span.nav-icon');
+      iconEl.innerHTML = ICONS[item.icon] || '';
       const button = h('button.nav-item', {
         type: 'button',
         dataset: { key: item.key },
@@ -236,7 +249,7 @@ function renderNav() {
           window.location.hash = item.hash;
         },
       },
-        h('span.nav-icon', item.icon),
+        iconEl,
         h('span.nav-label', item.label),
       );
       nav.appendChild(button);
