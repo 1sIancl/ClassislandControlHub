@@ -1,0 +1,53 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ControlHub.Desktop.ViewModels"
+             x:Class="ControlHub.Desktop.Views.RemoteView"
+             x:DataType="vm:RemoteViewModel">
+
+    <ScrollViewer>
+        <StackPanel Margin="24" Spacing="16">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <TextBlock Text="远程管理" FontSize="24" FontWeight="SemiBold" />
+                <Button Content="加载设备" Command="{Binding LoadDevicesCommand}" />
+                <TextBlock Text="{Binding Status}" FontSize="12" VerticalAlignment="Center" Opacity="0.6" />
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <TextBlock Text="目标设备" VerticalAlignment="Center" />
+                <ComboBox ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}"
+                          DisplayMemberBinding="{Binding Name}" MinWidth="200" />
+                <CheckBox Content="统一广播到全部设备" IsChecked="{Binding Broadcast}" VerticalAlignment="Center" />
+            </StackPanel>
+
+            <Border CornerRadius="10" Padding="16" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="远程命令行" FontSize="16" FontWeight="SemiBold" />
+                    <TextBox Text="{Binding Command}" Watermark="例如：ipconfig /all 或 uname -a" />
+                    <Button Content="执行" HorizontalAlignment="Left" Command="{Binding RunCommandCommand}" />
+                    <ItemsControl ItemsSource="{Binding OutputLines}" />
+                </StackPanel>
+            </Border>
+
+            <Border CornerRadius="10" Padding="16" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="发送提醒" FontSize="16" FontWeight="SemiBold" />
+                    <TextBox Text="{Binding NotifyTitle}" Watermark="标题" />
+                    <TextBox Text="{Binding NotifyMessage}" Watermark="提醒内容…" AcceptsReturn="True" MinHeight="70" />
+                    <CheckBox Content="语音播报" IsChecked="{Binding NotifySpeak}" />
+                    <Button Content="发送" HorizontalAlignment="Left" Command="{Binding SendNotifyCommand}" />
+                </StackPanel>
+            </Border>
+
+            <Border CornerRadius="10" Padding="16" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="外观下发（统一）" FontSize="16" FontWeight="SemiBold" />
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="强调色" FontSize="12" Opacity="0.7" />
+                        <TextBox Text="{Binding AccentColor}" Watermark="#1E90FF" Width="180" />
+                    </StackPanel>
+                    <Button Content="下发外观" HorizontalAlignment="Left" Command="{Binding ApplyAppearanceCommand}" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

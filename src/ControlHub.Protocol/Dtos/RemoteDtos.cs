@@ -175,3 +175,22 @@ public sealed class DeviceCommandDto
     /// <summary>下发管理员。</summary>
     public string IssuedBy { get; set; } = string.Empty;
 }
+
+/// <summary>A 端备份条目。</summary>
+public sealed class BackupEntryDto
+{
+    /// <summary>备份目录名（唯一标识）。</summary>
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>备份类型：<c>manual</c> / <c>auto</c> / <c>update</c>。</summary>
+    public string Type { get; set; } = "manual";
+
+    /// <summary>创建时间（UTC）。</summary>
+    public DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>大小（字节）。</summary>
+    public long SizeBytes { get; set; }
+
+    /// <summary>备注。</summary>
+    public string Note { get; set; } = string.Empty;
+}

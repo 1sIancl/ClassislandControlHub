@@ -1,0 +1,99 @@
+﻿<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:fa="clr-namespace:FluentAvalonia.UI.Controls;assembly=FluentAvalonia"
+        xmlns:vm="using:ControlHub.Desktop.ViewModels"
+        xmlns:views="using:ControlHub.Desktop.Views"
+        x:Class="ControlHub.Desktop.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="ClassislandControlHub 集控管理端"
+        Width="1280" Height="800"
+        MinWidth="960" MinHeight="600"
+        WindowStartupLocation="CenterScreen"
+        SystemDecorations="None"
+        TransparencyLevelHint="Mica"
+        Background="Transparent">
+
+    <Grid RowDefinitions="48,*,28">
+        <!-- 自定义标题栏（半透明，透出 Mica 毛玻璃） -->
+        <Grid Grid.Row="0" Background="#B01E90FF">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" Margin="14,0,0,0" VerticalAlignment="Center">
+                <Border Width="22" Height="22" CornerRadius="6" Background="#40FFFFFF">
+                    <TextBlock Text="CH" Foreground="White" FontSize="12" FontWeight="Bold"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+                <TextBlock Text="ClassislandControlHub 集控管理端" Foreground="White" FontSize="14"
+                           FontWeight="SemiBold" VerticalAlignment="Center" />
+            </StackPanel>
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right"
+                        VerticalAlignment="Center" Margin="0,0,16,0"
+                        IsVisible="{Binding Connected}">
+                <Ellipse Width="8" Height="8" Fill="#FF3B3B" VerticalAlignment="Center" />
+                <TextBlock Text="已连接" Foreground="White" FontSize="12" VerticalAlignment="Center" />
+                <Button Content="断开" Command="{Binding DisconnectCommand}" Padding="10,4" FontSize="12" />
+            </StackPanel>
+
+            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Stretch">
+                <Button Content="─" Width="46" Background="Transparent" Foreground="White" Click="Minimize_Click" />
+                <Button Content="□" Width="46" Background="Transparent" Foreground="White" Click="Maximize_Click" />
+                <Button Content="✕" Width="46" Background="Transparent" Foreground="White" Click="Close_Click" />
+            </StackPanel>
+        </Grid>
+
+        <!-- 内容区 -->
+        <Grid Grid.Row="1">
+            <views:ConnectView IsVisible="{Binding !Connected}" />
+
+            <Grid IsVisible="{Binding Connected}" ColumnDefinitions="280,*">
+                <fa:FANavigationView x:Name="Nav"
+                                PaneDisplayMode="Left"
+                                IsBackButtonVisible="False"
+                                IsSettingsVisible="False"
+                                IsPaneToggleButtonVisible="False"
+                                PaneHeader="{x:Null}"
+                                OpenPaneLength="260">
+                    <fa:FANavigationView.MenuItems>
+                        <fa:FANavigationViewItem Content="仪表盘" Tag="dashboard">
+                            <fa:FANavigationViewItem.IconSource><fa:FAFontIconSource FontFamily="Segoe Fluent Icons" Glyph="&#xE80F;" /></fa:FANavigationViewItem.IconSource>
+                        </fa:FANavigationViewItem>
+                        <fa:FANavigationViewItem Content="设备管理" Tag="devices">
+                            <fa:FANavigationViewItem.IconSource><fa:FAFontIconSource FontFamily="Segoe Fluent Icons" Glyph="&#xE7F8;" /></fa:FANavigationViewItem.IconSource>
+                        </fa:FANavigationViewItem>
+                        <fa:FANavigationViewItem Content="配置档案" Tag="profiles">
+                            <fa:FANavigationViewItem.IconSource><fa:FAFontIconSource FontFamily="Segoe Fluent Icons" Glyph="&#xE8F1;" /></fa:FANavigationViewItem.IconSource>
+                        </fa:FANavigationViewItem>
+                        <fa:FANavigationViewItem Content="配置下发" Tag="deploy">
+                            <fa:FANavigationViewItem.IconSource><fa:FAFontIconSource FontFamily="Segoe Fluent Icons" Glyph="&#xE8A8;" /></fa:FANavigationViewItem.IconSource>
+                        </fa:FANavigationViewItem>
+                        <fa:FANavigationViewItem Content="远程管理" Tag="remote">
+                            <fa:FANavigationViewItem.IconSource><fa:FAFontIconSource FontFamily="Segoe Fluent Icons" Glyph="&#xE756;" /></fa:FANavigationViewItem.IconSource>
+                        </fa:FANavigationViewItem>
+                        <fa:FANavigationViewItem Content="备份" Tag="backup">
+                            <fa:FANavigationViewItem.IconSource><fa:FAFontIconSource FontFamily="Segoe Fluent Icons" Glyph="&#xE7B8;" /></fa:FANavigationViewItem.IconSource>
+                        </fa:FANavigationViewItem>
+                        <fa:FANavigationViewItem Content="设置" Tag="settings">
+                            <fa:FANavigationViewItem.IconSource><fa:FAFontIconSource FontFamily="Segoe Fluent Icons" Glyph="&#xE713;" /></fa:FANavigationViewItem.IconSource>
+                        </fa:FANavigationViewItem>
+                    </fa:FANavigationView.MenuItems>
+                </fa:FANavigationView>
+
+                <ContentControl Grid.Column="1" Content="{Binding CurrentViewModel}" />
+            </Grid>
+        </Grid>
+
+        <!-- 底部状态栏 -->
+        <Border Grid.Row="2" Background="{DynamicResource LayerFillColorDefaultBrush}"
+                BorderThickness="0,1,0,0" BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}">
+            <StackPanel Orientation="Horizontal" Spacing="16" Margin="14,0" VerticalAlignment="Center">
+                <TextBlock Text="ClassislandControlHub 集控管理端 v1.0.0" FontSize="11" Opacity="0.6" />
+                <TextBlock Text="ClassIsland 2.x · 集中控制" FontSize="11" Opacity="0.6" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>
+

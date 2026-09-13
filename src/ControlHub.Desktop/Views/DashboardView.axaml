@@ -1,0 +1,61 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ControlHub.Desktop.ViewModels"
+             x:Class="ControlHub.Desktop.Views.DashboardView"
+             x:DataType="vm:DashboardViewModel">
+
+    <ScrollViewer>
+        <StackPanel Margin="24" Spacing="20">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <TextBlock Text="仪表盘" FontSize="24" FontWeight="SemiBold" />
+                <Button Content="刷新" Command="{Binding RefreshCommand}" />
+                <TextBlock Text="{Binding Status}" FontSize="12" VerticalAlignment="Center" Opacity="0.6" />
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <Border CornerRadius="10" Padding="20" Width="200" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="设备总数" FontSize="13" Opacity="0.6" />
+                        <TextBlock Text="{Binding DeviceCount}" FontSize="28" FontWeight="Bold" />
+                    </StackPanel>
+                </Border>
+                <Border CornerRadius="10" Padding="20" Width="200" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="在线设备" FontSize="13" Opacity="0.6" />
+                        <TextBlock Text="{Binding OnlineCount}" FontSize="28" FontWeight="Bold" Foreground="#16B364" />
+                    </StackPanel>
+                </Border>
+                <Border CornerRadius="10" Padding="20" Width="200" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="配置档案" FontSize="13" Opacity="0.6" />
+                        <TextBlock Text="{Binding ProfileCount}" FontSize="28" FontWeight="Bold" />
+                    </StackPanel>
+                </Border>
+                <Border CornerRadius="10" Padding="20" Width="240" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="服务器" FontSize="13" Opacity="0.6" />
+                        <TextBlock Text="{Binding ServerName}" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Version, StringFormat='版本 {0}'}" FontSize="12" Opacity="0.6" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <Border CornerRadius="10" Padding="20" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="在线设备" FontSize="16" FontWeight="SemiBold" />
+                    <ListBox ItemsSource="{Binding Devices}" MaxHeight="400">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,4">
+                                    <Ellipse Width="8" Height="8" Fill="#16B364" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding Name}" FontSize="14" />
+                                    <TextBlock Text="{Binding CurrentClassPlanName}" FontSize="12" Opacity="0.6" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

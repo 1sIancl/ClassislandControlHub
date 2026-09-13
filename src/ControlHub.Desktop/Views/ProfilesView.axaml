@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ControlHub.Desktop.ViewModels"
+             x:Class="ControlHub.Desktop.Views.ProfilesView"
+             x:DataType="vm:ProfilesViewModel">
+
+    <Grid RowDefinitions="Auto,*" Margin="24">
+        <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,0,16">
+            <TextBlock Text="配置档案" FontSize="24" FontWeight="SemiBold" />
+            <Button Content="新建档案" Command="{Binding CreateCommand}" />
+            <Button Content="刷新" Command="{Binding RefreshCommand}" />
+            <TextBlock Text="{Binding Status}" FontSize="12" VerticalAlignment="Center" Opacity="0.6" />
+        </StackPanel>
+
+        <DataGrid Grid.Row="1" ItemsSource="{Binding Profiles}" AutoGenerateColumns="False">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="识别码" Binding="{Binding Code}" Width="1*" />
+                <DataGridTextColumn Header="名称" Binding="{Binding Name}" Width="2.5*" />
+                <DataGridTextColumn Header="版本" Binding="{Binding Revision}" Width="1*" />
+                <DataGridTextColumn Header="更新时间" Binding="{Binding UpdatedAt}" Width="2*" />
+                <DataGridTemplateColumn Header="" Width="130">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <Button Content="编辑" Command="{Binding $parent[UserControl].((vm:ProfilesViewModel)DataContext).EditCommand}"
+                                        CommandParameter="{Binding}" />
+                                <Button Content="删除" Command="{Binding $parent[UserControl].((vm:ProfilesViewModel)DataContext).DeleteCommand}"
+                                        CommandParameter="{Binding}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+    </Grid>
+</UserControl>

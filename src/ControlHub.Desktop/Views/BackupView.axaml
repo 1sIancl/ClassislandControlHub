@@ -1,0 +1,32 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ControlHub.Desktop.ViewModels"
+             x:Class="ControlHub.Desktop.Views.BackupView"
+             x:DataType="vm:BackupViewModel">
+
+    <Grid RowDefinitions="Auto,*" Margin="24">
+        <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,0,16">
+            <TextBlock Text="备份" FontSize="24" FontWeight="SemiBold" />
+            <Button Content="立即备份" Command="{Binding CreateCommand}" />
+            <Button Content="刷新" Command="{Binding RefreshCommand}" />
+            <TextBlock Text="{Binding Status}" FontSize="12" VerticalAlignment="Center" Opacity="0.6" />
+        </StackPanel>
+
+        <DataGrid Grid.Row="1" ItemsSource="{Binding Backups}" AutoGenerateColumns="False">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="备份" Binding="{Binding Id}" Width="3*" />
+                <DataGridTextColumn Header="类型" Binding="{Binding Type}" Width="1*" />
+                <DataGridTextColumn Header="时间" Binding="{Binding CreatedAt}" Width="2*" />
+                <DataGridTextColumn Header="大小" Binding="{Binding SizeBytes, StringFormat='{}{0} B'}" Width="1*" />
+                <DataGridTemplateColumn Header="" Width="80">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Button Content="删除" Command="{Binding $parent[UserControl].((vm:BackupViewModel)DataContext).DeleteCommand}"
+                                    CommandParameter="{Binding}" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+    </Grid>
+</UserControl>

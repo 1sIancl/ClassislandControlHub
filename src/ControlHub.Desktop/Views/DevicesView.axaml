@@ -1,0 +1,49 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ControlHub.Desktop.ViewModels"
+             x:Class="ControlHub.Desktop.Views.DevicesView"
+             x:DataType="vm:DevicesViewModel">
+
+    <Grid RowDefinitions="Auto,*" Margin="24">
+        <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,0,16">
+            <TextBlock Text="设备管理" FontSize="24" FontWeight="SemiBold" />
+            <Button Content="刷新" Command="{Binding RefreshCommand}" />
+            <Button Content="生成注册码" Command="{Binding GenerateCodeCommand}" />
+            <TextBlock Text="{Binding Status}" FontSize="12" VerticalAlignment="Center" Opacity="0.6" />
+        </StackPanel>
+
+        <StackPanel Grid.Row="1" Spacing="16">
+            <Border CornerRadius="8" Padding="14" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    IsVisible="{Binding EnrollCode, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="注册码（复制给 B 端用于注册）" FontSize="12" Opacity="0.6" />
+                    <TextBox Text="{Binding EnrollCode}" FontFamily="Consolas" FontSize="20" IsReadOnly="True" />
+                </StackPanel>
+            </Border>
+
+            <DataGrid ItemsSource="{Binding Devices}" AutoGenerateColumns="False" CanUserSortColumns="True">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="设备" Binding="{Binding Name}" Width="2*" />
+                    <DataGridTextColumn Header="分组" Binding="{Binding GroupName}" Width="1.5*" />
+                    <DataGridTemplateColumn Header="状态" Width="100">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Online, StringFormat='{}{0:在线;在线:离线}'}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="IP" Binding="{Binding IpAddress}" Width="1.5*" />
+                    <DataGridTextColumn Header="插件版本" Binding="{Binding PluginVersion}" Width="1*" />
+                    <DataGridTemplateColumn Header="" Width="80">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Button Content="删除" Command="{Binding $parent[UserControl].((vm:DevicesViewModel)DataContext).DeleteDeviceCommand}"
+                                        CommandParameter="{Binding}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+        </StackPanel>
+    </Grid>
+</UserControl>

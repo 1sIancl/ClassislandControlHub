@@ -22,13 +22,14 @@ public static class BackupEndpoints
         group.MapPost("/backups/{id}/restore", RestoreAsync);
     }
 
-    private static ApiResult<List<BackupEntry>> ListAsync(HttpContext http, BackupService backups)
+    private static ApiResult<List<BackupEntryDto>> ListAsync(HttpContext http, BackupService backups)
     {
         http.RequireAdminSession();
-        return ApiResult<List<BackupEntry>>.Success(backups.ListBackups());
+        var list = backups.ListBackups().Select(ToDto).ToList();
+        return ApiResult<List<BackupEntryDto>>.Success(list);
     }
 
-    private static async Task<ApiResult<BackupEntry>> CreateAsync(
+    private static async Task<ApiResult<BackupEntryDto>> CreateAsync(
         CreateBackupRequest request,
         HttpContext http,
         BackupService backups,
@@ -39,8 +40,17 @@ public static class BackupEndpoints
         var entry = backups.CreateBackup("manual", request.Note ?? string.Empty);
         await store.AddAuditAsync(session.Username, "backup.create", entry.Id,
             $"创建备份（{entry.SizeBytes} 字节）。", http.GetClientIpAddress(), cancellationToken);
-        return ApiResult<BackupEntry>.Success(entry);
+        return ApiResult<BackupEntryDto>.Success(ToDto(entry));
     }
+
+    private static BackupEntryDto ToDto(BackupEntry entry) => new()
+    {
+        Id = entry.Id,
+        Type = entry.Type,
+        CreatedAt = entry.CreatedAt,
+        SizeBytes = entry.SizeBytes,
+        Note = entry.Note,
+    };
 
     private static async Task<ApiResult<bool>> DeleteAsync(
         string id,

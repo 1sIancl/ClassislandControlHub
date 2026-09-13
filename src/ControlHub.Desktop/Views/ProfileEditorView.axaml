@@ -1,0 +1,221 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ControlHub.Desktop.ViewModels"
+             xmlns:conv="using:ControlHub.Desktop.Converters"
+             xmlns:dto="using:ControlHub.Protocol.Dtos"
+             x:Class="ControlHub.Desktop.Views.ProfileEditorView"
+             x:DataType="vm:ProfileEditorViewModel">
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="20">
+        <!-- 头部：档案名 + 版本 + 操作 -->
+        <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <TextBlock Text="{Binding ProfileName}" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding Revision}" FontSize="12" Opacity="0.6" VerticalAlignment="Center" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <Button Content="返回列表" />
+                <Button Content="保存并下发" Command="{Binding SaveCommand}" />
+            </StackPanel>
+        </Grid>
+
+        <!-- 标签页 -->
+        <TabControl Grid.Row="1" SelectedIndex="{Binding ActiveTab}" HorizontalContentAlignment="Stretch">
+            <!-- ================= 时间表 ================= -->
+            <TabItem Header="时间表">
+                <Grid RowDefinitions="Auto,*" Margin="0,12,0,0">
+                    <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,0,0,10">
+                        <ComboBox ItemsSource="{Binding TimeLayouts}" SelectedItem="{Binding SelectedLayout}"
+                                  DisplayMemberBinding="{Binding Name}" MinWidth="220" />
+                        <Button Content="+ 新建" Command="{Binding AddLayoutCommand}" />
+                        <Button Content="⚡ 快速生成作息" Command="{Binding GenerateScheduleCommand}" />
+                        <Button Content="+ 添加时间点" Command="{Binding AddItemCommand}" />
+                        <Button Content="删除时间表" Command="{Binding RemoveLayoutCommand}" CommandParameter="{Binding SelectedLayout}" />
+                    </StackPanel>
+
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding LayoutItems}" AutoGenerateColumns="False">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="开始" Binding="{Binding StartTime}" Width="120" />
+                            <DataGridTextColumn Header="结束" Binding="{Binding EndTime}" Width="120" />
+                            <DataGridTextColumn Header="类型" Binding="{Binding Kind}" Width="100" />
+                            <DataGridTextColumn Header="名称 / 备注" Binding="{Binding BreakName}" Width="2*" />
+                            <DataGridTemplateColumn Header="" Width="60">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="✕" Padding="8,4"
+                                                Command="{Binding $parent[UserControl].((vm:ProfileEditorViewModel)DataContext).RemoveItemCommand}"
+                                                CommandParameter="{Binding}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
+            <!-- ================= 课表 ================= -->
+            <TabItem Header="课表">
+                <Grid ColumnDefinitions="*,230" Margin="0,12,0,0">
+                    <ScrollViewer Grid.Column="0">
+                        <Grid RowDefinitions="Auto,Auto,*">
+                            <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,0,0,8">
+                                <TextBlock Text="作息时间表" FontSize="12" Opacity="0.7" VerticalAlignment="Center" />
+                                <ComboBox ItemsSource="{Binding TimeLayouts}" SelectedItem="{Binding SelectedLayout}"
+                                          DisplayMemberBinding="{Binding Name}" MinWidth="200" />
+                            </StackPanel>
+                            <TextBlock Grid.Row="1" Text="点击单元格，在右侧选科目，选完自动跳到下一节" FontSize="12" Opacity="0.5" Margin="0,0,0,8" />
+
+                            <Grid Grid.Row="2" RowDefinitions="Auto,*">
+                                <Grid ColumnDefinitions="110,*,*,*,*,*,*,*">
+                                    <TextBlock Text="节次 / 时间" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" Margin="4" Opacity="0.7" />
+                                    <TextBlock Grid.Column="1" Text="周一" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                    <TextBlock Grid.Column="2" Text="周二" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                    <TextBlock Grid.Column="3" Text="周三" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                    <TextBlock Grid.Column="4" Text="周四" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                    <TextBlock Grid.Column="5" Text="周五" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                    <TextBlock Grid.Column="6" Text="周六" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                    <TextBlock Grid.Column="7" Text="周日" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                                </Grid>
+
+                                <ItemsControl Grid.Row="1" ItemsSource="{Binding Periods}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:PeriodRowViewModel">
+                                            <Grid ColumnDefinitions="110,*,*,*,*,*,*,*" Margin="0,2">
+                                                <TextBlock Text="{Binding Label}" FontSize="11" VerticalAlignment="Center" Margin="4" Opacity="0.8" />
+                                                <ItemsControl Grid.Column="1" Grid.ColumnSpan="7" ItemsSource="{Binding Cells}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate><Grid ColumnDefinitions="*,*,*,*,*,*,*" /></ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="vm:CellViewModel">
+                                                            <Border Grid.Column="{Binding Day, Converter={x:Static conv:DayToColumnConverter.Instance}}"
+                                                                    Margin="2" CornerRadius="6" MinHeight="36"
+                                                                    Background="{Binding IsSelected, Converter={x:Static conv:BoolToBrushConverter.Instance}}"
+                                                                    BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                                                                    BorderThickness="1">
+                                                                <Button HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                                                                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                                                                        Background="Transparent"
+                                                                        Command="{Binding $parent[UserControl].((vm:ProfileEditorViewModel)DataContext).SelectCellCommand}"
+                                                                        CommandParameter="{Binding}">
+                                                                    <StackPanel Spacing="0">
+                                                                        <TextBlock Text="{Binding Label}" FontSize="14" FontWeight="SemiBold"
+                                                                                   HorizontalAlignment="Center"
+                                                                                   IsVisible="{Binding !IsEmpty}" />
+                                                                        <TextBlock Text="（无）" FontSize="11" FontStyle="Italic" Opacity="0.3"
+                                                                                   IsVisible="{Binding IsEmpty}" HorizontalAlignment="Center" />
+                                                                    </StackPanel>
+                                                                </Button>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Grid>
+                        </Grid>
+                    </ScrollViewer>
+
+                    <!-- 右：科目面板 -->
+                    <Border Grid.Column="1" CornerRadius="10" Padding="12" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" Margin="12,0,0,0">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="{Binding SelectionHint}" FontSize="12" TextWrapping="Wrap" Opacity="0.85" />
+                            <Button Content="清空该格" Command="{Binding ClearCellCommand}" />
+                            <ScrollViewer>
+                                <ItemsControl ItemsSource="{Binding Subjects}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="dto:SubjectDto">
+                                            <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Margin="0,2"
+                                                    Command="{Binding $parent[UserControl].((vm:ProfileEditorViewModel)DataContext).AssignSubjectCommand}"
+                                                    CommandParameter="{Binding}">
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <Border CornerRadius="4" Padding="6,2" Background="{DynamicResource AccentFillColorDefaultBrush}">
+                                                        <TextBlock Text="{Binding Initial}" Foreground="White" FontWeight="SemiBold" />
+                                                    </Border>
+                                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- ================= 科目 ================= -->
+            <TabItem Header="科目">
+                <Grid RowDefinitions="Auto,*" Margin="0,12,0,0">
+                    <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,0,0,10">
+                        <Button Content="+ 添加科目" Command="{Binding AddSubjectCommand}" />
+                        <TextBlock Text="课表排课时会作为可选科目" FontSize="12" Opacity="0.6" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding Subjects}" AutoGenerateColumns="False">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="科目名称" Binding="{Binding Name, Mode=TwoWay}" Width="2*" />
+                            <DataGridTextColumn Header="简称" Binding="{Binding Initial, Mode=TwoWay}" Width="1*" />
+                            <DataGridTextColumn Header="任课教师" Binding="{Binding TeacherName, Mode=TwoWay}" Width="1.5*" />
+                            <DataGridCheckBoxColumn Header="户外" Binding="{Binding IsOutDoor, Mode=TwoWay}" Width="80" />
+                            <DataGridTemplateColumn Header="" Width="60">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="✕" Padding="8,4"
+                                                Command="{Binding $parent[UserControl].((vm:ProfileEditorViewModel)DataContext).DeleteSubjectCommand}"
+                                                CommandParameter="{Binding}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
+            <!-- ================= 自定义设置 ================= -->
+            <TabItem Header="自定义设置">
+                <ScrollViewer Margin="0,12,0,0">
+                    <StackPanel Spacing="14">
+                        <Border CornerRadius="10" Padding="14" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="下发公告" FontWeight="SemiBold" />
+                                <TextBox Text="{Binding Announcement}" Watermark="例如：本周起执行夏季作息，请注意作息变化。" AcceptsReturn="True" MinHeight="70" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border CornerRadius="10" Padding="14" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                            <CheckBox Content="锁定客户端本地编辑（插件将提示配置由集控统一管理）" IsChecked="{Binding LockLocalEditing}" />
+                        </Border>
+
+                        <Border CornerRadius="10" Padding="14" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                            <StackPanel Spacing="8">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <TextBlock Text="自定义配置项" FontWeight="SemiBold" />
+                                    <Button Content="+ 添加配置项" Command="{Binding AddCustomValueCommand}" />
+                                </StackPanel>
+                                <TextBlock Text="自定义配置项会随配置一起下发给客户端插件，键名建议使用「命名空间.键名」的形式。" FontSize="12" Opacity="0.6" />
+                                <ItemsControl ItemsSource="{Binding CustomValues}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:KeyValueEntryViewModel">
+                                            <Grid ColumnDefinitions="1*,2*,Auto" Margin="0,4">
+                                                <TextBox Grid.Column="0" Text="{Binding Key}" Watermark="键名，例如 播报.启用" Margin="0,0,6,0" />
+                                                <TextBox Grid.Column="1" Text="{Binding Value}" Watermark="值" Margin="0,0,6,0" />
+                                                <Button Grid.Column="2" Content="✕" Padding="8,4"
+                                                        Command="{Binding $parent[UserControl].((vm:ProfileEditorViewModel)DataContext).RemoveCustomValueCommand}"
+                                                        CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+
+        <!-- 状态栏 -->
+        <TextBlock Grid.Row="3" Text="{Binding Status}" FontSize="12" Opacity="0.7" Margin="0,10,0,0" />
+    </Grid>
+</UserControl>

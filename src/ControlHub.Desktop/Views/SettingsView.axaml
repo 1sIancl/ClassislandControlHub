@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ControlHub.Desktop.ViewModels"
+             x:Class="ControlHub.Desktop.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+
+    <ScrollViewer>
+        <StackPanel Margin="24" Spacing="16">
+            <TextBlock Text="设置" FontSize="24" FontWeight="SemiBold" />
+
+            <Border CornerRadius="10" Padding="16" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="外观" FontSize="16" FontWeight="SemiBold" />
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Button Content="跟随系统" Command="{Binding ApplyThemeCommand}" CommandParameter="system" />
+                        <Button Content="浅色" Command="{Binding ApplyThemeCommand}" CommandParameter="light" />
+                        <Button Content="深色" Command="{Binding ApplyThemeCommand}" CommandParameter="dark" />
+                        <TextBlock Text="{Binding Theme}" FontSize="12" VerticalAlignment="Center" Opacity="0.6" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border CornerRadius="10" Padding="16" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="服务器信息" FontSize="16" FontWeight="SemiBold" />
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <TextBlock Text="{Binding ServerName}" FontSize="14" />
+                        <TextBlock Text="{Binding Version, StringFormat='版本 {0}'}" FontSize="14" Opacity="0.6" />
+                        <Button Content="加载" Command="{Binding LoadCommand}" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding Status}" FontSize="12" Opacity="0.6" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

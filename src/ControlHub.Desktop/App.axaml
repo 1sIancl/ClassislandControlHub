@@ -1,0 +1,28 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ControlHub.Desktop.ViewModels"
+             xmlns:views="using:ControlHub.Desktop.Views"
+             xmlns:styling="clr-namespace:FluentAvalonia.Styling;assembly=FluentAvalonia"
+             x:Class="ControlHub.Desktop.App"
+             RequestedThemeVariant="Default">
+    <Application.Styles>
+        <styling:FluentAvaloniaTheme CustomAccentColor="DodgerBlue" />
+        <Style Selector="Window, UserControl">
+            <Setter Property="FontFamily" Value="avares://ControlHub.Desktop/Assets/Fonts/HarmonyOS_Sans_SC_Regular.ttf#HarmonyOS Sans SC" />
+        </Style>
+    </Application.Styles>
+
+    <Application.DataTemplates>
+        <DataTemplate DataType="vm:DashboardViewModel"><views:DashboardView /></DataTemplate>
+        <DataTemplate DataType="vm:DevicesViewModel"><views:DevicesView /></DataTemplate>
+        <DataTemplate DataType="vm:ProfilesViewModel"><views:ProfilesView /></DataTemplate>
+        <DataTemplate DataType="vm:DeployViewModel"><views:DeployView /></DataTemplate>
+        <DataTemplate DataType="vm:RemoteViewModel"><views:RemoteView /></DataTemplate>
+        <DataTemplate DataType="vm:BackupViewModel"><views:BackupView /></DataTemplate>
+        <DataTemplate DataType="vm:SettingsViewModel"><views:SettingsView /></DataTemplate>
+        <DataTemplate DataType="vm:ProfileEditorViewModel"><views:ProfileEditorView /></DataTemplate>
+    </Application.DataTemplates>
+
+    <Application.Resources>
+    </Application.Resources>
+</Application>

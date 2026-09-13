@@ -1,0 +1,52 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ControlHub.Desktop.ViewModels"
+             x:Class="ControlHub.Desktop.Views.ConnectView"
+             x:DataType="vm:ConnectViewModel">
+
+    <Grid>
+        <Grid.Background>
+            <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                <GradientStop Color="#1E90FF" Offset="0" />
+                <GradientStop Color="#0F1115" Offset="1" />
+            </LinearGradientBrush>
+        </Grid.Background>
+
+        <Border Width="420" VerticalAlignment="Center" HorizontalAlignment="Center"
+                CornerRadius="12" Padding="32"
+                Background="{DynamicResource ApplicationPageBackgroundThemeBrush}"
+                BoxShadow="0 12 40 0 #33000000">
+            <StackPanel Spacing="18">
+                <StackPanel Spacing="6">
+                    <Border Width="56" Height="56" CornerRadius="14" HorizontalAlignment="Center"
+                            Background="#1E90FF">
+                        <TextBlock Text="CH" Foreground="White" FontSize="22" FontWeight="Bold"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <TextBlock Text="ClassislandControlHub 集控管理端" FontSize="20" FontWeight="SemiBold"
+                               HorizontalAlignment="Center" />
+                    <TextBlock Text="在本地管理教室大屏的集中控制" FontSize="13" Opacity="0.6"
+                               HorizontalAlignment="Center" />
+                </StackPanel>
+
+                <StackPanel Spacing="4">
+                    <TextBlock Text="服务器地址" FontSize="12" Opacity="0.7" />
+                    <TextBox Text="{Binding ServerUrl}" Watermark="http://127.0.0.1:29800" />
+                </StackPanel>
+                <StackPanel Spacing="4">
+                    <TextBlock Text="用户名" FontSize="12" Opacity="0.7" />
+                    <TextBox Text="{Binding Username}" Watermark="admin" />
+                </StackPanel>
+                <StackPanel Spacing="4">
+                    <TextBlock Text="密码" FontSize="12" Opacity="0.7" />
+                    <TextBox Text="{Binding Password}" PasswordChar="●" />
+                </StackPanel>
+
+                <TextBlock Text="{Binding StatusText}" FontSize="12" Opacity="0.7" TextWrapping="Wrap" />
+
+                <Button Content="登 录" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                        Command="{Binding LoginCommand}" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

@@ -1,0 +1,31 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:ControlHub.Desktop.ViewModels"
+             x:Class="ControlHub.Desktop.Views.DeployView"
+             x:DataType="vm:DeployViewModel">
+
+    <Grid RowDefinitions="Auto,*" Margin="24">
+        <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,0,16">
+            <TextBlock Text="配置下发" FontSize="24" FontWeight="SemiBold" />
+            <Button Content="全局推送" Command="{Binding PushAllCommand}" />
+            <Button Content="刷新" Command="{Binding RefreshCommand}" />
+            <TextBlock Text="{Binding Status}" FontSize="12" VerticalAlignment="Center" Opacity="0.6" />
+        </StackPanel>
+
+        <DataGrid Grid.Row="1" ItemsSource="{Binding Devices}" AutoGenerateColumns="False">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="设备" Binding="{Binding Name}" Width="2*" />
+                <DataGridTextColumn Header="状态" Binding="{Binding UpToDate, StringFormat='{}{0:最新;最新:待更新}'}" Width="1*" />
+                <DataGridTextColumn Header="已应用版本" Binding="{Binding AppliedRevision}" Width="1*" />
+                <DataGridTemplateColumn Header="" Width="100">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Button Content="推送" Command="{Binding $parent[UserControl].((vm:DeployViewModel)DataContext).PushDeviceCommand}"
+                                    CommandParameter="{Binding}" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+    </Grid>
+</UserControl>
