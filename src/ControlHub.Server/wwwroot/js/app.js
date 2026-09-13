@@ -2,16 +2,20 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo } from './core/api.js?v=10';
-import { h, clear, toast } from './core/ui.js?v=10';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo } from './core/api.js?v=12';
+import { h, clear, toast } from './core/ui.js?v=12';
 import {
   initTheme, getTheme, applyTheme, THEMES,
   getSidebarCollapsed, setSidebarCollapsed,
   getDensity, setDensity, applyDensity, DENSITIES,
-} from './core/prefs.js?v=10';
+  applyAppearance, getAccent, setAccent, ACCENTS,
+  getFont, setFont, FONTS,
+  getRadius, setRadius, RADII,
+} from './core/prefs.js?v=12';
 
-// ── 应用启动早期：应用主题 / 布局偏好（避免主题闪烁） ──
+// ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
+applyAppearance();
 applyDensity();
 setSidebarCollapsed(getSidebarCollapsed());
 
@@ -46,6 +50,7 @@ const NAV = [
     label: '下发管理',
     items: [
       { key: 'deploy', label: '配置下发', icon: 'deploy', hash: '#/deploy' },
+      { key: 'remote', label: '远程管理', icon: 'deploy', hash: '#/remote' },
     ],
   },
   {
@@ -59,14 +64,15 @@ const NAV = [
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=10'),
-  devices: () => import('./views/devices.js?v=10'),
-  groups: () => import('./views/groups.js?v=10'),
-  profiles: () => import('./views/profiles.js?v=10'),
-  profileEditor: () => import('./views/profileEditor.js?v=10'),
-  deploy: () => import('./views/deploy.js?v=10'),
-  audit: () => import('./views/audit.js?v=10'),
-  settings: () => import('./views/settings.js?v=10'),
+  dashboard: () => import('./views/dashboard.js?v=12'),
+  devices: () => import('./views/devices.js?v=12'),
+  groups: () => import('./views/groups.js?v=12'),
+  profiles: () => import('./views/profiles.js?v=12'),
+  profileEditor: () => import('./views/profileEditor.js?v=12'),
+  deploy: () => import('./views/deploy.js?v=12'),
+  remote: () => import('./views/remote.js?v=12'),
+  audit: () => import('./views/audit.js?v=12'),
+  settings: () => import('./views/settings.js?v=12'),
 };
 
 /** 运行状态。 */
@@ -106,19 +112,28 @@ async function loadServerInfo() {
     session.serverInfo = info;
     session.revision = info.revision;
     applyBranding(info);
+    setLoginServerState('online', info.serverName || '已连接服务器');
   } catch {
-    document.getElementById('loginServerName').textContent = '无法连接到服务器';
+    setLoginServerState('offline', '无法连接到服务器');
   }
+}
+
+/** 更新登录页的服务器状态指示（online / offline）。 */
+function setLoginServerState(state, text) {
+  const box = document.getElementById('loginServerName');
+  const textEl = document.getElementById('loginServerText');
+  if (textEl) textEl.textContent = text;
+  if (box) box.className = `login-server ${state}`;
 }
 
 /** 应用站点品牌个性化（名称 / Logo / 图标）。 */
 function applyBranding(info) {
   const branding = info.branding || {};
-  const siteName = branding.siteName || info.serverName || 'ClassIsland 集控系统';
+  const siteName = branding.siteName || info.serverName || 'ClassislandControlHub 集控系统';
   const logoText = branding.logoText || 'CI';
 
   document.title = `${siteName} · 管理后台`;
-  const ids = ['brandServerName', 'loginServerName', 'loginTitle', 'brandTitle'];
+  const ids = ['brandServerName', 'loginTitle', 'brandTitle'];
   for (const id of ids) {
     const el = document.getElementById(id);
     if (el) el.textContent = siteName;
@@ -138,21 +153,22 @@ function applyBranding(info) {
   }
 }
 
-/** 更新品牌标识方块：有图片用图片，否则显示 Logo 文字。 */
+/** 更新品牌标识方块：有自定义图片用图片，否则默认使用 icon.png。 */
 function applyBrandMark(id, logoText, logoImage) {
   const mark = document.getElementById(id);
   if (!mark) return;
   mark.textContent = '';
-  if (logoImage) {
-    const img = document.createElement('img');
-    img.src = logoImage;
-    img.style.width = '100%';
-    img.style.height = '100%';
-    img.style.objectFit = 'contain';
-    mark.appendChild(img);
-  } else {
+  const src = logoImage || 'icon.png';
+  const img = document.createElement('img');
+  img.src = src;
+  img.style.width = '100%';
+  img.style.height = '100%';
+  img.style.objectFit = 'contain';
+  img.onerror = () => {
+    mark.textContent = '';
     mark.textContent = logoText.slice(0, 2).toUpperCase();
-  }
+  };
+  mark.appendChild(img);
 }
 
 // ────────────────────────────── 登录 ──────────────────────────────
@@ -284,6 +300,12 @@ function bindShellEvents() {
       applyTheme(value);
     } else if (action === 'density') {
       setDensity(value);
+    } else if (action === 'accent') {
+      setAccent(value);
+    } else if (action === 'font') {
+      setFont(value);
+    } else if (action === 'radius') {
+      setRadius(value);
     }
     renderAppearanceMenu();
     themeDropdown.hidden = true;
@@ -318,18 +340,22 @@ function bindShellEvents() {
   window.addEventListener('hashchange', () => route());
 }
 
-/** 渲染「外观」下拉：主题（跟随系统/浅色/深色）+ 密度（舒适/紧凑）。 */
+/** 渲染「外观」下拉：主题 + 强调色 + 字体 + 圆角 + 密度。 */
 function renderAppearanceMenu() {
   const dropdown = document.getElementById('themeDropdown');
   const themeBtn = document.getElementById('themeBtn');
   const currentTheme = getTheme();
   const currentDensity = getDensity();
+  const currentAccent = getAccent();
+  const currentFont = getFont();
+  const currentRadius = getRadius();
   clear(dropdown);
 
   // 主题按钮图标随当前主题变化
   const resolved = document.documentElement.dataset.theme;
   themeBtn.textContent = resolved === 'light' ? '☀' : '☾';
 
+  dropdown.appendChild(h('div.dropdown-section', '主题'));
   for (const t of THEMES) {
     dropdown.appendChild(h('button', { dataset: { action: 'theme', value: t.key } },
       h('span', { class: `theme-swatch ${t.key}` }, t.icon),
@@ -339,11 +365,41 @@ function renderAppearanceMenu() {
   }
 
   dropdown.appendChild(h('div.menu-sep'));
+  dropdown.appendChild(h('div.dropdown-section', '强调色'));
+  for (const a of ACCENTS) {
+    dropdown.appendChild(h('button', { dataset: { action: 'accent', value: a.value } },
+      h('span.accent-dot', { style: { background: a.value } }),
+      h('span', a.label),
+      currentAccent === a.value ? h('span.menu-check', '✓') : null,
+    ));
+  }
 
+  dropdown.appendChild(h('div.menu-sep'));
+  dropdown.appendChild(h('div.dropdown-section', '字体'));
+  for (const f of FONTS) {
+    dropdown.appendChild(h('button', { dataset: { action: 'font', value: f.value } },
+      h('span', { style: { width: '18px', textAlign: 'center', flex: 'none', opacity: 0.8 } }, 'A'),
+      h('span', f.label),
+      currentFont === f.value ? h('span.menu-check', '✓') : null,
+    ));
+  }
+
+  dropdown.appendChild(h('div.menu-sep'));
+  dropdown.appendChild(h('div.dropdown-section', '圆角'));
+  for (const r of RADII) {
+    dropdown.appendChild(h('button', { dataset: { action: 'radius', value: r.key } },
+      h('span', { style: { width: '18px', textAlign: 'center', flex: 'none', opacity: 0.8 } }, '▢'),
+      h('span', r.label),
+      currentRadius === r.key ? h('span.menu-check', '✓') : null,
+    ));
+  }
+
+  dropdown.appendChild(h('div.menu-sep'));
+  dropdown.appendChild(h('div.dropdown-section', '密度'));
   for (const d of DENSITIES) {
     dropdown.appendChild(h('button', { dataset: { action: 'density', value: d.key } },
       h('span', { style: { width: '18px', textAlign: 'center', flex: 'none', opacity: 0.8 } }, '▤'),
-      h('span', `密度 · ${d.label}`),
+      h('span', d.label),
       currentDensity === d.key ? h('span.menu-check', '✓') : null,
     ));
   }

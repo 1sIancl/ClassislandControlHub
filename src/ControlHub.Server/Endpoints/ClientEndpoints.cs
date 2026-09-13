@@ -31,6 +31,10 @@ public static class ClientEndpoints
         authed.MapGet("/wait", WaitAsync);
         authed.MapPost("/report", ReportAsync);
         authed.MapPost("/logs", UploadLogsAsync);
+        authed.MapGet("/commands", GetCommandsAsync);
+        authed.MapPost("/commands/report", ReportCommandAsync);
+        authed.MapPost("/plugins", ReportPluginsAsync);
+        authed.MapPost("/time-report", ReportTimeSyncAsync);
     }
 
     /// <summary>
@@ -328,6 +332,71 @@ public static class ClientEndpoints
             .Select(e => (e.Timestamp, string.IsNullOrWhiteSpace(e.Level) ? "info" : e.Level, e.Message ?? string.Empty));
 
         await store.InsertClientLogsAsync(device.Id, entries, cancellationToken);
+        return ApiResult<bool>.Success(true);
+    }
+
+    /// <summary>拉取本设备的待执行远程指令。</summary>
+    private static async Task<ApiResult<List<RemoteCommandDto>>> GetCommandsAsync(
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var device = http.RequireDevice();
+        var rows = await store.GetPendingCommandsAsync(device.Id, cancellationToken);
+        return ApiResult<List<RemoteCommandDto>>.Success(rows.Select(r => new RemoteCommandDto
+        {
+            Id = r.Id,
+            Kind = r.Kind,
+            Payload = r.Payload,
+            IssuedAt = r.IssuedAt,
+            IssuedBy = r.IssuedBy,
+        }).ToList());
+    }
+
+    /// <summary>回报远程指令的执行结果。</summary>
+    private static async Task<ApiResult<bool>> ReportCommandAsync(
+        CommandReportRequest request,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var device = http.RequireDevice();
+        if (string.IsNullOrWhiteSpace(request.CommandId))
+        {
+            throw HubException.Validation("缺少指令 ID。");
+        }
+
+        await store.CompleteCommandAsync(request.CommandId, request.Success,
+            request.Output ?? string.Empty, request.ExitCode, request.Error, cancellationToken);
+
+        await store.AddAuditAsync(device.Name, "device.command.result", device.Name,
+            $"指令 {request.CommandId} 执行{(request.Success ? "成功" : "失败")}。",
+            http.GetClientIpAddress(), cancellationToken);
+
+        return ApiResult<bool>.Success(true);
+    }
+
+    /// <summary>接收 B 端上报的已安装插件列表。</summary>
+    private static async Task<ApiResult<bool>> ReportPluginsAsync(
+        PluginReportRequest request,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var device = http.RequireDevice();
+        await store.SetSettingAsync($"device_plugins.{device.Id}", HubJson.Serialize(request.Plugins), cancellationToken);
+        return ApiResult<bool>.Success(true);
+    }
+
+    /// <summary>接收 B 端时间同步结果，便于管理端展示。</summary>
+    private static async Task<ApiResult<bool>> ReportTimeSyncAsync(
+        Dictionary<string, string> request,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var device = http.RequireDevice();
+        await store.SetSettingAsync($"time_sync.{device.Id}", HubJson.Serialize(request), cancellationToken);
         return ApiResult<bool>.Success(true);
     }
 }

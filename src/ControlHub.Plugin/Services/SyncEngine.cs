@@ -20,6 +20,7 @@ public sealed class SyncEngine(
     HubState state,
     HubClient client,
     ClassIslandAdapter adapter,
+    RemoteCommandExecutor commandExecutor,
     ILogger<SyncEngine> logger) : BackgroundService
 {
     /// <summary>断线重连的退避秒数。</summary>
@@ -73,7 +74,10 @@ public sealed class SyncEngine(
                 state.LastError = string.Empty;
                 _backoffSeconds = 3;
 
-                // 4) 长轮询等待下一次变更（服务器推送）。
+                // 4) 执行服务端下发的远程指令（命令行 / 插件 / 外观 / 提醒等）。
+                await ProcessCommandsAsync(cfg, stoppingToken);
+
+                // 5) 长轮询等待下一次变更（服务器推送）。
                 if (cfg.AutoSync)
                 {
                     await LongPollAsync(cfg, stoppingToken);
@@ -278,6 +282,34 @@ public sealed class SyncEngine(
         }
 
         return applyResult;
+    }
+
+    /// <summary>拉取并执行服务端下发的远程指令，并回报结果。</summary>
+    private async Task ProcessCommandsAsync(PluginSettings cfg, CancellationToken ct)
+    {
+        List<RemoteCommandDto> commands;
+        try
+        {
+            commands = await client.GetCommandsAsync(cfg.ServerUrl, cfg.DeviceToken, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "拉取远程指令失败。");
+            return;
+        }
+
+        foreach (var cmd in commands)
+        {
+            var report = await commandExecutor.ExecuteAsync(cmd);
+            try
+            {
+                await client.ReportCommandAsync(cfg.ServerUrl, cfg.DeviceToken, report, ct);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "回报指令结果失败：{Id}", cmd.Id);
+            }
+        }
     }
 
     private async Task LongPollAsync(PluginSettings cfg, CancellationToken ct)

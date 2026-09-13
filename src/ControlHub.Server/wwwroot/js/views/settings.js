@@ -2,11 +2,11 @@
  * 系统设置视图：服务器信息、账号安全与部署提示。
  */
 
-import { api, session } from '../core/api.js?v=10';
+import { api, session } from '../core/api.js?v=12';
 import {
   h, clear, formatDateTime, formatDuration, toast, loadingBlock,
   field, modal, copyText, confirmDialog,
-} from '../core/ui.js?v=10';
+} from '../core/ui.js?v=12';
 
 export const meta = {
   title: '系统设置',
@@ -225,7 +225,7 @@ function openResetPasswordDialog(account) {
 
 function renderBrandingCard(info) {
   const branding = info.branding || {};
-  const siteNameInput = h('input', { type: 'text', value: branding.siteName || '', placeholder: 'ClassIsland 集控系统' });
+  const siteNameInput = h('input', { type: 'text', value: branding.siteName || '', placeholder: 'ClassislandControlHub 集控系统' });
   const logoTextInput = h('input', { type: 'text', value: branding.logoText || '', placeholder: 'CI' });
   const logoImageInput = h('textarea', { placeholder: '粘贴图片 data URL 或图片地址，留空显示 Logo 文字' });
   logoImageInput.value = branding.logoImage || '';

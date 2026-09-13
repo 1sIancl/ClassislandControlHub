@@ -1,11 +1,11 @@
-# IslandManger集控
+# ClassislandControlHub集控
 
 > **一处配置，全网生效 —— 让每一块教室大屏，都准时、统一、可控。**
 
-**IslandManger集控** 是面向 **ClassIsland 2.x（.NET 10）** 的班级大屏集中管理系统，分为 A、B 两端：
+**ClassislandControlHub集控** 是面向 **ClassIsland 2.x（.NET 10）** 的班级大屏集中管理系统，分为 A、B 两端：
 
 - **A 端 · 集控服务器**：ASP.NET Core 应用，自带可视化 Web 管理界面。可作为学校内网本地服务器运行，也可部署到服务器以网页形式访问，负责课表、时间表、科目的统一下发与设备管理。
-- **B 端 · IslandManger集控接收端**：以 ClassIsland 插件形式运行在教室大屏上，连接 A 端，自动接收并应用**课表、时间表、科目、自定义设置**的下发与同步。
+- **B 端 · ClassislandControlHub集控接收端**：以 ClassIsland 插件形式运行在教室大屏上，连接 A 端，自动接收并应用**课表、时间表、科目、自定义设置**的下发与同步。
 
 ```
                 ┌───────────────────────────────┐
@@ -33,7 +33,7 @@
 在目标 Linux 服务器（Ubuntu / Debian / CentOS / OpenCloudOS 等，需 root）上执行：
 
 ```bash
-curl -fsSL https://cdn.jsdelivr.net/gh/1sIancl/IslandManger@main/sh/main.sh -o /tmp/islandmanger-install.sh && sudo bash /tmp/islandmanger-install.sh
+curl -fsSL https://cdn.jsdelivr.net/gh/1sIancl/ClassislandControlHub@main/sh/main.sh -o /tmp/classislandcontrolhub-install.sh && sudo bash /tmp/classislandcontrolhub-install.sh
 ```
 
 脚本会自动完成：安装 .NET 10 SDK → 拉取源码 → 编译发布 → 注册 systemd 服务并启动。完成后访问 `http://服务器IP:29800` 即可。
@@ -41,11 +41,11 @@ curl -fsSL https://cdn.jsdelivr.net/gh/1sIancl/IslandManger@main/sh/main.sh -o /
 > **国内服务器提示**：
 > - 下载脚本走 jsDelivr CDN（国内有节点），比 raw.githubusercontent.com 快且稳；若 jsDelivr 也超时，换备选镜像：
 >   ```bash
->   curl -fsSL https://fastly.jsdelivr.net/gh/1sIancl/IslandManger@main/sh/main.sh -o /tmp/islandmanger-install.sh && sudo bash /tmp/islandmanger-install.sh
+>   curl -fsSL https://fastly.jsdelivr.net/gh/1sIancl/ClassislandControlHub@main/sh/main.sh -o /tmp/classislandcontrolhub-install.sh && sudo bash /tmp/classislandcontrolhub-install.sh
 >   ```
 > - 脚本内拉源码已内置 GitHub 镜像自动回退；若仍失败，可显式指定镜像：
 >   ```bash
->   GIT_MIRROR=https://kkgithub.com sudo bash /tmp/islandmanger-install.sh
+>   GIT_MIRROR=https://kkgithub.com sudo bash /tmp/classislandcontrolhub-install.sh
 >   ```
 
 **方式 2：Windows / 本地运行**
@@ -53,14 +53,14 @@ curl -fsSL https://cdn.jsdelivr.net/gh/1sIancl/IslandManger@main/sh/main.sh -o /
 前置：安装 [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)。
 
 ```bash
-git clone https://github.com/1sIancl/IslandManger.git
+git clone https://github.com/1sIancl/ClassislandControlHub.git
 cd ClassIsland.ControlHub
 dotnet run --project src/ControlHub.Server -c Release
 ```
 
 启动后浏览器访问 `http://localhost:29800`，局域网内其它机器用 `http://本机IP:29800` 访问。默认账号 `admin`，密码 `admin123`（登录后请立即修改）。
 
-### 二、安装 B 端（IslandManger集控接收端）
+### 二、安装 B 端（ClassislandControlHub集控接收端）
 
 1. 构建插件包（或在 GitHub Releases 下载现成的 `.cipx`）：
 
@@ -69,9 +69,9 @@ dotnet run --project src/ControlHub.Server -c Release
    # 产物：src/ControlHub.Plugin/cipx/ControlHub.Plugin.cipx
    ```
 
-2. 在教室电脑安装 ClassIsland（2.1+），把 `.cipx` 放入插件目录，或通过 **ClassIsland 插件市场** 搜索「IslandManger集控接收端」安装。
+2. 在教室电脑安装 ClassIsland（2.1+），把 `.cipx` 放入插件目录，或通过 **ClassIsland 插件市场** 搜索「ClassislandControlHub集控接收端」安装。
 3. 回到 A 端 Web 界面「设备管理 → 生成注册码」，复制注册码。
-4. 打开 ClassIsland【应用设置 → IslandManger集控接收端】：
+4. 打开 ClassIsland【应用设置 → ClassislandControlHub集控接收端】：
    - 点「自动发现服务器」（同一局域网），或手动填写服务器地址（如 `http://192.168.1.5:29800`）；
    - 填入注册码 → 「保存设置」→「立即同步」。
 5. 设备即出现在「设备管理」列表中，配置下发数秒内自动生效。

@@ -12,7 +12,7 @@ public sealed class ServerOptions
     public const string SectionName = "ControlHub";
 
     /// <summary>服务器名称，会在客户端与局域网发现中显示。</summary>
-    public string ServerName { get; set; } = "ClassIsland 集控服务器";
+    public string ServerName { get; set; } = "ClassislandControlHub 集控服务器";
 
     /// <summary>HTTP 监听端口。</summary>
     public int HttpPort { get; set; } = HubProtocol.DefaultHttpPort;
@@ -60,7 +60,7 @@ public sealed class ServerOptions
     public int NtpPort { get; set; } = 123;
 
     /// <summary>自动更新的 GitHub 仓库（owner/repo），用于检查最新 Release。</summary>
-    public string UpdateRepo { get; set; } = "1sIancl/IslandManger";
+    public string UpdateRepo { get; set; } = "1sIancl/ClassislandControlHub";
 
     /// <summary>是否启用自动检查更新（后台周期性查询 GitHub Release）。</summary>
     public bool AutoCheckUpdates { get; set; } = true;
@@ -70,6 +70,15 @@ public sealed class ServerOptions
 
     /// <summary>是否在发现新版本后自动应用更新（谨慎：默认关闭，由管理员在 Web 端手动触发）。</summary>
     public bool AutoApplyUpdates { get; set; }
+
+    /// <summary>是否启用自动备份（参照 ClassIsland，备份数据库与配置到 data/Backups）。</summary>
+    public bool EnableAutoBackup { get; set; } = true;
+
+    /// <summary>自动备份间隔（小时）。</summary>
+    public int AutoBackupIntervalHours { get; set; } = 168;
+
+    /// <summary>自动备份保留份数（超出后删除最旧的自动备份）。</summary>
+    public int BackupRetention { get; set; } = 16;
 
     /// <summary>超过该秒数未收到心跳即视为离线。</summary>
     public int OnlineTimeoutSeconds { get; set; } = 120;

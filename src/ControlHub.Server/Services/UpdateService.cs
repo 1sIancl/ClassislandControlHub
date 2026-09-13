@@ -40,7 +40,7 @@ public sealed class UpdateService(
     static UpdateService()
     {
         // GitHub API 要求 User-Agent。
-        Http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("IslandManger", HubProtocol.ProductVersion));
+        Http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("ClassislandControlHub", HubProtocol.ProductVersion));
     }
 
     private readonly object _gate = new();
@@ -166,8 +166,8 @@ public sealed class UpdateService(
                 _state.Status = $"正在更新到 {state.LatestVersion}…";
             }
 
-            var zipPath = Path.Combine(Path.GetTempPath(), $"islandmanger-{Guid.NewGuid():N}.zip");
-            var extractDir = Path.Combine(Path.GetTempPath(), $"islandmanger-{Guid.NewGuid():N}");
+            var zipPath = Path.Combine(Path.GetTempPath(), $"classislandcontrolhub-{Guid.NewGuid():N}.zip");
+            var extractDir = Path.Combine(Path.GetTempPath(), $"classislandcontrolhub-{Guid.NewGuid():N}");
 
             try
             {

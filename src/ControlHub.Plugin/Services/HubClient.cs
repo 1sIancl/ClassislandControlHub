@@ -152,6 +152,35 @@ public sealed class HubClient
             timeout: TimeSpan.FromSeconds(20), cancellationToken);
     }
 
+    /// <summary>拉取待执行的远程指令。</summary>
+    public async Task<List<RemoteCommandDto>> GetCommandsAsync(string baseUrl, string deviceToken,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await SendAsync<List<RemoteCommandDto>>(baseUrl, "/client/commands", HttpMethod.Get,
+            auth: HubProtocol.DeviceScheme + " " + deviceToken, body: null,
+            timeout: TimeSpan.FromSeconds(20), cancellationToken);
+        return result.Data ?? [];
+    }
+
+    /// <summary>回报远程指令执行结果。</summary>
+    public async Task ReportCommandAsync(string baseUrl, string deviceToken, CommandReportRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        await SendAsync<bool>(baseUrl, "/client/commands/report", HttpMethod.Post,
+            auth: HubProtocol.DeviceScheme + " " + deviceToken, body: request,
+            timeout: TimeSpan.FromSeconds(20), cancellationToken);
+    }
+
+    /// <summary>上报已安装插件列表。</summary>
+    public async Task ReportPluginsAsync(string baseUrl, string deviceToken, List<PluginInfoDto> plugins,
+        CancellationToken cancellationToken = default)
+    {
+        await SendAsync<bool>(baseUrl, "/client/plugins", HttpMethod.Post,
+            auth: HubProtocol.DeviceScheme + " " + deviceToken,
+            body: new PluginReportRequest { Plugins = plugins },
+            timeout: TimeSpan.FromSeconds(20), cancellationToken);
+    }
+
     private async Task<ApiResult<T>> SendAsync<T>(string baseUrl, string path, HttpMethod method,
         string? auth, object? body, TimeSpan timeout, CancellationToken cancellationToken)
     {

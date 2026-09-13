@@ -4,11 +4,11 @@
  * 所有修改先落在内存对象上，点击「保存并下发」后一次性提交，由服务端做规范化与版本递增。
  */
 
-import { api } from '../core/api.js?v=10';
+import { api } from '../core/api.js?v=12';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, select,
   emptyState, formatDateTime, copyText,
-} from '../core/ui.js?v=10';
+} from '../core/ui.js?v=12';
 
 export const meta = {
   title: '编辑配置档案',
@@ -611,7 +611,7 @@ function subjectShort(subject) {
   return '未命名';
 }
 
-/** 单个课表单元格：可点击，显示科目简称；空格/空天保持空白。 */
+/** 单个课表单元格：可点击，显示科目简称；空格/空天保持空白。双击快速清空。 */
 function dayCell(layout, day, index) {
   const plan = getDayPlan(layout, day);
   const slot = plan ? (plan.slots || []).find((s) => s.index === index) : null;
@@ -625,7 +625,16 @@ function dayCell(layout, day, index) {
   return h('button', {
     class: `schedule-cell${selected ? ' selected' : ''}${label ? '' : ' empty'}`,
     type: 'button',
+    title: '单击选中后在右侧选择科目；双击清空该格',
     onClick: () => {
+      state.scheduleSelection = { day, index };
+      repaintTab();
+    },
+    onDblclick: () => {
+      const p = getDayPlan(layout, day);
+      const s = p ? (p.slots || []).find((x) => x.index === index) : null;
+      if (s) s.subjectId = null;
+      state.dirty = true;
       state.scheduleSelection = { day, index };
       repaintTab();
     },

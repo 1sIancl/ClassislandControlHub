@@ -3,7 +3,7 @@
 # ClassIsland.ControlHub · A 端服务器 Linux 一键部署脚本
 #
 # 用法（在目标 Linux 服务器上，用 root 执行）：
-#   curl -fsSL https://cdn.jsdelivr.net/gh/1sIancl/IslandManger@main/sh/main.sh -o /tmp/controlhub-install.sh && sudo bash /tmp/controlhub-install.sh
+#   curl -fsSL https://cdn.jsdelivr.net/gh/1sIancl/ClassislandControlHub@main/sh/main.sh -o /tmp/controlhub-install.sh && sudo bash /tmp/controlhub-install.sh
 #   （jsDelivr CDN 国内访问快；备选 fastly.jsdelivr.net 或 raw.githubusercontent.com）
 #
 # 说明：脚本会依次完成——安装 .NET 10 SDK（如缺失）→ 拉取源码 → 编译发布 →
@@ -19,7 +19,7 @@
 set -euo pipefail
 
 REPO_OWNER="1sIancl"
-REPO_NAME="IslandManger"
+REPO_NAME="ClassislandControlHub"
 INSTALL_DIR="/opt/classisland-controlhub"
 SERVICE_NAME="classisland-controlhub"
 HTTP_PORT="${HTTP_PORT:-29800}"

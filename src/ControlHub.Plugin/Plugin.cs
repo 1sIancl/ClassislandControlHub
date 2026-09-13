@@ -40,6 +40,35 @@ public class Plugin : PluginBase
         services.AddSingleton<ClassIslandClockService>();
         services.AddSingleton<TimeSyncService>();
 
+        // 集控提醒提供方（AddNotificationProvider 会注册到 RegistryService 并托管）。
+        services.AddNotificationProvider<HubNotificationProvider>();
+
+        // 远程指令执行器（shell / 插件 / 外观 / 提醒 / 重启）。
+        services.AddSingleton<RemoteCommandExecutor>(sp =>
+        {
+            var executor = new RemoteCommandExecutor(
+                sp.GetRequiredService<ILogger<RemoteCommandExecutor>>());
+            executor.OnPluginsReported = async plugins =>
+            {
+                var cfg = sp.GetRequiredService<HubSettingsStore>().Load();
+                if (string.IsNullOrWhiteSpace(cfg.DeviceToken))
+                {
+                    return;
+                }
+
+                try
+                {
+                    await sp.GetRequiredService<HubClient>()
+                        .ReportPluginsAsync(cfg.ServerUrl, cfg.DeviceToken, plugins);
+                }
+                catch
+                {
+                    // 上报失败不影响主流程。
+                }
+            };
+            return executor;
+        });
+
         // 后台同步循环。
         services.AddHostedService(sp => sp.GetRequiredService<SyncEngine>());
 

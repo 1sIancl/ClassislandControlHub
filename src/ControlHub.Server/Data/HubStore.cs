@@ -199,6 +199,29 @@ public sealed partial class HubStore
             message   TEXT NOT NULL DEFAULT ''
         );
         CREATE INDEX IF NOT EXISTS idx_client_logs_device ON client_logs(device_id, ts DESC);
+
+        CREATE TABLE IF NOT EXISTS assignments (
+            id          TEXT PRIMARY KEY,
+            target_type TEXT NOT NULL DEFAULT 'device',
+            target_id   TEXT NOT NULL DEFAULT '',
+            profile_id  TEXT NOT NULL DEFAULT '',
+            created_at  TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_assignments_profile ON assignments(profile_id);
+
+        CREATE TABLE IF NOT EXISTS device_commands (
+            id          TEXT PRIMARY KEY,
+            device_id   TEXT NOT NULL,
+            kind        TEXT NOT NULL DEFAULT '',
+            payload     TEXT NOT NULL DEFAULT '',
+            status      TEXT NOT NULL DEFAULT 'pending',
+            output      TEXT NOT NULL DEFAULT '',
+            exit_code   INTEGER NOT NULL DEFAULT 0,
+            issued_at   TEXT NOT NULL,
+            finished_at TEXT,
+            issued_by   TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_device_commands_device ON device_commands(device_id, issued_at DESC);
         """;
 
     // ────────────────────────────── 设置项 ──────────────────────────────

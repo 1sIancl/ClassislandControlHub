@@ -29,6 +29,7 @@ public static class ProfileEndpoints
         group.MapDelete("/profiles/{id}", DeleteAsync);
         group.MapPost("/profiles/{id}/default", SetDefaultAsync);
         group.MapPost("/profiles/{id}/push", PushAsync);
+        group.MapPost("/profiles/import-cses", ImportCsesAsync);
     }
 
     /// <summary>列出全部档案（不含内容，减少传输量）。</summary>
@@ -300,6 +301,93 @@ public static class ProfileEndpoints
         return ApiResult<object>.Success(new { affected, profile = profile.Name });
     }
 
+    /// <summary>从 CSES（The Course Schedule Exchange Schema）文本导入时间表与科目到指定档案。</summary>
+    private static async Task<ApiResult<CsesImportResult>> ImportCsesAsync(
+        CsesImportRequest request,
+        HttpContext http,
+        HubStore store,
+        SyncService sync,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+
+        if (string.IsNullOrWhiteSpace(request.Yaml))
+        {
+            throw HubException.Validation("CSES 内容为空。");
+        }
+
+        var profile = await store.GetProfileAsync(request.ProfileId, cancellationToken)
+                      ?? throw HubException.NotFound("配置档案不存在。");
+
+        CsesImporter.CsesDocument cses;
+        try
+        {
+            cses = CsesImporter.Parse(request.Yaml);
+        }
+        catch (Exception ex)
+        {
+            throw HubException.Validation("CSES 解析失败：" + ex.Message);
+        }
+
+        var imported = CsesImporter.ToContent(cses);
+        var content = HubJson.DeserializeOrDefault(profile.Content, new ContentBundleDto());
+
+        // 合并科目（按名称去重）
+        var existingNames = new HashSet<string>(content.Subjects.Select(s => s.Name), StringComparer.Ordinal);
+        var addedSubjects = 0;
+        foreach (var s in imported.Subjects)
+        {
+            if (!existingNames.Add(s.Name))
+            {
+                continue;
+            }
+
+            content.Subjects.Add(s);
+            addedSubjects++;
+        }
+
+        // 合并时间表（按时间序列去重）
+        var existingKeys = new HashSet<string>(
+            content.TimeLayouts.Select(l => string.Join("|", l.Items.Select(i => $"{i.StartTime}-{i.EndTime}"))),
+            StringComparer.Ordinal);
+        var addedLayouts = 0;
+        foreach (var l in imported.TimeLayouts)
+        {
+            var key = string.Join("|", l.Items.Select(i => $"{i.StartTime}-{i.EndTime}"));
+            if (!existingKeys.Add(key))
+            {
+                continue;
+            }
+
+            content.TimeLayouts.Add(l);
+            addedLayouts++;
+        }
+
+        // 合并附加设置
+        foreach (var kv in imported.Settings.Values)
+        {
+            content.Settings.Values[kv.Key] = kv.Value;
+        }
+
+        var updated = await store.UpdateProfileAsync(profile.Id, profile.Name, profile.Description,
+            HubJson.Serialize(content), true, cancellationToken)
+                      ?? throw HubException.NotFound("配置档案不存在。");
+
+        var revision = await sync.BumpRevisionAsync(cancellationToken);
+
+        await store.AddAuditAsync(session.Username, "profile.import-cses", profile.Name,
+            $"从 CSES 导入：新增科目 {addedSubjects} 个、时间表 {addedLayouts} 个。",
+            http.GetClientIpAddress(), cancellationToken);
+
+        return ApiResult<CsesImportResult>.Success(new CsesImportResult
+        {
+            Profile = ToDto(updated, includeContent: true),
+            AddedSubjects = addedSubjects,
+            AddedTimeLayouts = addedLayouts,
+            Revision = revision,
+        });
+    }
+
     /// <summary>
     /// 解析设备最终生效的档案 ID。与 <see cref="SyncService.ResolveProfileAsync"/> 保持一致的优先级。
     /// </summary>
@@ -353,4 +441,30 @@ public static class ProfileEndpoints
         // 极端情况下退回用 GUID 前 4 位大写，仍保证非空且大概率唯一。
         return Guid.NewGuid().ToString("N")[..4].ToUpperInvariant();
     }
+}
+
+/// <summary>从 CSES 导入的请求体。</summary>
+public sealed class CsesImportRequest
+{
+    /// <summary>目标配置档案 ID。</summary>
+    public string ProfileId { get; set; } = string.Empty;
+
+    /// <summary>CSES YAML 文本内容。</summary>
+    public string Yaml { get; set; } = string.Empty;
+}
+
+/// <summary>从 CSES 导入的结果。</summary>
+public sealed class CsesImportResult
+{
+    /// <summary>导入后的档案。</summary>
+    public ProfileDto Profile { get; set; } = new();
+
+    /// <summary>新增的科目数量。</summary>
+    public int AddedSubjects { get; set; }
+
+    /// <summary>新增的时间表数量。</summary>
+    public int AddedTimeLayouts { get; set; }
+
+    /// <summary>保存后的全局配置版本号。</summary>
+    public long Revision { get; set; }
 }

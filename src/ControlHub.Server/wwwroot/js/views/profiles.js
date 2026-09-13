@@ -3,11 +3,11 @@
  * 档案是集控下发的最小单元：一个档案 = 一套时间表 + 课表 + 科目 + 自定义设置。
  */
 
-import { api } from '../core/api.js?v=10';
+import { api } from '../core/api.js?v=12';
 import {
   h, clear, formatDateTime, toast, loadingBlock, modal, confirmDialog,
-  emptyState, field,
-} from '../core/ui.js?v=10';
+  emptyState, field, select,
+} from '../core/ui.js?v=12';
 
 export const meta = {
   title: '配置档案',
@@ -29,6 +29,7 @@ export async function render(container) {
           h('p.card-desc', '一个档案包含时间表、课表、科目与自定义设置。设备按「单独指定 → 分组默认 → 全局默认」的顺序取用档案。'),
         ),
         h('div.card-actions',
+          h('button.btn.btn-sm', { type: 'button', onClick: () => openImportCsesDialog(profiles) }, '从 CSES 导入'),
           h('button.btn.btn-sm', { type: 'button', onClick: () => openCreateDialog(false) }, '新建空白档案'),
           h('button.btn.btn-primary.btn-sm', { type: 'button', onClick: () => openCreateDialog(true) }, '+ 新建示例档案'),
         ),
@@ -88,6 +89,71 @@ function renderCard(profile) {
       h('button.btn.btn-sm.btn-danger', { type: 'button', onClick: () => removeProfile(profile) }, '删除'),
     ),
   );
+}
+
+/** 「从 CSES 导入」对话框：选择目标档案 + 选择/粘贴 CSES 文件内容。 */
+function openImportCsesDialog(profiles) {
+  if (!profiles || profiles.length === 0) {
+    toast('warn', '请先创建档案', 'CSES 导入需要指定一个目标档案，请先新建一个档案。');
+    return;
+  }
+
+  const profileSelect = select(
+    profiles.map((p) => ({ value: p.id, label: p.name })),
+    profiles[0].id,
+  );
+
+  const textarea = h('textarea', {
+    placeholder: '在此粘贴 CSES（.yml / .yaml）文件内容，或点击下方按钮选择文件…',
+    style: { minHeight: '180px' },
+  });
+
+  const fileInput = h('input', {
+    type: 'file',
+    accept: '.yml,.yaml,.txt',
+    style: { display: 'none' },
+    onChange: async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      textarea.value = await file.text();
+    },
+  });
+
+  const pickBtn = h('button.btn.btn-sm', { type: 'button', onClick: () => fileInput.click() }, '选择 CSES 文件');
+
+  modal({
+    title: '从 CSES 导入',
+    width: 'wide',
+    body: h('div',
+      field('导入到档案', profileSelect),
+      h('div.notice.notice-info',
+        h('span.notice-icon', 'i'),
+        h('div', 'CSES（通用课表交换格式）可从 ClassIsland 档案编辑器的「导入 / 导出」导出。导入会合并其中的时间表与科目，同名科目 / 同时间表会自动跳过。')),
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', margin: '12px 0 6px' } },
+        pickBtn, fileInput,
+        h('span', { style: { fontSize: '12px', color: 'var(--text-faint)' } }, '文件编码需为 UTF-8'),
+      ),
+      textarea,
+    ),
+    confirmText: '导入',
+    onConfirm: async () => {
+      const yaml = textarea.value.trim();
+      if (!yaml) {
+        toast('warn', '请粘贴或选择 CSES 内容');
+        return false;
+      }
+
+      const result = await api('/admin/profiles/import-cses', {
+        method: 'POST',
+        body: { profileId: profileSelect.value, yaml },
+      });
+
+      toast('ok', '导入成功',
+        `新增科目 ${result.addedSubjects} 个、时间表 ${result.addedTimeLayouts} 个。`);
+      await render(document.getElementById('content'));
+      return true;
+    },
+  });
 }
 
 function openCreateDialog(withSample) {

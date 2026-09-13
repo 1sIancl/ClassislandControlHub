@@ -5,9 +5,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="dark" />
-  <title>ClassIsland 集控系统</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%235b9dff'/%3E%3Crect x='7' y='9' width='18' height='3' rx='1.5' fill='%230f1115'/%3E%3Crect x='7' y='15' width='12' height='3' rx='1.5' fill='%230f1115'/%3E%3Crect x='7' y='21' width='15' height='3' rx='1.5' fill='%230f1115'/%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="css/app.css?v=10" />
+  <title>ClassislandControlHub 集控系统</title>
+  <link rel="icon" href="icon.png" />
+  <link rel="apple-touch-icon" href="icon.png" />
+  <link rel="stylesheet" href="css/app.css?v=12" />
 </head>
 
 <body>
@@ -18,7 +19,7 @@
         <div class="brand-mark" id="brandMark">CI</div>
         <div class="brand-text">
           <strong id="brandTitle">集控中心</strong>
-          <span id="brandServerName">ClassIsland 集控</span>
+          <span id="brandServerName">ClassislandControlHub 集控</span>
         </div>
       </div>
 
@@ -70,23 +71,25 @@
     <div class="login-card">
       <div class="login-head">
         <div class="brand-mark large" id="loginBrandMark">CI</div>
-        <h1 id="loginTitle">ClassIsland 集控系统</h1>
-        <p id="loginServerName">正在连接服务器…</p>
+        <h1 id="loginTitle">ClassislandControlHub</h1>
+        <p id="loginServerName" class="login-server">
+          <span class="login-server-dot"></span><span id="loginServerText">正在连接服务器…</span>
+        </p>
       </div>
-      <form id="loginForm" class="login-form">
+      <form id="loginForm" class="login-form" autocomplete="on">
         <label class="field">
           <span>用户名</span>
-          <input type="text" id="loginUsername" autocomplete="username" placeholder="admin" required />
+          <input type="text" id="loginUsername" autocomplete="username" placeholder="请输入用户名" required />
         </label>
         <label class="field">
           <span>密码</span>
           <input type="password" id="loginPassword" autocomplete="current-password" placeholder="请输入密码" required />
         </label>
         <div class="login-error" id="loginError" hidden></div>
-        <button class="btn btn-primary btn-block" type="submit" id="loginSubmit">登录</button>
+        <button class="btn btn-primary btn-block login-submit" type="submit" id="loginSubmit">登 录</button>
       </form>
       <div class="login-foot">
-        <span>首次部署默认账号为 <code>admin</code>，密码见服务端配置文件，登录后请立即修改。</span>
+        <span>首次部署默认账号 <code>admin</code>，登录后请立即修改密码。</span>
       </div>
     </div>
   </div>
@@ -95,7 +98,7 @@
   <div id="toastHost" class="toast-host"></div>
   <div id="modalHost" class="modal-host" hidden></div>
 
-  <script type="module" src="js/app.js?v=10"></script>
+  <script type="module" src="js/app.js?v=12"></script>
 </body>
 
 </html>

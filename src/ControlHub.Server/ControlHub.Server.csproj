@@ -8,7 +8,7 @@
     <RootNamespace>ControlHub.Server</RootNamespace>
     <AssemblyName>ControlHub.Server</AssemblyName>
     <Version>1.0.0</Version>
-    <Product>ClassIsland 集控系统 · 服务端</Product>
+    <Product>ClassislandControlHub 集控系统 · 服务端</Product>
     <InvariantGlobalization>false</InvariantGlobalization>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>

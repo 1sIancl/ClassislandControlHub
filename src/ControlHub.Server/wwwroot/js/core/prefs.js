@@ -122,3 +122,107 @@ export function getLayout(scope, defaults) {
 export function saveLayout(scope, items) {
   store.set(`layout.${scope}`, items);
 }
+
+// ────────────────────────── 外观（强调色 / 字体 / 圆角） ──────────────────────────
+
+export const ACCENTS = [
+  { key: 'dodger', label: 'DodgerBlue（CI 默认）', value: '#1e90ff' },
+  { key: 'purple', label: '紫罗兰', value: '#7c5cff' },
+  { key: 'green', label: '青竹', value: '#16b364' },
+  { key: 'orange', label: '暖橙', value: '#f0883e' },
+  { key: 'pink', label: '樱粉', value: '#e8578f' },
+  { key: 'graphite', label: '石墨', value: '#64748b' },
+];
+
+export const FONTS = [
+  { key: 'default', label: '系统默认', value: '' },
+  { key: 'yahei', label: '微软雅黑', value: '"Microsoft YaHei UI", "Microsoft YaHei"' },
+  { key: 'pingfang', label: '苹方 / 思源黑体', value: '"PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC"' },
+  { key: 'mono', label: '等宽字体', value: '"Cascadia Mono", Consolas, "Courier New", monospace' },
+];
+
+export const RADII = [
+  { key: 'sharp', label: '直角' },
+  { key: 'default', label: '默认' },
+  { key: 'round', label: '圆润' },
+];
+
+function hexToRgba(hex, alpha) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
+  if (!m) return `rgba(30,144,255,${alpha})`;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
+export function getAccent() {
+  return store.get('accent', '');
+}
+
+export function applyAccent() {
+  const accent = getAccent();
+  const root = document.documentElement;
+  if (!accent) {
+    root.style.removeProperty('--accent');
+    root.style.removeProperty('--accent-hover');
+    root.style.removeProperty('--accent-active');
+    root.style.removeProperty('--accent-soft');
+    root.style.removeProperty('--accent-line');
+    return;
+  }
+  root.style.setProperty('--accent', accent);
+  root.style.setProperty('--accent-hover', accent);
+  root.style.setProperty('--accent-active', accent);
+  root.style.setProperty('--accent-soft', hexToRgba(accent, 0.14));
+  root.style.setProperty('--accent-line', hexToRgba(accent, 0.5));
+}
+
+export function setAccent(value) {
+  store.set('accent', value);
+  applyAccent();
+}
+
+export function getFont() {
+  return store.get('font', '');
+}
+
+export function applyFont() {
+  const font = getFont();
+  document.body.style.fontFamily = font
+    ? `${font}, "Segoe UI", system-ui, -apple-system, sans-serif`
+    : '';
+}
+
+export function setFont(value) {
+  store.set('font', value);
+  applyFont();
+}
+
+export function getRadius() {
+  return store.get('radius', 'default');
+}
+
+export function applyRadius() {
+  const r = getRadius();
+  const map = {
+    sharp: ['3px', '5px', '7px'],
+    default: ['6px', '8px', '12px'],
+    round: ['10px', '14px', '20px'],
+  };
+  const [sm, md, lg] = map[r] || map.default;
+  const root = document.documentElement;
+  root.style.setProperty('--radius-sm', sm);
+  root.style.setProperty('--radius', md);
+  root.style.setProperty('--radius-lg', lg);
+}
+
+export function setRadius(value) {
+  store.set('radius', value);
+  applyRadius();
+}
+
+/** 一次性应用全部外观偏好（应用启动早期调用，避免闪烁）。 */
+export function applyAppearance() {
+  applyAccent();
+  applyFont();
+  applyRadius();
+}
