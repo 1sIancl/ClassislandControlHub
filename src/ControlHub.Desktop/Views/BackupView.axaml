@@ -21,7 +21,7 @@
                 <DataGridTemplateColumn Header="" Width="80">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <Button Content="删除" Command="{Binding $parent[UserControl].((vm:BackupViewModel)DataContext).DeleteCommand}"
+                            <Button Content="删除" Command="{Binding $parent[UserControl].DataContext.DeleteCommand}"
                                     CommandParameter="{Binding}" />
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>

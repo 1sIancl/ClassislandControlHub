@@ -22,9 +22,9 @@
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <StackPanel Orientation="Horizontal" Spacing="4">
-                                <Button Content="编辑" Command="{Binding $parent[UserControl].((vm:ProfilesViewModel)DataContext).EditCommand}"
+                                <Button Content="编辑" Command="{Binding $parent[UserControl].DataContext.EditCommand}"
                                         CommandParameter="{Binding}" />
-                                <Button Content="删除" Command="{Binding $parent[UserControl].((vm:ProfilesViewModel)DataContext).DeleteCommand}"
+                                <Button Content="删除" Command="{Binding $parent[UserControl].DataContext.DeleteCommand}"
                                         CommandParameter="{Binding}" />
                             </StackPanel>
                         </DataTemplate>

@@ -20,7 +20,7 @@
                 <DataGridTemplateColumn Header="" Width="100">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <Button Content="推送" Command="{Binding $parent[UserControl].((vm:DeployViewModel)DataContext).PushDeviceCommand}"
+                            <Button Content="推送" Command="{Binding $parent[UserControl].DataContext.PushDeviceCommand}"
                                     CommandParameter="{Binding}" />
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>

@@ -43,7 +43,7 @@
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <Button Content="✕" Padding="8,4"
-                                                Command="{Binding $parent[UserControl].((vm:ProfileEditorViewModel)DataContext).RemoveItemCommand}"
+                                                Command="{Binding $parent[UserControl].DataContext.RemoveItemCommand}"
                                                 CommandParameter="{Binding}" />
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
@@ -96,7 +96,7 @@
                                                                 <Button HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
                                                                         HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                                                                         Background="Transparent"
-                                                                        Command="{Binding $parent[UserControl].((vm:ProfileEditorViewModel)DataContext).SelectCellCommand}"
+                                                                        Command="{Binding $parent[UserControl].DataContext.SelectCellCommand}"
                                                                         CommandParameter="{Binding}">
                                                                     <StackPanel Spacing="0">
                                                                         <TextBlock Text="{Binding Label}" FontSize="14" FontWeight="SemiBold"
@@ -128,7 +128,7 @@
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="dto:SubjectDto">
                                             <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Margin="0,2"
-                                                    Command="{Binding $parent[UserControl].((vm:ProfileEditorViewModel)DataContext).AssignSubjectCommand}"
+                                                    Command="{Binding $parent[UserControl].DataContext.AssignSubjectCommand}"
                                                     CommandParameter="{Binding}">
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                                     <Border CornerRadius="4" Padding="6,2" Background="{DynamicResource AccentFillColorDefaultBrush}">
@@ -163,7 +163,7 @@
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <Button Content="✕" Padding="8,4"
-                                                Command="{Binding $parent[UserControl].((vm:ProfileEditorViewModel)DataContext).DeleteSubjectCommand}"
+                                                Command="{Binding $parent[UserControl].DataContext.DeleteSubjectCommand}"
                                                 CommandParameter="{Binding}" />
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
@@ -202,7 +202,7 @@
                                                 <TextBox Grid.Column="0" Text="{Binding Key}" Watermark="键名，例如 播报.启用" Margin="0,0,6,0" />
                                                 <TextBox Grid.Column="1" Text="{Binding Value}" Watermark="值" Margin="0,0,6,0" />
                                                 <Button Grid.Column="2" Content="✕" Padding="8,4"
-                                                        Command="{Binding $parent[UserControl].((vm:ProfileEditorViewModel)DataContext).RemoveCustomValueCommand}"
+                                                        Command="{Binding $parent[UserControl].DataContext.RemoveCustomValueCommand}"
                                                         CommandParameter="{Binding}" />
                                             </Grid>
                                         </DataTemplate>
