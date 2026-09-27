@@ -15,31 +15,32 @@ public static class DeviceEndpoints
     public static void MapDeviceEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.NewVersionedGroup("admin")
-            .AddEndpointFilter<AdminAuthFilter>();
+            .AddEndpointFilter<AdminAuthFilter>()
+            .AddEndpointFilter<AdminPermissionFilter>();
 
         // ── 设备 ──
-        group.MapGet("/devices", ListDevicesAsync);
-        group.MapPut("/devices/{id}", UpdateDeviceAsync);
-        group.MapPost("/devices/{id}/revoke", RevokeDeviceAsync);
-        group.MapDelete("/devices/{id}", DeleteDeviceAsync);
-        group.MapGet("/devices/{id}/logs", GetDeviceLogsAsync);
-        group.MapDelete("/devices/{id}/logs", ClearDeviceLogsAsync);
+        group.MapGet("/devices", ListDevicesAsync).RequirePermission(PermissionKeys.DevicesRead);
+        group.MapPut("/devices/{id}", UpdateDeviceAsync).RequirePermission(PermissionKeys.DevicesWrite);
+        group.MapPost("/devices/{id}/revoke", RevokeDeviceAsync).RequirePermission(PermissionKeys.DevicesWrite);
+        group.MapDelete("/devices/{id}", DeleteDeviceAsync).RequirePermission(PermissionKeys.DevicesWrite);
+        group.MapGet("/devices/{id}/logs", GetDeviceLogsAsync).RequirePermission(PermissionKeys.DevicesRead);
+        group.MapDelete("/devices/{id}/logs", ClearDeviceLogsAsync).RequirePermission(PermissionKeys.DevicesWrite);
 
-        // ── 分组 ──
-        group.MapGet("/groups", ListGroupsAsync);
-        group.MapPost("/groups", CreateGroupAsync);
-        group.MapPut("/groups/{id}", UpdateGroupAsync);
-        group.MapDelete("/groups/{id}", DeleteGroupAsync);
+        // ── 分组（楼栋 / 楼层）──
+        group.MapGet("/groups", ListGroupsAsync).RequirePermission(PermissionKeys.DevicesRead);
+        group.MapPost("/groups", CreateGroupAsync).RequirePermission(PermissionKeys.DevicesWrite);
+        group.MapPut("/groups/{id}", UpdateGroupAsync).RequirePermission(PermissionKeys.DevicesWrite);
+        group.MapDelete("/groups/{id}", DeleteGroupAsync).RequirePermission(PermissionKeys.DevicesWrite);
 
-        // ── 注册码 ──
-        group.MapGet("/enroll-codes", ListEnrollCodesAsync);
-        group.MapPost("/enroll-codes", CreateEnrollCodeAsync);
-        group.MapPut("/enroll-codes/{code}", UpdateEnrollCodeAsync);
-        group.MapDelete("/enroll-codes/{code}", DeleteEnrollCodeAsync);
+        // ── 设备注册码 ──
+        group.MapGet("/enroll-codes", ListEnrollCodesAsync).RequirePermission(PermissionKeys.DevicesRead);
+        group.MapPost("/enroll-codes", CreateEnrollCodeAsync).RequirePermission(PermissionKeys.DevicesWrite);
+        group.MapPut("/enroll-codes/{code}", UpdateEnrollCodeAsync).RequirePermission(PermissionKeys.DevicesWrite);
+        group.MapDelete("/enroll-codes/{code}", DeleteEnrollCodeAsync).RequirePermission(PermissionKeys.DevicesWrite);
 
         // ── 下发绑定与推送 ──
-        group.MapGet("/assignments", ListAssignmentsAsync);
-        group.MapPost("/push", PushAsync);
+        group.MapGet("/assignments", ListAssignmentsAsync).RequirePermission(PermissionKeys.DevicesRead);
+        group.MapPost("/push", PushAsync).RequirePermission(PermissionKeys.DeployWrite);
     }
 
     // ────────────────────────────── 设备 ──────────────────────────────

@@ -1,3 +1,4 @@
+using ControlHub.Protocol;
 using Microsoft.Data.Sqlite;
 
 namespace ControlHub.Server.Data;
@@ -8,7 +9,7 @@ public sealed partial class HubStore
     // ────────────────────────────── 管理员账号 ──────────────────────────────
 
     private const string UserColumns =
-        "id, username, password_hash, display_name, role, must_change_password, created_at";
+        "id, username, password_hash, display_name, role, permissions, must_change_password, created_at";
 
     private static UserRow ReadUser(SqliteDataReader reader) => new()
     {
@@ -17,6 +18,8 @@ public sealed partial class HubStore
         PasswordHash = GetString(reader, "password_hash"),
         DisplayName = GetString(reader, "display_name"),
         Role = GetString(reader, "role"),
+        Permissions = PermissionKeys.Normalize(
+            HubJson.DeserializeOrDefault<List<string>>(GetString(reader, "permissions"), [])),
         MustChangePassword = GetBool(reader, "must_change_password"),
         CreatedAt = GetTimestampOrNow(reader, "created_at"),
     };
@@ -66,8 +69,9 @@ public sealed partial class HubStore
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO users (id, username, password_hash, display_name, role, must_change_password, created_at)
-            VALUES ($id, $username, $hash, $displayName, $role, $mustChange, $createdAt);
+            INSERT INTO users (id, username, password_hash, display_name, role, permissions,
+                               must_change_password, created_at)
+            VALUES ($id, $username, $hash, $displayName, $role, $permissions, $mustChange, $createdAt);
             """;
         AddParameters(command,
             ("$id", user.Id),
@@ -75,9 +79,51 @@ public sealed partial class HubStore
             ("$hash", user.PasswordHash),
             ("$displayName", user.DisplayName),
             ("$role", user.Role),
+            ("$permissions", HubJson.Serialize(PermissionKeys.Normalize(user.Permissions))),
             ("$mustChange", Bool(user.MustChangePassword)),
             ("$createdAt", Ts(user.CreatedAt)));
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>更新账号的显示名、角色与权限集合（不改用户名与密码）。</summary>
+    public async Task UpdateUserAsync(string userId, string displayName, string role,
+        IEnumerable<string> permissions, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE users SET display_name = $displayName, role = $role, permissions = $permissions
+            WHERE id = $id;
+            """;
+        AddParameters(command,
+            ("$displayName", displayName),
+            ("$role", role),
+            ("$permissions", HubJson.Serialize(PermissionKeys.Normalize(permissions))),
+            ("$id", userId));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>删除账号，连同它的会话、邀请码与个人提醒（数据隔离：个人数据随账号一起清掉）。</summary>
+    public async Task DeleteUserAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        foreach (var sql in new[]
+                 {
+                     "DELETE FROM sessions WHERE user_id = $id;",
+                     "DELETE FROM reminders WHERE user_id = $id;",
+                     "DELETE FROM reminder_fires WHERE user_id = $id;",
+                     "DELETE FROM users WHERE id = $id;",
+                 })
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText = sql;
+            command.Parameters.AddWithValue("$id", userId);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
     }
 
     /// <summary>更新账号密码。</summary>
@@ -131,7 +177,7 @@ public sealed partial class HubStore
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT s.token, s.user_id, u.username, u.display_name, u.role, s.expires_at
+            SELECT s.token, s.user_id, u.username, u.display_name, u.role, u.permissions, s.expires_at
             FROM sessions s
             JOIN users u ON u.id = s.user_id
             WHERE s.token = $token AND s.expires_at > $now
@@ -151,6 +197,8 @@ public sealed partial class HubStore
             Username = GetString(reader, "username"),
             DisplayName = GetString(reader, "display_name"),
             Role = GetString(reader, "role"),
+            Permissions = PermissionKeys.Normalize(
+                HubJson.DeserializeOrDefault<List<string>>(GetString(reader, "permissions"), [])),
             ExpiresAt = GetTimestampOrNow(reader, "expires_at"),
         };
     }

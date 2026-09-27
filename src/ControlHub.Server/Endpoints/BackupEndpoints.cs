@@ -13,13 +13,14 @@ public static class BackupEndpoints
     public static void MapBackupEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.NewVersionedGroup("admin")
-            .AddEndpointFilter<AdminAuthFilter>();
+            .AddEndpointFilter<AdminAuthFilter>()
+            .AddEndpointFilter<AdminPermissionFilter>();
 
-        group.MapGet("/backups", ListAsync);
-        group.MapPost("/backups", CreateAsync);
-        group.MapDelete("/backups/{id}", DeleteAsync);
-        group.MapGet("/backups/{id}/download", DownloadAsync);
-        group.MapPost("/backups/{id}/restore", RestoreAsync);
+        group.MapGet("/backups", ListAsync).RequirePermission(PermissionKeys.BackupRead);
+        group.MapPost("/backups", CreateAsync).RequirePermission(PermissionKeys.BackupWrite);
+        group.MapDelete("/backups/{id}", DeleteAsync).RequirePermission(PermissionKeys.BackupWrite);
+        group.MapGet("/backups/{id}/download", DownloadAsync).RequirePermission(PermissionKeys.BackupRead);
+        group.MapPost("/backups/{id}/restore", RestoreAsync).RequirePermission(PermissionKeys.BackupWrite);
     }
 
     private static ApiResult<List<BackupEntryDto>> ListAsync(HttpContext http, BackupService backups)

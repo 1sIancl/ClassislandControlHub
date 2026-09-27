@@ -2168,6 +2168,159 @@ input.pcell-name:focus {
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
+/* ────────────────────────── 新手引导 ────────────────────────── */
+.tour-host {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+}
+.tour-spot {
+  position: absolute;
+  border-radius: 10px;
+  pointer-events: none;
+  /* 用一个超大 box-shadow 造出「挖空高亮」的效果，比四块遮罩简单可靠。 */
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55), 0 0 0 2px var(--accent);
+  transition: left 0.18s ease, top 0.18s ease, width 0.18s ease, height 0.18s ease;
+}
+.tour-card {
+  position: absolute;
+  width: 340px;
+  padding: 16px 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.38);
+}
+.tour-step {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+.tour-title {
+  margin: 5px 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.tour-text {
+  margin: 0 0 15px;
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--text-dim);
+}
+.tour-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tour-actions .spacer {
+  flex: 1;
+}
+
+/* ────────────────────────── 登录页：邀请码注册 ────────────────────────── */
+.login-switch {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+}
+.linkish {
+  padding: 4px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.linkish:hover {
+  text-decoration: underline;
+}
+
+/* ────────────────────────── 账号权限勾选 ────────────────────────── */
+.perm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.perm-table th {
+  padding: 7px 10px;
+  text-align: left;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.perm-table th.center {
+  width: 78px;
+  text-align: center;
+}
+.perm-table td {
+  padding: 8px 10px;
+  vertical-align: middle;
+}
+.perm-table tbody tr:hover {
+  background: var(--bg-hover);
+}
+.perm-table td.center {
+  text-align: center;
+}
+.perm-name {
+  font-weight: 500;
+}
+.perm-desc {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+.perm-table.disabled {
+  opacity: 0.55;
+}
+.perm-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* ────────────────────────── 定时提醒 ────────────────────────── */
+.reminder-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+}
+.reminder-next {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.reminder-repeat {
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.reminder-target {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.weekday-picker {
+  display: flex;
+  gap: 6px;
+}
+.weekday-chip {
+  width: 36px;
+  height: 30px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel-2);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.weekday-chip:hover {
+  background: var(--bg-hover);
+}
+.weekday-chip.active {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
 /* ────────────────────────── 响应式 ────────────────────────── */
 @media (max-width: 900px) {
   .app-shell,

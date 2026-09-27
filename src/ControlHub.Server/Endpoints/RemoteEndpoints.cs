@@ -15,15 +15,17 @@ public static class RemoteEndpoints
     public static void MapRemoteEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.NewVersionedGroup("admin")
-            .AddEndpointFilter<AdminAuthFilter>();
+            .AddEndpointFilter<AdminAuthFilter>()
+            .AddEndpointFilter<AdminPermissionFilter>();
 
-        group.MapPost("/devices/{id}/command", SendCommandAsync);
-        group.MapPost("/devices/command", SendBroadcastCommandAsync);
-        group.MapGet("/devices/{id}/commands", ListCommandsAsync);
-        group.MapPost("/devices/{id}/notify", NotifyAsync);
-        group.MapPost("/devices/appearance", ApplyAppearanceAsync);
-        group.MapGet("/devices/{id}/plugins", GetPluginsAsync);
-        group.MapPost("/devices/{id}/plugins/refresh", RefreshPluginsAsync);
+        group.MapPost("/devices/{id}/command", SendCommandAsync).RequirePermission(PermissionKeys.RemoteWrite);
+        group.MapPost("/devices/command", SendBroadcastCommandAsync).RequirePermission(PermissionKeys.RemoteWrite);
+        group.MapGet("/devices/{id}/commands", ListCommandsAsync).RequirePermission(PermissionKeys.RemoteRead);
+        group.MapPost("/devices/{id}/notify", NotifyAsync).RequirePermission(PermissionKeys.RemoteWrite);
+        group.MapPost("/devices/appearance", ApplyAppearanceAsync).RequirePermission(PermissionKeys.RemoteWrite);
+        group.MapGet("/devices/{id}/plugins", GetPluginsAsync).RequirePermission(PermissionKeys.RemoteRead);
+        group.MapPost("/devices/{id}/plugins/refresh", RefreshPluginsAsync)
+            .RequirePermission(PermissionKeys.RemoteWrite);
     }
 
     /// <summary>读取设备最近一次上报的插件列表。</summary>

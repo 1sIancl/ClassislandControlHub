@@ -19,17 +19,18 @@ public static class ProfileEndpoints
     public static void MapProfileEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.NewVersionedGroup("admin")
-            .AddEndpointFilter<AdminAuthFilter>();
+            .AddEndpointFilter<AdminAuthFilter>()
+            .AddEndpointFilter<AdminPermissionFilter>();
 
-        group.MapGet("/profiles", ListAsync);
-        group.MapPost("/profiles", CreateAsync);
-        group.MapPost("/profiles/sample", CreateSampleAsync);
-        group.MapGet("/profiles/{id}", GetAsync);
-        group.MapPut("/profiles/{id}", UpdateAsync);
-        group.MapDelete("/profiles/{id}", DeleteAsync);
-        group.MapPost("/profiles/{id}/default", SetDefaultAsync);
-        group.MapPost("/profiles/{id}/push", PushAsync);
-        group.MapPost("/profiles/import-cses", ImportCsesAsync);
+        group.MapGet("/profiles", ListAsync).RequirePermission(PermissionKeys.ProfilesRead);
+        group.MapPost("/profiles", CreateAsync).RequirePermission(PermissionKeys.ProfilesWrite);
+        group.MapPost("/profiles/sample", CreateSampleAsync).RequirePermission(PermissionKeys.ProfilesWrite);
+        group.MapGet("/profiles/{id}", GetAsync).RequirePermission(PermissionKeys.ProfilesRead);
+        group.MapPut("/profiles/{id}", UpdateAsync).RequirePermission(PermissionKeys.ProfilesWrite);
+        group.MapDelete("/profiles/{id}", DeleteAsync).RequirePermission(PermissionKeys.ProfilesWrite);
+        group.MapPost("/profiles/{id}/default", SetDefaultAsync).RequirePermission(PermissionKeys.ProfilesWrite);
+        group.MapPost("/profiles/{id}/push", PushAsync).RequirePermission(PermissionKeys.DeployWrite);
+        group.MapPost("/profiles/import-cses", ImportCsesAsync).RequirePermission(PermissionKeys.ProfilesWrite);
     }
 
     /// <summary>列出全部档案（不含内容，减少传输量）。</summary>

@@ -77,6 +77,9 @@ public sealed partial class HubStore
         await EnsureColumnAsync(connection, "device_commands", "dispatched_at", "TEXT", cancellationToken);
         await EnsureColumnAsync(connection, "device_commands", "expires_at", "TEXT", cancellationToken);
 
+        // 迁移：账号的按模块权限集合（JSON 数组文本）。
+        await EnsureColumnAsync(connection, "users", "permissions", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+
         // 确保全局版本号存在，保证任何一次同步请求都能拿到确定值。
         await using var seed = connection.CreateCommand();
         seed.CommandText = """
@@ -130,6 +133,7 @@ public sealed partial class HubStore
             password_hash        TEXT NOT NULL,
             display_name         TEXT NOT NULL DEFAULT '',
             role                 TEXT NOT NULL DEFAULT 'admin',
+            permissions          TEXT NOT NULL DEFAULT '',
             must_change_password INTEGER NOT NULL DEFAULT 0,
             created_at           TEXT NOT NULL
         );
@@ -141,6 +145,55 @@ public sealed partial class HubStore
             expires_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
+
+        -- 邀请码：凭码自助注册为一个拥有预设权限的账号。
+        CREATE TABLE IF NOT EXISTS register_codes (
+            code        TEXT PRIMARY KEY,
+            note        TEXT NOT NULL DEFAULT '',
+            permissions TEXT NOT NULL DEFAULT '',
+            max_uses    INTEGER NOT NULL DEFAULT 1,
+            used_count  INTEGER NOT NULL DEFAULT 0,
+            expires_at  TEXT,
+            created_at  TEXT NOT NULL
+        );
+
+        -- 定时提醒：按用户隔离（user_id），目标是共享的教室设备。
+        CREATE TABLE IF NOT EXISTS reminders (
+            id                TEXT PRIMARY KEY,
+            user_id           TEXT NOT NULL,
+            title             TEXT NOT NULL DEFAULT '',
+            content           TEXT NOT NULL DEFAULT '',
+            channel           TEXT NOT NULL DEFAULT 'screen',
+            target_type       TEXT NOT NULL DEFAULT 'all',
+            target_id         TEXT NOT NULL DEFAULT '',
+            speak             INTEGER NOT NULL DEFAULT 0,
+            enabled           INTEGER NOT NULL DEFAULT 1,
+            repeat_kind       TEXT NOT NULL DEFAULT 'once',
+            repeat_interval   INTEGER NOT NULL DEFAULT 1,
+            repeat_weekdays   TEXT NOT NULL DEFAULT '',
+            repeat_day_of_month INTEGER NOT NULL DEFAULT 0,
+            fire_time         TEXT NOT NULL DEFAULT '08:00',
+            start_date        TEXT NOT NULL DEFAULT '',
+            end_date          TEXT,
+            next_fire_at      TEXT,
+            last_fired_at     TEXT,
+            fire_count        INTEGER NOT NULL DEFAULT 0,
+            created_at        TEXT NOT NULL,
+            updated_at        TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_reminders_user ON reminders(user_id);
+
+        -- 提醒触发记录：用于核对「是否按设定时间准确触发」。
+        CREATE TABLE IF NOT EXISTS reminder_fires (
+            id          TEXT PRIMARY KEY,
+            reminder_id TEXT NOT NULL,
+            user_id     TEXT NOT NULL,
+            fired_at    TEXT NOT NULL,
+            affected    INTEGER NOT NULL DEFAULT 0,
+            skipped     INTEGER NOT NULL DEFAULT 0,
+            detail      TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_reminder_fires_reminder ON reminder_fires(reminder_id, fired_at DESC);
 
         CREATE TABLE IF NOT EXISTS groups (
             id                 TEXT PRIMARY KEY,

@@ -91,10 +91,13 @@ builder.Services.AddSingleton<ServerTimeService>();
 builder.Services.AddSingleton<UpdateService>();
 builder.Services.AddSingleton<BackupService>();
 builder.Services.AddSingleton<AiTimetableService>();
+// 定时提醒：ReminderService 负责推算触发时间与投递，ReminderScheduler 每 15 秒检查一次。
+builder.Services.AddSingleton<ReminderService>();
 builder.Services.AddHostedService<DiscoveryService>();
 builder.Services.AddHostedService<MaintenanceService>();
 builder.Services.AddHostedService<NtpServer>();
 builder.Services.AddHostedService<AutoBackupService>();
+builder.Services.AddHostedService<ReminderScheduler>();
 // ServerTimeService 同时是「可被端点注入的单例」与「后台授时服务」，用工厂引用同一实例。
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ServerTimeService>());
 // UpdateService 同理：单例 + 后台自动检查，用工厂引用同一实例。
@@ -152,6 +155,7 @@ app.MapProfileEndpoints();
 app.MapRemoteEndpoints();
 app.MapBackupEndpoints();
 app.MapAiEndpoints();
+app.MapReminderEndpoints();
 
 // 未匹配到的 API 路径统一返回 JSON 404，而不是落到前端页面。
 app.Map($"{HubProtocol.ApiPrefix}/{{**rest}}",

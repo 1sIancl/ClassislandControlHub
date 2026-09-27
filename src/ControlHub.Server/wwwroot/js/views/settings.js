@@ -2,29 +2,37 @@
  * 系统设置视图：服务器信息、账号安全与部署提示。
  */
 
-import { api, session } from '../core/api.js?v=21';
+import { api, session, hasPermission } from '../core/api.js?v=22';
 import {
   h, clear, formatDateTime, formatDuration, toast, loadingBlock,
   field, modal, copyText, confirmDialog,
-} from '../core/ui.js?v=21';
+} from '../core/ui.js?v=22';
 
 export const meta = {
   title: '系统设置',
-  subtitle: '服务器信息、账号安全与部署说明',
+  subtitle: '账号与权限、服务器信息与部署说明',
 };
 
 export async function render(container) {
   clear(container);
   container.appendChild(loadingBlock());
 
-  const [info, me, accounts, timeOffset, updateState, aiConfig] = await Promise.all([
-    api('/server/info', { auth: false }),
-    api('/admin/me'),
-    api('/admin/accounts'),
-    api('/admin/time-offset'),
-    api('/admin/update/state'),
-    api('/admin/ai/config'),
-  ]);
+  // 按权限取数：没有权限的接口干脆不请求，否则整页会被 403 打断。
+  const canSettings = hasPermission('settings.read');
+  const canAccounts = hasPermission('accounts.read');
+
+  const [info, me, accounts, permissions, registerCodes, registration, timeOffset, updateState, aiConfig] =
+    await Promise.all([
+      api('/server/info', { auth: false }),
+      api('/admin/me'),
+      canAccounts ? api('/admin/accounts') : Promise.resolve([]),
+      canAccounts ? api('/admin/permissions') : Promise.resolve([]),
+      canAccounts ? api('/admin/register-codes') : Promise.resolve([]),
+      api('/admin/registration', { auth: false }).catch(() => ({ enabled: false })),
+      canSettings ? api('/admin/time-offset') : Promise.resolve(null),
+      canSettings ? api('/admin/update/state') : Promise.resolve(null),
+      canSettings ? api('/admin/ai/config') : Promise.resolve(null),
+    ]);
 
   session.serverInfo = info;
   session.me = me;
@@ -40,11 +48,12 @@ export async function render(container) {
       renderServerCard(info),
       renderAccountCard(me),
     ),
-    renderAccountsCard(accounts, me),
-    renderBrandingCard(info),
-    renderTimeCard(timeOffset),
-    renderAiCard(aiConfig),
-    renderUpdateCard(updateState),
+    canAccounts ? renderAccountsCard(container, accounts, me, permissions) : null,
+    canAccounts ? renderRegisterCodesCard(container, registerCodes, registration) : null,
+    canSettings ? renderBrandingCard(info) : null,
+    canSettings ? renderTimeCard(timeOffset) : null,
+    canSettings ? renderAiCard(aiConfig) : null,
+    canSettings ? renderUpdateCard(updateState) : null,
     renderDeployCard(info),
   ));
 }
@@ -96,6 +105,9 @@ function row(label, value, mono = false) {
 }
 
 function renderAccountCard(me) {
+  const isAdmin = me.role === 'admin';
+  const granted = (me.permissions || []).length;
+
   return h('div.card',
     h('div.card-head',
       h('div',
@@ -105,7 +117,8 @@ function renderAccountCard(me) {
     ),
     h('div', { style: { display: 'grid', gap: '10px', fontSize: '13px', marginBottom: '16px' } },
       row('显示名称', me.displayName || me.username),
-      row('角色', me.role === 'admin' ? '管理员' : me.role),
+      row('角色', isAdmin ? '超级管理员（全部权限）' : '自定义权限'),
+      row('权限', isAdmin ? '全部模块' : `已勾选 ${granted} 项`),
       row('登录有效期至', formatDateTime(me.expiresAt)),
     ),
     h('div.card-actions',
@@ -115,6 +128,11 @@ function renderAccountCard(me) {
       }, '修改密码'),
       h('button.btn.btn-sm', {
         type: 'button',
+        title: '重新播放新手引导',
+        onClick: () => replayOnboarding(),
+      }, '重新观看引导'),
+      h('button.btn.btn-sm', {
+        type: 'button',
         onClick: async () => {
           await api('/admin/logout', { method: 'POST' });
           window.location.reload();
@@ -122,6 +140,25 @@ function renderAccountCard(me) {
       }, '退出登录'),
     ),
   );
+}
+
+/** 重置引导状态并立即播放一遍。 */
+async function replayOnboarding() {
+  try {
+    await api('/admin/onboarding', { method: 'POST', query: { done: false } });
+  } catch (err) {
+    toast('error', '操作失败', err.message);
+    return;
+  }
+
+  const { startTour } = await import('../core/tour.js?v=22');
+  startTour({
+    onFinish: async (skipped) => {
+      if (!skipped) {
+        await api('/admin/onboarding', { method: 'POST' });
+      }
+    },
+  });
 }
 
 function openChangePasswordDialog() {
@@ -159,45 +196,445 @@ function openChangePasswordDialog() {
   });
 }
 
-function renderAccountsCard(accounts, me) {
+function renderAccountsCard(container, accounts, me, permissions) {
   return h('div.card', { style: { marginTop: '16px' } },
     h('div.card-head',
       h('div',
-        h('h3', `管理员账号（${accounts.length}）`),
-        h('p.card-desc', '账号信息由服务端配置文件初始化，可在此重置密码。'),
+        h('h3', `账号与权限（${accounts.length}）`),
+        h('p.card-desc',
+          '按模块勾选每个账号能做什么。设备、档案、分组等学校数据是共享的，'
+          + '只有账号本身与个人提醒按用户隔离。'),
       ),
+      h('button.btn.btn-primary.btn-sm', {
+        type: 'button',
+        onClick: () => openAccountEditor(container, null, permissions),
+      }, '+ 新建账号'),
     ),
     h('div.table-wrap',
       h('table.data',
         h('thead', h('tr',
-          h('th', '用户名'),
-          h('th', '显示名称'),
+          h('th', '账号'),
           h('th', '角色'),
+          h('th', '权限'),
           h('th', '创建时间'),
           h('th', { style: { textAlign: 'right' } }, '操作'),
         )),
         h('tbody', ...accounts.map((account) => h('tr',
           h('td',
             h('div.cell-main', account.username),
+            h('div.cell-sub', account.displayName || '—'),
             account.mustChangePassword
               ? h('div.cell-sub', { style: { color: 'var(--warn)' } }, '仍使用初始密码')
               : null,
           ),
-          h('td', account.displayName || '—'),
           h('td', account.role === 'admin'
-            ? h('span.badge.badge-accent', '管理员')
-            : h('span.badge.badge-neutral', account.role)),
+            ? h('span.badge.badge-accent', '超级管理员')
+            : h('span.badge.badge-neutral', '自定义')),
+          h('td', account.role === 'admin'
+            ? h('span', { style: { color: 'var(--text-dim)' } }, '全部模块')
+            : h('span', `已勾选 ${(account.permissions || []).length} 项`)),
           h('td', { style: { fontSize: '12px', color: 'var(--text-faint)' } }, formatDateTime(account.createdAt)),
           h('td.actions',
             h('button.btn.btn-sm', {
               type: 'button',
+              onClick: () => openAccountEditor(container, account, permissions),
+            }, '编辑'),
+            ' ',
+            h('button.btn.btn-sm', {
+              type: 'button',
               onClick: () => openResetPasswordDialog(account),
             }, '重置密码'),
+            ' ',
+            account.id === me.id
+              ? null
+              : h('button.btn.btn-sm.btn-danger', {
+                type: 'button',
+                onClick: () => removeAccount(container, account),
+              }, '删除'),
           ),
         ))),
       ),
     ),
   );
+}
+
+/** 与服务端 PermissionKeys.DefaultForNewUser 保持一致：新建账号时的推荐权限。 */
+const DEFAULT_PERMISSIONS = [
+  'profiles.read', 'profiles.write',
+  'devices.read', 'devices.write',
+  'deploy.write',
+  'remote.read', 'remote.write',
+  'reminders.read', 'reminders.write',
+  'audit.read',
+];
+
+/**
+ * 模块权限勾选表。
+ * @returns {{ table: HTMLElement, selected: Set<string>, refresh: () => void }}
+ */
+function createPermissionTable(permissions, initial, isAdminRole) {
+  const selected = new Set(initial);
+  const table = h('table.perm-table',
+    h('thead', h('tr', h('th', '模块'), h('th.center', '查看'), h('th.center', '修改'))));
+  const body = h('tbody');
+  table.appendChild(body);
+
+  let adminMode = isAdminRole;
+
+  function paint() {
+    clear(body);
+    table.classList.toggle('disabled', adminMode);
+
+    for (const module of permissions) {
+      const make = (key) => {
+        if (!key) {
+          return h('span', { style: { color: 'var(--text-faint)' } }, '—');
+        }
+
+        const box = h('input', { type: 'checkbox' });
+        box.checked = adminMode || selected.has(key);
+        box.disabled = adminMode;
+        box.addEventListener('change', () => {
+          if (box.checked) {
+            selected.add(key);
+            // 「能改就能看」：勾上修改时把对应的查看也补上，避免出现自相矛盾的状态。
+            if (key.endsWith('.write') && module.readKey) {
+              selected.add(module.readKey);
+              syncCheckbox(module.readKey, true);
+            }
+          } else {
+            selected.delete(key);
+            if (key.endsWith('.read') && module.writeKey) {
+              selected.delete(module.writeKey);
+              syncCheckbox(module.writeKey, false);
+            }
+          }
+        });
+        return box;
+      };
+
+      body.appendChild(h('tr',
+        h('td',
+          h('div.perm-name', module.label),
+          h('div.perm-desc', module.description)),
+        h('td.center', make(module.readKey)),
+        h('td.center', make(module.writeKey)),
+      ));
+    }
+  }
+
+  /** 联动勾选时直接改对应复选框，不整表重绘，避免丢焦点。 */
+  function syncCheckbox(key, value) {
+    const boxes = body.querySelectorAll('input[type="checkbox"]');
+    const keys = [];
+    for (const module of permissions) {
+      if (module.readKey) keys.push(module.readKey);
+      if (module.writeKey) keys.push(module.writeKey);
+    }
+
+    const index = keys.indexOf(key);
+    if (index >= 0 && boxes[index]) {
+      boxes[index].checked = value;
+    }
+  }
+
+  paint();
+  return {
+    table,
+    selected,
+    setAdminMode: (value) => {
+      adminMode = value;
+      paint();
+    },
+  };
+}
+
+function openAccountEditor(container, account, permissions) {
+  const isNew = !account;
+  const isAdminAccount = account?.role === 'admin';
+  const canGrantAdmin = session.me?.role === 'admin';
+
+  const usernameInput = h('input', {
+    type: 'text',
+    value: account?.username || '',
+    placeholder: '3~32 位，字母 / 数字 / . _ -',
+  });
+  usernameInput.disabled = !isNew;
+
+  const displayInput = h('input', {
+    type: 'text',
+    value: account?.displayName || '',
+    placeholder: '留空则使用用户名',
+  });
+
+  const passwordInput = h('input', {
+    type: 'password',
+    autocomplete: 'new-password',
+    placeholder: '留空则由系统生成，并在创建后显示一次',
+  });
+  if (!isNew) {
+    passwordInput.disabled = true;
+  }
+
+  const adminChk = h('input', { type: 'checkbox' });
+  adminChk.checked = isAdminAccount;
+  adminChk.disabled = !canGrantAdmin;
+
+  const perm = createPermissionTable(permissions, isNew ? DEFAULT_PERMISSIONS : (account?.permissions || []), isAdminAccount);
+
+  if (canGrantAdmin) {
+    adminChk.addEventListener('change', () => perm.setAdminMode(adminChk.checked));
+  }
+
+  modal({
+    title: isNew ? '新建账号' : `编辑账号 · ${account.username}`,
+    width: 'wide',
+    body: h('div',
+      h('div.form-row',
+        field('用户名', usernameInput, isNew ? '创建后不可修改。' : '用户名不可修改。'),
+        field('显示名称', displayInput),
+      ),
+      isNew ? field('初始密码', passwordInput) : null,
+      canGrantAdmin
+        ? h('label.checkbox-field', adminChk,
+          h('span', '设为超级管理员'),
+          h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } }, '（拥有全部权限，且不可被裁剪）'))
+        : null,
+      h('div', { style: { marginTop: '6px' } },
+        h('div', { style: { fontSize: '12.5px', color: 'var(--text-dim)', marginBottom: '8px' } }, '模块权限'),
+        perm.table,
+        h('div.notice.notice-info', { style: { marginTop: '12px' } },
+          h('span.notice-icon', 'i'),
+          h('div', '「修改」包含新增 / 编辑 / 删除；勾选「修改」会自动带上对应的「查看」。'
+            + '权限变更后，该账号需要重新登录才会生效。')),
+      ),
+    ),
+    confirmText: isNew ? '创建' : '保存',
+    onConfirm: async () => {
+      const body = {
+        username: usernameInput.value.trim(),
+        displayName: displayInput.value.trim(),
+        role: adminChk.checked ? 'admin' : 'custom',
+        permissions: adminChk.checked ? [] : [...perm.selected],
+        password: passwordInput.value,
+      };
+
+      if (isNew && !body.username) {
+        toast('warn', '请填写用户名');
+        return false;
+      }
+
+      let created = null;
+      try {
+        if (isNew) {
+          created = await api('/admin/accounts', { method: 'POST', body });
+        } else {
+          await api(`/admin/accounts/${account.id}`, { method: 'PUT', body });
+          toast('ok', '已保存');
+        }
+      } catch (err) {
+        toast('error', '保存失败', err.message);
+        return false;
+      }
+
+      await render(container);
+
+      if (created?.generatedPassword) {
+        modal({
+          title: '账号已创建',
+          width: 'wide',
+          hideFooter: true,
+          body: h('div',
+            h('p', { style: { marginTop: 0, color: 'var(--text-dim)' } },
+              '系统生成的初始密码只显示这一次，请立即转交并提醒对方首次登录后修改：'),
+            h('div.copy-row',
+              h('div.code-block', created.generatedPassword),
+              h('button.btn', {
+                type: 'button',
+                onClick: () => copyText(created.generatedPassword, '密码已复制'),
+              }, '复制'),
+            ),
+          ),
+        });
+      } else if (isNew) {
+        toast('ok', '账号已创建');
+      }
+
+      return true;
+    },
+  });
+}
+
+async function removeAccount(container, account) {
+  if (!await confirmDialog('删除账号',
+    `删除「${account.username}」会同时清掉它的登录会话与个人提醒，且不可恢复。确定继续吗？`, '删除', true)) {
+    return;
+  }
+
+  try {
+    await api(`/admin/accounts/${account.id}`, { method: 'DELETE' });
+    toast('ok', '已删除');
+    await render(container);
+  } catch (err) {
+    toast('error', '删除失败', err.message);
+  }
+}
+
+// ────────────────────────────── 注册邀请码 ──────────────────────────────
+
+function renderRegisterCodesCard(container, codes, registration) {
+  const toggle = h('input', { type: 'checkbox' });
+  toggle.checked = Boolean(registration?.enabled);
+  toggle.addEventListener('change', async () => {
+    toggle.disabled = true;
+    try {
+      await api('/admin/registration', { method: 'PUT', query: { enabled: toggle.checked } });
+      toast('ok', toggle.checked ? '已开启自助注册' : '已关闭自助注册');
+    } catch (err) {
+      toggle.checked = !toggle.checked;
+      toast('error', '操作失败', err.message);
+    } finally {
+      toggle.disabled = false;
+    }
+  });
+
+  return h('div.card', { style: { marginTop: '16px' } },
+    h('div.card-head',
+      h('div',
+        h('h3', '注册邀请码'),
+        h('p.card-desc',
+          '默认关闭自助注册：A 端是校内控制台，开放注册意味着任何拿到地址的人都有可能进入管理界面。'),
+      ),
+      h('button.btn.btn-primary.btn-sm', {
+        type: 'button',
+        onClick: () => openCreateRegisterCodeDialog(container),
+      }, '+ 生成邀请码'),
+    ),
+    h('label.checkbox-field', toggle,
+      h('span', '允许凭邀请码自助注册'),
+      h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } }, '（关闭时注册接口一律拒绝）')),
+    codes.length === 0
+      ? h('div.notice.notice-info', { style: { marginTop: '12px' } },
+        h('span.notice-icon', 'i'),
+        h('div', '还没有邀请码。生成一个并把码发给新同事，对方即可在登录页自助注册。'))
+      : h('div.table-wrap', { style: { marginTop: '12px' } },
+        h('table.data',
+          h('thead', h('tr',
+            h('th', '邀请码'),
+            h('th', '备注'),
+            h('th', '注册后权限'),
+            h('th', '剩余次数'),
+            h('th', '有效期'),
+            h('th', { style: { textAlign: 'right' } }, '操作'),
+          )),
+          h('tbody', ...codes.map((code) => h('tr',
+            h('td',
+              h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
+                h('code', { style: { fontSize: '14px', letterSpacing: '1.5px', fontWeight: '700' } }, code.code),
+                h('button.btn.btn-ghost.btn-sm', {
+                  type: 'button',
+                  onClick: () => copyText(code.code, '邀请码已复制'),
+                }, '复制'),
+              ),
+            ),
+            h('td', code.note || h('span', { style: { color: 'var(--text-faint)' } }, '—')),
+            h('td', `已勾选 ${(code.permissions || []).length} 项`),
+            h('td', code.remainingUses < 0 ? '不限' : `剩余 ${code.remainingUses} / ${code.maxUses}`),
+            h('td', code.expiresAt
+              ? h('span', { style: { fontSize: '12px' } }, formatDateTime(code.expiresAt))
+              : h('span.badge.badge-ok', '长期有效')),
+            h('td.actions',
+              h('button.btn.btn-sm.btn-danger', {
+                type: 'button',
+                onClick: async () => {
+                  if (!await confirmDialog('删除邀请码', `确定删除邀请码 ${code.code} 吗？已注册的账号不受影响。`, '删除', true)) return;
+                  await api(`/admin/register-codes/${encodeURIComponent(code.code)}`, { method: 'DELETE' });
+                  toast('ok', '已删除');
+                  await render(container);
+                },
+              }, '删除'),
+            ),
+          ))),
+        ),
+      ),
+  );
+}
+
+function openCreateRegisterCodeDialog(container) {
+  const noteInput = h('input', { type: 'text', placeholder: '例如：给张老师的账号' });
+  const maxUsesInput = h('input', { type: 'number', min: '0', value: '1' });
+  const hoursInput = h('input', { type: 'number', min: '0', value: '72' });
+
+  // 与新建账号共用同一张权限表，保证口径一致。
+  const perm = createPermissionTable([], DEFAULT_PERMISSIONS, false);
+  const catalog = h('div');
+  let table = null;
+
+  api('/admin/permissions').then((modules) => {
+    table = createPermissionTable(modules, DEFAULT_PERMISSIONS, false);
+    clear(catalog);
+    catalog.appendChild(table.table);
+  }).catch((err) => {
+    clear(catalog);
+    catalog.appendChild(h('div.notice.notice-danger', h('span.notice-icon', '!'), h('div', err.message)));
+  });
+
+  modal({
+    title: '生成注册邀请码',
+    width: 'wide',
+    body: h('div',
+      field('备注', noteInput, '仅用于管理端识别，不会展示给注册者。'),
+      h('div.form-row',
+        field('可注册次数', maxUsesInput, '填 0 表示不限次数。'),
+        field('有效小时数', hoursInput, '填 0 表示长期有效。'),
+      ),
+      h('div', { style: { marginTop: '6px' } },
+        h('div', { style: { fontSize: '12.5px', color: 'var(--text-dim)', marginBottom: '8px' } }, '注册后获得的权限'),
+        catalog,
+        h('div.notice.notice-info', { style: { marginTop: '12px' } },
+          h('span.notice-icon', 'i'),
+          h('div', '只能勾选你自己拥有的权限；注册出来的账号一律是「自定义权限」角色。')),
+      ),
+    ),
+    confirmText: '生成',
+    onConfirm: async () => {
+      const body = {
+        note: noteInput.value.trim(),
+        permissions: [...(table ? table.selected : perm.selected)],
+        maxUses: Number(maxUsesInput.value) || 0,
+        validHours: Number(hoursInput.value) || 0,
+      };
+
+      if (body.permissions.length === 0) {
+        toast('warn', '请至少勾选一项权限');
+        return false;
+      }
+
+      let created = null;
+      try {
+        created = await api('/admin/register-codes', { method: 'POST', body });
+      } catch (err) {
+        toast('error', '生成失败', err.message);
+        return false;
+      }
+
+      await render(container);
+      modal({
+        title: '邀请码已生成',
+        width: 'wide',
+        hideFooter: true,
+        body: h('div',
+          h('p', { style: { marginTop: 0, color: 'var(--text-dim)' } },
+            '把下面的邀请码发给对方，对方可在登录页「使用邀请码注册」完成注册：'),
+          h('div.copy-row',
+            h('div.code-block', created.code),
+            h('button.btn', { type: 'button', onClick: () => copyText(created.code, '邀请码已复制') }, '复制'),
+          ),
+        ),
+      });
+      return true;
+    },
+  });
 }
 
 function openResetPasswordDialog(account) {

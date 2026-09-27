@@ -7,7 +7,13 @@ public sealed class UserRow
     public string Username { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
+
+    /// <summary>角色：admin（超级管理员，全部权限）/ custom（按 <see cref="Permissions"/> 勾选）。</summary>
     public string Role { get; set; } = "admin";
+
+    /// <summary>已授予的权限键集合（角色为 custom 时生效）。</summary>
+    public List<string> Permissions { get; set; } = [];
+
     public bool MustChangePassword { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }
@@ -20,6 +26,10 @@ public sealed class SessionRow
     public string Username { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
     public string Role { get; set; } = "admin";
+
+    /// <summary>该账号的权限键集合（随会话一起查出，供权限过滤器使用）。</summary>
+    public List<string> Permissions { get; set; } = [];
+
     public DateTimeOffset ExpiresAt { get; set; }
 }
 

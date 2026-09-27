@@ -13,13 +13,15 @@ public static class AiEndpoints
     public static void MapAiEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.NewVersionedGroup("admin")
-            .AddEndpointFilter<AdminAuthFilter>();
+            .AddEndpointFilter<AdminAuthFilter>()
+            .AddEndpointFilter<AdminPermissionFilter>();
 
-        group.MapGet("/ai/config", GetConfigAsync);
-        group.MapPut("/ai/config", SetConfigAsync);
-        group.MapPost("/ai/test", TestAsync);
-        group.MapPost("/ai/parse", ParseAsync);
-        group.MapPost("/ai/apply", ApplyAsync);
+        // AI 接口地址与密钥属于系统设置；实际解析/并入档案属于档案编辑，按两者分别校验。
+        group.MapGet("/ai/config", GetConfigAsync).RequirePermission(PermissionKeys.SettingsRead);
+        group.MapPut("/ai/config", SetConfigAsync).RequirePermission(PermissionKeys.SettingsWrite);
+        group.MapPost("/ai/test", TestAsync).RequirePermission(PermissionKeys.SettingsWrite);
+        group.MapPost("/ai/parse", ParseAsync).RequirePermission(PermissionKeys.ProfilesWrite);
+        group.MapPost("/ai/apply", ApplyAsync).RequirePermission(PermissionKeys.ProfilesWrite);
     }
 
     /// <summary>读取 AI 配置。接口密钥只回传掩码，避免明文出现在页面上。</summary>

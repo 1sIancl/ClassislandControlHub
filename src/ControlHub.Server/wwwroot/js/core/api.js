@@ -117,6 +117,17 @@ function handleExpired() {
   onSessionExpired();
 }
 
+/**
+ * 当前账号是否具备某项权限。
+ * @param {string|string[]} perm 权限键；传数组表示「任一满足」。不传表示无需权限。
+ */
+export function hasPermission(perm) {
+  if (!perm) return true;
+  const granted = (session.me && session.me.permissions) || [];
+  const wanted = Array.isArray(perm) ? perm : [perm];
+  return wanted.some((key) => granted.includes(key));
+}
+
 /** 读取服务器公开信息（无需登录）。 */
 export function fetchServerInfo() {
   return api('/server/info', { auth: false });

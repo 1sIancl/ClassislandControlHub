@@ -104,11 +104,16 @@ public sealed class HubException : Exception
     public static HubException AuthInvalid(string message) =>
         new(HubErrorCodes.AuthInvalid, message, StatusCodes.Unauthorized);
 
+    /// <summary>已登录但当前账号没有相应权限。</summary>
+    public static HubException Forbidden(string message) =>
+        new(HubErrorCodes.PermissionDenied, message, StatusCodes.Forbidden);
+
     /// <summary>HTTP 状态码常量（避免协议层依赖 ASP.NET）。</summary>
     private static class StatusCodes
     {
         public const int BadRequest = 400;
         public const int Unauthorized = 401;
+        public const int Forbidden = 403;
         public const int NotFound = 404;
         public const int Conflict = 409;
     }

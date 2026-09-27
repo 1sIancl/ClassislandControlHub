@@ -8,7 +8,7 @@
   <title>ClassislandControlHub 集控系统</title>
   <link rel="icon" href="icon.png" />
   <link rel="apple-touch-icon" href="icon.png" />
-  <link rel="stylesheet" href="css/app.css?v=21" />
+  <link rel="stylesheet" href="css/app.css?v=22" />
 </head>
 
 <body>
@@ -90,8 +90,36 @@
         <div class="login-error" id="loginError" hidden></div>
         <button class="btn btn-primary btn-block login-submit" type="submit" id="loginSubmit">登录</button>
       </form>
+
+      <!-- 凭邀请码自助注册（由服务端开关决定是否展示入口） -->
+      <form id="registerForm" class="login-form" autocomplete="on" hidden>
+        <label class="field">
+          <span>邀请码</span>
+          <input type="text" id="registerCode" placeholder="由管理员发放" required />
+        </label>
+        <label class="field">
+          <span>用户名</span>
+          <input type="text" id="registerUsername" autocomplete="username" placeholder="3~32 位，字母 / 数字 / . _ -" required />
+        </label>
+        <label class="field">
+          <span>显示名称</span>
+          <input type="text" id="registerDisplayName" placeholder="留空则使用用户名" />
+        </label>
+        <label class="field">
+          <span>密码</span>
+          <input type="password" id="registerPassword" autocomplete="new-password" placeholder="至少 8 位，需同时包含字母与数字" required />
+        </label>
+        <div class="login-error" id="registerError" hidden></div>
+        <button class="btn btn-primary btn-block login-submit" type="submit" id="registerSubmit">注册并登录</button>
+      </form>
+
+      <div class="login-switch">
+        <button type="button" class="linkish" id="switchToRegister" hidden>使用邀请码注册</button>
+        <button type="button" class="linkish" id="switchToLogin" hidden>已有账号？返回登录</button>
+      </div>
+
       <div class="login-foot">
-        <span>首次部署默认账号 <code>admin</code>，登录后请立即修改密码。</span>
+        <span id="loginFootHint">首次部署默认账号 <code>admin</code>，登录后请立即修改密码。</span>
       </div>
     </div>
   </div>
@@ -100,7 +128,10 @@
   <div id="toastHost" class="toast-host"></div>
   <div id="modalHost" class="modal-host" hidden></div>
 
-  <script type="module" src="js/app.js?v=21"></script>
+  <!-- 新手引导浮层 -->
+  <div id="tourHost" class="tour-host" hidden></div>
+
+  <script type="module" src="js/app.js?v=22"></script>
 </body>
 
 </html>

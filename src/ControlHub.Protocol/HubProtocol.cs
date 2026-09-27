@@ -100,6 +100,9 @@ public static class HubErrorCodes
     /// <summary>注册码已过期或已被使用完毕。</summary>
     public const string EnrollCodeExpired = "ENROLL_CODE_EXPIRED";
 
+    /// <summary>已登录，但当前账号没有执行该操作所需的权限。</summary>
+    public const string PermissionDenied = "PERMISSION_DENIED";
+
     /// <summary>请求参数校验失败。</summary>
     public const string ValidationFailed = "VALIDATION_FAILED";
 

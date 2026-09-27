@@ -2,8 +2,8 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo } from './core/api.js?v=21';
-import { h, clear, toast, icon } from './core/ui.js?v=21';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=22';
+import { h, clear, toast, icon } from './core/ui.js?v=22';
 import {
   initTheme, getTheme, applyTheme, THEMES,
   getSidebarCollapsed, setSidebarCollapsed,
@@ -11,7 +11,7 @@ import {
   applyAppearance, getAccent, setAccent, ACCENTS,
   getFont, setFont, FONTS,
   getRadius, setRadius, RADII,
-} from './core/prefs.js?v=21';
+} from './core/prefs.js?v=22';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -20,7 +20,10 @@ applyDensity();
 setSidebarCollapsed(getSidebarCollapsed());
 
 
-/** 导航结构。新增页面时只需在此登记。 */
+/**
+ * 导航结构。新增页面时只需在此登记。
+ * `perm` 为该页面所需的权限键，可用数组表示「任一满足」；不写表示只需登录。
+ */
 const NAV = [
   {
     label: '概览',
@@ -31,44 +34,61 @@ const NAV = [
   {
     label: '配置管理',
     items: [
-      { key: 'profiles', label: '配置档案', icon: 'profiles', hash: '#/profiles' },
-      { key: 'devices', label: '设备管理', icon: 'monitor', hash: '#/devices' },
+      { key: 'profiles', label: '配置档案', icon: 'profiles', hash: '#/profiles', perm: 'profiles.read' },
+      { key: 'devices', label: '设备管理', icon: 'monitor', hash: '#/devices', perm: 'devices.read' },
     ],
   },
   {
     label: '下发管理',
     items: [
-      { key: 'deploy', label: '配置下发', icon: 'send', hash: '#/deploy' },
-      { key: 'remote', label: '远程管理', icon: 'send', hash: '#/remote' },
+      { key: 'deploy', label: '配置下发', icon: 'send', hash: '#/deploy', perm: 'deploy.write' },
+      { key: 'remote', label: '远程管理', icon: 'send', hash: '#/remote', perm: 'remote.read' },
+      { key: 'reminders', label: '定时提醒', icon: 'bell', hash: '#/reminders', perm: 'reminders.read' },
     ],
   },
   {
     label: '系统',
     items: [
-      { key: 'audit', label: '审计日志', icon: 'list', hash: '#/audit' },
-      { key: 'settings', label: '系统设置', icon: 'gear', hash: '#/settings' },
+      { key: 'audit', label: '审计日志', icon: 'list', hash: '#/audit', perm: 'audit.read' },
+      { key: 'settings', label: '系统设置', icon: 'gear', hash: '#/settings', perm: ['settings.read', 'accounts.read'] },
     ],
   },
 ];
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=21'),
-  devices: () => import('./views/devices.js?v=21'),
+  dashboard: () => import('./views/dashboard.js?v=22'),
+  devices: () => import('./views/devices.js?v=22'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=21'),
-  profiles: () => import('./views/profiles.js?v=21'),
-  profileEditor: () => import('./views/profileEditor.js?v=21'),
-  deploy: () => import('./views/deploy.js?v=21'),
-  remote: () => import('./views/remote.js?v=21'),
-  audit: () => import('./views/audit.js?v=21'),
-  settings: () => import('./views/settings.js?v=21'),
+  groups: () => import('./views/devices.js?v=22'),
+  profiles: () => import('./views/profiles.js?v=22'),
+  profileEditor: () => import('./views/profileEditor.js?v=22'),
+  deploy: () => import('./views/deploy.js?v=22'),
+  remote: () => import('./views/remote.js?v=22'),
+  reminders: () => import('./views/reminders.js?v=22'),
+  audit: () => import('./views/audit.js?v=22'),
+  settings: () => import('./views/settings.js?v=22'),
+};
+
+/** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
+const ROUTE_PERMS = {
+  profiles: 'profiles.read',
+  profileEditor: 'profiles.read',
+  devices: 'devices.read',
+  groups: 'devices.read',
+  deploy: 'deploy.write',
+  remote: 'remote.read',
+  reminders: 'reminders.read',
+  audit: 'audit.read',
+  settings: ['settings.read', 'accounts.read'],
 };
 
 /** 运行状态。 */
 const runtime = {
   currentKey: '',
   refreshTimer: null,
+  /** 服务端是否开放了凭邀请码自助注册（决定登录页是否显示注册入口）。 */
+  registrationEnabled: false,
 };
 
 // ────────────────────────────── 会话 ──────────────────────────────
@@ -176,7 +196,58 @@ function showLogin(message) {
     errorBox.hidden = true;
   }
 
+  switchLoginMode('login');
+  refreshRegistrationEntry();
   document.getElementById('loginUsername').focus();
+}
+
+/** 在「登录」与「凭邀请码注册」两张表单之间切换。 */
+function switchLoginMode(mode) {
+  const register = mode === 'register';
+  document.getElementById('loginForm').hidden = register;
+  document.getElementById('registerForm').hidden = !register;
+  document.getElementById('switchToRegister').hidden = register || !runtime.registrationEnabled;
+  document.getElementById('switchToLogin').hidden = !register;
+  document.getElementById('loginError').hidden = true;
+  document.getElementById('registerError').hidden = true;
+
+  const first = document.getElementById(register ? 'registerCode' : 'loginUsername');
+  first?.focus();
+}
+
+/** 询问服务端是否开放自助注册；关闭时不显示注册入口，避免误导。 */
+async function refreshRegistrationEntry() {
+  try {
+    const info = await api('/admin/registration', { auth: false });
+    runtime.registrationEnabled = Boolean(info.enabled);
+    document.getElementById('loginFootHint').innerHTML = info.enabled
+      ? '凭管理员发放的邀请码可自助注册；首次部署默认账号 <code>admin</code>。'
+      : '首次部署默认账号 <code>admin</code>，登录后请立即修改密码。';
+  } catch {
+    runtime.registrationEnabled = false;
+  }
+
+  const link = document.getElementById('switchToRegister');
+  if (link) {
+    link.hidden = runtime.registrationEnabled || !document.getElementById('loginForm').hidden;
+  }
+}
+
+/** 登录 / 注册成功后的统一收尾：补全权限与引导状态后再进主界面。 */
+async function completeSignIn(result) {
+  saveToken(result.token);
+  session.me = result;
+
+  // 登录响应里只有最小信息，权限集合与引导状态要单独取，导航过滤依赖它。
+  try {
+    session.me = { ...result, ...(await api('/admin/me')) };
+  } catch { /* 取不到就退回最小信息，导航会保守地少显示几项 */ }
+
+  await showApp();
+
+  if (session.me.mustChangePassword) {
+    toast('warn', '请修改初始密码', '当前账号仍在使用初始密码，建议立即在「系统设置」中修改。', 8000);
+  }
 }
 
 async function handleLogin(event) {
@@ -198,23 +269,45 @@ async function handleLogin(event) {
       body: { username, password },
     });
 
-    saveToken(result.token);
-    session.me = result;
     document.getElementById('loginPassword').value = '';
-    await showApp();
-
-    if (result.role === 'admin') {
-      const me = await api('/admin/me');
-      if (me.mustChangePassword) {
-        toast('warn', '请修改初始密码', '当前账号仍在使用初始密码，建议立即在「系统设置」中修改。', 8000);
-      }
-    }
+    await completeSignIn(result);
   } catch (err) {
     errorBox.textContent = err.message || '登录失败';
     errorBox.hidden = false;
   } finally {
     button.disabled = false;
     button.textContent = '登录';
+  }
+}
+
+/** 凭邀请码自助注册，注册成功后直接登录。 */
+async function handleRegister(event) {
+  event.preventDefault();
+
+  const button = document.getElementById('registerSubmit');
+  const errorBox = document.getElementById('registerError');
+  const body = {
+    code: document.getElementById('registerCode').value.trim(),
+    username: document.getElementById('registerUsername').value.trim(),
+    displayName: document.getElementById('registerDisplayName').value.trim(),
+    password: document.getElementById('registerPassword').value,
+  };
+
+  button.disabled = true;
+  button.textContent = '注册中…';
+  errorBox.hidden = true;
+
+  try {
+    const result = await api('/admin/register', { method: 'POST', auth: false, body });
+    document.getElementById('registerPassword').value = '';
+    await completeSignIn(result);
+    toast('ok', '注册成功', `欢迎，${result.displayName || result.username}。`);
+  } catch (err) {
+    errorBox.textContent = err.message || '注册失败';
+    errorBox.hidden = false;
+  } finally {
+    button.disabled = false;
+    button.textContent = '注册并登录';
   }
 }
 
@@ -237,6 +330,22 @@ async function showApp() {
   } else {
     await route();
   }
+
+  // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
+  if (me.onboardingDone === false) {
+    const { startTour } = await import('./core/tour.js?v=22');
+    startTour({
+      onFinish: async (skipped) => {
+        try {
+          await api('/admin/onboarding', { method: 'POST' });
+          session.me.onboardingDone = true;
+        } catch { /* 记录失败也无妨，下次登录会再放一次 */ }
+        if (!skipped) {
+          toast('ok', '引导已完成', '之后可以在「系统设置」里重新观看。');
+        }
+      },
+    });
+  }
 }
 
 function renderNav() {
@@ -244,8 +353,12 @@ function renderNav() {
   clear(nav);
 
   for (const group of NAV) {
+    // 没有权限的页面直接不出现；整组都没权限时连分组标题也省掉。
+    const items = group.items.filter((item) => can(item.perm));
+    if (items.length === 0) continue;
+
     nav.appendChild(h('div.nav-group-label', group.label));
-    for (const item of group.items) {
+    for (const item of items) {
       const iconEl = h('span.nav-icon');
       iconEl.appendChild(icon(item.icon, 17));
       const button = h('button.nav-item', {
@@ -406,6 +519,24 @@ async function route() {
   }
 
   const content = document.getElementById('content');
+
+  // 无权访问的页面直接给提示，不要先打一堆注定 403 的接口。
+  if (!can(ROUTE_PERMS[key])) {
+    const label = NAV.flatMap((g) => g.items).find((i) => i.key === key)?.label || '该页面';
+    document.getElementById('pageTitle').textContent = label;
+    document.getElementById('pageSubtitle').textContent = '无权访问';
+    clear(content);
+    content.appendChild(h('div.card',
+      h('div.notice.notice-warn', { style: { margin: 0 } },
+        h('span.notice-icon', '!'),
+        h('div',
+          h('strong', '当前账号没有访问该页面的权限'),
+          h('div', `请联系超级管理员在「系统设置 → 账号管理」中为你的账号勾选相应权限。`)),
+      ),
+    ));
+    return;
+  }
+
   clear(content);
   content.appendChild(h('div', { style: { padding: '40px', textAlign: 'center', color: 'var(--text-faint)' } },
     h('span.spinner')));
@@ -475,6 +606,9 @@ function updateRevisionChip() {
 // ────────────────────────────── 启动 ──────────────────────────────
 
 document.getElementById('loginForm').addEventListener('submit', handleLogin);
+document.getElementById('registerForm').addEventListener('submit', handleRegister);
+document.getElementById('switchToRegister').addEventListener('click', () => switchLoginMode('register'));
+document.getElementById('switchToLogin').addEventListener('click', () => switchLoginMode('login'));
 
 // 登录页也展示在线状态，方便确认服务器是否可达。
 fetchServerInfo()
