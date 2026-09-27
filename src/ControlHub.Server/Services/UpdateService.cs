@@ -289,6 +289,11 @@ public sealed class UpdateService(
         return fallback;
     }
 
+    /// <summary>
+    /// 判断是否有更新的版本。
+    /// <para>只比较「主.次.修订」三段：仓库里同时存在 <c>1.1.0</c> 与 <c>1.1.0.0</c> 这类写法，
+    /// 直接比较四段会把 1.1.0.0 判成大于 1.1.0，导致永远提示「有新版本」。</para>
+    /// </summary>
     private static bool HasNewer(string? latest, string current)
     {
         if (latest is null)
@@ -298,8 +303,12 @@ public sealed class UpdateService(
 
         return Version.TryParse(latest, out var l)
                && Version.TryParse(current, out var c)
-               && l > c;
+               && Normalize(l) > Normalize(c);
     }
+
+    /// <summary>把版本号归一化为「主.次.修订」三段，忽略第四段。</summary>
+    private static Version Normalize(Version version) =>
+        new(version.Major, version.Minor, Math.Max(version.Build, 0));
 
     private static async Task SafeDelayAsync(TimeSpan delay, CancellationToken ct)
     {
