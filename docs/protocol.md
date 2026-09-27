@@ -57,6 +57,28 @@ HTTP 状态码与业务结果同时生效：`401` 鉴权失败、`404` 资源不
 - 设备令牌由注册接口签发，长期有效，直至被吊销或重新注册。
 - 客户端额外携带 `X-Hub-Client-Version: <pluginVersion>` 便于服务端统计版本分布。
 
+### 管理端模块权限
+
+登录只解决「你是谁」，能不能做还要看模块权限。每条管理端路由都用 `.RequirePermission(...)` 声明所需权限键
+（约定为 `模块.read` / `模块.write`，定义在 `PermissionKeys`），**未声明权限的路由一律拒绝**（fail-closed）：
+
+| 权限键 | 覆盖范围 |
+|---|---|
+| `profiles.read` / `profiles.write` | 配置档案查看 / 增删改与导入 |
+| `devices.read` / `devices.write` | 设备、楼栋楼层分组与注册码 |
+| `deploy.write` | 向教室终端下发配置 |
+| `remote.read` / `remote.write` | 远程命令历史与插件清单 / 下发命令、插件、外观 |
+| `reminders.read` / `reminders.write` | 定时提醒查看 / 增删改与立即触发 |
+| `audit.read` | 审计日志 |
+| `backup.read` / `backup.write` | 备份查看下载 / 创建、删除、恢复 |
+| `settings.read` / `settings.write` | 品牌、时间偏移、AI 配置、更新 |
+| `accounts.read` / `accounts.write` | 账号管理与邀请码 |
+
+- `role=admin`（超级管理员）通吃全部权限且不可被裁剪；`role=custom` 按账号勾选的权限集合精确匹配。
+- 两条约束：不能授予自己没有的权限；系统至少保留一个超级管理员。
+- 权限变更后该账号的既有会话立即失效，需要重新登录才生效。
+- 账号、个人偏好与个人提醒按用户隔离；设备、楼栋楼层、配置档案、注册码等为全校共享数据，靠权限控制谁能改。
+
 ## 4. 同步机制
 
 同步采用 **「版本号 + 长轮询」** 模型，避免客户端高频轮询：
@@ -82,46 +104,85 @@ HTTP 状态码与业务结果同时生效：`401` 鉴权失败、`404` 资源不
 |---|---|---|
 | GET | `/api/v1/ping` | 存活探针 |
 | GET | `/api/v1/server/info` | 服务器公开信息（名称、版本、端口、是否要求注册码等） |
+| GET | `/admin/registration` | 自助注册开关与邀请码校验所需信息 |
+| POST | `/admin/register` | 凭邀请码自助注册（开关关闭或邀请码无效时拒绝） |
 
-### 5.2 设备接口（`HubDevice` 鉴权，注册接口除外）
+### 5.2 设备接口（`HubDevice` 鉴权，注册/对时接口除外）
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | POST | `/client/enroll` | 设备注册（无需鉴权） |
+| GET | `/client/config` | 注册前读取服务器连接配置（无需鉴权） |
 | GET | `/client/time` | 时间同步（无需鉴权，返回服务器 UTC 时间） |
 | POST | `/client/heartbeat` | 心跳上报 |
 | GET | `/client/sync` | 拉取配置（版本一致时 `data = null`） |
 | GET | `/client/wait` | 长轮询等待变更 |
 | POST | `/client/report` | 上报配置应用结果 |
+| POST | `/client/time-report` | 上报 ClassIsland 授时结果 |
+| GET | `/client/commands` | 拉取待执行命令（一次性派发） |
+| POST | `/client/commands/report` | 回报命令执行结果 |
+| POST | `/client/plugins` | 上报本机插件清单（含启用状态与版本） |
 | POST | `/client/logs` | 上传客户端日志 |
 
-### 5.3 管理接口（`Bearer` 鉴权，登录接口除外）
+> `/client/commands` 采用一次性派发：命令带 `dispatchedAt` / `expiresAt`（默认 TTL 2 小时），
+> 取走后即标记为已派发，避免断线重连时重复执行；回报时会校验命令归属，跨设备回报被拒绝。
 
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| POST | `/admin/login` | 登录 |
-| POST | `/admin/logout` | 登出 |
-| GET | `/admin/me` | 当前账号 |
-| POST | `/admin/password` | 修改密码 |
-| GET | `/admin/dashboard` | 仪表盘统计 |
-| GET/POST | `/admin/groups` | 分组列表 / 新建 |
-| PUT/DELETE | `/admin/groups/{id}` | 分组修改 / 删除 |
-| GET/POST | `/admin/profiles` | 档案列表 / 新建 |
-| POST | `/admin/profiles/sample` | 新建示例档案 |
-| GET/PUT/DELETE | `/admin/profiles/{id}` | 档案详情 / 更新 / 删除 |
-| POST | `/admin/profiles/{id}/default` | 设为默认 |
-| POST | `/admin/profiles/{id}/push` | 推送到使用该档案的设备 |
-| GET/PUT | `/admin/devices`、`/admin/devices/{id}` | 设备列表 / 修改 |
-| POST/DELETE | `/admin/devices/{id}/revoke`、`/admin/devices/{id}` | 停用 / 删除 |
-| GET/DELETE | `/admin/devices/{id}/logs` | 设备日志查看 / 清空 |
-| GET/POST | `/admin/enroll-codes` | 注册码列表 / 生成 |
-| PUT/DELETE | `/admin/enroll-codes/{code}` | 注册码修改 / 删除 |
-| GET | `/admin/assignments` | 下发绑定关系视图 |
-| POST | `/admin/push` | 立即推送（all/group/device） |
-| GET | `/admin/audit` | 审计日志（分页） |
-| GET | `/admin/accounts` | 管理员账号列表 |
-| GET/PUT | `/admin/branding` | 品牌个性化读取 / 保存 |
-| GET/PUT | `/admin/time-offset` | 手动时间偏移读取 / 设置（叠加到授时） |
+### 5.3 管理接口（`Bearer` 鉴权，标注「公开」的除外）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| POST | `/admin/login` | 公开 | 登录 |
+| GET | `/admin/registration` | 公开 | 自助注册开关 |
+| POST | `/admin/register` | 公开 | 凭邀请码自助注册 |
+| POST | `/admin/logout` | 已登录 | 登出 |
+| GET | `/admin/me` | 已登录 | 当前账号与权限（含 `onboardingDone`） |
+| POST | `/admin/password` | 已登录 | 修改密码 |
+| POST | `/admin/onboarding` | 已登录 | 标记新手引导已完成 |
+| GET | `/admin/dashboard` | 已登录 | 仪表盘统计 |
+| GET | `/admin/audit` | `audit.read` | 审计日志（分页） |
+| GET | `/admin/permissions` | `accounts.read` | 可授予的权限目录 |
+| GET/POST | `/admin/accounts` | `accounts.read` / `accounts.write` | 账号列表 / 新建（初始密码只显示一次） |
+| PUT/DELETE | `/admin/accounts/{id}` | `accounts.write` | 修改账号与权限 / 删除账号 |
+| POST | `/admin/accounts/{id}/reset-password` | `accounts.write` | 重置密码 |
+| GET/POST | `/admin/register-codes` | `accounts.read` / `accounts.write` | 邀请码列表 / 生成 |
+| DELETE | `/admin/register-codes/{code}` | `accounts.write` | 删除邀请码 |
+| PUT | `/admin/registration` | `accounts.write` | 开关自助注册 |
+| GET | `/admin/devices` | `devices.read` | 设备列表（含在线状态、版本） |
+| PUT | `/admin/devices/{id}` | `devices.write` | 修改设备（改名 / 调组） |
+| POST/DELETE | `/admin/devices/{id}/revoke`、`/admin/devices/{id}` | `devices.write` | 停用 / 删除设备 |
+| GET/DELETE | `/admin/devices/{id}/logs` | `devices.read` / `devices.write` | 设备日志查看 / 清空 |
+| GET/POST | `/admin/groups` | `devices.read` / `devices.write` | 楼栋 / 楼层 / 教室分组列表 / 新建 |
+| PUT/DELETE | `/admin/groups/{id}` | `devices.write` | 分组修改 / 删除（级联子节点） |
+| GET/POST | `/admin/enroll-codes` | `devices.read` / `devices.write` | 注册码列表 / 生成 |
+| PUT/DELETE | `/admin/enroll-codes/{code}` | `devices.write` | 注册码修改 / 删除 |
+| GET | `/admin/assignments` | `devices.read` | 下发绑定关系视图 |
+| POST | `/admin/push` | `deploy.write` | 立即推送（all/group/device） |
+| GET/POST | `/admin/profiles` | `profiles.read` / `profiles.write` | 档案列表 / 新建 |
+| POST | `/admin/profiles/sample` | `profiles.write` | 新建示例档案 |
+| POST | `/admin/profiles/import-cses` | `profiles.write` | 导入 CSES（含逐格课表） |
+| GET/PUT/DELETE | `/admin/profiles/{id}` | `profiles.read` / `profiles.write` | 档案详情 / 更新 / 删除 |
+| POST | `/admin/profiles/{id}/default` | `profiles.write` | 设为默认 |
+| POST | `/admin/profiles/{id}/push` | `deploy.write` | 推送到使用该档案的设备 |
+| POST | `/admin/devices/{id}/command`、`/admin/devices/command` | `remote.write` | 单设备 / 批量下发远程命令 |
+| GET | `/admin/devices/{id}/commands` | `remote.read` | 命令历史（含派发与完成状态） |
+| POST | `/admin/devices/{id}/notify` | `remote.write` | 向教室发送临时通知 |
+| POST | `/admin/devices/appearance` | `remote.write` | 下发外观（主题 / 强调色） |
+| GET | `/admin/devices/{id}/plugins` | `remote.read` | 插件清单 |
+| POST | `/admin/devices/{id}/plugins/refresh` | `remote.write` | 命令 B 端重新上报插件清单 |
+| GET | `/admin/reminders`、`/admin/reminders/summary`、`/admin/reminders/fires` | `reminders.read` | 提醒列表 / 概览 / 触发历史 |
+| POST/PUT/DELETE | `/admin/reminders`、`/admin/reminders/{id}` | `reminders.write` | 新建 / 修改 / 删除提醒 |
+| POST | `/admin/reminders/{id}/run` | `reminders.write` | 立即触发（不影响原有重复计划） |
+| GET/POST | `/admin/backups` | `backup.read` / `backup.write` | 备份列表 / 创建 |
+| GET | `/admin/backups/{id}/download` | `backup.read` | 下载备份 |
+| POST | `/admin/backups/{id}/restore` | `backup.write` | 恢复备份 |
+| DELETE | `/admin/backups/{id}` | `backup.write` | 删除备份 |
+| GET/PUT | `/admin/branding` | `settings.read` / `settings.write` | 品牌个性化读取 / 保存 |
+| GET/PUT | `/admin/time-offset` | `settings.read` / `settings.write` | 手动时间偏移读取 / 设置（叠加到授时） |
+| GET | `/admin/update/state`、`/admin/update/check` | `settings.read` | 更新状态 / 检查更新 |
+| POST | `/admin/update/apply` | `settings.write` | 应用更新 |
+| GET/PUT | `/admin/ai/config` | `settings.read` / `settings.write` | AI 配置读取 / 保存 |
+| POST | `/admin/ai/test` | `settings.write` | AI 连通性测试 |
+| POST | `/admin/ai/parse`、`/admin/ai/apply` | `profiles.write` | AI 解析自然语言课表 / 应用解析结果 |
 
 ## 6. 关键数据格式
 
