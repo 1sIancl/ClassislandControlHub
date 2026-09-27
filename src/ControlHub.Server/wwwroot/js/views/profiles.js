@@ -3,11 +3,11 @@
  * 档案是集控下发的最小单元：一个档案 = 一套时间表 + 课表 + 科目 + 自定义设置。
  */
 
-import { api } from '../core/api.js?v=12';
+import { api } from '../core/api.js?v=21';
 import {
   h, clear, formatDateTime, toast, loadingBlock, modal, confirmDialog,
   emptyState, field, select,
-} from '../core/ui.js?v=12';
+} from '../core/ui.js?v=21';
 
 export const meta = {
   title: '配置档案',
@@ -29,13 +29,14 @@ export async function render(container) {
           h('p.card-desc', '一个档案包含时间表、课表、科目与自定义设置。设备按「单独指定 → 分组默认 → 全局默认」的顺序取用档案。'),
         ),
         h('div.card-actions',
+          h('button.btn.btn-sm', { type: 'button', onClick: () => openAiImportDialog(profiles) }, 'AI 导入课表'),
           h('button.btn.btn-sm', { type: 'button', onClick: () => openImportCsesDialog(profiles) }, '从 CSES 导入'),
           h('button.btn.btn-sm', { type: 'button', onClick: () => openCreateDialog(false) }, '新建空白档案'),
           h('button.btn.btn-primary.btn-sm', { type: 'button', onClick: () => openCreateDialog(true) }, '+ 新建示例档案'),
         ),
       ),
       profiles.length === 0
-        ? emptyState('📚', '还没有配置档案',
+        ? emptyState('book', '还没有配置档案',
           '建议先用「示例档案」快速生成一套标准作息与课表，再按实际情况调整。',
           h('button.btn.btn-primary', { type: 'button', onClick: () => openCreateDialog(true) }, '新建示例档案'))
         : h('div', { style: { display: 'grid', gap: '12px' } }, ...profiles.map(renderCard)),
@@ -148,12 +149,169 @@ function openImportCsesDialog(profiles) {
         body: { profileId: profileSelect.value, yaml },
       });
 
-      toast('ok', '导入成功',
-        `新增科目 ${result.addedSubjects} 个、时间表 ${result.addedTimeLayouts} 个。`);
+      const parts = [
+        `新增科目 ${result.addedSubjects} 个`,
+        `时间表 ${result.addedTimeLayouts} 个`,
+        `课表 ${result.addedClassPlans} 张`,
+      ];
+      if (result.updatedClassPlans > 0) parts.push(`覆盖课表 ${result.updatedClassPlans} 张`);
+      if (result.enrichedSubjects > 0) parts.push(`补全科目信息 ${result.enrichedSubjects} 个`);
+
+      toast('ok', '导入成功', `${parts.join('、')}。`);
       await render(document.getElementById('content'));
       return true;
     },
   });
+}
+
+const DAY_LABEL = { 1: '周一', 2: '周二', 3: '周三', 4: '周四', 5: '周五', 6: '周六', 7: '周日' };
+
+/**
+ * 「AI 导入课表」对话框：粘贴任意格式的课表文本 → 交给模型解析 → 预览确认 → 合并进档案。
+ * 解析与导入分成两步，导入用的是预览过的结果，不会重复调用模型。
+ */
+function openAiImportDialog(profiles) {
+  if (!profiles || profiles.length === 0) {
+    toast('warn', '请先创建档案', 'AI 导入需要指定一个目标档案，请先新建一个档案。');
+    return;
+  }
+
+  let parsed = null;
+
+  const profileSelect = select(profiles.map((p) => ({ value: p.id, label: p.name })), profiles[0].id);
+  const preview = h('div');
+  const parseStatus = h('div', { style: { fontSize: '12.5px', color: 'var(--text-faint)', marginTop: '8px' } },
+    '尚未解析。点击「AI 解析」后先预览，确认无误再导入。');
+
+  const textarea = h('textarea', {
+    placeholder: '把课表粘贴到这里：从 Excel 复制的表格、从教务系统网页复制的内容，或手工整理的文本都可以。',
+    style: { minHeight: '170px' },
+  });
+
+  const fileInput = h('input', {
+    type: 'file',
+    accept: '.txt,.csv,.md,.html',
+    style: { display: 'none' },
+    onChange: async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      textarea.value = await file.text();
+      parsed = null;
+      clear(preview);
+      parseStatus.textContent = `已读取 ${file.name}，请点击「AI 解析」。`;
+      parseStatus.style.color = 'var(--text-faint)';
+    },
+  });
+
+  const pickBtn = h('button.btn.btn-sm', { type: 'button', onClick: () => fileInput.click() }, '选择文件');
+
+  const parseBtn = h('button.btn.btn-sm.btn-primary', {
+    type: 'button',
+    onClick: async () => {
+      const text = textarea.value.trim();
+      if (!text) {
+        toast('warn', '请先粘贴或选择课表内容');
+        return;
+      }
+
+      parseBtn.disabled = true;
+      parsed = null;
+      clear(preview);
+      parseStatus.textContent = '正在调用模型解析，请稍候……';
+      parseStatus.style.color = 'var(--text-faint)';
+
+      try {
+        parsed = await api('/admin/ai/parse', { method: 'POST', body: { text } });
+        parseStatus.textContent = `解析完成：作息 ${parsed.periodCount} 节 · ${parsed.dayCount} 天 · `
+          + `${parsed.subjectCount} 个科目 · ${parsed.courseCount} 节有课。`;
+        parseStatus.style.color = 'var(--ok)';
+        preview.appendChild(renderParsedPreview(parsed.bundle));
+      } catch (err) {
+        parseStatus.textContent = err.message;
+        parseStatus.style.color = 'var(--danger)';
+      } finally {
+        parseBtn.disabled = false;
+      }
+    },
+  }, 'AI 解析');
+
+  modal({
+    title: 'AI 导入课表',
+    width: 'wide',
+    body: h('div',
+      field('导入到档案', profileSelect),
+      h('div.notice.notice-info',
+        h('span.notice-icon', 'i'),
+        h('div', '课表原文会发送到「系统设置 → AI 辅助导入」里配置的接口。'
+          + '导入时同名科目与相同作息的时间表会自动复用，同一天的课表会被本次结果覆盖。')),
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', margin: '14px 0 8px' } },
+        pickBtn, fileInput, parseBtn),
+      textarea,
+      parseStatus,
+      preview,
+    ),
+    confirmText: '导入到档案',
+    onConfirm: async () => {
+      if (!parsed) {
+        toast('warn', '请先点击「AI 解析」', '预览确认后再导入。');
+        return false;
+      }
+
+      const result = await api('/admin/ai/apply', {
+        method: 'POST',
+        body: { profileId: profileSelect.value, bundle: parsed.bundle },
+      });
+
+      const parts = [
+        `新增科目 ${result.addedSubjects} 个`,
+        `时间表 ${result.addedTimeLayouts} 个`,
+        `课表 ${result.addedClassPlans} 张`,
+      ];
+      if (result.updatedClassPlans > 0) parts.push(`覆盖课表 ${result.updatedClassPlans} 张`);
+      if (result.enrichedSubjects > 0) parts.push(`补全科目信息 ${result.enrichedSubjects} 个`);
+
+      toast('ok', '导入完成', `${parts.join('、')}。配置版本已更新为 ${result.revision}。`);
+      await render(document.getElementById('content'));
+      return true;
+    },
+  });
+}
+
+/** 把解析结果渲染成「节次 × 星期」的紧凑预览。 */
+function renderParsedPreview(bundle) {
+  const layout = (bundle.timeLayouts || [])[0];
+  if (!layout) {
+    return h('div.notice.notice-warn', h('span.notice-icon', '!'), h('div', '解析结果里没有时间表。'));
+  }
+
+  const periods = (layout.items || []).filter((item) => item.kind === 'class');
+  const subjects = new Map((bundle.subjects || []).map((s) => [s.id, s]));
+  const plans = new Map((bundle.classPlans || []).map((p) => [(p.daysOfWeek || [])[0], p]));
+  const days = [...plans.keys()].filter((d) => d !== undefined).sort((a, b) => a - b);
+
+  const cells = [
+    h('div.preview-cell.head', '节次'),
+    ...days.map((day) => h('div.preview-cell.head', DAY_LABEL[day] || `第 ${day} 天`)),
+  ];
+
+  periods.forEach((period, index) => {
+    cells.push(h('div.preview-cell.side', `${index + 1} · ${period.startTime.slice(0, 5)}`));
+    for (const day of days) {
+      const slot = (plans.get(day).slots || []).find((s) => s.index === index);
+      const subject = slot && slot.subjectId ? subjects.get(slot.subjectId) : null;
+      cells.push(subject
+        ? h('div.preview-cell.on', subject.initial || subject.name)
+        : h('div.preview-cell'));
+    }
+  });
+
+  return h('div',
+    h('div.preview-summary', `即将导入：作息「${layout.name}」共 ${periods.length} 节，`
+      + `${days.length} 天课表，${(bundle.subjects || []).length} 个科目。`),
+    h('div.preview-grid', {
+      style: { gridTemplateColumns: `86px repeat(${days.length}, minmax(44px, 1fr))` },
+    }, ...cells),
+  );
 }
 
 function openCreateDialog(withSample) {

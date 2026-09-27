@@ -1,14 +1,13 @@
 /**
- * 配置档案编辑器。
- * 左侧为分类（时间表 / 课表 / 科目 / 自定义设置），右侧为具体内容编辑区。
- * 所有修改先落在内存对象上，点击「保存并下发」后一次性提交，由服务端做规范化与版本递增。
+ * 配置档案编辑器：时间表 / 课表 / 科目 / 自定义设置四个标签页。
+ * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=12';
+import { api } from '../core/api.js?v=21';
 import {
-  h, clear, toast, loadingBlock, modal, confirmDialog, field, select,
-  emptyState, formatDateTime, copyText,
-} from '../core/ui.js?v=12';
+  h, clear, toast, loadingBlock, modal, confirmDialog, field, icon,
+  emptyState, formatDateTime,
+} from '../core/ui.js?v=21';
 
 export const meta = {
   title: '编辑配置档案',
@@ -22,12 +21,9 @@ const TABS = [
   { key: 'settings', label: '自定义设置' },
 ];
 
-const TIME_KINDS = [
-  { value: 'class', label: '上课' },
-  { value: 'break', label: '课间' },
-  { value: 'separator', label: '分割线' },
-  { value: 'action', label: '行动' },
-];
+/** 时间点类型：点击单元格上的类型标签可循环切换，避免使用下拉框。 */
+const TIME_KIND_ORDER = ['class', 'break', 'separator', 'action'];
+const TIME_KIND_LABEL = { class: '上课', break: '课间', separator: '分割线', action: '行动' };
 
 /** 生成唯一 ID：优先 crypto.randomUUID，非安全上下文（HTTP）回退到手写 UUID v4。 */
 function genId() {
@@ -41,6 +37,22 @@ function genId() {
   });
 }
 
+/** 分段选择器：一排扁平按钮，替代下拉框。 */
+function segmented(items, currentId, onPick, emptyLabel) {
+  if (!items || items.length === 0) {
+    return h('span.segmented-empty', emptyLabel || '（暂无）');
+  }
+  return h('div.segmented',
+    ...items.map((item) => h('button', {
+      class: `segmented-item${item.id === currentId ? ' active' : ''}`,
+      type: 'button',
+      onClick: () => onPick(item.id),
+    }, item.label)));
+}
+
+/** 拖拽中的载荷：`{kind:'subject',subjectId}` 或 `{kind:'slot',day,index}`。 */
+let dragPayload = null;
+
 /** 编辑器状态。 */
 let state = {
   profileId: null,
@@ -51,6 +63,7 @@ let state = {
   selectedPlanId: null,
   classPlanLayoutId: null,
   scheduleSelection: null,
+  armedSubjectId: null,
   dirty: false,
 };
 
@@ -68,6 +81,7 @@ export async function render(container, params) {
     selectedPlanId: profile.content?.classPlans?.[0]?.id || null,
     classPlanLayoutId: state.classPlanLayoutId || profile.content?.timeLayouts?.[0]?.id || null,
     scheduleSelection: null,
+    armedSubjectId: null,
     dirty: false,
   };
 
@@ -108,6 +122,23 @@ function paint(container) {
       h('div#tabBody', renderTab()),
     ),
   ));
+
+  syncDirtyFlag();
+}
+
+/** 同步「有未保存修改」标记（不重建 DOM）。 */
+function syncDirtyFlag() {
+  const flag = document.getElementById('dirtyFlag');
+  if (!flag) return;
+  clear(flag);
+  if (state.dirty) flag.appendChild(h('span.badge.badge-warn', '有未保存修改'));
+}
+
+/** 输入类编辑用：只刷新未保存标记，不重建 DOM，避免打断输入。 */
+function markDirtyLight() {
+  if (state.dirty) return;
+  state.dirty = true;
+  syncDirtyFlag();
 }
 
 function countOf(key) {
@@ -133,7 +164,7 @@ function renderHeader() {
         h('strong', { style: { fontSize: '15px' } }, state.profile.name),
         state.profile.isDefault ? h('span.badge.badge-accent', '全局默认') : null,
         h('span.badge.badge-neutral', `内容版本 ${state.profile.revision}`),
-        state.dirty ? h('span.badge.badge-warn', '有未保存修改') : null,
+        h('span#dirtyFlag'),
       ),
       h('div', { style: { fontSize: '12px', color: 'var(--text-faint)', marginTop: '3px' } },
         `最后更新 ${formatDateTime(state.profile.updatedAt)}`),
@@ -235,40 +266,29 @@ function renderTimeLayouts() {
 
   return h('div',
     h('div.toolbar',
-      select(
-        layouts.length === 0
-          ? [{ value: '', label: '（还没有时间表）' }]
-          : layouts.map((l) => ({ value: l.id, label: `${l.name}（${classCount(l)} 节）` })),
+      h('span.toolbar-label', '时间表'),
+      segmented(
+        layouts.map((l) => ({ id: l.id, label: `${l.name}（${classCount(l)} 节）` })),
         state.selectedLayoutId,
         (v) => {
           state.selectedLayoutId = v;
           repaintTab();
         },
+        '（还没有时间表）',
       ),
+      h('div.spacer'),
       h('button.btn.btn-sm.btn-primary', { type: 'button', onClick: addLayout }, '+ 新建时间表'),
       layout ? h('button.btn.btn-sm', { type: 'button', onClick: () => renameLayout(layout) }, '重命名') : null,
-      layout ? h('button.btn.btn-sm', { type: 'button', onClick: () => generateSchedule(layout) }, '⚡ 快速生成作息') : null,
-      layout ? h('button.btn.btn-sm.btn-danger', { type: 'button', onClick: () => removeLayout(layout) }, '删除') : null,
-      h('div.spacer'),
+      layout ? h('button.btn.btn-sm', { type: 'button', onClick: () => generateSchedule(layout) }, '快速生成作息') : null,
       layout ? h('button.btn.btn-sm', { type: 'button', onClick: () => addItem(layout) }, '+ 添加时间点') : null,
+      layout ? h('button.btn.btn-sm.btn-danger', { type: 'button', onClick: () => removeLayout(layout) }, '删除') : null,
     ),
     !layout
-      ? emptyState('🕐', '还没有时间表',
+      ? emptyState('clock', '还没有时间表',
         '时间表定义了一天的作息时间点，课表以它的「上课」时间点为基准。',
         h('button.btn.btn-primary', { type: 'button', onClick: addLayout }, '新建时间表'))
-      : h('div.table-wrap', { style: { maxHeight: '58vh', overflowY: 'auto' } },
-        h('table.data',
-          h('thead', h('tr',
-            h('th', { style: { width: '64px' } }, '序号'),
-            h('th', { style: { width: '150px' } }, '开始时间'),
-            h('th', { style: { width: '150px' } }, '结束时间'),
-            h('th', { style: { width: '130px' } }, '类型'),
-            h('th', '名称 / 备注'),
-            h('th', { style: { width: '82px' } }, '默认隐藏'),
-            h('th', { style: { width: '60px' } }, ''),
-          )),
-          h('tbody', ...layout.items.map((item, index) => renderItemRow(layout, item, index))),
-        ),
+      : h('div.grid-scroll',
+        h('div.period-grid', ...layout.items.map((item, index) => periodCell(layout, item, index))),
       ),
     layout && layout.items.length === 0
       ? h('div.notice.notice-warn', { style: { marginTop: '14px' } },
@@ -282,62 +302,76 @@ function classCount(layout) {
   return (layout.items || []).filter((i) => i.kind === 'class').length;
 }
 
-function renderItemRow(layout, item, index) {
+/** 时间点单元格：节次 / 类型 / 起止时间 / 名称。 */
+function periodCell(layout, item, index) {
+  const isPoint = item.kind === 'separator' || item.kind === 'action';
+
+  const kindButton = h('button.pcell-kind', {
+    type: 'button',
+    title: '点击切换类型：上课 → 课间 → 分割线 → 行动',
+    onClick: () => {
+      const next = TIME_KIND_ORDER[(TIME_KIND_ORDER.indexOf(item.kind) + 1) % TIME_KIND_ORDER.length];
+      item.kind = next;
+      if (next === 'separator' || next === 'action') item.endTime = item.startTime;
+      markDirtyValues();
+    },
+  }, TIME_KIND_LABEL[item.kind] || '上课');
+
+  const flagButton = h('button.pcell-flag', {
+    type: 'button',
+    class: item.isHideDefault ? 'on' : '',
+    title: '切换该时间点是否默认隐藏',
+    onClick: () => {
+      item.isHideDefault = !item.isHideDefault;
+      markDirtyValues();
+    },
+  }, item.isHideDefault ? '已隐藏' : '默认显示');
+
   const startInput = timeInput(item.startTime, (v) => {
     item.startTime = v;
-    if (item.kind === 'separator' || item.kind === 'action') item.endTime = v;
-    markDirtyValues();
+    if (isPoint) item.endTime = v;
+    markDirtyLight();
   });
+  startInput.classList.add('pcell-time');
 
   const endInput = timeInput(item.endTime, (v) => {
     item.endTime = v;
-    markDirtyValues();
+    markDirtyLight();
   });
-  const isPoint = item.kind === 'separator' || item.kind === 'action';
-  if (isPoint) endInput.disabled = true;
+  endInput.classList.add('pcell-time');
+  if (isPoint) {
+    endInput.disabled = true;
+    endInput.classList.add('muted');
+  }
 
-  const kindSelect = select(TIME_KINDS, item.kind, (v) => {
-    item.kind = v;
-    if (v === 'separator' || v === 'action') item.endTime = item.startTime;
-    markDirtyValues();
-  });
-
-  const nameInput = h('input', {
+  const nameInput = h('input.pcell-name', {
     type: 'text',
     value: item.breakName || '',
-    placeholder: item.kind === 'break' ? '课间名称，留空显示「课间休息」' : '备注（可选）',
+    placeholder: item.kind === 'break' ? '课间名称（留空显示「课间休息」）' : '备注（可选）',
     onInput: (e) => {
       item.breakName = e.target.value.trim() || null;
-      markDirtyValues();
+      markDirtyLight();
     },
   });
 
-  const hideCheckbox = h('input', {
-    type: 'checkbox',
-    onChange: (e) => {
-      item.isHideDefault = e.target.checked;
-      markDirtyValues();
-    },
-  });
-  hideCheckbox.checked = !!item.isHideDefault;
-
-  return h('tr',
-    h('td.period-index', item.kind === 'class' ? `第 ${countClassBefore(layout, index) + 1} 节` : '—'),
-    h('td', startInput),
-    h('td', endInput),
-    h('td', kindSelect),
-    h('td', nameInput),
-    h('td', { style: { textAlign: 'center' } }, hideCheckbox),
-    h('td',
-      h('button.btn.btn-ghost.btn-sm', {
+  return h('div', { class: `pcell kind-${item.kind}${item.isHideDefault ? ' hidden-point' : ''}` },
+    h('div.pcell-top',
+      // 非上课时间点的类型已由类型标签表达，不再重复文字，保持单元格清爽。
+      item.kind === 'class' ? h('span.pcell-no', `第 ${countClassBefore(layout, index) + 1} 节`) : null,
+      kindButton,
+      h('div.spacer'),
+      flagButton,
+      h('button.pcell-del', {
         type: 'button',
         title: '删除该时间点',
         onClick: () => {
           layout.items.splice(index, 1);
           markDirtyValues();
         },
-      }, '✕'),
+      }, icon('close', 14)),
     ),
+    h('div.pcell-times', startInput, h('span.pcell-dash', '–'), endInput),
+    nameInput,
   );
 }
 
@@ -507,27 +541,26 @@ function classPlanLayout() {
   return state.content.timeLayouts.find((l) => l.id === state.classPlanLayoutId) || null;
 }
 
-/** 课表页：以时间表为框架，渲染「周一到周日 × 节次」的整周排课网格，右侧科目面板快速录入。 */
+/** 课表页：整周「节次 × 星期」网格，点选或拖拽即可排课、调课。 */
 function renderClassPlans() {
   const layouts = state.content.timeLayouts;
   const layout = classPlanLayout();
 
-  const layoutSelect = select(
-    layouts.length === 0
-      ? [{ value: '', label: '（请先创建时间表）' }]
-      : layouts.map((l) => ({ value: l.id, label: `${l.name}（${classCount(l)} 节）` })),
-    layout?.id || '',
+  const layoutBar = segmented(
+    layouts.map((l) => ({ id: l.id, label: `${l.name}（${classCount(l)} 节）` })),
+    state.classPlanLayoutId,
     (v) => {
       state.classPlanLayoutId = v;
       state.scheduleSelection = null;
       repaintTab();
     },
+    layouts.length === 0 ? '（请先创建时间表）' : null,
   );
 
   if (!layout) {
     return h('div',
-      h('div.toolbar', layoutSelect),
-      emptyState('🕐', '还没有时间表',
+      h('div.toolbar', h('span.toolbar-label', '作息时间表'), layoutBar),
+      emptyState('clock', '还没有时间表',
         '课程表以时间表的「上课」时间点为基准，横向为周一到周日、纵向为节次。请先创建时间表（作息）。',
         h('button.btn.btn-sm.btn-primary', {
           type: 'button',
@@ -539,8 +572,8 @@ function renderClassPlans() {
   const periods = layout.items.filter((i) => i.kind === 'class');
   if (periods.length === 0) {
     return h('div',
-      h('div.toolbar', layoutSelect),
-      emptyState('🕐', '时间表还没有「上课」时间点',
+      h('div.toolbar', h('span.toolbar-label', '作息时间表'), layoutBar),
+      emptyState('clock', '时间表还没有「上课」时间点',
         '请先在「时间表」中添加至少一节课（上课类型），再回来排课。'),
     );
   }
@@ -552,28 +585,23 @@ function renderClassPlans() {
 
   return h('div',
     h('div.toolbar',
-      h('span', { style: { fontSize: '12.5px', color: 'var(--text-dim)' } }, '作息时间表'),
-      layoutSelect,
+      h('span.toolbar-label', '作息时间表'),
+      layoutBar,
       h('div.spacer'),
-      h('span', { style: { fontSize: '12px', color: 'var(--text-faint)' } }, '点击单元格，在右侧选科目，选完自动跳到下一节'),
+      h('span.toolbar-hint', '点格子选中后点科目，或把科目拖进格子；拖动已排课程可调课；双击格子清空'),
     ),
-    h('div', { style: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 232px', gap: '16px', alignItems: 'start' } },
-      h('div.table-wrap', { style: { overflowX: 'auto' } },
-        h('table.data', { style: { minWidth: '780px' } },
-          h('thead', h('tr',
-            h('th', { style: { width: '96px' } }, '节次 / 时间'),
-            ...GRID_DAYS.map((d) => h('th', { style: { textAlign: 'center' } }, d.label)),
-          )),
-          h('tbody', ...periods.map((period, index) => h('tr',
-            h('td', { style: { whiteSpace: 'nowrap' } },
-              h('div.cell-main', `第 ${index + 1} 节`),
-              h('div.cell-sub', `${period.startTime.slice(0, 5)} - ${period.endTime.slice(0, 5)}`),
-            ),
-            ...GRID_DAYS.map((d) => h('td', { style: { padding: '4px' } }, dayCell(layout, d.value, index))),
-          ))),
-        ),
+    renderPalette(periods.length),
+    h('div.grid-scroll',
+      h('div.sched-grid',
+        h('div.sched-head.corner', '节次 / 时间'),
+        ...GRID_DAYS.map((d) => h('div.sched-head', d.label)),
+        ...periods.flatMap((period, index) => [
+          h('div.sched-period',
+            h('span.no', `第 ${index + 1} 节`),
+            h('span.tm', `${period.startTime.slice(0, 5)}–${period.endTime.slice(0, 5)}`)),
+          ...GRID_DAYS.map((d) => schedCell(layout, d.value, index, periods.length)),
+        ]),
       ),
-      renderSubjectPanel(layout, periods),
     ),
   );
 }
@@ -611,97 +639,225 @@ function subjectShort(subject) {
   return '未命名';
 }
 
-/** 单个课表单元格：可点击，显示科目简称；空格/空天保持空白。双击快速清空。 */
-function dayCell(layout, day, index) {
+/** 读取某一格的课程；空格返回 null。 */
+function readSlot(layout, day, index) {
   const plan = getDayPlan(layout, day);
   const slot = plan ? (plan.slots || []).find((s) => s.index === index) : null;
-  const subject = slot?.subjectId ? state.content.subjects.find((s) => s.id === slot.subjectId) : null;
-  const label = subject ? subjectShort(subject) : '';
+  return slot && slot.subjectId
+    ? { subjectId: slot.subjectId, isEnabled: slot.isEnabled !== false }
+    : null;
+}
 
-  const selected = state.scheduleSelection
+/** 写入某一格的课程；`value` 为 null 表示清空该格。空天只有真正排课时才会创建课表。 */
+function writeSlot(layout, day, index, value) {
+  if (!value) {
+    const plan = getDayPlan(layout, day);
+    const slot = plan ? (plan.slots || []).find((s) => s.index === index) : null;
+    if (slot) slot.subjectId = null;
+    return;
+  }
+
+  const plan = ensureDayPlan(layout, day);
+  let slot = (plan.slots || []).find((s) => s.index === index);
+  if (!slot) {
+    slot = { index, subjectId: value.subjectId, isEnabled: value.isEnabled !== false };
+    plan.slots.push(slot);
+    plan.slots.sort((a, b) => a.index - b.index);
+  } else {
+    slot.subjectId = value.subjectId;
+    slot.isEnabled = value.isEnabled !== false;
+  }
+}
+
+/** 选中格并自动前进到下一节（同一列内；已是最后一节则停在原地）。 */
+function advanceSelection(day, index, periodCount) {
+  state.scheduleSelection = index < periodCount - 1
+    ? { day, index: index + 1 }
+    : { day, index };
+}
+
+/**
+ * 单个课表单元格：整格呈现「科目简称 + 全称 + 教师」，可通过点击或拖拽排课、调课。
+ */
+function schedCell(layout, day, index, periodCount) {
+  const current = readSlot(layout, day, index);
+  const subject = current ? state.content.subjects.find((s) => s.id === current.subjectId) : null;
+  const selected = !!state.scheduleSelection
     && state.scheduleSelection.day === day
     && state.scheduleSelection.index === index;
 
-  return h('button', {
-    class: `schedule-cell${selected ? ' selected' : ''}${label ? '' : ' empty'}`,
-    type: 'button',
-    title: '单击选中后在右侧选择科目；双击清空该格',
-    onClick: () => {
-      state.scheduleSelection = { day, index };
-      repaintTab();
-    },
-    onDblclick: () => {
-      const p = getDayPlan(layout, day);
-      const s = p ? (p.slots || []).find((x) => x.index === index) : null;
-      if (s) s.subjectId = null;
+  const classes = ['sched-cell'];
+  if (subject) classes.push('filled');
+  if (current && !current.isEnabled) classes.push('off');
+  if (selected) classes.push('selected');
+
+  const cell = h('div', {
+    class: classes.join(' '),
+    role: 'button',
+    tabindex: '0',
+    title: subject ? '拖动可调到其他格子；双击清空该格' : '点击选中后点科目，或把科目拖进来',
+  },
+    subject
+      ? h('span.sched-initial', subjectShort(subject))
+      : h('span.sched-plus', '＋'),
+    subject ? h('span.sched-name', subject.name || '未命名') : null,
+    subject && subject.teacherName ? h('span.sched-teacher', subject.teacherName) : null,
+  );
+
+  if (subject) cell.draggable = true;
+
+  cell.addEventListener('click', () => {
+    if (state.armedSubjectId) {
+      writeSlot(layout, day, index, { subjectId: state.armedSubjectId, isEnabled: true });
       state.dirty = true;
+      advanceSelection(day, index, periodCount);
+    } else {
       state.scheduleSelection = { day, index };
-      repaintTab();
-    },
-  }, label);
+    }
+    repaintTab();
+  });
+
+  cell.addEventListener('dblclick', () => {
+    writeSlot(layout, day, index, null);
+    state.dirty = true;
+    state.scheduleSelection = { day, index };
+    repaintTab();
+  });
+
+  cell.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      cell.click();
+    }
+  });
+
+  cell.addEventListener('dragstart', (e) => {
+    if (!subject) {
+      e.preventDefault();
+      return;
+    }
+    dragPayload = { kind: 'slot', day, index };
+    e.dataTransfer.effectAllowed = 'move';
+    try {
+      e.dataTransfer.setData('text/plain', `slot:${day}:${index}`);
+    } catch { /* 非安全上下文下可能不可用，忽略即可 */ }
+    cell.classList.add('dragging');
+  });
+
+  cell.addEventListener('dragend', () => {
+    cell.classList.remove('dragging');
+    dragPayload = null;
+  });
+
+  cell.addEventListener('dragover', (e) => {
+    if (!dragPayload) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = dragPayload.kind === 'slot' ? 'move' : 'copy';
+    cell.classList.add('drop-target');
+  });
+
+  cell.addEventListener('dragleave', () => cell.classList.remove('drop-target'));
+
+  cell.addEventListener('drop', (e) => {
+    e.preventDefault();
+    cell.classList.remove('drop-target');
+    applyCellDrop(layout, day, index, periodCount);
+  });
+
+  return cell;
 }
 
-/** 右侧科目面板：选中单元格后，点科目填入并自动移到下一节。 */
-function renderSubjectPanel(layout, periods) {
-  const sel = state.scheduleSelection;
-  const title = sel
-    ? `第 ${sel.index + 1} 节 · ${GRID_DAYS.find((d) => d.value === sel.day)?.label}`
-    : '快速录入';
+/** 处理放置：科目 → 排课；已有课程 → 移动（目标已有课则互换）。 */
+function applyCellDrop(layout, day, index, periodCount) {
+  const payload = dragPayload;
+  dragPayload = null;
+  if (!payload) return;
 
-  if (!sel) {
-    return h('div.card', { style: { padding: '14px' } },
-      h('div', { style: { fontWeight: '600', fontSize: '13px', marginBottom: '8px' } }, title),
-      h('div', { style: { fontSize: '12.5px', color: 'var(--text-faint)', lineHeight: '1.7' } },
-        '点击左侧网格中的某个单元格，在这里点科目即可填入，并自动跳到下一节。'),
-    );
+  if (payload.kind === 'subject') {
+    writeSlot(layout, day, index, { subjectId: payload.subjectId, isEnabled: true });
+    state.dirty = true;
+    advanceSelection(day, index, periodCount);
+    repaintTab();
+    return;
   }
 
-  const plan = getDayPlan(layout, sel.day);
-  const slot = plan ? (plan.slots || []).find((s) => s.index === sel.index) : null;
-  const current = slot?.subjectId ? state.content.subjects.find((s) => s.id === slot.subjectId) : null;
+  if (payload.kind !== 'slot') return;
+  if (payload.day === day && payload.index === index) return;
 
-  const applySubject = (subjectId) => {
-    const p = ensureDayPlan(layout, sel.day);
-    let s = (p.slots || []).find((x) => x.index === sel.index);
-    if (!s) {
-      s = { index: sel.index, subjectId, isEnabled: true };
-      p.slots.push(s);
-    } else {
-      s.subjectId = subjectId;
-    }
-    state.dirty = true;
-    if (sel.index < periods.length - 1) {
-      state.scheduleSelection = { day: sel.day, index: sel.index + 1 };
-    }
-    repaintTab();
-  };
+  const source = readSlot(layout, payload.day, payload.index);
+  if (!source) return;
+  const target = readSlot(layout, day, index);
 
-  const clearCell = () => {
-    const p = getDayPlan(layout, sel.day);
-    const s = p ? (p.slots || []).find((x) => x.index === sel.index) : null;
-    if (s) s.subjectId = null;
-    state.dirty = true;
-    repaintTab();
-  };
+  writeSlot(layout, payload.day, payload.index, target);
+  writeSlot(layout, day, index, source);
+  state.dirty = true;
+  state.scheduleSelection = { day, index };
+  repaintTab();
+}
 
-  const subjectList = state.content.subjects.length === 0
-    ? h('div', { style: { fontSize: '12.5px', color: 'var(--text-faint)' } }, '还没有科目，请先在「科目」标签页添加。')
-    : h('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '55vh', overflowY: 'auto' } },
-      ...state.content.subjects.map((subject) => h('button', {
-        class: `subject-btn${current?.id === subject.id ? ' active' : ''}`,
-        type: 'button',
-        onClick: () => applySubject(subject.id),
+/** 科目调色板：点选后点格子排课，或直接拖进格子。 */
+function renderPalette(periodCount) {
+  if (state.content.subjects.length === 0) {
+    return h('div.sched-palette',
+      h('span.palette-empty', '还没有科目。请先在「科目」标签页添加科目，再回到这里排课。'));
+  }
+
+  return h('div.sched-palette',
+    ...state.content.subjects.map((subject) => {
+      const armed = state.armedSubjectId === subject.id;
+      const chip = h('div', {
+        class: `sched-chip${armed ? ' armed' : ''}`,
+        role: 'button',
+        tabindex: '0',
+        title: armed ? '再次点击可取消选中' : '点击选中后点格子排课；也可直接拖到格子',
       },
-        h('span.subject-initial', subjectShort(subject)),
-        h('span', subject.name || '未命名'),
-      )));
+        h('b.sched-chip-initial', subjectShort(subject)),
+        h('span.sched-chip-name', subject.name || '未命名'),
+      );
 
-  return h('div.card', { style: { padding: '14px' } },
-    h('div', { style: { fontWeight: '600', fontSize: '13px', marginBottom: '10px' } }, title),
-    subjectList,
-    h('div', { style: { marginTop: '12px' } },
-      h('button.btn.btn-sm.btn-danger', { type: 'button', onClick: clearCell }, '清空该格'),
-    ),
+      chip.draggable = true;
+
+      chip.addEventListener('click', () => {
+        if (armed) {
+          state.armedSubjectId = null;
+          repaintTab();
+          return;
+        }
+
+        state.armedSubjectId = subject.id;
+        const sel = state.scheduleSelection;
+        const layout = classPlanLayout();
+        if (sel && layout && sel.index < periodCount) {
+          writeSlot(layout, sel.day, sel.index, { subjectId: subject.id, isEnabled: true });
+          state.dirty = true;
+          advanceSelection(sel.day, sel.index, periodCount);
+        }
+        repaintTab();
+      });
+
+      chip.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          chip.click();
+        }
+      });
+
+      chip.addEventListener('dragstart', (e) => {
+        dragPayload = { kind: 'subject', subjectId: subject.id };
+        e.dataTransfer.effectAllowed = 'copy';
+        try {
+          e.dataTransfer.setData('text/plain', `subject:${subject.id}`);
+        } catch { /* 忽略 */ }
+        chip.classList.add('dragging');
+      });
+
+      chip.addEventListener('dragend', () => {
+        chip.classList.remove('dragging');
+        dragPayload = null;
+      });
+
+      return chip;
+    }),
   );
 }
 
@@ -714,19 +870,19 @@ function renderSubjects() {
     h('td', textInput(subject.name, (v) => {
       subject.name = v;
       if (!subject.initial) subject.initial = v.slice(0, 1);
-      state.dirty = true;
+      markDirtyLight();
     }, '例如：语文')),
     h('td', textInput(subject.initial, (v) => {
       subject.initial = v;
-      state.dirty = true;
+      markDirtyLight();
     }, '语')),
     h('td', textInput(subject.teacherName, (v) => {
       subject.teacherName = v;
-      state.dirty = true;
+      markDirtyLight();
     }, '可选')),
     h('td', { style: { textAlign: 'center' } }, checkbox(subject.isOutDoor, (v) => {
       subject.isOutDoor = v;
-      state.dirty = true;
+      markDirtyLight();
     })),
     h('td', h('button.btn.btn-ghost.btn-sm', {
       type: 'button',
@@ -734,13 +890,13 @@ function renderSubjects() {
         state.content.subjects.splice(index, 1);
         markDirtyValues();
       },
-    }, '✕')),
+    }, icon('close', 14))),
   ));
 
   return h('div',
     h('div.toolbar',
       h('span', { style: { fontSize: '12.5px', color: 'var(--text-dim)' } },
-        `共 ${subjects.length} 个科目，课表排课时会作为下拉选项。`),
+        `共 ${subjects.length} 个科目。回到「课表」即可点选或拖拽科目进行排课。`),
       h('div.spacer'),
       h('button.btn.btn-sm.btn-primary', {
         type: 'button',
@@ -757,7 +913,7 @@ function renderSubjects() {
       }, '+ 添加科目'),
     ),
     subjects.length === 0
-      ? emptyState('📖', '还没有科目', '先添加科目，才能在课表中安排课程。')
+      ? emptyState('book', '还没有科目', '先添加科目，才能在课表中安排课程。')
       : h('div.table-wrap', { style: { maxHeight: '60vh', overflowY: 'auto' } },
         h('table.data',
           h('thead', h('tr',
@@ -798,14 +954,14 @@ function renderSettings() {
     placeholder: '例如：本周起执行夏季作息，请注意作息变化。',
     onInput: (e) => {
       settings.announcement = e.target.value;
-      state.dirty = true;
+      markDirtyLight();
     },
   });
   announcementInput.value = settings.announcement || '';
 
   const lockCheckbox = checkbox(settings.lockLocalEditing, (v) => {
     settings.lockLocalEditing = v;
-    state.dirty = true;
+    markDirtyLight();
   });
 
   const entries = Object.entries(settings.values || {});
@@ -831,7 +987,7 @@ function renderSettings() {
       placeholder: '值',
       onChange: (e) => {
         settings.values[key] = e.target.value;
-        state.dirty = true;
+        markDirtyLight();
       },
     }),
     h('button.btn.btn-ghost.btn-sm', {
@@ -840,7 +996,7 @@ function renderSettings() {
         delete settings.values[key];
         markDirtyValues();
       },
-    }, '✕'),
+    }, icon('close', 14)),
   ));
 
   return h('div',

@@ -2,10 +2,10 @@
  * 审计日志视图：记录管理员操作与设备同步事件，便于排查与追溯。
  */
 
-import { api } from '../core/api.js?v=12';
+import { api } from '../core/api.js?v=21';
 import {
   h, clear, formatDateTime, toast, loadingBlock, emptyState,
-} from '../core/ui.js?v=12';
+} from '../core/ui.js?v=21';
 
 export const meta = {
   title: '审计日志',
@@ -55,7 +55,7 @@ export async function render(container) {
         ),
       ),
       result.items.length === 0
-        ? emptyState('📋', '没有匹配的记录', query.search ? '尝试调整搜索关键词。' : '系统还没有产生任何操作记录。')
+        ? emptyState('clipboard', '没有匹配的记录', query.search ? '尝试调整搜索关键词。' : '系统还没有产生任何操作记录。')
         : h('div', h('div.table-wrap',
           h('table.data',
             h('thead', h('tr',

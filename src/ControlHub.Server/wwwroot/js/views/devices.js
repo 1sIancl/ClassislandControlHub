@@ -1,37 +1,47 @@
 /**
- * 设备管理视图：设备清单、状态监控、分组/档案绑定与注册码管理。
+ * 设备管理视图：按「楼栋 → 楼层 → 教室」三级结构管理教室终端。
+ * 顶层分组是楼栋，下层分组是楼层，每台设备就是一间教室；支持拖拽调整归属，
+ * 并可切换到列表视图查看完整状态明细。注册码管理一并放在本页。
  */
 
-import { api } from '../core/api.js?v=12';
+import { api } from '../core/api.js?v=21';
 import {
   h, clear, formatDateTime, relativeTime, toast, loadingBlock,
   modal, confirmDialog, deviceStateBadge, syncBadge,
   emptyState, field, select, copyText, append,
-} from '../core/ui.js?v=12';
-import { getLayout, saveLayout } from '../core/prefs.js?v=12';
+} from '../core/ui.js?v=21';
+import { getLayout, saveLayout } from '../core/prefs.js?v=21';
 
 export const meta = {
   title: '设备管理',
-  subtitle: '查看教室终端状态、绑定分组与配置档案',
+  subtitle: '按楼栋 / 楼层 / 教室查看归属，拖拽即可调整',
 };
 
+/** 分组标识色调色板，与服务端 DeviceEndpoints.GroupColors 保持一致。 */
+const GROUP_COLORS = ['blue', 'cyan', 'green', 'lime', 'amber', 'orange', 'red', 'violet', 'pink', 'slate'];
+
+/** 未分组区块的筛选值。 */
+const NO_BUILDING = '__none__';
+
 let cache = { devices: [], groups: [], profiles: [], codes: [] };
-let filter = { keyword: '', groupId: '', state: '' };
+let filter = { keyword: '', groupId: '', state: '', buildingId: '' };
+let view = 'groups';
+
+/** 拖拽中的设备 ID（HTML5 DnD 的 dataTransfer 在 dragover 阶段读不到数据，用模块变量兜底）。 */
+let draggedDeviceId = null;
 
 // ── 设备表格列定义（支持显隐配置，操作列固定） ──
 const COLUMN_DEFS = [
   {
-    key: 'name', label: '设备',
+    key: 'name', label: '教室 / 设备',
     cell: (d) => h('td',
       h('div.cell-main', d.name),
       h('div.cell-sub', [d.machineName, d.ipAddress].filter(Boolean).join(' · ') || d.id.slice(0, 8)),
     ),
   },
   {
-    key: 'group', label: '分组',
-    cell: (d) => h('td', d.groupName
-      ? h('span.badge.badge-neutral', d.groupName)
-      : h('span', { style: { color: 'var(--text-faint)' } }, '未分组')),
+    key: 'group', label: '楼栋 / 楼层',
+    cell: (d) => h('td', groupPathBadge(d)),
   },
   {
     key: 'state', label: '状态',
@@ -80,8 +90,112 @@ function visibleColumns() {
     .filter(Boolean);
 }
 
+// ── 分组树与视觉标识 ────────────────────────────────────────────────────
+
+/** 分组标识色：优先用管理员选定的，否则按分组 ID 推导一个稳定颜色。 */
+function groupColor(group) {
+  if (group && GROUP_COLORS.includes(group.color)) {
+    return group.color;
+  }
+
+  let hash = 0;
+  for (const ch of String(group?.id ?? '')) {
+    hash = (hash * 31 + ch.charCodeAt(0)) % 1000003;
+  }
+
+  return GROUP_COLORS[hash % GROUP_COLORS.length];
+}
+
+function groupOf(device) {
+  return cache.groups.find((g) => g.id === device.groupId) || null;
+}
+
+/** 按名字自然排序：让「2 层」排在「10 层」前面。 */
+function byName(a, b) {
+  return String(a.name).localeCompare(String(b.name), 'zh-Hans-CN', { numeric: true });
+}
+
+/**
+ * 把扁平的分组列表组织成「楼栋 → 楼层」结构。
+ * 顶层分组即楼栋，parentId 指向它的分组即楼层。
+ */
+function buildTree() {
+  const byId = new Map(cache.groups.map((g) => [g.id, g]));
+  const roots = cache.groups
+    .filter((g) => !g.parentId || !byId.has(g.parentId))
+    .sort(byName);
+
+  return roots.map((root) => ({
+    root,
+    floors: cache.groups.filter((g) => g.parentId === root.id).sort(byName),
+  }));
+}
+
+/** 分组 + 其全部下级分组的 ID。 */
+function groupFamilyIds(groupId) {
+  const ids = new Set([groupId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const g of cache.groups) {
+      if (g.parentId && ids.has(g.parentId) && !ids.has(g.id)) {
+        ids.add(g.id);
+        changed = true;
+      }
+    }
+  }
+
+  return ids;
+}
+
+/** 拖拽目标里可选的楼层（含「楼栋整体」「未分组」）。 */
+function assignmentOptions() {
+  const options = [{ value: '', label: '（未分组）' }];
+  for (const { root, floors } of buildTree()) {
+    options.push({ value: root.id, label: `${root.name} · 整栋` });
+    for (const floor of floors) {
+      options.push({ value: floor.id, label: `${root.name} / ${floor.name}` });
+    }
+  }
+
+  return options;
+}
+
+/** 设备所在「楼栋 / 楼层」的彩色徽标。 */
+function groupPathBadge(device) {
+  const group = groupOf(device);
+  if (!group) {
+    return h('span.badge.badge-neutral', '未分组');
+  }
+
+  const parent = group.parentId ? cache.groups.find((g) => g.id === group.parentId) : null;
+  return h('span', { style: { display: 'inline-flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' } },
+    parent ? h('span.badge.badge-neutral', parent.name) : null,
+    h('span.badge.badge-group', { dataset: { color: groupColor(group) } }, group.name));
+}
+
+/** 卡片上用的一行状态摘要。 */
+function deviceStateKey(device) {
+  if (device.revoked) return 'off';
+  if (!device.online) return 'offline';
+  if (device.state === 'error') return 'error';
+  if (device.state === 'syncing') return 'syncing';
+  return device.upToDate ? 'online' : 'pending';
+}
+
+const STATE_LABEL = {
+  online: '在线',
+  syncing: '同步中',
+  pending: '待同步',
+  error: '异常',
+  offline: '离线',
+  off: '已停用',
+};
+
+// ── 页面 ────────────────────────────────────────────────────────────────
+
 export async function render(container, params = {}) {
-  // 支持从分组页跳转过来时预先筛选该分组。
+  // 兼容旧链接 #/devices?group=xxx。
   if (params.group !== undefined) {
     filter.groupId = params.group || '';
   }
@@ -101,27 +215,23 @@ export async function render(container, params = {}) {
   clear(container);
   container.appendChild(h('div',
     renderToolbar(),
-    renderTable(),
+    h('div#deviceBoardHost', renderBoard()),
     renderEnrollCodes(),
   ));
 }
 
 function renderToolbar() {
-  const groupOptions = cache.groups.map((g) => ({ value: g.id, label: g.name }));
+  const tree = buildTree();
 
   return h('div.toolbar',
     h('input', {
       type: 'text',
-      placeholder: '搜索设备名 / 机器名 / IP…',
+      placeholder: '搜索教室名 / 机器名 / IP…',
       value: filter.keyword,
       onInput: (e) => {
         filter.keyword = e.target.value.trim();
-        refreshTable();
+        repaintBoard();
       },
-    }),
-    select([{ value: '', label: '全部分组' }, ...groupOptions], filter.groupId, (v) => {
-      filter.groupId = v;
-      refreshTable();
     }),
     select([
       { value: '', label: '全部状态' },
@@ -132,19 +242,81 @@ function renderToolbar() {
       { value: 'revoked', label: '已停用' },
     ], filter.state, (v) => {
       filter.state = v;
-      refreshTable();
+      repaintBoard();
     }),
+    view === 'list'
+      ? select(assignmentOptions(), filter.groupId, (v) => {
+        filter.groupId = v;
+        repaintBoard();
+      })
+      : null,
     h('div.spacer'),
-    h('button.btn', { type: 'button', onClick: openColumnCustomize }, '⚙ 列'),
-    h('button.btn', { type: 'button', onClick: () => refresh(true) }, '刷新'),
+    view === 'groups' && tree.length > 0
+      ? h('div.segmented',
+        h('button', {
+          class: `segmented-item${filter.buildingId === '' ? ' active' : ''}`,
+          type: 'button',
+          onClick: () => switchBuilding(''),
+        }, '全部'),
+        ...tree.map(({ root }) => h('button', {
+          class: `segmented-item${filter.buildingId === root.id ? ' active' : ''}`,
+          type: 'button',
+          onClick: () => switchBuilding(root.id),
+        }, root.name)),
+        h('button', {
+          class: `segmented-item${filter.buildingId === NO_BUILDING ? ' active' : ''}`,
+          type: 'button',
+          onClick: () => switchBuilding(NO_BUILDING),
+        }, '未分组'),
+      )
+      : null,
+    h('div.segmented',
+      h('button', {
+        class: `segmented-item${view === 'groups' ? ' active' : ''}`,
+        type: 'button',
+        onClick: () => switchView('groups'),
+      }, '看板视图'),
+      h('button', {
+        class: `segmented-item${view === 'list' ? ' active' : ''}`,
+        type: 'button',
+        onClick: () => switchView('list'),
+      }, '列表视图'),
+    ),
+    h('button.btn.btn-sm.btn-primary', { type: 'button', onClick: () => openGroupDialog(null) }, '+ 新建楼栋'),
+    view === 'list'
+      ? h('button.btn.btn-sm', { type: 'button', onClick: openColumnCustomize }, '列设置')
+      : null,
+    h('button.btn.btn-sm', { type: 'button', onClick: () => refresh(true) }, '刷新'),
   );
 }
 
-function refreshTable() {
-  const host = document.getElementById('deviceTableHost');
+function switchView(next) {
+  view = next;
+  repaintAll();
+}
+
+function switchBuilding(id) {
+  filter.buildingId = filter.buildingId === id ? '' : id;
+  repaintAll();
+}
+
+function repaintAll() {
+  const container = document.getElementById('content');
+  if (!container) return;
+  clear(container);
+  container.appendChild(h('div', renderToolbar(), h('div#deviceBoardHost', renderBoard()), renderEnrollCodes()));
+}
+
+function renderBoard() {
+  return view === 'groups' ? renderBoardTree() : renderTable();
+}
+
+/** 局部重绘看板，避免整页刷新丢掉滚动位置。 */
+function repaintBoard() {
+  const host = document.getElementById('deviceBoardHost');
   if (host) {
     clear(host);
-    host.appendChild(renderTable());
+    host.appendChild(renderBoard());
   }
 }
 
@@ -155,19 +327,17 @@ async function refresh(showToast = false) {
     api('/admin/profiles'),
     api('/admin/enroll-codes'),
   ]);
+
   cache = { devices, groups, profiles, codes };
-  const container = document.getElementById('content');
-  if (container) {
-    clear(container);
-    container.appendChild(h('div', renderToolbar(), renderTable(), renderEnrollCodes()));
-  }
+  repaintAll();
+
   if (showToast) toast('ok', '已刷新');
 }
 
 function filteredDevices() {
   const keyword = filter.keyword.toLowerCase();
   return cache.devices.filter((d) => {
-    if (filter.groupId && d.groupId !== filter.groupId) return false;
+    if (view === 'list' && filter.groupId && d.groupId !== filter.groupId) return false;
 
     if (filter.state) {
       if (filter.state === 'online' && !d.online) return false;
@@ -184,23 +354,433 @@ function filteredDevices() {
   });
 }
 
+// ── 看板：楼栋 → 楼层 → 教室 ────────────────────────────────────────────
+
+function renderBoardTree() {
+  const devices = filteredDevices();
+  const known = new Set(cache.groups.map((g) => g.id));
+  const ungrouped = devices.filter((d) => !d.groupId || !known.has(d.groupId));
+  const tree = buildTree();
+
+  const blocks = [];
+  if (filter.buildingId !== NO_BUILDING) {
+    const shown = filter.buildingId ? tree.filter((b) => b.root.id === filter.buildingId) : tree;
+    for (const block of shown) {
+      blocks.push(buildingBlock(block, devices));
+    }
+  }
+
+  if (filter.buildingId === '' || filter.buildingId === NO_BUILDING) {
+    blocks.push(ungroupedBlock(ungrouped));
+  }
+
+  return h('div',
+    overviewBar(tree),
+    tree.length === 0
+      ? emptyState('folder', '还没有楼栋',
+        '按「楼栋 → 楼层 → 教室」组织：先建一栋楼，再往楼里加楼层，最后把教室设备拖进对应楼层。',
+        h('button.btn.btn-primary', { type: 'button', onClick: () => openGroupDialog(null) }, '新建楼栋'))
+      : h('div.board-stack', ...blocks),
+  );
+}
+
+/** 顶部概览：楼栋 / 楼层 / 教室数量与在线率。 */
+function overviewBar(tree) {
+  const total = cache.devices.length;
+  const online = cache.devices.filter((d) => d.online && !d.revoked).length;
+  const floors = tree.reduce((n, b) => n + b.floors.length, 0);
+  const rate = total === 0 ? 0 : Math.round((online / total) * 100);
+  const allBuildings = tree.length > 0 && tree.every((b) => b.root.kind === 'building');
+
+  return h('div.board-overview',
+    h('div.ov-stat', h('b', String(tree.length)), h('span', allBuildings ? '栋' : '个顶层分组')),
+    h('div.ov-stat', h('b', String(floors)), h('span', '层')),
+    h('div.ov-stat', h('b', String(total)), h('span', '间教室')),
+    h('div.ov-online',
+      h('div.ov-online-head',
+        h('span', '在线设备'),
+        h('b', `${online} / ${total}`)),
+      h('div.ov-bar', h('i', { style: { width: `${rate}%` } })),
+    ),
+  );
+}
+
+function buildingBlock({ root, floors }, devices) {
+  const color = groupColor(root);
+  const bare = devices.filter((d) => d.groupId === root.id);
+  const family = groupFamilyIds(root.id);
+  const all = devices.filter((d) => d.groupId && family.has(d.groupId));
+  const online = all.filter((d) => d.online && !d.revoked).length;
+  const profile = cache.profiles.find((p) => p.id === root.defaultProfileId);
+
+  // 没有楼层时，楼栋自己就是放置区；已存在楼层时才多给一张「未分层」卡片。
+  const cards = [];
+  if (bare.length > 0 || floors.length === 0) {
+    cards.push(floorCard(root, null, bare));
+  }
+
+  for (const floor of floors) {
+    cards.push(floorCard(root, floor, devices.filter((d) => d.groupId === floor.id)));
+  }
+
+  return h('section.bblock', { dataset: { color } },
+    h('div.bblock-head',
+      h('span.gcard-badge', (root.name || '?').slice(0, 1)),
+      h('div.bblock-title',
+        h('span.bblock-name', root.name,
+          h('em.bblock-kind', root.kind === 'building' ? '楼栋' : '分组')),
+        h('span.gcard-meta',
+          `${floors.length} 层 · ${all.length} 间 · 在线 ${online}`
+          + (profile ? ` · ${profile.name}` : '')),
+      ),
+      h('div.gcard-actions',
+        h('button.gcard-act', { type: 'button', title: '让该楼栋设备立即重新拉取配置', onClick: () => pushGroup(root) }, '下发'),
+        h('button.gcard-act', { type: 'button', title: '编辑楼栋', onClick: () => openGroupDialog(root) }, '编辑'),
+        h('button.gcard-act.danger', { type: 'button', title: '删除楼栋（连同楼层）', onClick: () => removeGroup(root) }, '删除'),
+      ),
+    ),
+    h('div.bblock-floors',
+      ...cards,
+      h('button.floor-add', {
+        type: 'button',
+        title: `在「${root.name}」下新增楼层`,
+        onClick: () => openGroupDialog(null, { parent: root }),
+      }, '＋ 添加楼层'),
+    ),
+  );
+}
+
+/**
+ * 楼层卡片（教室芯片网格）。`floor` 为 null 表示「未分层」，
+ * 即设备直接挂在楼栋上，此时放置目标是楼栋本身。
+ */
+function floorCard(building, floor, members) {
+  const isBare = floor === null;
+  const groupId = isBare ? building.id : floor.id;
+  const online = members.filter((d) => d.online && !d.revoked).length;
+
+  const body = h('div.fcard-body');
+  if (members.length === 0) {
+    body.appendChild(h('div.fcard-empty', isBare ? '暂无未分层设备' : '把教室拖到这里'));
+  } else {
+    body.append(...members.map((d) => deviceChip(d)));
+  }
+
+  // 楼栋还没有楼层时，这张卡片直接叫「本栋教室」，避免出现「未分层」这种别扭的说法。
+  const hasFloors = cache.groups.some((g) => g.parentId === building.id);
+  const bareTitle = hasFloors ? '未分层' : '本栋教室';
+
+  const head = h('div.fcard-head',
+    h('span.fcard-name', isBare ? bareTitle : floor.name),
+    h('span.fcard-meta', `${members.length} 间${online > 0 ? ` · 在线 ${online}` : ''}`),
+    isBare
+      ? null
+      : h('div.fcard-actions',
+        h('button.fcard-act', { type: 'button', title: '编辑楼层', onClick: () => openGroupDialog(floor) }, '编辑'),
+        h('button.fcard-act.danger', { type: 'button', title: '删除楼层', onClick: () => removeGroup(floor) }, '删除'),
+      ),
+  );
+
+  // 注意：h() 的标签简写按 [.#] 切分，类名里不能再带空格，所以这里用三元挑标签。
+  const card = h(isBare ? 'div.fcard.bare' : 'div.fcard', head, body);
+  bindDropTarget(card, body, groupId);
+  return card;
+}
+
+function ungroupedBlock(members) {
+  const body = h('div.fcard-body');
+  if (members.length === 0) {
+    body.appendChild(h('div.fcard-empty', '没有未分组的设备'));
+  } else {
+    body.append(...members.map((d) => deviceChip(d)));
+  }
+
+  const card = h('div.fcard.bare',
+    h('div.fcard-head',
+      h('span.fcard-name', '未分组设备'),
+      h('span.fcard-meta', `${members.length} 间`),
+    ),
+    body);
+  bindDropTarget(card, body, '');
+
+  return h('section.bblock.ungrouped', { dataset: { color: 'slate' } },
+    h('div.bblock-head',
+      h('span.gcard-badge', '—'),
+      h('div.bblock-title',
+        h('span.bblock-name', '未归入楼栋'),
+        h('span.gcard-meta', '把教室拖到这里即可移出分组'),
+      ),
+    ),
+    h('div.bblock-floors', card),
+  );
+}
+
+/** 一台教室设备。可点击查看详情，可拖拽调整归属。 */
+function deviceChip(device) {
+  const state = deviceStateKey(device);
+  const group = groupOf(device);
+
+  const chip = h(`div.dchip.st-${state}`, {
+    draggable: 'true',
+    title: `${device.name}\n${STATE_LABEL[state]}`
+      + (group ? `\n${group.name}` : '\n未分组')
+      + (device.machineName ? `\n${device.machineName}` : '')
+      + '\n单击查看详情，拖拽可调整楼层',
+  },
+    h('span.dchip-dot'),
+    h('span.dchip-name', device.name || device.id.slice(0, 8)),
+    state === 'pending' ? h('span.dchip-tag', `v${device.appliedRevision}`) : null,
+  );
+
+  chip.addEventListener('click', () => openDeviceDialog(device));
+  chip.addEventListener('dragstart', (e) => {
+    draggedDeviceId = device.id;
+    e.dataTransfer.effectAllowed = 'move';
+    try {
+      e.dataTransfer.setData('text/plain', device.id);
+    } catch { /* 非安全上下文下可能不可用，忽略即可 */ }
+    chip.classList.add('dragging');
+  });
+  chip.addEventListener('dragend', () => {
+    draggedDeviceId = null;
+    chip.classList.remove('dragging');
+  });
+
+  return chip;
+}
+
+/** 把卡片变成放置目标：拖入设备即改归属。 */
+function bindDropTarget(card, body, groupId) {
+  body.addEventListener('dragover', (e) => {
+    if (!draggedDeviceId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    card.classList.add('drop-target');
+  });
+
+  body.addEventListener('dragleave', (e) => {
+    if (!body.contains(e.relatedTarget)) {
+      card.classList.remove('drop-target');
+    }
+  });
+
+  body.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    card.classList.remove('drop-target');
+    if (draggedDeviceId) {
+      await moveDevice(draggedDeviceId, groupId);
+    }
+  });
+}
+
+/** 把设备移动到目标分组；`groupId` 为空串表示移出分组。 */
+async function moveDevice(deviceId, groupId) {
+  const device = cache.devices.find((d) => d.id === deviceId);
+  draggedDeviceId = null;
+  if (!device || (device.groupId || '') === groupId) {
+    return;
+  }
+
+  try {
+    const updated = await api(`/admin/devices/${device.id}`, {
+      method: 'PUT',
+      body: { name: device.name, groupId, profileId: device.profileId || '' },
+    });
+
+    Object.assign(device, updated);
+    const target = groupId ? cache.groups.find((g) => g.id === groupId) : null;
+    toast('ok', '已调整归属', `${device.name} → ${target ? groupPathLabel(target) : '未分组'}`);
+    repaintBoard();
+  } catch (err) {
+    toast('error', '调整归属失败', err.message);
+  }
+}
+
+function groupPathLabel(group) {
+  const parent = group.parentId ? cache.groups.find((g) => g.id === group.parentId) : null;
+  return parent ? `${parent.name} / ${group.name}` : `${group.name} · 整栋`;
+}
+
+async function pushGroup(group) {
+  if (!await confirmDialog('下发到分组',
+    `将立即通知「${group.name}」及其下楼层里的在线设备重新拉取配置。确定继续吗？`, '下发')) {
+    return;
+  }
+
+  try {
+    const result = await api('/admin/push', {
+      method: 'POST',
+      body: { scope: 'group', targetIds: [group.id], force: false, message: '' },
+    });
+    toast('ok', '下发已发出', `影响 ${result.affected} 台设备。`);
+  } catch (err) {
+    toast('error', '下发失败', err.message);
+  }
+}
+
+// ── 楼栋 / 楼层增删改 ───────────────────────────────────────────────────
+
+/**
+ * 新建或编辑分组。
+ * `options.parent` 存在时按「在该楼栋下新增楼层」预填。
+ */
+function openGroupDialog(group, options = {}) {
+  const parentOfSelf = group?.parentId ?? options.parent?.id ?? '';
+  const isFloor = Boolean(parentOfSelf) || group?.kind === 'floor';
+
+  const nameInput = h('input', {
+    type: 'text',
+    value: group?.name || '',
+    placeholder: isFloor ? '例如：3 层' : '例如：一号教学楼',
+  });
+  const descInput = h('input', { type: 'text', value: group?.description || '', placeholder: '可选' });
+
+  // 上级：顶层 = 楼栋；选中某个楼栋 = 楼层。
+  const roots = buildTree().map((b) => b.root).filter((r) => r.id !== group?.id);
+  const parentSelect = select(
+    [{ value: '', label: '（顶层：楼栋 / 独立分组）' }, ...roots.map((r) => ({ value: r.id, label: r.name }))],
+    parentOfSelf,
+  );
+
+  const profileSelect = select(
+    [
+      { value: '', label: '（不指定，向上回退到楼栋 / 全局默认档案）' },
+      ...cache.profiles.map((p) => ({ value: p.id, label: `${p.name}（内容版本 ${p.revision}）` })),
+    ],
+    group?.defaultProfileId || '',
+  );
+
+  const chosen = {
+    color: group ? groupColor(group) : (options.parent ? groupColor(options.parent) : GROUP_COLORS[0]),
+  };
+  const badgePreview = h('span.gcard-badge');
+  const swatches = h('div.color-picker');
+
+  const paintSwatches = () => {
+    badgePreview.dataset.color = chosen.color;
+    badgePreview.textContent = (nameInput.value.trim() || '新').slice(0, 1);
+    swatches.replaceChildren(...GROUP_COLORS.map((key) => h('button', {
+      class: `color-swatch${key === chosen.color ? ' active' : ''}`,
+      type: 'button',
+      dataset: { color: key },
+      title: key,
+      onClick: () => {
+        chosen.color = key;
+        paintSwatches();
+      },
+    })));
+  };
+
+  nameInput.addEventListener('input', paintSwatches);
+  paintSwatches();
+
+  const hint = h('div.notice.notice-info',
+    h('span.notice-icon', 'i'),
+    h('div', ''));
+
+  const updateHint = () => {
+    const parentId = parentSelect.value;
+    if (parentId) {
+      const parent = cache.groups.find((g) => g.id === parentId);
+      hint.lastChild.textContent =
+        `将作为「${parent ? parent.name : ''}」下的楼层。教室设备直接拖进楼层即可。`;
+    } else {
+      hint.lastChild.textContent = '顶层分组按「楼栋」呈现；不填上级时它就是一棵独立的楼栋 / 分组。';
+    }
+  };
+
+  parentSelect.addEventListener('change', updateHint);
+  updateHint();
+
+  modal({
+    title: group ? `编辑 · ${group.name}` : (options.parent ? `在「${options.parent.name}」下新增楼层` : '新建楼栋'),
+    width: 'wide',
+    body: h('div',
+      field('名称', nameInput),
+      field('备注', descInput, '仅用于管理端展示。'),
+      field('上级', parentSelect, '层级最多两层：楼栋 → 楼层；教室不再建分组，直接用设备表示。'),
+      hint,
+      field('标识色', h('div.color-row', badgePreview, swatches),
+        '楼栋用这个颜色标识，楼层默认沿用所属楼栋的颜色。'),
+      field('默认配置档案', profileSelect,
+        '留空时楼层会回退到所属楼栋的默认档案，再回退到全局默认档案。'),
+    ),
+    confirmText: group ? '保存' : '创建',
+    onConfirm: async () => {
+      const body = {
+        name: nameInput.value.trim(),
+        description: descInput.value.trim(),
+        color: chosen.color,
+        parentId: parentSelect.value,
+        kind: parentSelect.value ? 'floor' : 'building',
+        defaultProfileId: profileSelect.value,
+      };
+
+      if (!body.name) {
+        toast('warn', '请填写名称');
+        return false;
+      }
+
+      try {
+        if (group) {
+          await api(`/admin/groups/${group.id}`, { method: 'PUT', body });
+          toast('ok', '已保存', '该分组下的设备会立即重新拉取配置。');
+        } else {
+          await api('/admin/groups', { method: 'POST', body });
+          toast('ok', body.parentId ? '楼层已创建' : '楼栋已创建');
+        }
+      } catch (err) {
+        toast('error', '保存失败', err.message);
+        return false;
+      }
+
+      await refresh();
+      return true;
+    },
+  });
+}
+
+async function removeGroup(group) {
+  const family = groupFamilyIds(group.id);
+  const floors = cache.groups.filter((g) => g.parentId === group.id);
+  const affected = cache.devices.filter((d) => d.groupId && family.has(d.groupId));
+
+  let message;
+  if (floors.length > 0) {
+    message = `删除「${group.name}」会连同其下 ${floors.length} 个楼层一起删除，`
+      + `其中 ${affected.length} 台设备将变为未分组。确定继续吗？`;
+  } else if (affected.length > 0) {
+    message = `删除「${group.name}」后，其中 ${affected.length} 台设备会变为未分组（并回退到楼栋 / 全局默认档案）。确定继续吗？`;
+  } else {
+    message = `确定删除「${group.name}」吗？`;
+  }
+
+  if (!await confirmDialog('删除分组', message, '删除', true)) return;
+
+  await api(`/admin/groups/${group.id}`, { method: 'DELETE' });
+  toast('ok', '已删除');
+  await refresh();
+}
+
+// ── 列表视图 ────────────────────────────────────────────────────────────
+
 function renderTable() {
   const devices = filteredDevices();
 
   if (cache.devices.length === 0) {
-    return h('div#deviceTableHost', h('div.card',
-      emptyState('🖥️', '还没有设备接入',
+    return h('div.card',
+      emptyState('monitor', '还没有设备接入',
         '生成一个注册码，然后在教室电脑的 ClassIsland 中安装集控插件并填写该注册码。'),
-    ));
+    );
   }
 
   if (devices.length === 0) {
-    return h('div#deviceTableHost', h('div.card',
-      emptyState('🔍', '没有匹配的设备', '尝试调整搜索关键词或筛选条件。'),
-    ));
+    return h('div.card',
+      emptyState('search', '没有匹配的设备', '尝试调整搜索关键词或筛选条件。'),
+    );
   }
 
-  return h('div#deviceTableHost', h('div.table-wrap',
+  return h('div.table-wrap',
     h('table.data',
       h('thead', h('tr',
         ...visibleColumns().map((c) => h('th', c.label)),
@@ -209,7 +789,7 @@ function renderTable() {
       h('tbody', ...devices.map((d) => h('tr',
         ...visibleColumns().map((c) => c.cell(d)),
         h('td.actions',
-          h('button.btn.btn-sm', { type: 'button', onClick: () => openEditDialog(d) }, '编辑'),
+          h('button.btn.btn-sm', { type: 'button', onClick: () => openDeviceDialog(d) }, '编辑'),
           ' ',
           h('button.btn.btn-sm', { type: 'button', onClick: () => openLogsDialog(d) }, '日志'),
           ' ',
@@ -220,7 +800,7 @@ function renderTable() {
         ),
       ))),
     ),
-  ));
+  );
 }
 
 /** 「列」配置面板：勾选设备表格要显示的列。 */
@@ -261,39 +841,69 @@ function openColumnCustomize() {
     body: container,
     confirmText: '完成',
     onConfirm: () => {
-      refreshTable();
+      repaintBoard();
       return true;
     },
   });
 }
 
-function openEditDialog(device) {
+/** 设备详情：改名称/归属/档案，并可直接查看日志、停用或删除。 */
+function openDeviceDialog(device) {
   const nameInput = h('input', { type: 'text', value: device.name });
 
-  const groupSelect = select(
-    [{ value: '', label: '（不分组）' }, ...cache.groups.map((g) => ({ value: g.id, label: g.name }))],
-    device.groupId || '',
-  );
+  const groupSelect = select(assignmentOptions(), device.groupId || '');
 
   const profileSelect = select(
     [
-      { value: '', label: '（继承分组 / 默认档案）' },
+      { value: '', label: '（继承楼层 / 楼栋 / 默认档案）' },
       ...cache.profiles.map((p) => ({ value: p.id, label: `${p.name}（内容版本 ${p.revision}）` })),
     ],
     device.profileId || '',
   );
 
   modal({
-    title: `编辑设备 · ${device.name}`,
+    title: `教室 · ${device.name}`,
     width: 'wide',
     body: h('div',
-      field('设备名称', nameInput, '显示在管理界面与客户端中的名称，例如「高一(3)班」。'),
-      field('所属分组', groupSelect, '分组可批量指定默认档案与推送范围。'),
+      h('div.device-summary',
+        h('div.summary-line', deviceStateBadge(device), syncBadge(device)),
+        h('div.summary-line',
+          h('span.summary-key', '机器名'), device.machineName || '—',
+          h('span.summary-key', 'IP'), device.ipAddress || '—'),
+        h('div.summary-line',
+          h('span.summary-key', 'ClassIsland'), device.classIslandVersion || '—',
+          h('span.summary-key', '插件'), device.pluginVersion || '—'),
+        h('div.summary-line',
+          h('span.summary-key', '当前课表'), d0(device.currentClassPlanName)),
+        h('div.summary-line',
+          h('span.summary-key', '最近心跳'), relativeTime(device.lastSeenAt),
+          h('span.summary-key', '注册时间'), formatDateTime(device.createdAt)),
+      ),
+      field('教室 / 设备名称', nameInput, '显示在管理界面与客户端中的名称，例如「高一(3)班」。'),
+      field('所属楼栋 / 楼层', groupSelect, '也可以在看板里直接把设备拖到目标楼层。'),
       field('指定配置档案', profileSelect,
-        '指定后优先级高于分组默认档案。留空则按「分组默认档案 → 全局默认档案」依次回退。'),
-      h('div.notice.notice-info',
-        h('span.notice-icon', 'i'),
-        h('div', '保存后会立即唤醒该设备重新拉取配置，通常几秒内即可生效。'),
+        '优先级：设备指定 → 所属楼层 → 所属楼栋 → 全局默认。'),
+      h('div.card-actions',
+        h('button.btn.btn-sm', { type: 'button', onClick: () => openLogsDialog(device) }, '查看日志'),
+        h('button.btn.btn-sm', {
+          type: 'button',
+          onClick: async () => {
+            await toggleRevoke(device);
+          },
+        }, device.revoked ? '恢复设备' : '停用设备'),
+        h('button.btn.btn-sm.btn-danger', {
+          type: 'button',
+          onClick: async () => {
+            if (!await confirmDialog('删除设备',
+              `删除「${device.name}」后，该设备需要重新用注册码接入。确定继续吗？`, '删除', true)) {
+              return;
+            }
+
+            await api(`/admin/devices/${device.id}`, { method: 'DELETE' });
+            toast('ok', '已删除');
+            await refresh();
+          },
+        }, '删除设备'),
       ),
     ),
     confirmText: '保存',
@@ -308,8 +918,14 @@ function openEditDialog(device) {
       });
       toast('ok', '已保存', `${nameInput.value.trim()} 的配置已更新。`);
       await refresh();
+      return true;
     },
   });
+}
+
+/** 空值占位。 */
+function d0(value) {
+  return value || '—';
 }
 
 async function toggleRevoke(device) {
@@ -364,7 +980,7 @@ async function openLogsDialog(device) {
   );
 
   const list = logs.length === 0
-    ? emptyState('📄', '暂无日志', '客户端会在同步或异常时上报日志。')
+    ? emptyState('profiles', '暂无日志', '客户端会在同步或异常时上报日志。')
     : h('div.log-list', ...logs.map((l) => h('div.log-line',
       h('span.log-time', formatDateTime(l.timestamp)),
       h(`span.log-level.${l.level}`, l.level.toUpperCase()),
@@ -388,7 +1004,7 @@ function renderEnrollCodes() {
       h('button.btn.btn-primary.btn-sm', { type: 'button', onClick: openCreateCodeDialog }, '+ 生成注册码'),
     ),
     codes.length === 0
-      ? emptyState('🔑', '还没有注册码', '生成一个注册码用于新设备接入。',
+      ? emptyState('key', '还没有注册码', '生成一个注册码用于新设备接入。',
         h('button.btn.btn-primary', { type: 'button', onClick: openCreateCodeDialog }, '生成注册码'))
       : h('div.table-wrap',
         h('table.data',
@@ -530,6 +1146,7 @@ function openEditCodeDialog(code) {
       });
       toast('ok', '已保存');
       await refresh();
+      return true;
     },
   });
 }

@@ -139,6 +139,16 @@ public sealed class BrandingDto
     public string Favicon { get; set; } = string.Empty;
 }
 
+/// <summary>分组层级类型。层级最多两层：楼栋 → 楼层，教室由设备本身表示。</summary>
+public static class GroupKinds
+{
+    /// <summary>顶层：楼栋（也可以放「年级」这类自定义分组）。</summary>
+    public const string Building = "building";
+
+    /// <summary>第二层：楼层。</summary>
+    public const string Floor = "floor";
+}
+
 /// <summary>
 /// 设备分组。
 /// </summary>
@@ -152,6 +162,18 @@ public sealed class GroupDto
 
     /// <summary>备注。</summary>
     public string Description { get; set; } = string.Empty;
+
+    /// <summary>视觉标识色（调色板键名，如 <c>blue</c>）；为空时管理端按 ID 推导一个稳定颜色。</summary>
+    public string Color { get; set; } = string.Empty;
+
+    /// <summary>上级分组 ID。为空表示顶层（楼栋/自定义分组）。</summary>
+    public string? ParentId { get; set; }
+
+    /// <summary>层级类型：<c>building</c>（楼栋）/ <c>floor</c>（楼层）/ 空（自定义分组）。</summary>
+    public string Kind { get; set; } = string.Empty;
+
+    /// <summary>直接挂在顶层的子分组数量（楼栋下的楼层数）。</summary>
+    public int ChildCount { get; set; }
 
     /// <summary>默认下发的配置档案 ID。分组内设备未单独指定档案时使用。</summary>
     public string? DefaultProfileId { get; set; }
@@ -173,6 +195,15 @@ public sealed class GroupUpsertRequest
 
     /// <summary>备注。</summary>
     public string Description { get; set; } = string.Empty;
+
+    /// <summary>标识色（调色板键名），留空表示由管理端自动分配。</summary>
+    public string? Color { get; set; }
+
+    /// <summary>上级分组 ID。留空表示顶层（楼栋）；填楼栋 ID 表示建/挪到该楼栋下的楼层。</summary>
+    public string? ParentId { get; set; }
+
+    /// <summary>层级类型，仅顶层分组有意义：<c>building</c> 表示按「楼栋」呈现，留空表示普通分组。</summary>
+    public string? Kind { get; set; }
 
     /// <summary>分组默认下发的配置档案 ID，留空表示不指定。</summary>
     public string? DefaultProfileId { get; set; }

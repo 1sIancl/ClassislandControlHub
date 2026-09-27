@@ -40,4 +40,66 @@
     <None Update="icon.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!--
+    ClassIsland 官方打包目标在 GenerateHashSummary=true 时会调用 pwsh 生成 MD5 摘要
+    （generate-md5.ps1）。很多构建机并未安装 PowerShell 7，导致打包失败。
+    这里用 MSBuild 内联任务在完全不依赖 pwsh 的前提下生成同样的 checksums.md，
+    因此 `-p:GenerateHashSummary=false` 这个规避参数不再需要。
+  -->
+  <UsingTask TaskName="ControlHubWriteCipxChecksum"
+             TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <PackageDirectory ParameterType="System.String" Required="true" />
+      <OutputFile ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.Collections.Generic" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Security.Cryptography" />
+      <Using Namespace="System.Text" />
+      <Code Type="Fragment" Language="cs">
+<![CDATA[
+        var parts = new List<string>();
+        foreach (var file in Directory.GetFiles(PackageDirectory))
+        {
+            var name = Path.GetFileName(file);
+            if (name.EndsWith(".md5sum", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            using var md5 = MD5.Create();
+            using var stream = File.OpenRead(file);
+            // 与官方 Get-FileHash 输出一致：大写十六进制、无分隔符。
+            var hash = BitConverter.ToString(md5.ComputeHash(stream)).Replace("-", string.Empty);
+            parts.Add("\"" + name + "\":\"" + hash + "\"");
+        }
+
+        var summary = Environment.NewLine
+            + "<!-- CLASSISLAND_PKG_MD5 {" + string.Join(",", parts) + "} -->";
+        File.WriteAllText(OutputFile, summary, new UTF8Encoding(false));
+]]>
+      </Code>
+    </Task>
+  </UsingTask>
+
+  <!-- 在官方 CreateCipx 之前关掉它对 pwsh 的依赖，改由下面的目标生成摘要。 -->
+  <Target Name="ControlHubDisablePwshHashSummary"
+          BeforeTargets="CreateCipx"
+          Condition="'$(CreateCipx)' == 'true'">
+    <PropertyGroup>
+      <GenerateHashSummary>false</GenerateHashSummary>
+    </PropertyGroup>
+  </Target>
+
+  <Target Name="ControlHubGenerateHashSummary"
+          AfterTargets="CreateCipx"
+          Condition="'$(CreateCipx)' == 'true'">
+    <ControlHubWriteCipxChecksum PackageDirectory="$(CipxPackageOutputDirectory)"
+                                 OutputFile="$(CipxPackageOutputDirectory)/checksums.md" />
+    <Message Text="已生成插件包 MD5 摘要：$(CipxPackageOutputDirectory)/checksums.md" Importance="high" />
+  </Target>
+
 </Project>

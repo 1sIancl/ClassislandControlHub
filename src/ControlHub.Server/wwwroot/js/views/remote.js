@@ -3,10 +3,10 @@
  * 数据来自 A 端 /admin/devices、/admin/backups 等接口。
  */
 
-import { api } from '../core/api.js?v=12';
+import { api } from '../core/api.js?v=21';
 import {
   h, clear, toast, loadingBlock, confirmDialog, field, select, emptyState, formatDateTime,
-} from '../core/ui.js?v=12';
+} from '../core/ui.js?v=21';
 
 export const meta = {
   title: '远程管理',
@@ -20,6 +20,23 @@ const TABS = [
   { key: 'notify', label: '发送提醒' },
   { key: 'backup', label: '备份' },
 ];
+
+/** 指令状态 → 展示文案 / 日志级别。 */
+const STATUS_LABEL = {
+  pending: '排队中',
+  dispatched: '已派发',
+  done: '已完成',
+  failed: '失败',
+  expired: '已过期',
+};
+
+const STATUS_LEVEL = {
+  done: 'info',
+  failed: 'error',
+  expired: 'error',
+  dispatched: 'warn',
+  pending: 'warn',
+};
 
 let state = { tab: 'command', devices: [], backupList: [] };
 
@@ -40,17 +57,17 @@ function paint(container) {
         type: 'button',
         onClick: () => { state.tab = t.key; paint(container); },
       }, t.label))),
-      h('div#tabBody', renderTab()),
+      h('div#tabBody', renderTab(container)),
     ),
   ));
 }
 
-function renderTab() {
+function renderTab(container) {
   switch (state.tab) {
-    case 'command': return renderCommand();
-    case 'plugins': return renderPlugins();
-    case 'appearance': return renderAppearance();
-    case 'notify': return renderNotify();
+    case 'command': return renderCommand(container);
+    case 'plugins': return renderPlugins(container);
+    case 'appearance': return renderAppearance(container);
+    case 'notify': return renderNotify(container);
     case 'backup': return renderBackup();
     default: return h('div');
   }
@@ -60,15 +77,49 @@ function deviceOptions() {
   return state.devices.map((d) => ({ value: d.id, label: `${d.name}${d.online ? '（在线）' : '（离线）'}` }));
 }
 
+/** 重新拉取设备列表（在线状态会随心跳变化）。 */
+async function reloadDevices(container) {
+  state.devices = await api('/admin/devices');
+  paint(container);
+}
+
+function deviceRefreshButton(container) {
+  return h('button.btn.btn-sm', {
+    type: 'button',
+    title: '重新读取设备在线状态',
+    onClick: async () => {
+      await reloadDevices(container);
+      toast('ok', '已刷新设备状态');
+    },
+  }, '刷新设备');
+}
+
+/** 「含离线设备」开关：默认只发给在线设备，避免对离线设备堆积陈旧指令。 */
+function offlineOption() {
+  const input = h('input', { type: 'checkbox' });
+  return {
+    input,
+    el: h('label.checkbox-field', input,
+      h('span', '含离线设备（命令会排队，等设备上线后执行，2 小时后自动作废）')),
+  };
+}
+
+function broadcastResult(result) {
+  const skipped = result?.skipped ?? 0;
+  return `已下发 ${result?.affected ?? 0} 台在线设备`
+    + (skipped > 0 ? `；${skipped} 台离线未下发（如需排队，请勾选「含离线设备」）` : '');
+}
+
 // ────────────────────── 远程命令行 ──────────────────────
 
-function renderCommand() {
+function renderCommand(container) {
   const targetSelect = select(
-    [{ value: '__all__', label: '★ 全部设备（统一执行）' }, ...deviceOptions()],
+    [{ value: '__all__', label: '全部在线设备（统一执行）' }, ...deviceOptions()],
     '__all__',
   );
   const cmdInput = h('input', { type: 'text', placeholder: '例如：ipconfig /all 或 uname -a' });
-  const out = h('div.log-list', { style: { display: 'none' } });
+  const offline = offlineOption();
+  const out = h('div', { style: { display: 'none' } });
 
   const runBtn = h('button.btn.btn-primary', {
     type: 'button',
@@ -77,23 +128,22 @@ function renderCommand() {
       if (!command) { toast('warn', '请输入命令'); return; }
       const isAll = targetSelect.value === '__all__';
       const ok = await confirmDialog('执行远程命令',
-        `将在${isAll ? '全部在线设备' : '所选设备'}上执行：\n${command}\n\n确定继续吗？`, '执行');
+        `将在${isAll ? '所选范围内的设备' : '所选设备'}上执行：\n${command}\n\n确定继续吗？`, '执行');
       if (!ok) return;
 
+      const body = { kind: 'shell', payload: JSON.stringify({ command }) };
       try {
         if (isAll) {
           const r = await api('/admin/devices/command', {
             method: 'POST',
-            body: { kind: 'shell', payload: JSON.stringify({ command }) },
+            body: { ...body, includeOffline: offline.input.checked },
           });
-          toast('ok', '已下发', `影响 ${r.affected} 台设备，稍后可在设备详情查看结果。`);
+          toast('ok', '已下发', broadcastResult(r));
         } else {
-          await api(`/admin/devices/${targetSelect.value}/command`, {
-            method: 'POST',
-            body: { kind: 'shell', payload: JSON.stringify({ command }) },
-          });
+          await api(`/admin/devices/${targetSelect.value}/command`, { method: 'POST', body });
           toast('ok', '已下发', '请在下方查看执行结果。');
           await loadCommandHistory(targetSelect.value, out);
+          pollHistory(targetSelect.value, out);
         }
       } catch (e) {
         toast('error', '下发失败', e.message);
@@ -102,12 +152,16 @@ function renderCommand() {
   }, '执行');
 
   return h('div',
-    h('div.form-row', field('目标设备', targetSelect)),
-    field('命令', cmdInput),
-    h('div', { style: { display: 'flex', gap: '8px', marginTop: '4px' } },
-      runBtn,
-      h('button.btn', { type: 'button', onClick: () => loadCommandHistory(targetSelect.value, out) }, '查看历史'),
+    h('div.toolbar',
+      h('span.toolbar-label', '目标设备'),
+      targetSelect,
+      deviceRefreshButton(container),
+      h('div.spacer'),
+      h('button.btn.btn-sm', { type: 'button', onClick: () => loadCommandHistory(targetSelect.value, out) }, '查看历史'),
     ),
+    field('命令', cmdInput, '在 Windows 上以 cmd /c 执行，其它平台以 bash -c 执行。'),
+    offline.el,
+    h('div', { style: { display: 'flex', gap: '8px', marginTop: '12px' } }, runBtn),
     h('div', { style: { marginTop: '16px' } }, out),
   );
 }
@@ -118,27 +172,72 @@ async function loadCommandHistory(deviceId, outEl) {
   outEl.style.display = 'block';
   clear(outEl);
   if (list.length === 0) {
-    outEl.appendChild(h('div', { style: { padding: '12px', color: 'var(--text-faint)', fontSize: '12.5px' } }, '暂无指令记录'));
+    outEl.appendChild(h('div', { style: { padding: '12px', color: 'var(--text-faint)', fontSize: '12.5px' } }, '暂无指令记录。'));
     return;
   }
 
-  for (const c of list) {
-    outEl.appendChild(h('div.log-line',
+  outEl.appendChild(h('div.cmd-list', ...list.map((c) => h('div.cmd-row',
+    h('div.cmd-head',
       h('span.log-time', formatDateTime(c.issuedAt)),
-      h('span.log-level.' + (c.status === 'done' ? 'info' : c.status === 'failed' ? 'error' : 'warn'), c.status),
-      h('span.log-msg', `[${c.kind}] ${c.output || '等待执行…'}`),
-    ));
-  }
+      h('span.log-level.' + (STATUS_LEVEL[c.status] || 'warn'), STATUS_LABEL[c.status] || c.status),
+      h('span.cmd-kind', c.kind),
+      c.exitCode ? h('span.cmd-kind', `退出码 ${c.exitCode}`) : null,
+    ),
+    h('pre.cmd-output', c.output && c.output.length > 0 ? c.output : '等待执行…'),
+  ))));
+}
+
+/** 下发后自动查看数次结果，省掉手动点「查看历史」。 */
+function pollHistory(deviceId, outEl, times = 4) {
+  let left = times;
+  const tick = async () => {
+    if (left-- <= 0 || deviceId === '__all__') return;
+    try {
+      await loadCommandHistory(deviceId, outEl);
+    } catch { /* 轮询失败忽略 */ }
+    setTimeout(tick, 1500);
+  };
+  setTimeout(tick, 1500);
 }
 
 // ────────────────────── 插件管理 ──────────────────────
 
-function renderPlugins() {
+function renderPlugins(container) {
   const targetSelect = select(deviceOptions(), state.devices[0]?.id || '');
   const listBox = h('div', { style: { marginTop: '14px' } });
 
-  const load = async () => {
+  const refreshList = async () => {
     if (!targetSelect.value) return;
+    await api(`/admin/devices/${targetSelect.value}/plugins/refresh`, { method: 'POST' });
+  };
+
+  /** 发一条插件指令；随后自动请求刷新清单，让状态列反映最新结果。 */
+  const sendPluginCommand = async (kind, payload, message) => {
+    if (!targetSelect.value) { toast('warn', '请先选择设备'); return; }
+    try {
+      await api(`/admin/devices/${targetSelect.value}/command`, {
+        method: 'POST',
+        body: { kind, payload: JSON.stringify(payload) },
+      });
+      toast('ok', '指令已下发', message);
+
+      // 启停/卸载要等 B 端执行完再刷新清单，否则拿到的是旧状态。
+      setTimeout(() => refreshList().catch(() => {}), 800);
+      setTimeout(() => load().catch(() => {}), 5000);
+    } catch (e) {
+      toast('error', '下发失败', e.message);
+    }
+  };
+
+  const load = async () => {
+    if (!targetSelect.value) {
+      clear(listBox);
+      listBox.appendChild(h('div.notice.notice-info',
+        h('span.notice-icon', 'i'),
+        h('div', '还没有设备接入。请先到「设备管理」生成注册码并接入教室终端。')));
+      return;
+    }
+
     clear(listBox);
     listBox.appendChild(loadingBlock());
     try {
@@ -153,48 +252,82 @@ function renderPlugins() {
 
       listBox.appendChild(h('div.table-wrap',
         h('table.data',
-          h('thead', h('tr', h('th', '插件'), h('th', '版本'), h('th', '作者'), h('th', '状态'))),
+          h('thead', h('tr',
+            h('th', '插件'), h('th', '版本'), h('th', '作者'), h('th', '状态'),
+            h('th', { style: { textAlign: 'right' } }, '操作'),
+          )),
           h('tbody', ...plugins.map((p) => h('tr',
             h('td', h('div.cell-main', p.name), h('div.cell-sub', p.id)),
-            h('td', p.version),
+            h('td', p.version || '—'),
             h('td', p.author || '—'),
             h('td', p.isEnabled ? h('span.badge.badge-ok', '已启用') : h('span.badge.badge-neutral', '已禁用')),
+            h('td.actions',
+              h('button.btn.btn-sm', {
+                type: 'button',
+                onClick: () => sendPluginCommand('plugin.toggle', { pluginId: p.id, enabled: !p.isEnabled },
+                  `已请求${p.isEnabled ? '禁用' : '启用'}「${p.name}」，ClassIsland 重启后生效。`),
+              }, p.isEnabled ? '禁用' : '启用'),
+              ' ',
+              isHubPlugin(p)
+                ? null
+                : h('button.btn.btn-sm.btn-danger', {
+                  type: 'button',
+                  onClick: async () => {
+                    const ok = await confirmDialog('卸载插件',
+                      `将从该设备删除插件「${p.name}」，ClassIsland 重启后生效。确定继续吗？`, '卸载', true);
+                    if (!ok) return;
+                    await sendPluginCommand('plugin.uninstall', { pluginId: p.id },
+                      `已请求卸载「${p.name}」，ClassIsland 重启后生效。`);
+                  },
+                }, '卸载'),
+            ),
           ))),
         ),
       ));
+
+      listBox.appendChild(h('div.notice.notice-info', { style: { marginTop: '12px' } },
+        h('span.notice-icon', 'i'),
+        h('div', '插件的启用 / 禁用 / 卸载都通过「插件目录下的 .disabled 标记」实现，需重启 ClassIsland 才会真正生效。')));
     } catch (e) {
       clear(listBox);
       listBox.appendChild(h('div.notice.notice-danger', h('span.notice-icon', '!'), h('div', e.message)));
     }
   };
 
-  const refreshBtn = h('button.btn.btn-primary.btn-sm', {
-    type: 'button',
-    onClick: async () => {
-      if (!targetSelect.value) return;
-      await api(`/admin/devices/${targetSelect.value}/plugins/refresh`, { method: 'POST' });
-      toast('ok', '已请求刷新', 'B 端将在下一次心跳后上报。');
-    },
-  }, '刷新插件列表');
-
   targetSelect.addEventListener('change', load);
+  if (targetSelect.value) load();
 
   return h('div',
     h('div.toolbar',
-      h('span', { style: { fontSize: '12.5px', color: 'var(--text-dim)' } }, '目标设备'),
+      h('span.toolbar-label', '目标设备'),
       targetSelect,
-      refreshBtn,
+      deviceRefreshButton(container),
+      h('button.btn.btn-sm', {
+        type: 'button',
+        onClick: async () => {
+          await refreshList();
+          toast('ok', '已请求刷新', 'B 端将在下一次心跳后上报。');
+          setTimeout(() => load().catch(() => {}), 5000);
+        },
+      }, '刷新插件列表'),
       h('button.btn.btn-sm', { type: 'button', onClick: load }, '查看'),
     ),
     listBox,
   );
 }
 
+/** 集控接收端插件自身不允许被远程卸载（否则会失联）。 */
+function isHubPlugin(plugin) {
+  const id = String(plugin.id || '');
+  const name = String(plugin.name || '');
+  return id.toLowerCase().includes('controlhub') || name.includes('集控');
+}
+
 // ────────────────────── 外观下发 ──────────────────────
 
-function renderAppearance() {
+function renderAppearance(container) {
   const targetSelect = select(
-    [{ value: '__all__', label: '★ 全部设备（统一）' }, ...deviceOptions()],
+    [{ value: '__all__', label: '全部在线设备（统一）' }, ...deviceOptions()],
     '__all__',
   );
   const themeSelect = select([
@@ -203,7 +336,7 @@ function renderAppearance() {
     { value: 'dark', label: '深色' },
   ], '');
   const accentInput = h('input', { type: 'text', placeholder: '例如 #1E90FF（留空不修改）' });
-  const fontInput = h('input', { type: 'text', placeholder: '例如 Microsoft YaHei（留空不修改）' });
+  const offline = offlineOption();
 
   const applyBtn = h('button.btn.btn-primary', {
     type: 'button',
@@ -211,18 +344,25 @@ function renderAppearance() {
       const appearance = {
         theme: themeSelect.value || null,
         accentColor: accentInput.value.trim() || null,
-        fontFamily: fontInput.value.trim() || null,
       };
+      if (!appearance.theme && !appearance.accentColor) {
+        toast('warn', '请至少选择主题或填写强调色');
+        return;
+      }
+
       try {
         if (targetSelect.value === '__all__') {
-          const r = await api('/admin/devices/appearance', { method: 'POST', body: { appearance } });
-          toast('ok', '已下发', `影响 ${r.affected} 台设备。`);
+          const r = await api('/admin/devices/appearance', {
+            method: 'POST',
+            body: { appearance, includeOffline: offline.input.checked },
+          });
+          toast('ok', '已下发', broadcastResult(r));
         } else {
           await api(`/admin/devices/${targetSelect.value}/command`, {
             method: 'POST',
             body: { kind: 'appearance.apply', payload: JSON.stringify(appearance) },
           });
-          toast('ok', '已下发', '外观配置已发送。');
+          toast('ok', '已下发', '外观配置已发送，客户端会立即应用。');
         }
       } catch (e) {
         toast('error', '下发失败', e.message);
@@ -233,29 +373,28 @@ function renderAppearance() {
   return h('div',
     h('div.notice.notice-info',
       h('span.notice-icon', 'i'),
-      h('div', '统一管理所有教室大屏的 ClassIsland 外观（主题 / 强调色 / 字体）。应用后需重启 ClassIsland 生效。')),
+      h('div', '统一管理所有教室大屏的 ClassIsland 外观。下发生效后立即应用，无需重启。')),
     h('div.form-row',
       field('目标设备', targetSelect),
       field('主题', themeSelect),
     ),
-    h('div.form-row',
-      field('强调色', accentInput),
-      field('字体', fontInput),
-    ),
-    applyBtn,
+    field('强调色', accentInput, '形如 #1E90FF；填错格式会提示「没有可应用的项」。'),
+    offline.el,
+    h('div', { style: { marginTop: '12px' } }, applyBtn),
   );
 }
 
 // ────────────────────── 发送提醒 ──────────────────────
 
-function renderNotify() {
+function renderNotify(container) {
   const targetSelect = select(
-    [{ value: '__all__', label: '★ 全部设备（统一）' }, ...deviceOptions()],
+    [{ value: '__all__', label: '全部在线设备（统一）' }, ...deviceOptions()],
     '__all__',
   );
   const titleInput = h('input', { type: 'text', placeholder: '例如：紧急通知' });
   const msgInput = h('textarea', { placeholder: '提醒内容…', style: { minHeight: '90px' } });
   const speakChk = h('input', { type: 'checkbox' });
+  const offline = offlineOption();
 
   const sendBtn = h('button.btn.btn-primary', {
     type: 'button',
@@ -267,17 +406,17 @@ function renderNotify() {
       const payload = JSON.stringify({ title, message, speak: speakChk.checked });
       try {
         if (targetSelect.value === '__all__') {
-          await api('/admin/devices/command', {
+          const r = await api('/admin/devices/command', {
             method: 'POST',
-            body: { kind: 'notify', payload },
+            body: { kind: 'notify', payload, includeOffline: offline.input.checked },
           });
-          toast('ok', '已广播', '提醒已下发到全部在线设备。');
+          toast('ok', '已广播', broadcastResult(r));
         } else {
           await api(`/admin/devices/${targetSelect.value}/notify`, {
             method: 'POST',
             body: { title, message, speak: speakChk.checked },
           });
-          toast('ok', '已发送', '提醒已下发。');
+          toast('ok', '已发送', `提醒已下发${speakChk.checked ? '，并会语音播报' : ''}。`);
         }
       } catch (e) {
         toast('error', '发送失败', e.message);
@@ -290,7 +429,8 @@ function renderNotify() {
     field('标题', titleInput),
     field('内容', msgInput),
     h('label.checkbox-field', speakChk, h('span', '语音播报提醒内容')),
-    sendBtn,
+    offline.el,
+    h('div', { style: { marginTop: '12px' } }, sendBtn),
   );
 }
 
@@ -306,7 +446,7 @@ function renderBackup() {
       state.backupList = await api('/admin/backups');
       clear(listBox);
       if (state.backupList.length === 0) {
-        listBox.appendChild(emptyState('💾', '还没有备份', '点击「立即备份」创建第一个备份。'));
+        listBox.appendChild(emptyState('database', '还没有备份', '点击「立即备份」创建第一个备份。'));
         return;
       }
 

@@ -332,42 +332,8 @@ public static class ProfileEndpoints
         var imported = CsesImporter.ToContent(cses);
         var content = HubJson.DeserializeOrDefault(profile.Content, new ContentBundleDto());
 
-        // 合并科目（按名称去重）
-        var existingNames = new HashSet<string>(content.Subjects.Select(s => s.Name), StringComparer.Ordinal);
-        var addedSubjects = 0;
-        foreach (var s in imported.Subjects)
-        {
-            if (!existingNames.Add(s.Name))
-            {
-                continue;
-            }
-
-            content.Subjects.Add(s);
-            addedSubjects++;
-        }
-
-        // 合并时间表（按时间序列去重）
-        var existingKeys = new HashSet<string>(
-            content.TimeLayouts.Select(l => string.Join("|", l.Items.Select(i => $"{i.StartTime}-{i.EndTime}"))),
-            StringComparer.Ordinal);
-        var addedLayouts = 0;
-        foreach (var l in imported.TimeLayouts)
-        {
-            var key = string.Join("|", l.Items.Select(i => $"{i.StartTime}-{i.EndTime}"));
-            if (!existingKeys.Add(key))
-            {
-                continue;
-            }
-
-            content.TimeLayouts.Add(l);
-            addedLayouts++;
-        }
-
-        // 合并附加设置
-        foreach (var kv in imported.Settings.Values)
-        {
-            content.Settings.Values[kv.Key] = kv.Value;
-        }
+        // CSES 会一并并入逐格课表（按 enable_day 生成），与 AI 导入保持一致。
+        var merged = ContentMerger.Merge(content, imported, includeClassPlans: true);
 
         var updated = await store.UpdateProfileAsync(profile.Id, profile.Name, profile.Description,
             HubJson.Serialize(content), true, cancellationToken)
@@ -376,14 +342,18 @@ public static class ProfileEndpoints
         var revision = await sync.BumpRevisionAsync(cancellationToken);
 
         await store.AddAuditAsync(session.Username, "profile.import-cses", profile.Name,
-            $"从 CSES 导入：新增科目 {addedSubjects} 个、时间表 {addedLayouts} 个。",
+            $"从 CSES 导入：新增科目 {merged.AddedSubjects} 个、时间表 {merged.AddedTimeLayouts} 个、"
+            + $"课表 {merged.AddedClassPlans} 张（覆盖 {merged.UpdatedClassPlans} 张）。",
             http.GetClientIpAddress(), cancellationToken);
 
         return ApiResult<CsesImportResult>.Success(new CsesImportResult
         {
             Profile = ToDto(updated, includeContent: true),
-            AddedSubjects = addedSubjects,
-            AddedTimeLayouts = addedLayouts,
+            AddedSubjects = merged.AddedSubjects,
+            EnrichedSubjects = merged.EnrichedSubjects,
+            AddedTimeLayouts = merged.AddedTimeLayouts,
+            AddedClassPlans = merged.AddedClassPlans,
+            UpdatedClassPlans = merged.UpdatedClassPlans,
             Revision = revision,
         });
     }
@@ -462,8 +432,17 @@ public sealed class CsesImportResult
     /// <summary>新增的科目数量。</summary>
     public int AddedSubjects { get; set; }
 
+    /// <summary>被补全了简称或教师的科目数量。</summary>
+    public int EnrichedSubjects { get; set; }
+
     /// <summary>新增的时间表数量。</summary>
     public int AddedTimeLayouts { get; set; }
+
+    /// <summary>新增的课表数量。</summary>
+    public int AddedClassPlans { get; set; }
+
+    /// <summary>被覆盖更新的课表数量。</summary>
+    public int UpdatedClassPlans { get; set; }
 
     /// <summary>保存后的全局配置版本号。</summary>
     public long Revision { get; set; }

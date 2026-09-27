@@ -59,6 +59,24 @@ public sealed partial class HubStore
         // 迁移：老版本 profiles 表可能缺少 code 列（四位识别码），这里按需补上。
         await EnsureColumnAsync(connection, "profiles", "code", "TEXT NOT NULL DEFAULT ''", cancellationToken);
 
+        // 迁移：分组标识色是后加的，老库需要在启动时补列。
+        await EnsureColumnAsync(connection, "groups", "color", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+
+        // 迁移：分组树（楼栋 → 楼层）。
+        await EnsureColumnAsync(connection, "groups", "parent_id", "TEXT", cancellationToken);
+        await EnsureColumnAsync(connection, "groups", "kind", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+
+        // 索引必须在 parent_id 补列之后再建（老库直接建会报 no such column）。
+        await using (var groupIndex = connection.CreateCommand())
+        {
+            groupIndex.CommandText = "CREATE INDEX IF NOT EXISTS idx_groups_parent ON groups(parent_id);";
+            await groupIndex.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        // 迁移：远程指令的「一次性派发」与「过期」时间戳。
+        await EnsureColumnAsync(connection, "device_commands", "dispatched_at", "TEXT", cancellationToken);
+        await EnsureColumnAsync(connection, "device_commands", "expires_at", "TEXT", cancellationToken);
+
         // 确保全局版本号存在，保证任何一次同步请求都能拿到确定值。
         await using var seed = connection.CreateCommand();
         seed.CommandText = """
@@ -128,9 +146,15 @@ public sealed partial class HubStore
             id                 TEXT PRIMARY KEY,
             name               TEXT NOT NULL,
             description        TEXT NOT NULL DEFAULT '',
+            color              TEXT NOT NULL DEFAULT '',
+            parent_id          TEXT,
+            kind               TEXT NOT NULL DEFAULT '',
             default_profile_id TEXT,
             created_at         TEXT NOT NULL
         );
+        -- 注意：idx_groups_parent 不在这里建。老库升级时 parent_id 要先由 EnsureColumnAsync 补出来，
+        -- 否则 CREATE TABLE IF NOT EXISTS 不生效、建索引会报「no such column: parent_id」。
+        -- 见 InitializeAsync 中紧跟分组成员迁移之后的建索引语句。
 
         CREATE TABLE IF NOT EXISTS profiles (
             id          TEXT PRIMARY KEY,
@@ -210,16 +234,18 @@ public sealed partial class HubStore
         CREATE INDEX IF NOT EXISTS idx_assignments_profile ON assignments(profile_id);
 
         CREATE TABLE IF NOT EXISTS device_commands (
-            id          TEXT PRIMARY KEY,
-            device_id   TEXT NOT NULL,
-            kind        TEXT NOT NULL DEFAULT '',
-            payload     TEXT NOT NULL DEFAULT '',
-            status      TEXT NOT NULL DEFAULT 'pending',
-            output      TEXT NOT NULL DEFAULT '',
-            exit_code   INTEGER NOT NULL DEFAULT 0,
-            issued_at   TEXT NOT NULL,
-            finished_at TEXT,
-            issued_by   TEXT NOT NULL DEFAULT ''
+            id            TEXT PRIMARY KEY,
+            device_id     TEXT NOT NULL,
+            kind          TEXT NOT NULL DEFAULT '',
+            payload       TEXT NOT NULL DEFAULT '',
+            status        TEXT NOT NULL DEFAULT 'pending',
+            output        TEXT NOT NULL DEFAULT '',
+            exit_code     INTEGER NOT NULL DEFAULT 0,
+            issued_at     TEXT NOT NULL,
+            finished_at   TEXT,
+            issued_by     TEXT NOT NULL DEFAULT '',
+            dispatched_at TEXT,
+            expires_at    TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_device_commands_device ON device_commands(device_id, issued_at DESC);
         """;

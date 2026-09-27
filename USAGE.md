@@ -47,6 +47,24 @@ dotnet run --project src/ControlHub.Server -c Release
 
 启动后浏览器访问 `http://localhost:29800`。局域网内其它机器用 `http://本机IP:29800` 访问。
 
+**方式 2 · 附：注册为 Windows 服务（推荐长期运行）**
+
+在仓库目录用**管理员身份**运行 PowerShell：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
+```
+
+脚本会自动发布服务端并注册 Windows 服务（开机自启、崩溃自动重启），并放行 HTTP 与自动发现端口。
+数据默认保存在 `C:\ProgramData\ClassislandControlHub\data`，升级重新执行该命令即可。
+
+| 操作 | 命令 |
+|---|---|
+| 查看状态 | `Get-Service ClassislandControlHub` |
+| 重启服务 | `Restart-Service ClassislandControlHub` |
+| 停止服务 | `Stop-Service ClassislandControlHub` |
+| 卸载 | `powershell -ExecutionPolicy Bypass -File .\sh\uninstall-windows.ps1` |
+
 ### 方式 3：部署到公网（可选）
 
 1. 用方式 1 或 2 部署后，用 Nginx 反向代理 `https://你的域名` → `127.0.0.1:29800`。
@@ -62,7 +80,31 @@ dotnet run --project src/ControlHub.Server -c Release
 2. **立即修改密码**：右上角头像 → 「修改密码」（左侧「系统设置」里也有）。
 3. 建一套配置：左侧「配置档案 → 新建示例档案」，会自动生成标准作息 + 周一至周五课表 + 常用科目。
 4. 按学校实际情况编辑：时间表（作息）、课表（排课）、科目，保存即可。
-5. 建分组（如「高一年级」）并绑定该档案，便于批量管理。
+5. 到「设备管理」按「**楼栋 → 楼层 → 教室**」整理教室大屏：先「+ 新建楼栋」，再在楼栋里「+ 添加楼层」，
+   最后把教室设备拖进对应楼层即可。楼栋与楼层都带标识色，顶部概览直接显示栋数 / 层数 / 教室数与在线率。
+   点某台教室设备可以单独指定档案，或查看日志、停用、删除。
+
+### 用现成课表快速建档案
+
+**方式一：AI 导入（推荐，支持任意格式）**
+
+手上已经有课表（Excel、教务系统网页、纸质课表的文字版）时，不必手工一格一格排：
+
+1. 先到「系统设置 → AI 辅助导入课表」填入接口地址、模型与密钥（任何兼容 OpenAI Chat Completions 的服务都可以），
+   点「**测试连接**」确认可用。
+2. 到「配置档案 → **AI 导入课表**」，把课表原文粘贴进去（也可选择文件），点「**AI 解析**」。
+3. 预览解析结果（作息节数、每天课表、科目），确认无误后点「导入到档案」。
+
+解析结果会自动整理成一张作息时间表、每天的课表与用到的科目。同名科目与相同作息的时间表会自动复用，
+同一天的课表会被本次结果覆盖；反复导入不会产生重复数据。
+
+> 课表原文会发送到你配置的接口地址。若其中含教师姓名等信息，请使用可信服务或本地部署的模型。
+
+**方式二：从 ClassIsland 导出的 CSES 导入**
+
+ClassIsland 的档案编辑器支持导出 CSES（`.yml`）。在「配置档案 → 从 CSES 导入」中粘贴或选择该文件，
+会并入其中的**科目、作息时间表与逐格课表**：按 `enable_day` 生成每天的课表，
+各天作息一致的会自动合并成一张时间表。集控的课表模型不区分周次，单双周课表会合并处理。
 
 ---
 
@@ -72,7 +114,7 @@ dotnet run --project src/ControlHub.Server -c Release
 
    ```bash
    dotnet build src/ControlHub.Plugin/ControlHub.Plugin.csproj -c Release -p:CreateCipx=true
-   # 产物：src/ControlHub.Plugin/cipx/ControlHub.Plugin.cipx
+   # 产物：src/ControlHub.Plugin/cipx/ControlHub.Plugin.cipx（同目录 checksums.md 为自动生成的 MD5 摘要）
    ```
 
 2. 在教室电脑安装 ClassIsland（2.1+），把 `.cipx` 放入插件目录（或走插件市场分发）。
@@ -97,10 +139,11 @@ dotnet run --project src/ControlHub.Server -c Release
 ### 配置下发优先级
 
 ```
-设备单独指定档案  →  设备所属分组默认档案  →  全局默认档案
+设备单独指定档案  →  所属楼层默认档案  →  所属楼栋默认档案  →  全局默认档案
 ```
 
-也就是说：可以在「设备管理」里给单台设备单独指定档案，覆盖其分组默认值，适合个别班级的临时调整。
+也就是说：给楼栋指定档案，整栋教室都会跟着走；某一层要单独用别的档案（例如机房层）就在楼层上指定；
+个别教室要临时调整，直接在「设备管理」里给那台设备单独指定，优先级最高。
 
 ---
 

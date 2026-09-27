@@ -2,11 +2,11 @@
  * 配置下发视图：查看绑定关系、按范围推送，并跟踪客户端同步进度。
  */
 
-import { api, session } from '../core/api.js?v=12';
+import { api, session } from '../core/api.js?v=21';
 import {
   h, clear, relativeTime, toast, loadingBlock, modal, field, select,
   emptyState, confirmDialog, deviceStateBadge, syncBadge,
-} from '../core/ui.js?v=12';
+} from '../core/ui.js?v=21';
 
 export const meta = {
   title: '配置下发',
@@ -72,7 +72,7 @@ function renderAssignments(assignments) {
       h('a', { href: '#/devices', class: 'btn btn-sm', style: { textDecoration: 'none' } }, '调整绑定'),
     ),
     assignments.length === 0
-      ? emptyState('🔗', '还没有绑定关系',
+      ? emptyState('link', '还没有绑定关系',
         '所有设备当前都使用全局默认档案。可在「设备管理」或「分组管理」中指定具体档案。')
       : h('div.table-wrap',
         h('table.data',

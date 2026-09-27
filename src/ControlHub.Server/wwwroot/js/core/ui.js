@@ -1,8 +1,4 @@
-/**
- * 轻量 DOM 构建与通用交互组件。
- * 不引入任何框架：h() 负责生成元素，toast/modal 提供统一反馈，
- * 使各视图代码保持声明式且便于维护。
- */
+/** 轻量 DOM 构建与通用交互组件，无框架依赖。 */
 
 /**
  * 创建元素。
@@ -183,11 +179,9 @@ export function modal(options) {
     if (e.key === 'Escape') close();
   };
 
-  const confirmBtn = h('button.btn',
-    options.danger ? 'btn-danger' : 'btn-primary',
+  const confirmBtn = h(`button.btn.${options.danger ? 'btn-danger' : 'btn-primary'}`,
     { type: 'button' },
-    options.confirmText || '确定',
-  );
+    options.confirmText || '确定');
 
   confirmBtn.addEventListener('click', async () => {
     if (!options.onConfirm) {
@@ -211,7 +205,7 @@ export function modal(options) {
   const modalEl = h(`div.modal${options.width ? '.' + options.width : ''}`,
     h('div.modal-head',
       h('h3', options.title || ''),
-      h('button.btn.btn-ghost.btn-sm', { type: 'button', onClick: close }, '✕'),
+      h('button.btn.btn-ghost.btn-sm', { type: 'button', title: '关闭', onClick: close }, icon('close', 15)),
     ),
     bodyEl,
     options.hideFooter
@@ -332,10 +326,69 @@ export function syncBadge(device) {
     : h('span.badge.badge-warn', `待同步 · 版本 ${device.appliedRevision}`);
 }
 
+// ── 图标 ────────────────────────────────────────────────────────────────
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/** 24×24 视窗的线性图标路径，统一继承 currentColor。 */
+const ICON_PATHS = {
+  // 导航
+  dashboard: 'M3.2 3.2h6.6v6.6H3.2zM14.2 3.2h6.6v6.6h-6.6zM14.2 14.2h6.6v6.6h-6.6zM3.2 14.2h6.6v6.6H3.2z',
+  profiles: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5',
+  monitor: 'M3.5 5.2h17v11h-17zM9 19.8h6M12 16.2v3.6',
+  folder: 'M3.5 7.3A2.3 2.3 0 0 1 5.8 5h3.4l2 2.3h7a2.3 2.3 0 0 1 2.3 2.3v7.1a2.3 2.3 0 0 1-2.3 2.3H5.8a2.3 2.3 0 0 1-2.3-2.3z',
+  send: 'M22 2L11 13M22 2l-7 20-4-9-9-4z',
+  list: 'M8.5 6h12M8.5 12h12M8.5 18h12M3.5 6h.01M3.5 12h.01M3.5 18h.01',
+  gear: 'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z',
+
+  // 状态
+  checkCircle: 'M12 3a9 9 0 1 1 0 18a9 9 0 0 1 0-18M8.5 12l2.5 2.5 4.5-5',
+  clock: 'M12 3a9 9 0 1 1 0 18a9 9 0 0 1 0-18M12 7.4v5l3.4 2',
+  alert: 'M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01',
+  plusCircle: 'M12 3a9 9 0 1 1 0 18a9 9 0 0 1 0-18M12 8v8M8 12h8',
+  inbox: 'M4.5 5.5h15v13h-15zM4.5 13.5H9l1.5 2.5h3l1.5-2.5h4.5',
+  search: 'M11 4.2a6.8 6.8 0 1 1 0 13.6a6.8 6.8 0 0 1 0-13.6M20.2 20.2l-4.6-4.6',
+  link: 'M10.2 13.8a4 4 0 0 0 5.6 0l2.9-2.9a4 4 0 0 0-5.6-5.6l-1 1M13.8 10.2a4 4 0 0 0-5.6 0l-2.9 2.9a4 4 0 0 0 5.6 5.6l1-1',
+  clipboard: 'M9.5 3.5h5v2.7h-5zM8.2 4.6H6.5A1.5 1.5 0 0 0 5 6.1v12.6a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V6.1a1.5 1.5 0 0 0-1.5-1.5h-1.7',
+  database: 'M12 3.2c4.4 0 8 1.1 8 2.5s-3.6 2.5-8 2.5-8-1.1-8-2.5 3.6-2.5 8-2.5M4 5.7v12.6c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5V5.7M4 12c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5',
+  book: 'M19 20.5H6.6A2.6 2.6 0 0 1 4 17.9V6.1A2.6 2.6 0 0 1 6.6 3.5H19zM4 17.9a2.6 2.6 0 0 1 2.6-2.6H19',
+  key: 'M8 18.5a4.2 4.2 0 1 1 0-8.4 4.2 4.2 0 0 1 0 8.4M11.3 12.9L20 4.2M16.8 4.2H20v3.2',
+  chart: 'M4.5 19.5V9.5M9.8 19.5v-15M15.2 19.5v-6.4M20.5 19.5V7.6M3.5 21h17',
+
+  // 外观
+  menu: 'M3.5 7h17M3.5 12h17M3.5 17h17',
+  close: 'M6.5 6.5l11 11M17.5 6.5l-11 11',
+  check: 'M5 12.5l4.5 4.5L19 7',
+  sun: 'M12 7.8a4.2 4.2 0 1 1 0 8.4 4.2 4.2 0 0 1 0-8.4M12 2.6v2.1M12 19.3v2.1M2.6 12h2.1M19.3 12h2.1M5.4 5.4l1.5 1.5M17.1 17.1l1.5 1.5M18.6 5.4l-1.5 1.5M6.9 17.1l-1.5 1.5',
+  moon: 'M20.4 13.3A8.4 8.4 0 1 1 10.7 3.6a6.7 6.7 0 0 0 9.7 9.7z',
+  auto: 'M12 3.2a8.8 8.8 0 1 1 0 17.6 8.8 8.8 0 0 1 0-17.6M12 3.2v17.6',
+  square: 'M5.8 5.8h12.4v12.4H5.8z',
+  rows: 'M4 6.8h16M4 12h16M4 17.2h16',
+};
+
+/** 生成一个线性图标。`name` 未命中时回退到 inbox。 */
+export function icon(name, size = 18) {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', String(size));
+  svg.setAttribute('height', String(size));
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '1.6');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+
+  const path = document.createElementNS(SVG_NS, 'path');
+  path.setAttribute('d', ICON_PATHS[name] || ICON_PATHS.inbox);
+  svg.appendChild(path);
+  return svg;
+}
+
 /** 空状态块。 */
-export function emptyState(icon, title, description, action) {
+export function emptyState(name, title, description, action) {
   return h('div.empty',
-    h('div.empty-icon', icon),
+    h('div.empty-icon', icon(name, 26)),
     h('h3', title),
     description ? h('p', description) : null,
     action || null,

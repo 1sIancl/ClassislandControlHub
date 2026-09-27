@@ -188,7 +188,7 @@ public static class DeviceEndpoints
 
     // ────────────────────────────── 分组 ──────────────────────────────
 
-    /// <summary>列出全部分组。</summary>
+    /// <summary>列出全部分组（含楼栋 / 楼层层级）。</summary>
     private static async Task<ApiResult<List<GroupDto>>> ListGroupsAsync(
         HttpContext http,
         HubStore store,
@@ -196,20 +196,15 @@ public static class DeviceEndpoints
     {
         http.RequireAdminSession();
         var groups = await store.GetGroupsAsync(cancellationToken);
-        var counts = await store.GetGroupDeviceCountsAsync(cancellationToken);
+        var deviceCounts = await store.GetGroupDeviceCountsAsync(cancellationToken);
+        var childCounts = await store.GetGroupChildCountsAsync(cancellationToken);
 
-        return ApiResult<List<GroupDto>>.Success(groups.Select(g => new GroupDto
-        {
-            Id = g.Id,
-            Name = g.Name,
-            Description = g.Description,
-            DefaultProfileId = g.DefaultProfileId,
-            DeviceCount = counts.GetValueOrDefault(g.Id),
-            CreatedAt = g.CreatedAt,
-        }).ToList());
+        return ApiResult<List<GroupDto>>.Success(groups
+            .Select(g => ToGroupDto(g, deviceCounts.GetValueOrDefault(g.Id), childCounts.GetValueOrDefault(g.Id)))
+            .ToList());
     }
 
-    /// <summary>新建分组。</summary>
+    /// <summary>新建分组；带 <c>ParentId</c> 时创建的是「楼层」。</summary>
     private static async Task<ApiResult<GroupDto>> CreateGroupAsync(
         GroupUpsertRequest request,
         HttpContext http,
@@ -223,31 +218,32 @@ public static class DeviceEndpoints
             throw HubException.Validation("分组名称不能为空。");
         }
 
+        var profileId = await ResolveGroupProfileAsync(store, request.DefaultProfileId, cancellationToken);
+        var id = HubChecksum.NewId();
+        var (kind, parentId) = await ResolveGroupPlacementAsync(store, id, request.ParentId, request.Kind,
+            cancellationToken);
+
         var row = new GroupRow
         {
-            Id = HubChecksum.NewId(),
+            Id = id,
             Name = request.Name.Trim(),
             Description = request.Description?.Trim() ?? string.Empty,
-            DefaultProfileId = string.IsNullOrWhiteSpace(request.DefaultProfileId) ? null : request.DefaultProfileId,
+            Color = NormalizeGroupColor(request.Color),
+            ParentId = parentId,
+            Kind = kind,
+            DefaultProfileId = profileId,
             CreatedAt = DateTimeOffset.UtcNow,
         };
 
         await store.CreateGroupAsync(row, cancellationToken);
         await store.AddAuditAsync(session.Username, "group.create", row.Name,
-            "创建了分组。", http.GetClientIpAddress(), cancellationToken);
+            parentId is null ? "创建了分组。" : "创建了下级分组（楼层）。",
+            http.GetClientIpAddress(), cancellationToken);
 
-        return ApiResult<GroupDto>.Success(new GroupDto
-        {
-            Id = row.Id,
-            Name = row.Name,
-            Description = row.Description,
-            DefaultProfileId = row.DefaultProfileId,
-            DeviceCount = 0,
-            CreatedAt = row.CreatedAt,
-        });
+        return ApiResult<GroupDto>.Success(ToGroupDto(row, 0, 0));
     }
 
-    /// <summary>修改分组。</summary>
+    /// <summary>修改分组，含把楼层挪到别的分组下。</summary>
     private static async Task<ApiResult<bool>> UpdateGroupAsync(
         string id,
         GroupUpsertRequest request,
@@ -259,29 +255,134 @@ public static class DeviceEndpoints
         var group = await store.GetGroupAsync(id, cancellationToken)
                     ?? throw HubException.NotFound("分组不存在。");
 
-        var profileId = string.IsNullOrWhiteSpace(request.DefaultProfileId) ? null : request.DefaultProfileId;
-        if (profileId is not null && await store.GetProfileAsync(profileId, cancellationToken) is null)
-        {
-            throw HubException.Validation("指定的配置档案不存在。");
-        }
+        var profileId = await ResolveGroupProfileAsync(store, request.DefaultProfileId, cancellationToken);
+        var (kind, parentId) = await ResolveGroupPlacementAsync(store, id, request.ParentId, request.Kind,
+            cancellationToken);
 
         await store.UpdateGroupAsync(id,
             string.IsNullOrWhiteSpace(request.Name) ? group.Name : request.Name.Trim(),
             request.Description?.Trim() ?? group.Description,
+            request.Color is null ? group.Color : NormalizeGroupColor(request.Color),
+            kind,
+            parentId,
             profileId,
             cancellationToken);
 
         await store.AddAuditAsync(session.Username, "group.update", group.Name,
             "更新了分组设置。", http.GetClientIpAddress(), cancellationToken);
 
-        // 分组默认档案变化会影响到组内全部设备，逐个唤醒它们。
-        var devices = await store.GetDevicesByGroupAsync(id, cancellationToken);
-        await store.BumpPushEpochAsync(devices.Select(d => d.Id), cancellationToken);
+        // 分组（或它的上级）默认档案变化会影响到组内全部设备，逐个唤醒。
+        await WakeGroupDevicesAsync(store, id, cancellationToken);
 
         return ApiResult<bool>.Success(true);
     }
 
-    /// <summary>删除分组。</summary>
+    /// <summary>校验分组默认档案是否存在，返回归一化后的档案 ID。</summary>
+    private static async Task<string?> ResolveGroupProfileAsync(HubStore store, string? defaultProfileId,
+        CancellationToken cancellationToken)
+    {
+        var profileId = string.IsNullOrWhiteSpace(defaultProfileId) ? null : defaultProfileId;
+        if (profileId is not null && await store.GetProfileAsync(profileId, cancellationToken) is null)
+        {
+            throw HubException.Validation("指定的配置档案不存在。");
+        }
+
+        return profileId;
+    }
+
+    /// <summary>
+    /// 校验并归一化分组层级，返回 (kind, parentId)。
+    /// <para>层级最多两层：楼栋 → 楼层。教室不再建分组，由设备本身表示，
+    /// 所以「楼层下不能再有子分组」，有下级的楼栋也不能被挪进别的分组。</para>
+    /// </summary>
+    private static async Task<(string Kind, string? ParentId)> ResolveGroupPlacementAsync(
+        HubStore store, string groupId, string? parentId, string? kind, CancellationToken cancellationToken)
+    {
+        var parent = string.IsNullOrWhiteSpace(parentId) ? null : parentId.Trim();
+        if (parent is null)
+        {
+            // 顶层：楼栋 or 普通分组。
+            return (string.Equals(kind?.Trim(), "building", StringComparison.OrdinalIgnoreCase)
+                ? GroupKinds.Building
+                : string.Empty, null);
+        }
+
+        if (string.Equals(parent, groupId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw HubException.Validation("分组不能把自己设为上级。");
+        }
+
+        var parentRow = await store.GetGroupAsync(parent, cancellationToken)
+                        ?? throw HubException.Validation("指定的上级分组不存在。");
+
+        if (!string.IsNullOrEmpty(parentRow.ParentId))
+        {
+            throw HubException.Validation("层级最多两层：楼层下不能再建子分组，教室直接用设备表示。");
+        }
+
+        var childCounts = await store.GetGroupChildCountsAsync(cancellationToken);
+        if (childCounts.GetValueOrDefault(groupId) > 0)
+        {
+            throw HubException.Validation("该分组下还有子分组，不能挪到别的分组里。");
+        }
+
+        return (GroupKinds.Floor, parent);
+    }
+
+    /// <summary>唤醒分组及其全部下级分组里的设备重新拉取配置。</summary>
+    private static async Task WakeGroupDevicesAsync(HubStore store, string groupId,
+        CancellationToken cancellationToken)
+    {
+        var groups = await store.GetGroupsAsync(cancellationToken);
+        var pending = new List<string> { groupId };
+        var deviceIds = new List<string>();
+
+        while (pending.Count > 0)
+        {
+            var current = pending[0];
+            pending.RemoveAt(0);
+
+            var devices = await store.GetDevicesByGroupAsync(current, cancellationToken);
+            deviceIds.AddRange(devices.Select(d => d.Id));
+            pending.AddRange(groups
+                .Where(g => string.Equals(g.ParentId, current, StringComparison.Ordinal))
+                .Select(g => g.Id));
+        }
+
+        if (deviceIds.Count > 0)
+        {
+            await store.BumpPushEpochAsync(deviceIds, cancellationToken);
+        }
+    }
+
+    /// <summary>分组标识色调色板，与前端 devices.js 的 GROUP_COLORS 保持一致。</summary>
+    private static readonly HashSet<string> GroupColors = new(StringComparer.Ordinal)
+    {
+        "blue", "cyan", "green", "lime", "amber", "orange", "red", "violet", "pink", "slate",
+    };
+
+    /// <summary>只接受调色板内的键名，其余落库为空串，由管理端按分组 ID 推导稳定颜色。</summary>
+    private static string NormalizeGroupColor(string? color)
+    {
+        var value = color?.Trim().ToLowerInvariant() ?? string.Empty;
+        return GroupColors.Contains(value) ? value : string.Empty;
+    }
+
+    private static GroupDto ToGroupDto(GroupRow group, int deviceCount, int childCount) => new()
+    {
+        Id = group.Id,
+        Name = group.Name,
+        Description = group.Description,
+        Color = group.Color,
+        ParentId = group.ParentId,
+        Kind = group.Kind,
+        ChildCount = childCount,
+        DefaultProfileId = group.DefaultProfileId,
+        DeviceCount = deviceCount,
+        CreatedAt = group.CreatedAt,
+    };
+
+    /// <summary>删除分组。下级分组（楼层）会一并删除，组内设备变为未分组。</summary>
     private static async Task<ApiResult<bool>> DeleteGroupAsync(
         string id,
         HttpContext http,
@@ -294,7 +395,8 @@ public static class DeviceEndpoints
 
         await store.DeleteGroupAsync(id, cancellationToken);
         await store.AddAuditAsync(session.Username, "group.delete", group.Name,
-            "删除了分组，组内设备已变为未分组。", http.GetClientIpAddress(), cancellationToken);
+            "删除了分组（含全部下级分组），组内设备已变为未分组。",
+            http.GetClientIpAddress(), cancellationToken);
 
         return ApiResult<bool>.Success(true);
     }

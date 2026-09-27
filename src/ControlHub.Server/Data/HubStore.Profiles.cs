@@ -26,6 +26,9 @@ public sealed partial class HubStore
         Id = GetString(reader, "id"),
         Name = GetString(reader, "name"),
         Description = GetString(reader, "description"),
+        Color = GetString(reader, "color"),
+        ParentId = GetNullableString(reader, "parent_id"),
+        Kind = GetString(reader, "kind"),
         DefaultProfileId = GetNullableString(reader, "default_profile_id"),
         CreatedAt = GetTimestampOrNow(reader, "created_at"),
     };
@@ -185,12 +188,15 @@ public sealed partial class HubStore
 
     // ────────────────────────────── 分组 ──────────────────────────────
 
-    /// <summary>查询全部分组。</summary>
+    private const string GroupColumns =
+        "id, name, description, color, parent_id, kind, default_profile_id, created_at";
+
+    /// <summary>查询全部分组（含楼栋 / 楼层层级）。</summary>
     public async Task<List<GroupRow>> GetGroupsAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT id, name, description, default_profile_id, created_at FROM groups ORDER BY name;";
+        command.CommandText = $"SELECT {GroupColumns} FROM groups ORDER BY name;";
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var result = new List<GroupRow>();
         while (await reader.ReadAsync(cancellationToken))
@@ -206,8 +212,7 @@ public sealed partial class HubStore
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText =
-            "SELECT id, name, description, default_profile_id, created_at FROM groups WHERE id = $id LIMIT 1;";
+        command.CommandText = $"SELECT {GroupColumns} FROM groups WHERE id = $id LIMIT 1;";
         command.Parameters.AddWithValue("$id", id);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken) ? ReadGroup(reader) : null;
@@ -219,56 +224,116 @@ public sealed partial class HubStore
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO groups (id, name, description, default_profile_id, created_at)
-            VALUES ($id, $name, $description, $profileId, $createdAt);
+            INSERT INTO groups (id, name, description, color, parent_id, kind, default_profile_id, created_at)
+            VALUES ($id, $name, $description, $color, $parentId, $kind, $profileId, $createdAt);
             """;
         AddParameters(command,
             ("$id", group.Id),
             ("$name", group.Name),
             ("$description", group.Description),
+            ("$color", group.Color),
+            ("$parentId", TextOrNull(group.ParentId)),
+            ("$kind", group.Kind),
             ("$profileId", TextOrNull(group.DefaultProfileId)),
             ("$createdAt", Ts(group.CreatedAt)));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    /// <summary>更新分组。</summary>
-    public async Task UpdateGroupAsync(string id, string name, string description, string? defaultProfileId,
-        CancellationToken cancellationToken = default)
+    /// <summary>更新分组（含调整上级，用于挪动楼层）。</summary>
+    public async Task UpdateGroupAsync(string id, string name, string description, string color,
+        string kind, string? parentId, string? defaultProfileId, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            UPDATE groups SET name = $name, description = $description, default_profile_id = $profileId
+            UPDATE groups SET name = $name, description = $description, color = $color,
+                              kind = $kind, parent_id = $parentId, default_profile_id = $profileId
             WHERE id = $id;
             """;
         AddParameters(command,
             ("$name", name),
             ("$description", description),
+            ("$color", color),
+            ("$kind", kind),
+            ("$parentId", TextOrNull(parentId)),
             ("$profileId", TextOrNull(defaultProfileId)),
             ("$id", id));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    /// <summary>删除分组。组内设备会变为未分组。</summary>
+    /// <summary>
+    /// 删除分组及其全部下级分组（楼栋会连同楼层一起删掉）。受影响设备会变为未分组。
+    /// </summary>
     public async Task DeleteGroupAsync(string id, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        foreach (var sql in new[]
-                 {
-                     "UPDATE devices SET group_id = NULL WHERE group_id = $id;",
-                     "DELETE FROM assignments WHERE target_type = 'group' AND target_id = $id;",
-                     "DELETE FROM groups WHERE id = $id;",
-                 })
+        var ids = new List<string> { id };
+        var frontier = new List<string> { id };
+
+        // 逐层收集后代。层级设计上只有两层，这里仍按递归处理，避免脏数据留下孤立子分组。
+        while (frontier.Count > 0)
         {
-            await using var command = connection.CreateCommand();
-            command.Transaction = (SqliteTransaction)transaction;
-            command.CommandText = sql;
-            command.Parameters.AddWithValue("$id", id);
-            await command.ExecuteNonQueryAsync(cancellationToken);
+            var next = new List<string>();
+            foreach (var parent in frontier)
+            {
+                await using var query = connection.CreateCommand();
+                query.CommandText = "SELECT id FROM groups WHERE parent_id = $parent;";
+                query.Parameters.AddWithValue("$parent", parent);
+                await using var reader = await query.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    var child = reader.GetString(0);
+                    if (ids.Contains(child, StringComparer.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    ids.Add(child);
+                    next.Add(child);
+                }
+            }
+
+            frontier = next;
+        }
+
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        for (var index = 0; index < ids.Count; index++)
+        {
+            var parameter = $"$id{index}";
+            foreach (var sql in new[]
+                     {
+                         $"UPDATE devices SET group_id = NULL WHERE group_id = {parameter};",
+                         $"DELETE FROM assignments WHERE target_type = 'group' AND target_id = {parameter};",
+                         $"DELETE FROM groups WHERE id = {parameter};",
+                     })
+            {
+                await using var command = connection.CreateCommand();
+                command.Transaction = (SqliteTransaction)transaction;
+                command.CommandText = sql;
+                command.Parameters.AddWithValue(parameter, ids[index]);
+                await command.ExecuteNonQueryAsync(cancellationToken);
+            }
         }
 
         await transaction.CommitAsync(cancellationToken);
+    }
+
+    /// <summary>统计每个分组的直接下级数量（楼栋下的楼层数）。</summary>
+    public async Task<Dictionary<string, int>> GetGroupChildCountsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT parent_id, COUNT(1) AS c FROM groups WHERE parent_id IS NOT NULL GROUP BY parent_id;";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var result = new Dictionary<string, int>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result[GetString(reader, "parent_id")] = GetInt32(reader, "c");
+        }
+
+        return result;
     }
 
     /// <summary>统计各分组的设备数量。</summary>

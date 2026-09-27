@@ -59,6 +59,15 @@ public static class ClientEndpoints
 
         var deviceId = request.DeviceId.Trim();
 
+        // 设备 ID 会出现在管理端接口路径里（/admin/devices/{id}/…），必须是 URL 安全的短标识。
+        // 客户端生成形如 ci-<guid>；这里挡住异常或恶意指纹，避免建出打不开的设备记录。
+        if (deviceId.Length > 64
+            || !deviceId.All(ch => char.IsAsciiLetterOrDigit(ch) || ch is '-' or '_' or '.'))
+        {
+            throw HubException.Validation(
+                "设备标识格式不正确：只允许字母、数字、减号、下划线与点，且不超过 64 个字符。");
+        }
+
         // 设备重新注册（例如重装系统后）时若已存在记录，允许直接放行，无需再次消耗注册码。
         var existing = await store.GetDeviceAsync(deviceId, cancellationToken);
 
@@ -335,14 +344,18 @@ public static class ClientEndpoints
         return ApiResult<bool>.Success(true);
     }
 
-    /// <summary>拉取本设备的待执行远程指令。</summary>
+    /// <summary>
+    /// 拉取并「领取」本设备的待执行远程指令。
+    /// <para>指令是<b>一次性派发</b>的：本次返回的会被标记为已派发，后续轮询不再返回，
+    /// 避免同一条命令随每次心跳被反复执行（重复重启、重复跑命令）。</para>
+    /// </summary>
     private static async Task<ApiResult<List<RemoteCommandDto>>> GetCommandsAsync(
         HttpContext http,
         HubStore store,
         CancellationToken cancellationToken)
     {
         var device = http.RequireDevice();
-        var rows = await store.GetPendingCommandsAsync(device.Id, cancellationToken);
+        var rows = await store.DispatchPendingCommandsAsync(device.Id, cancellationToken);
         return ApiResult<List<RemoteCommandDto>>.Success(rows.Select(r => new RemoteCommandDto
         {
             Id = r.Id,
@@ -353,7 +366,7 @@ public static class ClientEndpoints
         }).ToList());
     }
 
-    /// <summary>回报远程指令的执行结果。</summary>
+    /// <summary>回报远程指令的执行结果。只能回报属于本设备的指令。</summary>
     private static async Task<ApiResult<bool>> ReportCommandAsync(
         CommandReportRequest request,
         HttpContext http,
@@ -366,8 +379,12 @@ public static class ClientEndpoints
             throw HubException.Validation("缺少指令 ID。");
         }
 
-        await store.CompleteCommandAsync(request.CommandId, request.Success,
+        var updated = await store.CompleteCommandAsync(device.Id, request.CommandId, request.Success,
             request.Output ?? string.Empty, request.ExitCode, request.Error, cancellationToken);
+        if (!updated)
+        {
+            throw HubException.NotFound("指令不存在，或不属于当前设备。");
+        }
 
         await store.AddAuditAsync(device.Name, "device.command.result", device.Name,
             $"指令 {request.CommandId} 执行{(request.Success ? "成功" : "失败")}。",

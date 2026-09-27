@@ -35,9 +35,9 @@ const mqLight = window.matchMedia('(prefers-color-scheme: light)');
 // ────────────────────────────── 主题 ──────────────────────────────
 
 export const THEMES = [
-  { key: 'system', label: '跟随系统', icon: '◐' },
-  { key: 'light', label: '浅色', icon: '☀' },
-  { key: 'dark', label: '深色', icon: '☾' },
+  { key: 'system', label: '跟随系统', icon: 'auto' },
+  { key: 'light', label: '浅色', icon: 'sun' },
+  { key: 'dark', label: '深色', icon: 'moon' },
 ];
 
 export function getTheme() {

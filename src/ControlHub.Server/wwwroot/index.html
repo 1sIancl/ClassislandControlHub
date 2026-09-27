@@ -8,7 +8,7 @@
   <title>ClassislandControlHub 集控系统</title>
   <link rel="icon" href="icon.png" />
   <link rel="apple-touch-icon" href="icon.png" />
-  <link rel="stylesheet" href="css/app.css?v=12" />
+  <link rel="stylesheet" href="css/app.css?v=21" />
 </head>
 
 <body>
@@ -36,7 +36,9 @@
     <div class="main">
       <header class="topbar">
         <div class="topbar-left">
-          <button class="btn btn-icon btn-ghost" id="collapseBtn" title="折叠 / 展开侧边栏" aria-label="折叠侧边栏">☰</button>
+          <button class="btn btn-icon btn-ghost" id="collapseBtn" title="折叠 / 展开侧边栏" aria-label="折叠侧边栏">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3.5 7h17M3.5 12h17M3.5 17h17" /></svg>
+          </button>
           <div class="topbar-titles">
             <h1 id="pageTitle">仪表盘</h1>
             <p id="pageSubtitle" class="page-subtitle"></p>
@@ -45,7 +47,7 @@
         <div class="topbar-right">
           <span class="revision-chip" id="revisionChip" title="当前全局配置版本号">版本 —</span>
           <div class="user-menu">
-            <button class="btn btn-icon btn-ghost" id="themeBtn" title="切换主题" aria-label="切换主题">☾</button>
+            <button class="btn btn-icon btn-ghost" id="themeBtn" title="切换主题" aria-label="切换主题"></button>
             <div class="dropdown theme-menu" id="themeDropdown" hidden></div>
           </div>
           <button class="btn btn-ghost" id="refreshBtn" title="刷新当前页面">刷新</button>
@@ -86,7 +88,7 @@
           <input type="password" id="loginPassword" autocomplete="current-password" placeholder="请输入密码" required />
         </label>
         <div class="login-error" id="loginError" hidden></div>
-        <button class="btn btn-primary btn-block login-submit" type="submit" id="loginSubmit">登 录</button>
+        <button class="btn btn-primary btn-block login-submit" type="submit" id="loginSubmit">登录</button>
       </form>
       <div class="login-foot">
         <span>首次部署默认账号 <code>admin</code>，登录后请立即修改密码。</span>
@@ -98,7 +100,7 @@
   <div id="toastHost" class="toast-host"></div>
   <div id="modalHost" class="modal-host" hidden></div>
 
-  <script type="module" src="js/app.js?v=12"></script>
+  <script type="module" src="js/app.js?v=21"></script>
 </body>
 
 </html>

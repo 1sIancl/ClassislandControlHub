@@ -6,3 +6,12 @@ url: https://github.com/1sIancl/ClassislandControlHub
 version: 1.0.0.0
 apiVersion: 2.1.0.0
 author: 1sIancl
+# ── 插件市场（PluginIndex）元信息：随插件一起分发的图标与仓库定位 ──
+icon: icon.png
+readme: README.md
+repoOwner: 1sIancl
+repoName: ClassislandControlHub
+assetsRoot: main/src/ControlHub.Plugin/
+artifactName: ControlHub.Plugin.cipx
+tagPattern: "1.*.*.*"
+supportedOSPlatforms: [Windows]

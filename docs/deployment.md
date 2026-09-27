@@ -10,11 +10,14 @@
 dotnet build ClassIsland.ControlHub.slnx -c Release
 
 # 打包 B 端插件（产出 src/ControlHub.Plugin/cipx/ControlHub.Plugin.cipx）
-dotnet build src/ControlHub.Plugin/ControlHub.Plugin.csproj -c Release -p:CreateCipx=true -p:GenerateHashSummary=false
+dotnet build src/ControlHub.Plugin/ControlHub.Plugin.csproj -c Release -p:CreateCipx=true
+
+# B 端映射自动化验证（科目/时间表/课表对齐/单双周轮换，无需真机）
+dotnet run --project tools/ControlHub.Verify -c Release
 ```
 
-> `GenerateHashSummary=false` 会跳过 MD5 摘要生成（该步骤依赖 `pwsh`）。
-> 若要生成含摘要的正式包，请安装 PowerShell 7 后去掉该参数。
+> 打包会一并生成 `cipx/checksums.md`（内容为 `<!-- CLASSISLAND_PKG_MD5 {...} -->`），
+> 该 MD5 摘要由项目内置的 MSBuild 任务生成，**不依赖 PowerShell 7**，可直接粘贴到 GitHub Release 说明中。
 
 ## 2. A 端部署
 
@@ -28,7 +31,22 @@ dotnet run -c Release
 - 默认监听 `0.0.0.0:29800`，同一局域网内用 `http://本机IP:29800` 访问。
 - 局域网自动发现使用 UDP `29810`，请确保防火墙放行这两个端口。
 
-### 方式二：发布为自包含目录
+### 方式二：注册为 Windows 服务（推荐长期运行）
+
+在仓库目录用**管理员身份**运行 PowerShell：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
+```
+
+脚本会完成：`dotnet publish` → 注册名为 `ClassislandControlHub` 的 Windows 服务（开机自启、
+崩溃自动重启）→ 放行 HTTP 与自动发现端口。可用参数：`-HttpPort`、`-DiscoveryPort`、
+`-InstallDir`、`-DataDir`、`-ServiceName`、`-NoFirewall`。
+
+数据默认保存在 `C:\ProgramData\ClassislandControlHub\data`，与服务程序目录分离，升级不影响数据。
+卸载：`powershell -ExecutionPolicy Bypass -File .\sh\uninstall-windows.ps1`（加 `-RemoveData` 可一并删除数据）。
+
+### 方式三：发布为自包含目录
 
 ```bash
 dotnet publish src/ControlHub.Server/ControlHub.Server.csproj -c Release -o dist/server
@@ -38,7 +56,7 @@ cd dist/server
 
 发布目录即一个完整的服务器应用，可拷贝到任意 Windows/Linux/macOS 机器运行。
 
-### 方式三：部署到公网/服务器
+### 方式四：部署到公网/服务器
 
 - 上传发布目录到服务器，运行即可。
 - 建议在前面加 Nginx 反向代理提供 HTTPS，并反向代理 `/` 到本机 `29800`。
@@ -62,6 +80,12 @@ cd dist/server
 | `NtpPort` | 123 | 内置 NTP 服务器监听端口（需 root/管理员权限，公网需放行该 UDP 端口） |
 | `DefaultAdminUser` / `DefaultAdminPassword` | admin / admin123 | 首次启动创建的管理员 |
 | `EnableHttps` / `HttpsPort` | false / 29801 | 是否启用 HTTPS |
+| `CertificatePath` / `CertificatePassword` | 空 | HTTPS 证书（`.pfx`）；留空时自动生成自签名证书并缓存到数据目录 |
+
+> **HTTPS 自签证书**：把 `EnableHttps` 设为 `true` 后，若未配置 `CertificatePath`，服务端会在数据目录
+> 自动生成一张有效期 5 年的自签名证书（`controlhub-selfsigned.pfx`，SAN 含主机名、localhost、回环与本机内网 IP）。
+> 自签名证书不会被客户端自动信任：请在插件设置页勾选「允许不受信任的 HTTPS 证书」，
+> 或改用正式证书 / Nginx 反向代理终止 TLS。
 
 ### 备份
 

@@ -84,16 +84,12 @@ public static class RemoteEndpoints
             throw HubException.Validation("指令类型不能为空。");
         }
 
-        var row = new RemoteCommandRow
+        if (device.Revoked)
         {
-            Id = HubChecksum.NewId(),
-            DeviceId = device.Id,
-            Kind = request.Kind.Trim(),
-            Payload = request.Payload ?? string.Empty,
-            Status = "pending",
-            IssuedAt = DateTimeOffset.UtcNow,
-            IssuedBy = session.Username,
-        };
+            throw HubException.Validation("设备已停用，无法下发指令。");
+        }
+
+        var row = NewCommand(device, request.Kind.Trim(), request.Payload ?? string.Empty, session.Username);
         await store.CreateCommandAsync(row, cancellationToken);
         sync.PublishWakeUp();
 
@@ -118,38 +114,70 @@ public static class RemoteEndpoints
         }
 
         var devices = await store.GetDevicesAsync(cancellationToken);
-        var targets = new List<DeviceRow>();
-        if (request.DeviceIds is { Count: > 0 })
-        {
-            var wanted = new HashSet<string>(request.DeviceIds, StringComparer.OrdinalIgnoreCase);
-            targets.AddRange(devices.Where(d => wanted.Contains(d.Id) && !d.Revoked));
-        }
-        else
-        {
-            targets.AddRange(devices.Where(d => !d.Revoked));
-        }
+        var (targets, skipped) = SelectTargets(devices, request.DeviceIds, request.IncludeOffline, sync);
 
+        // 同一批广播共用同一个签发时间，方便在历史里识别为一次操作。
         var now = DateTimeOffset.UtcNow;
         foreach (var device in targets)
         {
-            await store.CreateCommandAsync(new RemoteCommandRow
-            {
-                Id = HubChecksum.NewId(),
-                DeviceId = device.Id,
-                Kind = request.Kind.Trim(),
-                Payload = request.Payload ?? string.Empty,
-                Status = "pending",
-                IssuedAt = now,
-                IssuedBy = session.Username,
-            }, cancellationToken);
+            await store.CreateCommandAsync(
+                NewCommand(device, request.Kind.Trim(), request.Payload ?? string.Empty, session.Username, now),
+                cancellationToken);
         }
 
         sync.PublishWakeUp();
         await store.AddAuditAsync(session.Username, "device.command.broadcast", "多设备",
-            $"统一下发指令 {request.Kind} 至 {targets.Count} 台设备。",
+            $"统一下发指令 {request.Kind} 至 {targets.Count} 台设备（跳过离线 {skipped} 台）。",
             http.GetClientIpAddress(), cancellationToken);
 
-        return ApiResult<object>.Success(new { affected = targets.Count });
+        return ApiResult<object>.Success(new { affected = targets.Count, skipped });
+    }
+
+    // ────────────────────────────── 指令构造与目标筛选 ──────────────────────────────
+
+    /// <summary>远程指令的默认有效期：超过该时间还没执行就作废，避免设备离线很久后突然执行陈旧命令。</summary>
+    private static readonly TimeSpan CommandTtl = TimeSpan.FromHours(2);
+
+    /// <summary>构造一条待执行指令。</summary>
+    private static RemoteCommandRow NewCommand(DeviceRow device, string kind, string payload, string issuedBy,
+        DateTimeOffset? issuedAt = null)
+    {
+        var now = issuedAt ?? DateTimeOffset.UtcNow;
+        return new RemoteCommandRow
+        {
+            Id = HubChecksum.NewId(),
+            DeviceId = device.Id,
+            Kind = kind,
+            Payload = payload,
+            Status = "pending",
+            IssuedAt = now,
+            IssuedBy = issuedBy,
+            ExpiresAt = now.Add(CommandTtl),
+        };
+    }
+
+    /// <summary>
+    /// 解析广播目标。默认只发给**在线**设备（与界面文案一致），
+    /// 离线设备需要显式打开 <c>IncludeOffline</c>：此时命令会排队，等设备上线后执行。
+    /// </summary>
+    private static (List<DeviceRow> Targets, int Skipped) SelectTargets(
+        List<DeviceRow> devices, List<string>? deviceIds, bool includeOffline, SyncService sync)
+    {
+        IEnumerable<DeviceRow> pool = devices.Where(d => !d.Revoked);
+        if (deviceIds is { Count: > 0 })
+        {
+            var wanted = new HashSet<string>(deviceIds, StringComparer.OrdinalIgnoreCase);
+            pool = pool.Where(d => wanted.Contains(d.Id));
+        }
+
+        var candidates = pool.ToList();
+        if (includeOffline)
+        {
+            return (candidates, 0);
+        }
+
+        var online = candidates.Where(sync.IsOnline).ToList();
+        return (online, candidates.Count - online.Count);
     }
 
     /// <summary>查询某设备的指令历史。</summary>
@@ -184,16 +212,12 @@ public static class RemoteEndpoints
             throw HubException.Validation("提醒标题与内容不能同时为空。");
         }
 
-        var row = new RemoteCommandRow
+        if (device.Revoked)
         {
-            Id = HubChecksum.NewId(),
-            DeviceId = device.Id,
-            Kind = RemoteCommandKinds.Notify,
-            Payload = HubJson.Serialize(request),
-            Status = "pending",
-            IssuedAt = DateTimeOffset.UtcNow,
-            IssuedBy = session.Username,
-        };
+            throw HubException.Validation("设备已停用，无法发送提醒。");
+        }
+
+        var row = NewCommand(device, RemoteCommandKinds.Notify, HubJson.Serialize(request), session.Username);
         await store.CreateCommandAsync(row, cancellationToken);
         sync.PublishWakeUp();
 
@@ -213,38 +237,23 @@ public static class RemoteEndpoints
     {
         var session = http.RequireAdminSession();
         var devices = await store.GetDevicesAsync(cancellationToken);
-        var targets = new List<DeviceRow>();
-        if (request.DeviceIds is { Count: > 0 })
-        {
-            var wanted = new HashSet<string>(request.DeviceIds, StringComparer.OrdinalIgnoreCase);
-            targets.AddRange(devices.Where(d => wanted.Contains(d.Id) && !d.Revoked));
-        }
-        else
-        {
-            targets.AddRange(devices.Where(d => !d.Revoked));
-        }
+        var (targets, skipped) = SelectTargets(devices, request.DeviceIds, request.IncludeOffline, sync);
 
         var payload = HubJson.Serialize(request.Appearance ?? new AppearanceConfigDto());
         var now = DateTimeOffset.UtcNow;
         foreach (var device in targets)
         {
-            await store.CreateCommandAsync(new RemoteCommandRow
-            {
-                Id = HubChecksum.NewId(),
-                DeviceId = device.Id,
-                Kind = RemoteCommandKinds.AppearanceApply,
-                Payload = payload,
-                Status = "pending",
-                IssuedAt = now,
-                IssuedBy = session.Username,
-            }, cancellationToken);
+            await store.CreateCommandAsync(
+                NewCommand(device, RemoteCommandKinds.AppearanceApply, payload, session.Username, now),
+                cancellationToken);
         }
 
         sync.PublishWakeUp();
         await store.AddAuditAsync(session.Username, "device.appearance", "多设备",
-            $"统一下发外观配置至 {targets.Count} 台设备。", http.GetClientIpAddress(), cancellationToken);
+            $"统一下发外观配置至 {targets.Count} 台设备（跳过离线 {skipped} 台）。",
+            http.GetClientIpAddress(), cancellationToken);
 
-        return ApiResult<object>.Success(new { affected = targets.Count });
+        return ApiResult<object>.Success(new { affected = targets.Count, skipped });
     }
 
     private static DeviceCommandDto ToDto(RemoteCommandRow row, string? deviceName) => new()
@@ -274,6 +283,9 @@ public sealed class SendCommandRequest
 
     /// <summary>目标设备 ID（统一下发时可选，留空表示全部在线设备）。</summary>
     public List<string>? DeviceIds { get; set; }
+
+    /// <summary>是否把离线设备也纳入广播（命令会排队，等设备上线后执行）。默认 false。</summary>
+    public bool IncludeOffline { get; set; }
 }
 
 /// <summary>下发外观的请求体。</summary>
@@ -282,6 +294,9 @@ public sealed class ApplyAppearanceRequest
     /// <summary>外观配置。</summary>
     public AppearanceConfigDto? Appearance { get; set; }
 
-    /// <summary>目标设备 ID（留空表示全部设备）。</summary>
+    /// <summary>目标设备 ID（留空表示全部在线设备）。</summary>
     public List<string>? DeviceIds { get; set; }
+
+    /// <summary>是否把离线设备也纳入下发（命令会排队，等设备上线后执行）。默认 false。</summary>
+    public bool IncludeOffline { get; set; }
 }

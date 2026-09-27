@@ -19,6 +19,10 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 });
 
 // ────────────────────────────── 配置 ──────────────────────────────
+// 以 Windows 服务方式运行时接入服务生命周期（普通控制台/Linux 运行时空操作）。
+// 这样 `sc.exe create ... binPath=<发布目录>/ControlHub.Server.exe` 注册的服务才能正常响应 SCM。
+builder.Host.UseWindowsService(options => options.ServiceName = "ClassislandControlHub");
+
 builder.Services.Configure<ServerOptions>(builder.Configuration.GetSection(ServerOptions.SectionName));
 var serverOptions = builder.Configuration.GetSection(ServerOptions.SectionName).Get<ServerOptions>()
                     ?? new ServerOptions();
@@ -48,8 +52,8 @@ builder.WebHost.ConfigureKestrel(kestrel =>
     {
         var loggerFactory = LoggerFactory.Create(logging => logging.AddConsole());
         var certificate = CertificateProvider.LoadOrCreate(
-            builder.Configuration["ControlHub:CertificatePath"],
-            builder.Configuration["ControlHub:CertificatePassword"],
+            serverOptions.CertificatePath,
+            serverOptions.CertificatePassword,
             serverOptions.ResolveDataDirectory(builder.Environment.ContentRootPath),
             serverOptions.ServerName,
             loggerFactory.CreateLogger("Certificate"));
@@ -86,6 +90,7 @@ builder.Services.AddSingleton<NtpClient>();
 builder.Services.AddSingleton<ServerTimeService>();
 builder.Services.AddSingleton<UpdateService>();
 builder.Services.AddSingleton<BackupService>();
+builder.Services.AddSingleton<AiTimetableService>();
 builder.Services.AddHostedService<DiscoveryService>();
 builder.Services.AddHostedService<MaintenanceService>();
 builder.Services.AddHostedService<NtpServer>();
@@ -146,6 +151,7 @@ app.MapDeviceEndpoints();
 app.MapProfileEndpoints();
 app.MapRemoteEndpoints();
 app.MapBackupEndpoints();
+app.MapAiEndpoints();
 
 // 未匹配到的 API 路径统一返回 JSON 404，而不是落到前端页面。
 app.Map($"{HubProtocol.ApiPrefix}/{{**rest}}",

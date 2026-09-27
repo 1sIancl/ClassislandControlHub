@@ -5,8 +5,12 @@ namespace ControlHub.Server.Data;
 /// <summary>远程指令的数据访问（A 端下发、B 端回报）。</summary>
 public sealed partial class HubStore
 {
+    /// <summary>单条指令的输出上限。超出部分截断，避免一条命令把数据库撑大。</summary>
+    private const int MaxCommandOutputLength = 32 * 1024;
+
     private const string CommandColumns =
-        "id, device_id, kind, payload, status, output, exit_code, issued_at, finished_at, issued_by";
+        "id, device_id, kind, payload, status, output, exit_code, issued_at, finished_at, issued_by, "
+        + "dispatched_at, expires_at";
 
     private static RemoteCommandRow ReadCommand(SqliteDataReader reader) => new()
     {
@@ -20,6 +24,8 @@ public sealed partial class HubStore
         IssuedAt = GetTimestampOrNow(reader, "issued_at"),
         FinishedAt = GetTimestamp(reader, "finished_at"),
         IssuedBy = GetString(reader, "issued_by"),
+        DispatchedAt = GetTimestamp(reader, "dispatched_at"),
+        ExpiresAt = GetTimestamp(reader, "expires_at"),
     };
 
     /// <summary>创建一条待执行指令。</summary>
@@ -29,7 +35,8 @@ public sealed partial class HubStore
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
             INSERT INTO device_commands ({CommandColumns})
-            VALUES ($id, $deviceId, $kind, $payload, $status, $output, $exitCode, $issuedAt, $finishedAt, $issuedBy);
+            VALUES ($id, $deviceId, $kind, $payload, $status, $output, $exitCode, $issuedAt, $finishedAt,
+                    $issuedBy, $dispatchedAt, $expiresAt);
             """;
         AddParameters(command,
             ("$id", row.Id),
@@ -41,26 +48,68 @@ public sealed partial class HubStore
             ("$exitCode", row.ExitCode),
             ("$issuedAt", Ts(row.IssuedAt)),
             ("$finishedAt", row.FinishedAt is null ? null : Ts(row.FinishedAt.Value)),
-            ("$issuedBy", row.IssuedBy));
+            ("$issuedBy", row.IssuedBy),
+            ("$dispatchedAt", row.DispatchedAt is null ? null : Ts(row.DispatchedAt.Value)),
+            ("$expiresAt", row.ExpiresAt is null ? null : Ts(row.ExpiresAt.Value)));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    /// <summary>取出某设备所有待执行指令（按时间升序）。</summary>
-    public async Task<List<RemoteCommandRow>> GetPendingCommandsAsync(string deviceId,
+    /// <summary>
+    /// 取出并「领取」某设备的待执行指令。
+    /// <para>先作废已过期的指令，再把本次返回的指令标记为已派发。派发是一次性的：
+    /// 否则客户端每轮心跳都会重新拿到同一条 pending 指令，导致重复执行（重复重启、重复跑命令）。</para>
+    /// </summary>
+    public async Task<List<RemoteCommandRow>> DispatchPendingCommandsAsync(string deviceId,
         CancellationToken cancellationToken = default)
     {
+        var now = DateTimeOffset.UtcNow;
         await using var connection = await OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            $"SELECT {CommandColumns} FROM device_commands WHERE device_id = $id AND status = 'pending' ORDER BY issued_at;";
-        command.Parameters.AddWithValue("$id", deviceId);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var result = new List<RemoteCommandRow>();
-        while (await reader.ReadAsync(cancellationToken))
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        // 1) 过期未执行 → expired，不再下发（避免陈旧命令在设备上线后被突然执行）。
+        await using (var expire = connection.CreateCommand())
         {
-            result.Add(ReadCommand(reader));
+            expire.Transaction = (SqliteTransaction)transaction;
+            expire.CommandText = """
+                UPDATE device_commands SET status = 'expired', finished_at = $now
+                WHERE device_id = $id AND status = 'pending'
+                      AND expires_at IS NOT NULL AND expires_at <= $now;
+                """;
+            expire.Parameters.AddWithValue("$id", deviceId);
+            expire.Parameters.AddWithValue("$now", Ts(now));
+            await expire.ExecuteNonQueryAsync(cancellationToken);
         }
 
+        var result = new List<RemoteCommandRow>();
+        await using (var select = connection.CreateCommand())
+        {
+            select.Transaction = (SqliteTransaction)transaction;
+            select.CommandText =
+                $"SELECT {CommandColumns} FROM device_commands WHERE device_id = $id AND status = 'pending' ORDER BY issued_at;";
+            select.Parameters.AddWithValue("$id", deviceId);
+            await using var reader = await select.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                result.Add(ReadCommand(reader));
+            }
+        }
+
+        // 2) 本次取走的立即置为已派发，下一轮不会再返回。
+        foreach (var row in result)
+        {
+            await using var mark = connection.CreateCommand();
+            mark.Transaction = (SqliteTransaction)transaction;
+            mark.CommandText =
+                "UPDATE device_commands SET status = 'dispatched', dispatched_at = $now WHERE id = $id;";
+            mark.Parameters.AddWithValue("$id", row.Id);
+            mark.Parameters.AddWithValue("$now", Ts(now));
+            await mark.ExecuteNonQueryAsync(cancellationToken);
+
+            row.Status = "dispatched";
+            row.DispatchedAt = now;
+        }
+
+        await transaction.CommitAsync(cancellationToken);
         return result;
     }
 
@@ -84,25 +133,48 @@ public sealed partial class HubStore
         return result;
     }
 
-    /// <summary>回写指令执行结果。</summary>
-    public async Task CompleteCommandAsync(string id, bool success, string output, int exitCode,
-        string? error, CancellationToken cancellationToken = default)
+    /// <summary>该设备最近一次派发后仍未回报的指令数量（用于管理端提示）。</summary>
+    public async Task<int> CountInFlightCommandsAsync(string deviceId,
+        CancellationToken cancellationToken = default)
     {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT COUNT(1) AS c FROM device_commands WHERE device_id = $id AND status = 'dispatched';";
+        command.Parameters.AddWithValue("$id", deviceId);
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return value is null or DBNull ? 0 : Convert.ToInt32(value);
+    }
+
+    /// <summary>
+    /// 回写指令执行结果，返回是否命中。
+    /// <para>带上 <paramref name="deviceId"/> 条件，避免任意已认证设备回报/覆盖其它设备的指令。</para>
+    /// </summary>
+    public async Task<bool> CompleteCommandAsync(string deviceId, string id, bool success, string output,
+        int exitCode, string? error, CancellationToken cancellationToken = default)
+    {
+        var text = string.IsNullOrEmpty(error) ? output : $"{output}\n[错误] {error}";
+        if (text.Length > MaxCommandOutputLength)
+        {
+            text = text[..MaxCommandOutputLength]
+                   + $"\n…（输出过长，已截断至 {MaxCommandOutputLength / 1024} KB）";
+        }
+
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE device_commands
             SET status = $status, output = $output, exit_code = $exitCode, finished_at = $now
-            WHERE id = $id;
+            WHERE id = $id AND device_id = $deviceId;
             """;
-        var text = string.IsNullOrEmpty(error) ? output : $"{output}\n[错误] {error}";
         AddParameters(command,
             ("$status", success ? "done" : "failed"),
             ("$output", text),
             ("$exitCode", exitCode),
             ("$now", Ts(DateTimeOffset.UtcNow)),
-            ("$id", id));
-        await command.ExecuteNonQueryAsync(cancellationToken);
+            ("$id", id),
+            ("$deviceId", deviceId));
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
     /// <summary>清理过期指令（保留最近 N 天）。</summary>
@@ -129,4 +201,10 @@ public sealed class RemoteCommandRow
     public DateTimeOffset IssuedAt { get; set; }
     public DateTimeOffset? FinishedAt { get; set; }
     public string IssuedBy { get; set; } = string.Empty;
+
+    /// <summary>指令被取走下发给客户端的时刻。为空表示还没派发。</summary>
+    public DateTimeOffset? DispatchedAt { get; set; }
+
+    /// <summary>超过该时刻仍未执行就作废，避免设备离线很久后突然执行陈旧命令。</summary>
+    public DateTimeOffset? ExpiresAt { get; set; }
 }

@@ -29,6 +29,16 @@ public sealed class GroupRow
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
+
+    /// <summary>视觉标识色（调色板键名，见前端 GROUP_COLORS）；为空时由前端按 ID 推导。</summary>
+    public string Color { get; set; } = string.Empty;
+
+    /// <summary>上级分组 ID；为空表示顶层（楼栋 / 自定义分组）。</summary>
+    public string? ParentId { get; set; }
+
+    /// <summary>层级类型：building（楼栋）/ floor（楼层）/ 空（自定义分组）。</summary>
+    public string Kind { get; set; } = string.Empty;
+
     public string? DefaultProfileId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }

@@ -30,6 +30,15 @@ public sealed class ServerOptions
     public int HttpsPort { get; set; } = 29801;
 
     /// <summary>
+    /// HTTPS 证书文件（<c>.pfx</c>）路径。留空时自动生成自签名证书并缓存到数据目录，
+    /// 便于内网在没有正式证书时也能直接启用 HTTPS。
+    /// </summary>
+    public string? CertificatePath { get; set; }
+
+    /// <summary>HTTPS 证书口令。仅在 <see cref="CertificatePath"/> 指向受密码保护的证书时需要。</summary>
+    public string? CertificatePassword { get; set; }
+
+    /// <summary>
     /// 对外公布的基础地址，例如 <c>https://hub.example.edu</c>。
     /// 为空时由服务端按请求自动推断（适用于反向代理之外的直连场景）。
     /// </summary>

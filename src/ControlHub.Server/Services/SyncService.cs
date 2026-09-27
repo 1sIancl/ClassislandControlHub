@@ -18,7 +18,7 @@ public sealed class SyncService(
 
     /// <summary>
     /// 解析设备当前应生效的配置档案。
-    /// 优先级：设备单独指定 &gt; 设备所属分组的默认档案 &gt; 全局默认档案。
+    /// 优先级：设备单独指定 &gt; 设备所属分组的默认档案 &gt; 上级分组（楼栋）的默认档案 &gt; 全局默认档案。
     /// </summary>
     public async Task<ProfileRow?> ResolveProfileAsync(DeviceRow device,
         CancellationToken cancellationToken = default)
@@ -32,10 +32,17 @@ public sealed class SyncService(
             }
         }
 
-        if (!string.IsNullOrEmpty(device.GroupId))
+        // 从设备所在分组逐级向上找：楼层没设置就用所属楼栋的默认档案。
+        var groupId = device.GroupId;
+        for (var depth = 0; depth < 4 && !string.IsNullOrEmpty(groupId); depth++)
         {
-            var group = await store.GetGroupAsync(device.GroupId, cancellationToken);
-            if (group is not null && !string.IsNullOrEmpty(group.DefaultProfileId))
+            var group = await store.GetGroupAsync(groupId, cancellationToken);
+            if (group is null)
+            {
+                break;
+            }
+
+            if (!string.IsNullOrEmpty(group.DefaultProfileId))
             {
                 var fromGroup = await store.GetProfileAsync(group.DefaultProfileId, cancellationToken);
                 if (fromGroup is not null)
@@ -43,6 +50,8 @@ public sealed class SyncService(
                     return fromGroup;
                 }
             }
+
+            groupId = group.ParentId;
         }
 
         return await store.GetDefaultProfileAsync(cancellationToken);
@@ -125,12 +134,16 @@ public sealed class SyncService(
         };
     }
 
+    /// <summary>设备当前是否在线（由最近心跳时间与心跳超时共同决定）。</summary>
+    public bool IsOnline(DeviceRow device) =>
+        !device.Revoked
+        && device.LastSeenAt.HasValue
+        && (DateTimeOffset.UtcNow - device.LastSeenAt.Value).TotalSeconds < _options.OnlineTimeoutSeconds;
+
     /// <summary>把数据库行转换为面向 Web 管理端的摘要对象。</summary>
     public DeviceSummaryDto ToSummary(DeviceRow device, GroupRow? group, long serverRevision)
     {
-        var online = !device.Revoked
-                     && device.LastSeenAt.HasValue
-                     && (DateTimeOffset.UtcNow - device.LastSeenAt.Value).TotalSeconds < _options.OnlineTimeoutSeconds;
+        var online = IsOnline(device);
 
         var state = device.Revoked
             ? DeviceStates.Offline
@@ -221,16 +234,33 @@ public sealed class SyncService(
 
             case "group":
             {
+                // 分组是树形（楼栋 → 楼层），推送给楼栋时要覆盖其下楼层里的设备。
+                var groups = await store.GetGroupsAsync(cancellationToken);
                 var ids = new List<string>();
-                foreach (var groupId in request.TargetIds)
+                var visited = new HashSet<string>(StringComparer.Ordinal);
+                var pending = new Queue<string>(request.TargetIds);
+
+                while (pending.Count > 0)
                 {
+                    var groupId = pending.Dequeue();
+                    if (!visited.Add(groupId))
+                    {
+                        continue;
+                    }
+
                     var devices = await store.GetDevicesByGroupAsync(groupId, cancellationToken);
                     ids.AddRange(devices.Where(d => !d.Revoked).Select(d => d.Id));
+
+                    foreach (var child in groups.Where(g => string.Equals(g.ParentId, groupId, StringComparison.Ordinal)))
+                    {
+                        pending.Enqueue(child.Id);
+                    }
                 }
 
+                ids = ids.Distinct(StringComparer.Ordinal).ToList();
                 if (ids.Count == 0)
                 {
-                    throw HubException.Validation("所选分组内没有可推送的设备。");
+                    throw HubException.Validation("所选分组（含下级）内没有可推送的设备。");
                 }
 
                 affected = await store.BumpPushEpochAsync(ids, cancellationToken);

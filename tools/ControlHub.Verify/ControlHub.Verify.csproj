@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>ControlHub.Verify</RootNamespace>
+    <AssemblyName>ControlHub.Verify</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 直接复用 B 端插件的真实映射代码（ClassIslandAdapter）。 -->
+    <ProjectReference Include="..\..\src\ControlHub.Plugin\ControlHub.Plugin.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      插件默认把 ClassIsland 运行时程序集排除在输出之外（运行时由宿主提供）。
+      验证工具需要在普通控制台里真实运行，因此显式引入这些程序集。
+    -->
+    <PackageReference Include="ClassIsland.Shared" Version="2.1.1.1" />
+    <PackageReference Include="ClassIsland.Shared.IPC" Version="2.1.1.1" />
+  </ItemGroup>
+
+</Project>

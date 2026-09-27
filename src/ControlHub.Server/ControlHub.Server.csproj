@@ -16,6 +16,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.*" />
+    <!-- 支持以 Windows 服务方式运行（可由 sh/install-windows.ps1 一键注册）。 -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.*" />
   </ItemGroup>
 
   <ItemGroup>

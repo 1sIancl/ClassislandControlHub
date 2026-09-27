@@ -2,11 +2,11 @@
  * 系统设置视图：服务器信息、账号安全与部署提示。
  */
 
-import { api, session } from '../core/api.js?v=12';
+import { api, session } from '../core/api.js?v=21';
 import {
   h, clear, formatDateTime, formatDuration, toast, loadingBlock,
   field, modal, copyText, confirmDialog,
-} from '../core/ui.js?v=12';
+} from '../core/ui.js?v=21';
 
 export const meta = {
   title: '系统设置',
@@ -17,12 +17,13 @@ export async function render(container) {
   clear(container);
   container.appendChild(loadingBlock());
 
-  const [info, me, accounts, timeOffset, updateState] = await Promise.all([
+  const [info, me, accounts, timeOffset, updateState, aiConfig] = await Promise.all([
     api('/server/info', { auth: false }),
     api('/admin/me'),
     api('/admin/accounts'),
     api('/admin/time-offset'),
     api('/admin/update/state'),
+    api('/admin/ai/config'),
   ]);
 
   session.serverInfo = info;
@@ -42,6 +43,7 @@ export async function render(container) {
     renderAccountsCard(accounts, me),
     renderBrandingCard(info),
     renderTimeCard(timeOffset),
+    renderAiCard(aiConfig),
     renderUpdateCard(updateState),
     renderDeployCard(info),
   ));
@@ -408,4 +410,125 @@ function block(title, content) {
     h('div', { style: { fontWeight: '600', marginBottom: '6px' } }, title),
     h('div', { style: { color: 'var(--text-dim)', fontSize: '12.5px' } }, content),
   );
+}
+
+/** AI 辅助导入的接口配置。接口密钥只回传掩码，提交时留空表示保持原值。 */
+function renderAiCard(config) {
+  const enabledInput = h('input', { type: 'checkbox' });
+  enabledInput.checked = config.enabled !== false;
+
+  const baseUrlInput = h('input', {
+    type: 'text',
+    value: config.baseUrl || '',
+    placeholder: 'https://api.deepseek.com/v1',
+  });
+  const modelInput = h('input', {
+    type: 'text',
+    value: config.model || '',
+    placeholder: 'deepseek-chat',
+  });
+  const apiKeyInput = h('input', {
+    type: 'password',
+    placeholder: keyPlaceholder(config),
+  });
+  const timeoutInput = h('input', {
+    type: 'number', min: '10', max: '900', step: '10',
+    value: String(config.timeoutSeconds || 180),
+  });
+
+  const status = h('div', { style: { fontSize: '12.5px', color: 'var(--text-faint)', marginTop: '10px' } },
+    config.apiKeySet ? '接口密钥已保存，可先「测试连接」确认可用。' : '尚未保存接口密钥。');
+
+  const setStatus = (ok, text) => {
+    status.textContent = text;
+    status.style.color = ok ? 'var(--ok)' : 'var(--danger)';
+  };
+
+  const save = async (extra = {}) => {
+    const saved = await api('/admin/ai/config', {
+      method: 'PUT',
+      body: {
+        enabled: enabledInput.checked,
+        baseUrl: baseUrlInput.value.trim(),
+        model: modelInput.value.trim(),
+        timeoutSeconds: Number(timeoutInput.value) || 180,
+        apiKey: apiKeyInput.value,
+        apiKeyClear: false,
+        ...extra,
+      },
+    });
+    apiKeyInput.value = '';
+    apiKeyInput.placeholder = keyPlaceholder(saved);
+    return saved;
+  };
+
+  const run = async (button, task) => {
+    button.disabled = true;
+    try {
+      await task();
+    } catch (err) {
+      setStatus(false, err.message);
+    } finally {
+      button.disabled = false;
+    }
+  };
+
+  const testBtn = h('button.btn.btn-sm', {
+    type: 'button',
+    onClick: () => run(testBtn, async () => {
+      setStatus(true, '正在测试…');
+      await save();
+      const result = await api('/admin/ai/test', { method: 'POST' });
+      setStatus(result.ok, result.ok ? `${result.message}（${result.elapsedMs} ms）` : result.message);
+    }),
+  }, '测试连接');
+
+  const clearBtn = h('button.btn.btn-sm', {
+    type: 'button',
+    onClick: () => run(clearBtn, async () => {
+      if (!await confirmDialog('清除接口密钥', '确定清除已保存的接口密钥吗？', '清除', true)) {
+        return;
+      }
+
+      const saved = await save({ apiKey: '', apiKeyClear: true });
+      apiKeyInput.placeholder = keyPlaceholder(saved);
+      setStatus(true, '接口密钥已清除。');
+    }),
+  }, '清除密钥');
+
+  const saveBtn = h('button.btn.btn-sm.btn-primary', {
+    type: 'button',
+    onClick: () => run(saveBtn, async () => {
+      await save();
+      setStatus(true, 'AI 配置已保存。');
+    }),
+  }, '保存 AI 配置');
+
+  return h('div.card', { style: { marginTop: '16px' } },
+    h('div.card-head',
+      h('div',
+        h('h3', 'AI 辅助导入课表'),
+        h('p.card-desc', '把任意格式的课表文本（Excel 粘贴、网页复制、手工整理）交给大模型，自动整理成作息时间表、科目与课表。')),
+    ),
+    h('label.checkbox-field', enabledInput, '启用 AI 辅助导入'),
+    h('div.form-row',
+      field('接口地址', baseUrlInput, '任何兼容 OpenAI Chat Completions 的服务，填到 /v1 即可。'),
+      field('模型名称', modelInput, '例如 deepseek-chat、qwen-plus、gpt-4o-mini。'),
+    ),
+    h('div.form-row',
+      field('接口密钥', apiKeyInput, '仅保存在本机数据库，页面只回传掩码。'),
+      field('超时（秒）', timeoutInput, '解析整周课表耗时较长，建议 120 秒以上。'),
+    ),
+    h('div.notice.notice-info',
+      h('span.notice-icon', 'i'),
+      h('div', '课表内容会发送到你填写的接口地址。若其中含教师姓名等信息，请使用可信服务或本地部署的模型。'
+        + '「测试连接」会先保存当前配置。'),
+    ),
+    h('div.card-actions', testBtn, clearBtn, saveBtn),
+    status,
+  );
+}
+
+function keyPlaceholder(config) {
+  return config.apiKeySet ? `已保存 ${config.apiKeyHint}，留空则不修改` : '本地部署的模型可留空';
 }

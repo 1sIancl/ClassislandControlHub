@@ -2,8 +2,8 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo } from './core/api.js?v=12';
-import { h, clear, toast } from './core/ui.js?v=12';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo } from './core/api.js?v=21';
+import { h, clear, toast, icon } from './core/ui.js?v=21';
 import {
   initTheme, getTheme, applyTheme, THEMES,
   getSidebarCollapsed, setSidebarCollapsed,
@@ -11,7 +11,7 @@ import {
   applyAppearance, getAccent, setAccent, ACCENTS,
   getFont, setFont, FONTS,
   getRadius, setRadius, RADII,
-} from './core/prefs.js?v=12';
+} from './core/prefs.js?v=21';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -19,16 +19,6 @@ applyAppearance();
 applyDensity();
 setSidebarCollapsed(getSidebarCollapsed());
 
-/** 导航图标（内联 SVG，描边风格，跟随文字颜色）。 */
-const ICONS = {
-  dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.6"/><rect x="14" y="3" width="7" height="7" rx="1.6"/><rect x="14" y="14" width="7" height="7" rx="1.6"/><rect x="3" y="14" width="7" height="7" rx="1.6"/></svg>',
-  profiles: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg>',
-  devices: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
-  groups: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
-  deploy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></svg>',
-  audit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>',
-  settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
-};
 
 /** 导航结构。新增页面时只需在此登记。 */
 const NAV = [
@@ -42,37 +32,37 @@ const NAV = [
     label: '配置管理',
     items: [
       { key: 'profiles', label: '配置档案', icon: 'profiles', hash: '#/profiles' },
-      { key: 'devices', label: '设备管理', icon: 'devices', hash: '#/devices' },
-      { key: 'groups', label: '分组管理', icon: 'groups', hash: '#/groups' },
+      { key: 'devices', label: '设备管理', icon: 'monitor', hash: '#/devices' },
     ],
   },
   {
     label: '下发管理',
     items: [
-      { key: 'deploy', label: '配置下发', icon: 'deploy', hash: '#/deploy' },
-      { key: 'remote', label: '远程管理', icon: 'deploy', hash: '#/remote' },
+      { key: 'deploy', label: '配置下发', icon: 'send', hash: '#/deploy' },
+      { key: 'remote', label: '远程管理', icon: 'send', hash: '#/remote' },
     ],
   },
   {
     label: '系统',
     items: [
-      { key: 'audit', label: '审计日志', icon: 'audit', hash: '#/audit' },
-      { key: 'settings', label: '系统设置', icon: 'settings', hash: '#/settings' },
+      { key: 'audit', label: '审计日志', icon: 'list', hash: '#/audit' },
+      { key: 'settings', label: '系统设置', icon: 'gear', hash: '#/settings' },
     ],
   },
 ];
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=12'),
-  devices: () => import('./views/devices.js?v=12'),
-  groups: () => import('./views/groups.js?v=12'),
-  profiles: () => import('./views/profiles.js?v=12'),
-  profileEditor: () => import('./views/profileEditor.js?v=12'),
-  deploy: () => import('./views/deploy.js?v=12'),
-  remote: () => import('./views/remote.js?v=12'),
-  audit: () => import('./views/audit.js?v=12'),
-  settings: () => import('./views/settings.js?v=12'),
+  dashboard: () => import('./views/dashboard.js?v=21'),
+  devices: () => import('./views/devices.js?v=21'),
+  // 「分组管理」已并入设备管理，旧链接继续可用。
+  groups: () => import('./views/devices.js?v=21'),
+  profiles: () => import('./views/profiles.js?v=21'),
+  profileEditor: () => import('./views/profileEditor.js?v=21'),
+  deploy: () => import('./views/deploy.js?v=21'),
+  remote: () => import('./views/remote.js?v=21'),
+  audit: () => import('./views/audit.js?v=21'),
+  settings: () => import('./views/settings.js?v=21'),
 };
 
 /** 运行状态。 */
@@ -257,7 +247,7 @@ function renderNav() {
     nav.appendChild(h('div.nav-group-label', group.label));
     for (const item of group.items) {
       const iconEl = h('span.nav-icon');
-      iconEl.innerHTML = ICONS[item.icon] || '';
+      iconEl.appendChild(icon(item.icon, 17));
       const button = h('button.nav-item', {
         type: 'button',
         dataset: { key: item.key },
@@ -340,68 +330,50 @@ function bindShellEvents() {
   window.addEventListener('hashchange', () => route());
 }
 
-/** 渲染「外观」下拉：主题 + 强调色 + 字体 + 圆角 + 密度。 */
+/** 渲染「外观」下拉：主题、强调色、字体、圆角、密度。 */
 function renderAppearanceMenu() {
   const dropdown = document.getElementById('themeDropdown');
   const themeBtn = document.getElementById('themeBtn');
-  const currentTheme = getTheme();
-  const currentDensity = getDensity();
-  const currentAccent = getAccent();
-  const currentFont = getFont();
-  const currentRadius = getRadius();
-  clear(dropdown);
 
-  // 主题按钮图标随当前主题变化
-  const resolved = document.documentElement.dataset.theme;
-  themeBtn.textContent = resolved === 'light' ? '☀' : '☾';
+  clear(dropdown);
+  clear(themeBtn);
+  themeBtn.appendChild(icon(document.documentElement.dataset.theme === 'light' ? 'sun' : 'moon', 16));
+
+  const addItem = (label, active, dataset, marker) => dropdown.appendChild(h('button', { dataset },
+    h('span.menu-marker', marker),
+    h('span', label),
+    active ? h('span.menu-check', icon('check', 13)) : null,
+  ));
+
+  const addGroup = (title) => {
+    dropdown.appendChild(h('div.menu-sep'));
+    dropdown.appendChild(h('div.dropdown-section', title));
+  };
 
   dropdown.appendChild(h('div.dropdown-section', '主题'));
   for (const t of THEMES) {
-    dropdown.appendChild(h('button', { dataset: { action: 'theme', value: t.key } },
-      h('span', { class: `theme-swatch ${t.key}` }, t.icon),
-      h('span', t.label),
-      currentTheme === t.key ? h('span.menu-check', '✓') : null,
-    ));
+    addItem(t.label, getTheme() === t.key, { action: 'theme', value: t.key }, icon(t.icon, 15));
   }
 
-  dropdown.appendChild(h('div.menu-sep'));
-  dropdown.appendChild(h('div.dropdown-section', '强调色'));
+  addGroup('强调色');
   for (const a of ACCENTS) {
-    dropdown.appendChild(h('button', { dataset: { action: 'accent', value: a.value } },
-      h('span.accent-dot', { style: { background: a.value } }),
-      h('span', a.label),
-      currentAccent === a.value ? h('span.menu-check', '✓') : null,
-    ));
+    addItem(a.label, getAccent() === a.value, { action: 'accent', value: a.value },
+      h('span.accent-dot', { style: { background: a.value } }));
   }
 
-  dropdown.appendChild(h('div.menu-sep'));
-  dropdown.appendChild(h('div.dropdown-section', '字体'));
+  addGroup('字体');
   for (const f of FONTS) {
-    dropdown.appendChild(h('button', { dataset: { action: 'font', value: f.value } },
-      h('span', { style: { width: '18px', textAlign: 'center', flex: 'none', opacity: 0.8 } }, 'A'),
-      h('span', f.label),
-      currentFont === f.value ? h('span.menu-check', '✓') : null,
-    ));
+    addItem(f.label, getFont() === f.value, { action: 'font', value: f.value }, 'A');
   }
 
-  dropdown.appendChild(h('div.menu-sep'));
-  dropdown.appendChild(h('div.dropdown-section', '圆角'));
+  addGroup('圆角');
   for (const r of RADII) {
-    dropdown.appendChild(h('button', { dataset: { action: 'radius', value: r.key } },
-      h('span', { style: { width: '18px', textAlign: 'center', flex: 'none', opacity: 0.8 } }, '▢'),
-      h('span', r.label),
-      currentRadius === r.key ? h('span.menu-check', '✓') : null,
-    ));
+    addItem(r.label, getRadius() === r.key, { action: 'radius', value: r.key }, icon('square', 14));
   }
 
-  dropdown.appendChild(h('div.menu-sep'));
-  dropdown.appendChild(h('div.dropdown-section', '密度'));
+  addGroup('密度');
   for (const d of DENSITIES) {
-    dropdown.appendChild(h('button', { dataset: { action: 'density', value: d.key } },
-      h('span', { style: { width: '18px', textAlign: 'center', flex: 'none', opacity: 0.8 } }, '▤'),
-      h('span', d.label),
-      currentDensity === d.key ? h('span.menu-check', '✓') : null,
-    ));
+    addItem(d.label, getDensity() === d.key, { action: 'density', value: d.key }, icon('rows', 14));
   }
 }
 
@@ -420,7 +392,8 @@ function parseHash() {
     return { key: 'profileEditor', module: ROUTES.profileEditor, params: { ...params, id: segments[1] } };
   }
 
-  const key = segments[0] || 'dashboard';
+  // 「分组管理」已并入设备管理。
+  const key = segments[0] === 'groups' ? 'devices' : (segments[0] || 'dashboard');
   return { key, module: ROUTES[key] || ROUTES.dashboard, params };
 }
 
