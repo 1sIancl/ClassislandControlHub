@@ -269,6 +269,9 @@ public sealed class DeviceSummaryDto
     /// <summary>配置是否为最新（版本号与推送世代号均一致）。</summary>
     public bool UpToDate => AppliedRevision >= ServerRevision && AppliedPushEpoch >= ServerPushEpoch;
 
+    /// <summary>管理员备注（例如「三楼东侧」，仅管理端可见）。</summary>
+    public string Remark { get; set; } = string.Empty;
+
     /// <summary>最近心跳时间（UTC）。</summary>
     public DateTimeOffset? LastSeenAt { get; set; }
 

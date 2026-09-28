@@ -26,6 +26,69 @@ public static class RemoteCommandKinds
 
     /// <summary>请求 ClassIsland 重启。</summary>
     public const string Restart = "restart";
+
+    /// <summary>关闭计算机（Windows 电源管理，无载荷）。</summary>
+    public const string PowerShutdown = "power.shutdown";
+
+    /// <summary>重启计算机，无载荷。</summary>
+    public const string PowerRestart = "power.restart";
+
+    /// <summary>让计算机进入睡眠，无载荷。</summary>
+    public const string PowerSleep = "power.sleep";
+
+    /// <summary>请求上报可远程触发的自动化信号列表（结果放在命令回报的 Output 中）。</summary>
+    public const string AutomationList = "automation.list";
+
+    /// <summary>触发一个自动化信号，载荷为 <c>{"signal":"放学"}</c>。</summary>
+    public const string AutomationTrigger = "automation.trigger";
+}
+
+/// <summary>触发自动化信号的载荷。</summary>
+public sealed class AutomationTriggerPayload
+{
+    /// <summary>信号名（与 ClassIsland 自动化里「信号触发器」填写的名称一致）。</summary>
+    public string Signal { get; set; } = string.Empty;
+}
+
+/// <summary>通知模板：把常用的广播内容存起来，发通知时一键套用。</summary>
+public sealed class NoticeTemplateDto
+{
+    /// <summary>模板 ID。</summary>
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>模板名称（管理端识别用，例如「广播站通知」）。</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>通知标题。</summary>
+    public string Title { get; set; } = string.Empty;
+
+    /// <summary>通知正文。</summary>
+    public string Content { get; set; } = string.Empty;
+
+    /// <summary>是否语音播报。</summary>
+    public bool Speak { get; set; }
+
+    /// <summary>创建时间。</summary>
+    public DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>最近更新时间。</summary>
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary>新建或更新通知模板。</summary>
+public sealed class NoticeTemplateUpsertRequest
+{
+    /// <summary>模板名称。</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>通知标题。</summary>
+    public string Title { get; set; } = string.Empty;
+
+    /// <summary>通知正文。</summary>
+    public string Content { get; set; } = string.Empty;
+
+    /// <summary>是否语音播报。</summary>
+    public bool Speak { get; set; }
 }
 
 /// <summary>远程指令（A 端下发，B 端执行并回报）。</summary>

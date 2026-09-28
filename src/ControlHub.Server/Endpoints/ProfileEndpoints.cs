@@ -31,6 +31,13 @@ public static class ProfileEndpoints
         group.MapPost("/profiles/{id}/default", SetDefaultAsync).RequirePermission(PermissionKeys.ProfilesWrite);
         group.MapPost("/profiles/{id}/push", PushAsync).RequirePermission(PermissionKeys.DeployWrite);
         group.MapPost("/profiles/import-cses", ImportCsesAsync).RequirePermission(PermissionKeys.ProfilesWrite);
+
+        // 历史版本：保存前自动留快照，改坏了可以一键回滚
+        group.MapGet("/profiles/{id}/versions", ListVersionsAsync).RequirePermission(PermissionKeys.ProfilesRead);
+        group.MapPost("/profiles/{id}/versions/{versionId}/restore", RestoreVersionAsync)
+            .RequirePermission(PermissionKeys.ProfilesWrite);
+        group.MapDelete("/profiles/{id}/versions/{versionId}", DeleteVersionAsync)
+            .RequirePermission(PermissionKeys.ProfilesWrite);
     }
 
     /// <summary>列出全部档案（不含内容，减少传输量）。</summary>
@@ -187,6 +194,23 @@ public static class ProfileEndpoints
             contentText = HubJson.Serialize(content);
         }
 
+        if (contentChanged)
+        {
+            // 保存前先给「旧内容」留一份快照：换课 / 改课表改坏时可以一键回滚。
+            await store.CreateProfileVersionAsync(new ProfileVersionRow
+            {
+                Id = HubChecksum.NewId(),
+                ProfileId = id,
+                Revision = existing.Revision,
+                Name = existing.Name,
+                Description = existing.Description,
+                Content = existing.Content,
+                Reason = "保存前自动备份",
+                CreatedBy = session.Username,
+                CreatedAt = DateTimeOffset.UtcNow,
+            }, cancellationToken);
+        }
+
         var updated = await store.UpdateProfileAsync(id, request.Name.Trim(),
             request.Description?.Trim() ?? existing.Description, contentText, contentChanged, cancellationToken)
                       ?? throw HubException.NotFound("配置档案不存在。");
@@ -233,6 +257,7 @@ public static class ProfileEndpoints
         }
 
         await store.DeleteProfileAsync(id, cancellationToken);
+        await store.DeleteProfileVersionsOfProfileAsync(id, cancellationToken);
         await sync.BumpRevisionAsync(cancellationToken);
         await store.AddAuditAsync(session.Username, "profile.delete", profile.Name,
             "删除配置档案，相关设备已恢复为继承分组/默认档案。",
@@ -412,6 +437,139 @@ public static class ProfileEndpoints
         // 极端情况下退回用 GUID 前 4 位大写，仍保证非空且大概率唯一。
         return Guid.NewGuid().ToString("N")[..4].ToUpperInvariant();
     }
+
+    // ────────────────────────────── 历史版本（快照与回滚） ──────────────────────────────
+
+    private static ProfileVersionDto ToVersionDto(ProfileVersionRow row) => new()
+    {
+        Id = row.Id,
+        ProfileId = row.ProfileId,
+        Revision = row.Revision,
+        Name = row.Name,
+        Description = row.Description,
+        Reason = row.Reason,
+        CreatedBy = row.CreatedBy,
+        CreatedAt = row.CreatedAt,
+    };
+
+    /// <summary>档案的历史版本列表（不含内容，减少传输量）。</summary>
+    private static async Task<ApiResult<List<ProfileVersionDto>>> ListVersionsAsync(
+        string id,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        http.RequireAdminSession();
+        if (await store.GetProfileAsync(id, cancellationToken) is null)
+        {
+            throw HubException.NotFound("配置档案不存在。");
+        }
+
+        var rows = await store.GetProfileVersionsAsync(id, cancellationToken);
+        return ApiResult<List<ProfileVersionDto>>.Success(rows.Select(ToVersionDto).ToList());
+    }
+
+    /// <summary>回滚到指定历史版本；回滚前会先把「当前内容」也留一份快照。</summary>
+    private static async Task<ApiResult<ProfileSaveResult>> RestoreVersionAsync(
+        string id,
+        string versionId,
+        HttpContext http,
+        HubStore store,
+        SyncService sync,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var profile = await store.GetProfileAsync(id, cancellationToken)
+                      ?? throw HubException.NotFound("配置档案不存在。");
+
+        var version = await store.GetProfileVersionAsync(versionId, cancellationToken);
+        if (version is null || !string.Equals(version.ProfileId, id, StringComparison.OrdinalIgnoreCase))
+        {
+            throw HubException.NotFound("历史版本不存在。");
+        }
+
+        var content = HubJson.DeserializeOrDefault(version.Content, new ContentBundleDto());
+        var notes = ContentNormalizer.Normalize(content);
+
+        // 回滚本身也是一次内容变更：先把当前内容存一份，避免「回滚后又想回到刚才」。
+        await store.CreateProfileVersionAsync(new ProfileVersionRow
+        {
+            Id = HubChecksum.NewId(),
+            ProfileId = id,
+            Revision = profile.Revision,
+            Name = profile.Name,
+            Description = profile.Description,
+            Content = profile.Content,
+            Reason = "回滚前自动备份",
+            CreatedBy = session.Username,
+            CreatedAt = DateTimeOffset.UtcNow,
+        }, cancellationToken);
+
+        var updated = await store.UpdateProfileAsync(id, profile.Name, profile.Description,
+            HubJson.Serialize(content), true, cancellationToken)
+                      ?? throw HubException.NotFound("配置档案不存在。");
+
+        var revision = await sync.BumpRevisionAsync(cancellationToken);
+        await store.AddAuditAsync(session.Username, "profile.restore", updated.Name,
+            $"回滚到 {version.CreatedAt:yyyy-MM-dd HH:mm} 的快照（版本 v{version.Revision}）。",
+            http.GetClientIpAddress(), cancellationToken);
+
+        return ApiResult<ProfileSaveResult>.Success(new ProfileSaveResult
+        {
+            Profile = ToDto(updated, includeContent: true),
+            Notes = notes,
+            Revision = revision,
+        });
+    }
+
+    /// <summary>删除某个历史版本。</summary>
+    private static async Task<ApiResult<bool>> DeleteVersionAsync(
+        string id,
+        string versionId,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var version = await store.GetProfileVersionAsync(versionId, cancellationToken);
+        if (version is null || !string.Equals(version.ProfileId, id, StringComparison.OrdinalIgnoreCase))
+        {
+            throw HubException.NotFound("历史版本不存在。");
+        }
+
+        await store.DeleteProfileVersionAsync(versionId, cancellationToken);
+        await store.AddAuditAsync(session.Username, "profile.version.delete", version.Name,
+            "删除了一份档案历史版本。", http.GetClientIpAddress(), cancellationToken);
+        return ApiResult<bool>.Success(true);
+    }
+}
+
+/// <summary>配置档案历史版本（快照）。</summary>
+public sealed class ProfileVersionDto
+{
+    /// <summary>快照 ID。</summary>
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>所属档案 ID。</summary>
+    public string ProfileId { get; set; } = string.Empty;
+
+    /// <summary>快照对应的档案内容版本号。</summary>
+    public long Revision { get; set; }
+
+    /// <summary>快照时的档案名称。</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>快照时的档案说明。</summary>
+    public string Description { get; set; } = string.Empty;
+
+    /// <summary>产生快照的原因（保存前 / 回滚前自动备份）。</summary>
+    public string Reason { get; set; } = string.Empty;
+
+    /// <summary>操作人。</summary>
+    public string CreatedBy { get; set; } = string.Empty;
+
+    /// <summary>创建时间。</summary>
+    public DateTimeOffset CreatedAt { get; set; }
 }
 
 /// <summary>从 CSES 导入的请求体。</summary>

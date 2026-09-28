@@ -26,6 +26,8 @@ public static class RemoteEndpoints
         group.MapGet("/devices/{id}/plugins", GetPluginsAsync).RequirePermission(PermissionKeys.RemoteRead);
         group.MapPost("/devices/{id}/plugins/refresh", RefreshPluginsAsync)
             .RequirePermission(PermissionKeys.RemoteWrite);
+
+
     }
 
     /// <summary>读取设备最近一次上报的插件列表。</summary>
@@ -288,6 +290,135 @@ public sealed class SendCommandRequest
 
     /// <summary>是否把离线设备也纳入广播（命令会排队，等设备上线后执行）。默认 false。</summary>
     public bool IncludeOffline { get; set; }
+}
+
+/// <summary>
+/// 通知模板接口：把「广播站通知」「放学提醒」这类常用内容存成模板，发通知时一键套用。
+/// </summary>
+public static class NoticeTemplateEndpoints
+{
+    /// <summary>注册通知模板路由。</summary>
+    public static void MapNoticeTemplateEndpoints(this IEndpointRouteBuilder app)
+    {
+        var group = app.NewVersionedGroup("admin")
+            .AddEndpointFilter<AdminAuthFilter>()
+            .AddEndpointFilter<AdminPermissionFilter>();
+
+        group.MapGet("/notice-templates", ListNoticeTemplatesAsync).RequirePermission(PermissionKeys.RemoteRead);
+        group.MapPost("/notice-templates", CreateNoticeTemplateAsync).RequirePermission(PermissionKeys.RemoteWrite);
+        group.MapPut("/notice-templates/{id}", UpdateNoticeTemplateAsync)
+            .RequirePermission(PermissionKeys.RemoteWrite);
+        group.MapDelete("/notice-templates/{id}", DeleteNoticeTemplateAsync)
+            .RequirePermission(PermissionKeys.RemoteWrite);
+    }
+
+    private static NoticeTemplateDto ToNoticeTemplateDto(NoticeTemplateRow row) => new()
+    {
+        Id = row.Id,
+        Name = row.Name,
+        Title = row.Title,
+        Content = row.Content,
+        Speak = row.Speak,
+        CreatedAt = row.CreatedAt,
+        UpdatedAt = row.UpdatedAt,
+    };
+
+    /// <summary>通知模板列表。</summary>
+    private static async Task<ApiResult<List<NoticeTemplateDto>>> ListNoticeTemplatesAsync(
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        http.RequireAdminSession();
+        var rows = await store.GetNoticeTemplatesAsync(cancellationToken);
+        return ApiResult<List<NoticeTemplateDto>>.Success(rows.Select(ToNoticeTemplateDto).ToList());
+    }
+
+    /// <summary>新建通知模板。</summary>
+    private static async Task<ApiResult<NoticeTemplateDto>> CreateNoticeTemplateAsync(
+        NoticeTemplateUpsertRequest request,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var name = (request.Name ?? string.Empty).Trim();
+        if (name.Length == 0)
+        {
+            throw HubException.Validation("请填写模板名称。");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Title) && string.IsNullOrWhiteSpace(request.Content))
+        {
+            throw HubException.Validation("标题和内容不能都为空。");
+        }
+
+        var row = new NoticeTemplateRow
+        {
+            Id = HubChecksum.NewId(),
+            Name = name.Length > 40 ? name[..40] : name,
+            Title = (request.Title ?? string.Empty).Trim(),
+            Content = (request.Content ?? string.Empty).Trim(),
+            Speak = request.Speak,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
+
+        await store.CreateNoticeTemplateAsync(row, cancellationToken);
+        await store.AddAuditAsync(session.Username, "notice-template.create", row.Name,
+            "新建通知模板。", http.GetClientIpAddress(), cancellationToken);
+        return ApiResult<NoticeTemplateDto>.Success(ToNoticeTemplateDto(row));
+    }
+
+    /// <summary>更新通知模板。</summary>
+    private static async Task<ApiResult<NoticeTemplateDto>> UpdateNoticeTemplateAsync(
+        string id,
+        NoticeTemplateUpsertRequest request,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var row = await store.GetNoticeTemplateAsync(id, cancellationToken)
+                  ?? throw HubException.NotFound("模板不存在。");
+
+        var name = (request.Name ?? string.Empty).Trim();
+        if (name.Length == 0)
+        {
+            throw HubException.Validation("请填写模板名称。");
+        }
+
+        row.Name = name.Length > 40 ? name[..40] : name;
+        row.Title = (request.Title ?? string.Empty).Trim();
+        row.Content = (request.Content ?? string.Empty).Trim();
+        row.Speak = request.Speak;
+
+        if (!await store.UpdateNoticeTemplateAsync(row, cancellationToken))
+        {
+            throw HubException.NotFound("模板不存在。");
+        }
+
+        await store.AddAuditAsync(session.Username, "notice-template.update", row.Name,
+            "更新通知模板。", http.GetClientIpAddress(), cancellationToken);
+        return ApiResult<NoticeTemplateDto>.Success(ToNoticeTemplateDto(row));
+    }
+
+    /// <summary>删除通知模板。</summary>
+    private static async Task<ApiResult<bool>> DeleteNoticeTemplateAsync(
+        string id,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var row = await store.GetNoticeTemplateAsync(id, cancellationToken)
+                  ?? throw HubException.NotFound("模板不存在。");
+
+        await store.DeleteNoticeTemplateAsync(id, cancellationToken);
+        await store.AddAuditAsync(session.Username, "notice-template.delete", row.Name,
+            "删除通知模板。", http.GetClientIpAddress(), cancellationToken);
+        return ApiResult<bool>.Success(true);
+    }
 }
 
 /// <summary>下发外观的请求体。</summary>

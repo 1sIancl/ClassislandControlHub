@@ -46,6 +46,7 @@ public static class AdminEndpoints
 
         // ── 账号与权限 ──
         authed.MapGet("/permissions", PermissionsAsync).RequirePermission(PermissionKeys.AccountsRead);
+        authed.MapGet("/permission-presets", PermissionPresetsAsync).RequirePermission(PermissionKeys.AccountsRead);
         authed.MapGet("/accounts", AccountsAsync).RequirePermission(PermissionKeys.AccountsRead);
         authed.MapPost("/accounts", CreateAccountAsync).RequirePermission(PermissionKeys.AccountsWrite);
         authed.MapPut("/accounts/{id}", UpdateAccountAsync).RequirePermission(PermissionKeys.AccountsWrite);
@@ -513,6 +514,13 @@ public static class AdminEndpoints
     {
         http.RequireAdminSession();
         return ApiResult<List<PermissionModuleDto>>.Success(PermissionCatalog.ToDto());
+    }
+
+    /// <summary>角色模板：账号界面「快速套用」岗位权限组合。</summary>
+    private static ApiResult<List<PermissionPresetDto>> PermissionPresetsAsync(HttpContext http)
+    {
+        http.RequireAdminSession();
+        return ApiResult<List<PermissionPresetDto>>.Success(PermissionCatalog.ToPresetDto());
     }
 
     /// <summary>新建账号。未指定密码时由系统生成，并在响应里回传一次。</summary>

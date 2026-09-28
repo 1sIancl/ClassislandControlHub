@@ -2,11 +2,11 @@
  * 系统设置视图：服务器信息、账号安全与部署提示。
  */
 
-import { api, session, hasPermission } from '../core/api.js?v=23';
+import { api, session, hasPermission } from '../core/api.js?v=26';
 import {
   h, clear, formatDateTime, formatDuration, toast, loadingBlock,
   field, modal, copyText, confirmDialog,
-} from '../core/ui.js?v=23';
+} from '../core/ui.js?v=26';
 
 export const meta = {
   title: '系统设置',
@@ -21,12 +21,13 @@ export async function render(container) {
   const canSettings = hasPermission('settings.read');
   const canAccounts = hasPermission('accounts.read');
 
-  const [info, me, accounts, permissions, registerCodes, registerRequests, registration, timeOffset, updateState, aiConfig] =
+  const [info, me, accounts, permissions, permissionPresets, registerCodes, registerRequests, registration, timeOffset, updateState, aiConfig] =
     await Promise.all([
       api('/server/info', { auth: false }),
       api('/admin/me'),
       canAccounts ? api('/admin/accounts') : Promise.resolve([]),
       canAccounts ? api('/admin/permissions') : Promise.resolve([]),
+      canAccounts ? api('/admin/permission-presets') : Promise.resolve([]),
       canAccounts ? api('/admin/register-codes') : Promise.resolve([]),
       canAccounts ? api('/admin/register-requests') : Promise.resolve([]),
       api('/admin/registration', { auth: false }).catch(() => ({ enabled: false })),
@@ -49,7 +50,7 @@ export async function render(container) {
       renderServerCard(info),
       renderAccountCard(me),
     ),
-    canAccounts ? renderAccountsCard(container, accounts, me, permissions) : null,
+    canAccounts ? renderAccountsCard(container, accounts, me, permissions, permissionPresets) : null,
     canAccounts ? renderRegisterCodesCard(container, registerCodes, registration) : null,
     canAccounts ? renderRegisterRequestsCard(container, registerRequests, registration) : null,
     canSettings ? renderBrandingCard(info) : null,
@@ -153,7 +154,7 @@ async function replayOnboarding() {
     return;
   }
 
-  const { startTour } = await import('../core/tour.js?v=23');
+  const { startTour } = await import('../core/tour.js?v=26');
   startTour({
     onFinish: async (skipped) => {
       if (!skipped) {
@@ -198,7 +199,7 @@ function openChangePasswordDialog() {
   });
 }
 
-function renderAccountsCard(container, accounts, me, permissions) {
+function renderAccountsCard(container, accounts, me, permissions, presets) {
   return h('div.card', { style: { marginTop: '16px' } },
     h('div.card-head',
       h('div',
@@ -209,7 +210,7 @@ function renderAccountsCard(container, accounts, me, permissions) {
       ),
       h('button.btn.btn-primary.btn-sm', {
         type: 'button',
-        onClick: () => openAccountEditor(container, null, permissions),
+        onClick: () => openAccountEditor(container, null, permissions, presets),
       }, '+ 新建账号'),
     ),
     h('div.table-wrap',
@@ -239,7 +240,7 @@ function renderAccountsCard(container, accounts, me, permissions) {
           h('td.actions',
             h('button.btn.btn-sm', {
               type: 'button',
-              onClick: () => openAccountEditor(container, account, permissions),
+              onClick: () => openAccountEditor(container, account, permissions, presets),
             }, '编辑'),
             ' ',
             h('button.btn.btn-sm', {
@@ -348,10 +349,18 @@ function createPermissionTable(permissions, initial, isAdminRole) {
       adminMode = value;
       paint();
     },
+    /** 一键套用角色模板：整体替换勾选状态后重绘。 */
+    setSelected: (keys) => {
+      selected.clear();
+      for (const key of (keys || [])) {
+        selected.add(key);
+      }
+      paint();
+    },
   };
 }
 
-function openAccountEditor(container, account, permissions) {
+function openAccountEditor(container, account, permissions, presets) {
   const isNew = !account;
   const isAdminAccount = account?.role === 'admin';
   const canGrantAdmin = session.me?.role === 'admin';
@@ -384,6 +393,26 @@ function openAccountEditor(container, account, permissions) {
 
   const perm = createPermissionTable(permissions, isNew ? DEFAULT_PERMISSIONS : (account?.permissions || []), isAdminAccount);
 
+  // 角色模板：一键套用岗位权限组合（套用后仍可逐个微调）
+  const presetRow = h('div.preset-row');
+  if ((presets || []).length > 0) {
+    presetRow.appendChild(h('span.preset-label', '快速套用角色'));
+    for (const preset of presets) {
+      presetRow.appendChild(h('button.btn.btn-sm.preset-btn', {
+        type: 'button',
+        title: preset.description,
+        onClick: () => {
+          adminChk.checked = false;
+          perm.setAdminMode(false);
+          perm.setSelected(preset.permissions);
+          toast('ok', `已套用「${preset.label}」`, preset.description);
+        },
+      }, preset.label));
+    }
+  } else {
+    presetRow.hidden = true;
+  }
+
   if (canGrantAdmin) {
     adminChk.addEventListener('change', () => perm.setAdminMode(adminChk.checked));
   }
@@ -402,6 +431,7 @@ function openAccountEditor(container, account, permissions) {
           h('span', '设为超级管理员'),
           h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } }, '（拥有全部权限，且不可被裁剪）'))
         : null,
+      presetRow,
       h('div', { style: { marginTop: '6px' } },
         h('div', { style: { fontSize: '12.5px', color: 'var(--text-dim)', marginBottom: '8px' } }, '模块权限'),
         perm.table,

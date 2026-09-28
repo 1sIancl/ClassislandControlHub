@@ -4,13 +4,13 @@
  * 并可切换到列表视图查看完整状态明细。注册码管理一并放在本页。
  */
 
-import { api } from '../core/api.js?v=23';
+import { api } from '../core/api.js?v=26';
 import {
   h, clear, formatDateTime, relativeTime, toast, loadingBlock,
   modal, confirmDialog, deviceStateBadge, syncBadge,
   emptyState, field, select, copyText, append,
-} from '../core/ui.js?v=23';
-import { getLayout, saveLayout } from '../core/prefs.js?v=23';
+} from '../core/ui.js?v=26';
+import { getLayout, saveLayout } from '../core/prefs.js?v=26';
 
 export const meta = {
   title: '设备管理',
@@ -30,6 +30,9 @@ let view = 'groups';
 /** 拖拽中的设备 ID（HTML5 DnD 的 dataTransfer 在 dragover 阶段读不到数据，用模块变量兜底）。 */
 let draggedDeviceId = null;
 
+/** 列表视图里勾选的设备 ID（用于批量下发 / 通知 / 重启）。 */
+const selection = new Set();
+
 // ── 设备表格列定义（支持显隐配置，操作列固定） ──
 const COLUMN_DEFS = [
   {
@@ -37,6 +40,7 @@ const COLUMN_DEFS = [
     cell: (d) => h('td',
       h('div.cell-main', d.name),
       h('div.cell-sub', [d.machineName, d.ipAddress].filter(Boolean).join(' · ') || d.id.slice(0, 8)),
+      d.remark ? h('div.cell-sub', { style: { color: 'var(--text-faint)' } }, `备注：${d.remark}`) : null,
     ),
   },
   {
@@ -529,6 +533,7 @@ function deviceChip(device) {
   },
     h('span.dchip-dot'),
     h('span.dchip-name', device.name || device.id.slice(0, 8)),
+    device.remark ? h('span.dchip-remark', device.remark) : null,
     state === 'pending' ? h('span.dchip-tag', `v${device.appliedRevision}`) : null,
   );
 
@@ -780,27 +785,198 @@ function renderTable() {
     );
   }
 
-  return h('div.table-wrap',
-    h('table.data',
-      h('thead', h('tr',
-        ...visibleColumns().map((c) => h('th', c.label)),
-        h('th', { style: { textAlign: 'right' } }, '操作'),
-      )),
-      h('tbody', ...devices.map((d) => h('tr',
-        ...visibleColumns().map((c) => c.cell(d)),
-        h('td.actions',
-          h('button.btn.btn-sm', { type: 'button', onClick: () => openDeviceDialog(d) }, '编辑'),
-          ' ',
-          h('button.btn.btn-sm', { type: 'button', onClick: () => openLogsDialog(d) }, '日志'),
-          ' ',
-          h('button.btn.btn-sm', {
-            type: 'button',
-            onClick: () => toggleRevoke(d),
-          }, d.revoked ? '恢复' : '停用'),
-        ),
-      ))),
+  const allSelected = devices.length > 0 && devices.every((d) => selection.has(d.id));
+  const headBox = h('input', { type: 'checkbox' });
+  headBox.checked = allSelected;
+  headBox.title = '全选当前筛选结果';
+  headBox.addEventListener('change', () => {
+    if (headBox.checked) {
+      devices.forEach((d) => selection.add(d.id));
+    } else {
+      devices.forEach((d) => selection.delete(d.id));
+    }
+    repaintAll();
+  });
+
+  return h('div',
+    selectionBar(),
+    h('div.table-wrap',
+      h('table.data',
+        h('thead', h('tr',
+          h('th', { style: { width: '34px' } }, headBox),
+          ...visibleColumns().map((c) => h('th', c.label)),
+          h('th', { style: { textAlign: 'right' } }, '操作'),
+        )),
+        h('tbody', ...devices.map((d) => {
+          const box = h('input', { type: 'checkbox' });
+          box.checked = selection.has(d.id);
+          box.addEventListener('change', () => {
+            if (box.checked) {
+              selection.add(d.id);
+            } else {
+              selection.delete(d.id);
+            }
+            repaintAll();
+          });
+
+          return h('tr',
+            h('td', box),
+            ...visibleColumns().map((c) => c.cell(d)),
+            h('td.actions',
+              h('button.btn.btn-sm', { type: 'button', onClick: () => openDeviceDialog(d) }, '编辑'),
+              ' ',
+              h('button.btn.btn-sm', { type: 'button', onClick: () => openLogsDialog(d) }, '日志'),
+              ' ',
+              h('button.btn.btn-sm', {
+                type: 'button',
+                onClick: () => toggleRevoke(d),
+              }, d.revoked ? '恢复' : '停用'),
+            ),
+          );
+        })),
+      ),
     ),
   );
+}
+
+/** 批量操作条：仅在列表里勾选了设备时出现。 */
+function selectionBar() {
+  if (selection.size === 0) {
+    return null;
+  }
+
+  const ids = [...selection];
+  const active = () => ids.filter((id) => cache.devices.some((d) => d.id === id && !d.revoked));
+
+  return h('div.bulk-bar',
+    h('span.bulk-text', `已选 ${ids.length} 台`),
+    h('button.btn.btn-sm', {
+      type: 'button',
+      onClick: async () => {
+        const targets = active();
+        if (targets.length === 0) { toast('warn', '所选设备均已被停用'); return; }
+        if (!await confirmDialog('批量下发配置',
+          `将通知所选 ${targets.length} 台设备立即重新拉取配置。确定继续吗？`, '下发')) {
+          return;
+        }
+
+        const r = await api('/admin/push', {
+          method: 'POST',
+          body: { scope: 'device', targetIds: targets, force: true, message: '' },
+        });
+        toast('ok', '已下发', `影响 ${r.affected} 台设备。`);
+        selection.clear();
+        await refresh();
+      },
+    }, '批量下发配置'),
+    h('button.btn.btn-sm', {
+      type: 'button',
+      onClick: () => bulkNotify(active()),
+    }, '发送通知'),
+    h('button.btn.btn-sm', {
+      type: 'button',
+      onClick: () => bulkRestart(active()),
+    }, '重启 ClassIsland'),
+    h('button.btn.btn-sm.btn-danger', {
+      type: 'button',
+      onClick: () => bulkPower(active(), 'power.restart', '重启计算机', '计算机将立即重启，未保存的工作会丢失。'),
+    }, '重启计算机'),
+    h('button.btn.btn-sm.btn-danger', {
+      type: 'button',
+      onClick: () => bulkPower(active(), 'power.shutdown', '关机', '计算机会立即关机，未保存的工作会丢失。'),
+    }, '关机'),
+    h('button.btn.btn-sm', {
+      type: 'button',
+      onClick: () => bulkPower(active(), 'power.sleep', '睡眠', '计算机将进入睡眠，按任意键或电源键即可唤醒。'),
+    }, '睡眠'),
+    h('button.btn.btn-sm.btn-ghost', {
+      type: 'button',
+      onClick: () => { selection.clear(); repaintAll(); },
+    }, '取消选择'),
+  );
+}
+
+/** 批量通知：填一次内容，向选中的多台设备统一下发（离线设备不排队，通知讲时效）。 */
+function bulkNotify(ids) {
+  if (ids.length === 0) { toast('warn', '所选设备均已被停用'); return; }
+
+  const titleInput = h('input', { type: 'text', placeholder: '例如：紧急通知' });
+  const msgInput = h('textarea', { placeholder: '提醒内容…', style: { minHeight: '80px' } });
+  const speakChk = h('input', { type: 'checkbox' });
+
+  modal({
+    title: `向 ${ids.length} 台设备发送通知`,
+    body: h('div',
+      field('标题', titleInput, '可留空，只发正文。'),
+      field('内容', msgInput),
+      h('label.checkbox-field', speakChk,
+        h('span', '语音播报'),
+        h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } }, '（教室大屏会朗读这条内容）')),
+    ),
+    confirmText: '发送',
+    onConfirm: async () => {
+      const title = titleInput.value.trim();
+      const message = msgInput.value.trim();
+      if (!title && !message) { toast('warn', '请填写通知内容'); return false; }
+
+      const r = await api('/admin/devices/command', {
+        method: 'POST',
+        body: {
+          kind: 'notify',
+          payload: JSON.stringify({ title, message, speak: speakChk.checked }),
+          deviceIds: ids,
+          includeOffline: false,
+        },
+      });
+      toast('ok', '已发送', broadcastSummary(r));
+      selection.clear();
+      await refresh();
+      return true;
+    },
+  });
+}
+
+/** 批量重启 ClassIsland 进程（不动 Windows 本身，大屏会自动恢复）。 */
+async function bulkRestart(ids) {
+  if (ids.length === 0) { toast('warn', '所选设备均已被停用'); return; }
+  if (!await confirmDialog('重启 ClassIsland',
+    `将重启所选 ${ids.length} 台设备上的 ClassIsland 进程（大屏会短暂黑屏后自动恢复）。确定继续吗？`, '重启')) {
+    return;
+  }
+
+  const r = await api('/admin/devices/command', {
+    method: 'POST',
+    body: { kind: 'restart', deviceIds: ids, includeOffline: false },
+  });
+  toast('ok', '已下发', broadcastSummary(r));
+  selection.clear();
+  await refresh();
+}
+
+/** 批量电源操作：关机 / 重启 / 睡眠（仅 Windows 终端，二次确认后立即执行，不可撤销）。 */
+async function bulkPower(ids, kind, label, warning) {
+  if (ids.length === 0) { toast('warn', '所选设备均已被停用'); return; }
+  if (!await confirmDialog(`批量${label}`,
+    `将对所选 ${ids.length} 台设备执行「${label}」。\n${warning}\n\n该操作不可撤销，确定继续吗？`,
+    label, true)) {
+    return;
+  }
+
+  const r = await api('/admin/devices/command', {
+    method: 'POST',
+    body: { kind, deviceIds: ids, includeOffline: false },
+  });
+  toast('ok', '已下发', broadcastSummary(r));
+  selection.clear();
+  await refresh();
+}
+
+/** 批量操作结果的统一文案（不同接口返回字段略有差异）。 */
+function broadcastSummary(result) {
+  if (typeof result === 'number') return `影响 ${result} 台设备。`;
+  if (result && typeof result.affected === 'number') return `影响 ${result.affected} 台设备。`;
+  if (result && typeof result.queued === 'number') return `已排队 ${result.queued} 条指令。`;
+  return '指令已下发。';
 }
 
 /** 「列」配置面板：勾选设备表格要显示的列。 */
@@ -850,6 +1026,11 @@ function openColumnCustomize() {
 /** 设备详情：改名称/归属/档案，并可直接查看日志、停用或删除。 */
 function openDeviceDialog(device) {
   const nameInput = h('input', { type: 'text', value: device.name });
+  const remarkInput = h('input', {
+    type: 'text',
+    value: device.remark || '',
+    placeholder: '例如：三楼东侧 / 班主任 张老师',
+  });
 
   const groupSelect = select(assignmentOptions(), device.groupId || '');
 
@@ -883,6 +1064,7 @@ function openDeviceDialog(device) {
       field('所属楼栋 / 楼层', groupSelect, '也可以在看板里直接把设备拖到目标楼层。'),
       field('指定配置档案', profileSelect,
         '优先级：设备指定 → 所属楼层 → 所属楼栋 → 全局默认。'),
+      field('备注', remarkInput, '仅管理端可见，用于在列表里快速认出这台设备。'),
       h('div.card-actions',
         h('button.btn.btn-sm', { type: 'button', onClick: () => openLogsDialog(device) }, '查看日志'),
         h('button.btn.btn-sm', {
@@ -914,6 +1096,7 @@ function openDeviceDialog(device) {
           name: nameInput.value.trim(),
           groupId: groupSelect.value,
           profileId: profileSelect.value,
+          remark: remarkInput.value.trim(),
         },
       });
       toast('ok', '已保存', `${nameInput.value.trim()} 的配置已更新。`);

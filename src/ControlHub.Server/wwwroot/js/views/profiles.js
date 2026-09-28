@@ -3,11 +3,11 @@
  * 档案是集控下发的最小单元：一个档案 = 一套时间表 + 课表 + 科目 + 自定义设置。
  */
 
-import { api } from '../core/api.js?v=23';
+import { api } from '../core/api.js?v=26';
 import {
   h, clear, formatDateTime, toast, loadingBlock, modal, confirmDialog,
   emptyState, field, select,
-} from '../core/ui.js?v=23';
+} from '../core/ui.js?v=26';
 
 export const meta = {
   title: '配置档案',
@@ -84,12 +84,91 @@ function renderCard(profile) {
         onClick: () => window.location.hash = `#/profiles/${profile.id}`,
       }, '编辑内容'),
       h('button.btn.btn-sm', { type: 'button', onClick: () => pushProfile(profile) }, '立即推送'),
+      h('button.btn.btn-sm', { type: 'button', onClick: () => openVersionsDialog(profile) }, '历史版本'),
       profile.isDefault
         ? null
         : h('button.btn.btn-sm', { type: 'button', onClick: () => setDefault(profile) }, '设为默认'),
       h('button.btn.btn-sm.btn-danger', { type: 'button', onClick: () => removeProfile(profile) }, '删除'),
     ),
   );
+}
+
+/** 历史版本面板：列出保存前的自动快照，可一键回滚（回滚前也会自动留一份）。 */
+function openVersionsDialog(profile) {
+  const listBox = h('div');
+
+  const load = async () => {
+    clear(listBox);
+    listBox.appendChild(loadingBlock());
+    try {
+      const versions = await api(`/admin/profiles/${profile.id}/versions`);
+      clear(listBox);
+      if (versions.length === 0) {
+        listBox.appendChild(h('div.notice.notice-info',
+          h('span.notice-icon', 'i'),
+          h('div', '还没有历史版本。每次保存档案前会自动留一份快照（最多保留 20 份）。')));
+        return;
+      }
+
+      listBox.appendChild(h('div.table-wrap',
+        h('table.data',
+          h('thead', h('tr',
+            h('th', '时间'),
+            h('th', '内容版本'),
+            h('th', '原因'),
+            h('th', '操作人'),
+            h('th', { style: { textAlign: 'right' } }, '操作'),
+          )),
+          h('tbody', ...versions.map((v) => h('tr',
+            h('td', { style: { fontSize: '12px' } }, formatDateTime(v.createdAt)),
+            h('td', `v${v.revision}`),
+            h('td', { style: { fontSize: '12px' } }, v.reason || '—'),
+            h('td', { style: { fontSize: '12px' } }, v.createdBy || '—'),
+            h('td.actions',
+              h('button.btn.btn-sm.btn-primary', {
+                type: 'button',
+                onClick: async () => {
+                  if (!await confirmDialog('回滚到该版本',
+                    `将把「${profile.name}」回滚到 ${formatDateTime(v.createdAt)} 的快照（版本 v${v.revision}）。\n`
+                    + '回滚前会先把当前内容也存一份快照，可以再滚回来。确定继续吗？', '回滚')) {
+                    return;
+                  }
+
+                  await api(`/admin/profiles/${profile.id}/versions/${v.id}/restore`, { method: 'POST' });
+                  toast('ok', '已回滚', '档案内容已恢复，可到「配置下发」推送给教室。');
+                  await load();
+                },
+              }, '回滚'),
+              h('button.btn.btn-sm.btn-ghost', {
+                type: 'button',
+                onClick: async () => {
+                  if (!await confirmDialog('删除该快照', '仅删除这份历史记录，不影响当前档案内容。', '删除', true)) {
+                    return;
+                  }
+
+                  await api(`/admin/profiles/${profile.id}/versions/${v.id}`, { method: 'DELETE' });
+                  toast('ok', '已删除');
+                  await load();
+                },
+              }, '删除'),
+            ),
+          ))),
+        ),
+      ));
+    } catch (err) {
+      clear(listBox);
+      listBox.appendChild(h('div.notice.notice-danger', h('span.notice-icon', '!'), h('div', err.message)));
+    }
+  };
+
+  modal({
+    title: `历史版本 · ${profile.name}`,
+    width: 'wide',
+    hideFooter: true,
+    body: listBox,
+  });
+
+  load();
 }
 
 /** 「从 CSES 导入」对话框：选择目标档案 + 选择/粘贴 CSES 文件内容。 */

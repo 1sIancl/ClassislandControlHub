@@ -80,6 +80,9 @@ public sealed partial class HubStore
         // 迁移：账号的按模块权限集合（JSON 数组文本）。
         await EnsureColumnAsync(connection, "users", "permissions", "TEXT NOT NULL DEFAULT ''", cancellationToken);
 
+        // 迁移：设备备注（管理员自己标注，例如「三楼东侧」「班主任 张老师」）。
+        await EnsureColumnAsync(connection, "devices", "remark", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+
         // 确保全局版本号存在，保证任何一次同步请求都能拿到确定值。
         await using var seed = connection.CreateCommand();
         seed.CommandText = """
@@ -172,6 +175,32 @@ public sealed partial class HubStore
             created_at    TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_register_requests_status ON register_requests(status, created_at DESC);
+
+        -- 配置档案历史版本：每次保存前存一份快照，改坏了可以一键回滚。
+        CREATE TABLE IF NOT EXISTS profile_versions (
+            id          TEXT PRIMARY KEY,
+            profile_id  TEXT NOT NULL,
+            revision    INTEGER NOT NULL DEFAULT 0,
+            name        TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL DEFAULT '',
+            content     TEXT NOT NULL DEFAULT '{}',
+            reason      TEXT NOT NULL DEFAULT '',
+            created_by  TEXT NOT NULL DEFAULT '',
+            created_at  TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_profile_versions_profile
+            ON profile_versions(profile_id, created_at DESC);
+
+        -- 通知模板：把常用的广播内容存下来，发通知时一键套用。
+        CREATE TABLE IF NOT EXISTS notice_templates (
+            id         TEXT PRIMARY KEY,
+            name       TEXT NOT NULL,
+            title      TEXT NOT NULL DEFAULT '',
+            content    TEXT NOT NULL DEFAULT '',
+            speak      INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
 
         -- 定时提醒：按用户隔离（user_id），目标是共享的教室设备。
         CREATE TABLE IF NOT EXISTS reminders (

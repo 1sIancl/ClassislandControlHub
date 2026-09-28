@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -46,6 +47,11 @@ public sealed class RemoteCommandExecutor(
                 RemoteCommandKinds.PluginUninstall => UninstallPlugin(command),
                 RemoteCommandKinds.AppearanceApply => ApplyAppearance(command),
                 RemoteCommandKinds.Restart => Restart(command),
+                RemoteCommandKinds.PowerShutdown => RunPowerCommand(command, "/s", "正在关机。"),
+                RemoteCommandKinds.PowerRestart => RunPowerCommand(command, "/r", "正在重启计算机。"),
+                RemoteCommandKinds.PowerSleep => Sleep(command),
+                RemoteCommandKinds.AutomationList => ReportAutomations(command),
+                RemoteCommandKinds.AutomationTrigger => TriggerAutomation(command),
                 _ => Fail(command, $"不支持的指令类型：{command.Kind}"),
             };
         }
@@ -507,6 +513,163 @@ public sealed class RemoteCommandExecutor(
         {
             return Fail(command, "重启失败：" + ex.Message);
         }
+    }
+
+    // ────────────────────────────── 电源管理 ──────────────────────────────
+
+    /// <summary>关机 / 重启：调用 Windows 自带的 shutdown 命令，立即执行且不弹确认。</summary>
+    private static CommandReportRequest RunPowerCommand(RemoteCommandDto command, string mode, string okText)
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            return Fail(command, "电源管理仅支持 Windows 终端。");
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "shutdown",
+                Arguments = $"{mode} /t 0",
+                CreateNoWindow = true,
+                UseShellExecute = false,
+            });
+            return Ok(command, okText);
+        }
+        catch (Exception ex)
+        {
+            return Fail(command, "电源指令执行失败：" + ex.Message);
+        }
+    }
+
+    /// <summary>睡眠：调用 Windows 的 SetSuspendState（休眠 = false）。</summary>
+    private static CommandReportRequest Sleep(RemoteCommandDto command)
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            return Fail(command, "电源管理仅支持 Windows 终端。");
+        }
+
+        try
+        {
+            // bHibernate=false 即睡眠；bForce=false 允许应用程序否决（避免强断未保存的板书/文档）。
+            var ok = SetSuspendState(false, false, false);
+            return ok ? Ok(command, "正在进入睡眠。") : Fail(command, "睡眠请求被系统拒绝。");
+        }
+        catch (Exception ex)
+        {
+            return Fail(command, "睡眠失败：" + ex.Message);
+        }
+    }
+
+    [DllImport("powrprof.dll", SetLastError = true)]
+    private static extern bool SetSuspendState(bool hibernate, bool forceCritical, bool disableWakeEvent);
+
+    // ────────────────────────────── 自动化 ──────────────────────────────
+
+    /// <summary>
+    /// 上报本机可被远程触发的自动化信号（来自各工作流的「信号触发器」）。
+    /// <para>全程用反射读取 ClassIsland 的自动化模型：不同版本的自动化类型可能变化，
+    /// 反射可以在缺类型时优雅降级，不影响插件的其它功能。</para>
+    /// </summary>
+    private static CommandReportRequest ReportAutomations(RemoteCommandDto command)
+    {
+        try
+        {
+            var service = ResolveAutomationService();
+            if (service is null)
+            {
+                return Fail(command, "当前 ClassIsland 未提供自动化服务，无法远程触发自动化。");
+            }
+
+            var signals = new List<string>();
+            if (service.GetType().GetProperty("Workflows")?.GetValue(service) is IEnumerable workflows)
+            {
+                foreach (var workflow in workflows)
+                {
+                    var triggers = workflow?.GetType().GetProperty("Triggers")?.GetValue(workflow) as IEnumerable;
+                    if (triggers is null)
+                    {
+                        continue;
+                    }
+
+                    foreach (var trigger in triggers)
+                    {
+                        var settings = trigger?.GetType().GetProperty("Settings")?.GetValue(trigger);
+                        if (settings is null || settings.GetType().Name != "SignalTriggerSettings")
+                        {
+                            continue;
+                        }
+
+                        if (settings.GetType().GetProperty("SignalName")?.GetValue(settings) is string name
+                            && !string.IsNullOrWhiteSpace(name)
+                            && !signals.Contains(name))
+                        {
+                            signals.Add(name);
+                        }
+                    }
+                }
+            }
+
+            return Ok(command, HubJson.Serialize(new { signals }));
+        }
+        catch (Exception ex)
+        {
+            return Fail(command, "读取自动化配置失败：" + ex.Message);
+        }
+    }
+
+    /// <summary>触发一个自动化信号：等价于 ClassIsland 内部「广播信号」，会点亮所有监听它的工作流。</summary>
+    private static CommandReportRequest TriggerAutomation(RemoteCommandDto command)
+    {
+        var request = HubJson.DeserializeOrDefault(command.Payload, new AutomationTriggerPayload());
+        var signal = (request.Signal ?? string.Empty).Trim();
+        if (signal.Length == 0)
+        {
+            return Fail(command, "载荷缺少 signal 字段。");
+        }
+
+        var handlerType = Type.GetType(
+            "ClassIsland.Services.Automation.Triggers.SignalTriggerHandlerService, ClassIsland");
+        var handler = handlerType is null ? null : IAppHost.Host?.Services.GetService(handlerType);
+        if (handler is null)
+        {
+            return Fail(command, "当前 ClassIsland 未提供信号触发器服务，无法远程触发自动化。");
+        }
+
+        var method = handlerType!.GetMethod("EmitSignal", [typeof(string), typeof(bool)]);
+        if (method is null)
+        {
+            return Fail(command, "信号触发器服务的接口与预期不符（EmitSignal 不存在）。");
+        }
+
+        method.Invoke(handler, [signal, false]);
+        return Ok(command, $"已触发自动化信号「{signal}」。");
+    }
+
+    /// <summary>解析自动化服务实例（兼容两种程序集/类型名写法）。</summary>
+    private static object? ResolveAutomationService()
+    {
+        foreach (var typeName in new[]
+                 {
+                     "ClassIsland.Core.Abstractions.Services.IAutomationService, ClassIsland.Core",
+                     "ClassIsland.Services.AutomationService, ClassIsland",
+                 })
+        {
+            var type = Type.GetType(typeName);
+            if (type is null)
+            {
+                continue;
+            }
+
+            var service = IAppHost.Host?.Services.GetService(type);
+            if (service is not null)
+            {
+                return service;
+            }
+        }
+
+        return null;
     }
 
     // ────────────────────────────── helpers ──────────────────────────────

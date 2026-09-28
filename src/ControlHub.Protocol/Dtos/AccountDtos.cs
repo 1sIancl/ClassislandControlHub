@@ -73,6 +73,22 @@ public sealed class PermissionModuleDto
     public string? WriteKey { get; set; }
 }
 
+/// <summary>角色模板：把常见岗位打包成「一键套用」的权限组合。</summary>
+public sealed class PermissionPresetDto
+{
+    /// <summary>模板键，例如 <c>viewer</c>。</summary>
+    public string Key { get; set; } = string.Empty;
+
+    /// <summary>模板名称，例如「只读观察员」。</summary>
+    public string Label { get; set; } = string.Empty;
+
+    /// <summary>一句话说明这个角色能做什么。</summary>
+    public string Description { get; set; } = string.Empty;
+
+    /// <summary>套用后勾选的权限键集合。</summary>
+    public List<string> Permissions { get; set; } = [];
+}
+
 /// <summary>邀请码：凭码可自助注册为一个拥有预设权限的账号。</summary>
 public sealed class RegisterCodeDto
 {

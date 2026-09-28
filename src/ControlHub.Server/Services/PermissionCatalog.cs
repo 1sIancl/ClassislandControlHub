@@ -38,6 +38,56 @@ public static class PermissionCatalog
         })
         .ToList();
 
+    /// <summary>角色模板定义。</summary>
+    public sealed record Preset(string Key, string Label, string Description, string[] Permissions);
+
+    /// <summary>
+    /// 内置岗位模板。超级管理员对应 <c>role=admin</c>（勾「设为超级管理员」而不是套模板），
+    /// 其余岗位都是自定义权限账号的常用组合，套用后仍可逐个微调。
+    /// </summary>
+    public static readonly Preset[] Presets =
+    [
+        new("academic", "教务管理员", "管课表与下发：能改配置档案、把配置推到教室，并查看设备与审计；碰不到账号、备份与系统设置。",
+        [
+            PermissionKeys.ProfilesRead, PermissionKeys.ProfilesWrite,
+            PermissionKeys.DevicesRead, PermissionKeys.DevicesWrite,
+            PermissionKeys.DeployWrite,
+            PermissionKeys.RemoteRead,
+            PermissionKeys.RemindersRead,
+            PermissionKeys.AuditRead,
+        ]),
+        new("announcer", "通知发布员", "只负责发通知：向教室发即时通知、建定时提醒，看得见设备状态，改不了任何配置。",
+        [
+            PermissionKeys.DevicesRead,
+            PermissionKeys.RemoteRead, PermissionKeys.RemoteWrite,
+            PermissionKeys.RemindersRead, PermissionKeys.RemindersWrite,
+        ]),
+        new("operator", "设备运维", "只修设备不动课表：设备改名调组、停用删除、远程命令与插件管理、查看设备日志。",
+        [
+            PermissionKeys.DevicesRead, PermissionKeys.DevicesWrite,
+            PermissionKeys.RemoteRead, PermissionKeys.RemoteWrite,
+            PermissionKeys.AuditRead,
+        ]),
+        new("viewer", "只读观察员", "只能看：设备状态、配置档案、审计日志都能查，任何修改都会被服务端拒绝。",
+        [
+            PermissionKeys.ProfilesRead, PermissionKeys.DevicesRead,
+            PermissionKeys.RemoteRead, PermissionKeys.RemindersRead,
+            PermissionKeys.AuditRead, PermissionKeys.BackupRead,
+            PermissionKeys.SettingsRead, PermissionKeys.AccountsRead,
+        ]),
+    ];
+
+    /// <summary>转换为前端使用的角色模板列表。</summary>
+    public static List<PermissionPresetDto> ToPresetDto() => Presets
+        .Select(p => new PermissionPresetDto
+        {
+            Key = p.Key,
+            Label = p.Label,
+            Description = p.Description,
+            Permissions = PermissionKeys.Normalize(p.Permissions),
+        })
+        .ToList();
+
     /// <summary>把权限键翻译成「模块 · 查看/修改」，用于错误提示。</summary>
     public static string Describe(string permission)
     {

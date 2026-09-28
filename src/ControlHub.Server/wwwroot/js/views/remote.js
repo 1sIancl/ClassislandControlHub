@@ -3,10 +3,10 @@
  * 数据来自 A 端 /admin/devices、/admin/backups 等接口。
  */
 
-import { api } from '../core/api.js?v=23';
+import { api } from '../core/api.js?v=26';
 import {
-  h, clear, toast, loadingBlock, confirmDialog, field, select, emptyState, formatDateTime,
-} from '../core/ui.js?v=23';
+  h, clear, toast, loadingBlock, confirmDialog, field, select, emptyState, formatDateTime, modal,
+} from '../core/ui.js?v=26';
 
 export const meta = {
   title: '远程管理',
@@ -18,6 +18,7 @@ const TABS = [
   { key: 'plugins', label: '插件管理' },
   { key: 'appearance', label: '外观下发' },
   { key: 'notify', label: '发送提醒' },
+  { key: 'automation', label: '自动化' },
   { key: 'backup', label: '备份' },
 ];
 
@@ -68,6 +69,7 @@ function renderTab(container) {
     case 'plugins': return renderPlugins(container);
     case 'appearance': return renderAppearance(container);
     case 'notify': return renderNotify(container);
+    case 'automation': return renderAutomation(container);
     case 'backup': return renderBackup();
     default: return h('div');
   }
@@ -388,13 +390,132 @@ function renderAppearance(container) {
 
 function renderNotify(container) {
   const targetSelect = select(
-    [{ value: '__all__', label: '全部在线设备（统一）' }, ...deviceOptions()],
+    [
+      { value: '__all__', label: '全部在线设备（统一）' },
+      ...deviceOptions(),
+      { value: '__pick__', label: '多选设备…' },
+    ],
     '__all__',
   );
   const titleInput = h('input', { type: 'text', placeholder: '例如：紧急通知' });
   const msgInput = h('textarea', { placeholder: '提醒内容…', style: { minHeight: '90px' } });
   const speakChk = h('input', { type: 'checkbox' });
   const offline = offlineOption();
+
+  // 多选目标：选「多选设备…」后弹窗勾选，确定后显示已选台数
+  let picked = [];
+  const pickInfo = h('span.pick-info', { hidden: true });
+
+  // 通知模板：常用广播内容一键套用
+  const templateSelect = select([{ value: '', label: '（不使用模板）' }], '');
+  let templates = [];
+  const loadTemplates = async () => {
+    try {
+      templates = await api('/admin/notice-templates');
+      clear(templateSelect);
+      templateSelect.appendChild(h('option', { value: '' }, '（不使用模板）'));
+      for (const t of templates) {
+        templateSelect.appendChild(h('option', { value: t.id }, t.name));
+      }
+    } catch { /* 没有 remote.read 权限时静默降级为「无模板」 */ }
+  };
+
+  templateSelect.addEventListener('change', () => {
+    const t = templates.find((x) => x.id === templateSelect.value);
+    if (!t) return;
+    titleInput.value = t.title || '';
+    msgInput.value = t.content || '';
+    speakChk.checked = Boolean(t.speak);
+    toast('ok', '已套用模板', t.name);
+  });
+
+  targetSelect.addEventListener('change', () => {
+    if (targetSelect.value === '__pick__') {
+      openDevicePicker();
+      return;
+    }
+
+    picked = [];
+    pickInfo.hidden = true;
+  });
+
+  function openDevicePicker() {
+    const selected = new Set(picked);
+    const list = h('div.picker-list');
+
+    if (state.devices.length === 0) {
+      list.appendChild(h('div', { style: { color: 'var(--text-faint)', fontSize: '12.5px' } }, '还没有设备接入。'));
+    }
+
+    for (const d of state.devices) {
+      const box = h('input', { type: 'checkbox' });
+      box.checked = selected.has(d.id);
+      box.addEventListener('change', () => {
+        if (box.checked) {
+          selected.add(d.id);
+        } else {
+          selected.delete(d.id);
+        }
+      });
+
+      list.appendChild(h('label.picker-item', box,
+        h('span', ` ${d.name}`),
+        h('span.picker-meta', `${d.online ? '在线' : '离线'}${d.remark ? ` · ${d.remark}` : ''}`)));
+    }
+
+    modal({
+      title: '选择目标设备',
+      width: 'wide',
+      body: h('div',
+        h('p', { style: { marginTop: 0, color: 'var(--text-dim)', fontSize: '12.5px' } },
+          '勾选要发送通知的教室。即时通知只发给在线设备，离线设备不会补发。'),
+        list),
+      confirmText: '确定',
+      onConfirm: () => {
+        if (selected.size === 0) {
+          toast('warn', '请至少选择一台设备');
+          return false;
+        }
+
+        picked = [...selected];
+        pickInfo.textContent = `已选 ${picked.length} 台设备`;
+        pickInfo.hidden = false;
+        return true;
+      },
+    });
+  }
+
+  const saveTemplateBtn = h('button.btn.btn-sm', {
+    type: 'button',
+    onClick: () => {
+      const nameInput = h('input', { type: 'text', placeholder: '例如：广播站通知' });
+      modal({
+        title: '存为通知模板',
+        body: h('div', field('模板名称', nameInput, '仅管理端使用，下次发同类通知可一键套用。')),
+        confirmText: '保存',
+        onConfirm: async () => {
+          const name = nameInput.value.trim();
+          if (!name) {
+            toast('warn', '请填写模板名称');
+            return false;
+          }
+
+          await api('/admin/notice-templates', {
+            method: 'POST',
+            body: {
+              name,
+              title: titleInput.value.trim(),
+              content: msgInput.value.trim(),
+              speak: speakChk.checked,
+            },
+          });
+          toast('ok', '模板已保存', '下次可直接从模板下拉里选择。');
+          await loadTemplates();
+          return true;
+        },
+      });
+    },
+  }, '存为模板');
 
   const sendBtn = h('button.btn.btn-primary', {
     type: 'button',
@@ -405,7 +526,14 @@ function renderNotify(container) {
 
       const payload = JSON.stringify({ title, message, speak: speakChk.checked });
       try {
-        if (targetSelect.value === '__all__') {
+        if (targetSelect.value === '__pick__') {
+          if (picked.length === 0) { toast('warn', '请先选择目标设备'); return; }
+          const r = await api('/admin/devices/command', {
+            method: 'POST',
+            body: { kind: 'notify', payload, deviceIds: picked, includeOffline: false },
+          });
+          toast('ok', '已发送', broadcastResult(r));
+        } else if (targetSelect.value === '__all__') {
           const r = await api('/admin/devices/command', {
             method: 'POST',
             body: { kind: 'notify', payload, includeOffline: offline.input.checked },
@@ -424,13 +552,117 @@ function renderNotify(container) {
     },
   }, '发送提醒');
 
+  loadTemplates();
+
   return h('div',
-    h('div.form-row', field('目标设备', targetSelect)),
+    h('div.form-row',
+      field('目标设备', targetSelect),
+      field('通知模板', h('div.template-row', templateSelect, saveTemplateBtn),
+        '选择模板会填入标题、内容与播报设置；也可以把当前内容存成新模板。'),
+    ),
+    pickInfo,
     field('标题', titleInput),
     field('内容', msgInput),
     h('label.checkbox-field', speakChk, h('span', '语音播报提醒内容')),
     offline.el,
     h('div', { style: { marginTop: '12px' } }, sendBtn),
+  );
+}
+
+// ────────────────────── 自动化 ──────────────────────
+
+/**
+ * 远程触发 ClassIsland 的自动化规则：B 端把「信号触发器」的信号名上报上来，
+ * A 端按信号名触发，效果等同于在教室里手动点一次那条自动化。
+ */
+function renderAutomation(container) {
+  const deviceSelect = select(deviceOptions(), state.devices[0]?.id || '');
+  const datalist = h('datalist#automationSignals');
+  const signalInput = h('input', {
+    type: 'text',
+    placeholder: '例如：放学（与 ClassIsland「信号触发器」里填写的名称一致）',
+  });
+  signalInput.setAttribute('list', 'automationSignals');
+
+  const historyBox = h('div', { style: { marginTop: '14px' } });
+
+  /** 从历史指令里挑出 automation.list 的回报，解析出可用信号名填入输入建议。 */
+  async function harvestSignals() {
+    if (!deviceSelect.value) return;
+    try {
+      const list = await api(`/admin/devices/${deviceSelect.value}/commands`);
+      const found = new Set();
+      for (const cmd of list) {
+        if (cmd.kind !== 'automation.list' || !cmd.output) continue;
+        try {
+          for (const s of (JSON.parse(cmd.output).signals || [])) found.add(s);
+        } catch { /* 单条解析失败就跳过 */ }
+      }
+
+      clear(datalist);
+      for (const s of found) datalist.appendChild(h('option', { value: s }));
+      if (found.size > 0) {
+        toast('ok', '已获取可用信号', [...found].join('、'));
+      }
+    } catch { /* 拿不到就退回手动输入 */ }
+  }
+
+  const pullBtn = h('button.btn.btn-sm', {
+    type: 'button',
+    onClick: async () => {
+      if (!deviceSelect.value) { toast('warn', '请先选择设备'); return; }
+      try {
+        await api(`/admin/devices/${deviceSelect.value}/command`, {
+          method: 'POST',
+          body: { kind: 'automation.list' },
+        });
+        toast('ok', '已请求', '设备回报后会把可用信号填进输入建议。');
+        await loadCommandHistory(deviceSelect.value, historyBox);
+        pollHistory(deviceSelect.value, historyBox, 3);
+        setTimeout(() => harvestSignals().catch(() => {}), 3000);
+      } catch (e) {
+        toast('error', '请求失败', e.message);
+      }
+    },
+  }, '拉取可用信号');
+
+  const triggerBtn = h('button.btn.btn-primary', {
+    type: 'button',
+    onClick: async () => {
+      const signal = signalInput.value.trim();
+      if (!deviceSelect.value) { toast('warn', '请先选择设备'); return; }
+      if (!signal) { toast('warn', '请填写信号名'); return; }
+      if (!await confirmDialog('触发自动化',
+        `将在所选设备上触发自动化信号「${signal}」。确定继续吗？`, '触发')) {
+        return;
+      }
+
+      try {
+        await api(`/admin/devices/${deviceSelect.value}/command`, {
+          method: 'POST',
+          body: { kind: 'automation.trigger', payload: JSON.stringify({ signal }) },
+        });
+        toast('ok', '已触发', '执行结果可在下方命令历史里查看。');
+        await loadCommandHistory(deviceSelect.value, historyBox);
+        pollHistory(deviceSelect.value, historyBox, 3);
+      } catch (e) {
+        toast('error', '触发失败', e.message);
+      }
+    },
+  }, '触发自动化');
+
+  deviceSelect.addEventListener('change', () => {
+    clear(datalist);
+    clear(historyBox);
+  });
+
+  return h('div',
+    h('div.form-row', field('目标设备', deviceSelect)),
+    field('自动化信号', h('div.template-row', signalInput, pullBtn),
+      'B 端会列出该设备上配置了「信号触发器」的自动化名称；触发效果等于在教室里手动点一次那条自动化。'),
+    h('div', { style: { marginTop: '12px' } }, triggerBtn),
+    datalist,
+    historyBox,
   );
 }
 

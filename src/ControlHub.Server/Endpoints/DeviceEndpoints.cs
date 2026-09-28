@@ -104,6 +104,11 @@ public static class DeviceEndpoints
             await store.SetDeviceProfileAsync(id, profileId, cancellationToken);
         }
 
+        if (request.Remark is not null)
+        {
+            await store.SetDeviceRemarkAsync(id, request.Remark.Trim(), cancellationToken);
+        }
+
         await store.AddAuditAsync(session.Username, "device.update", device.Name,
             "更新了设备的分组/档案绑定。", http.GetClientIpAddress(), cancellationToken);
 
@@ -582,6 +587,9 @@ public sealed class DeviceUpdateRequest
 
     /// <summary>新的配置档案 ID，空字符串表示改为继承分组/默认档案。</summary>
     public string? ProfileId { get; set; }
+
+    /// <summary>管理员备注；空字符串表示清除备注。</summary>
+    public string? Remark { get; set; }
 }
 
 /// <summary>停用/恢复设备的请求体。</summary>

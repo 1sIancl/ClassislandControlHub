@@ -10,7 +10,7 @@ public sealed partial class HubStore
         id, token, name, machine_name, os_version, classisland_version, plugin_version,
         group_id, profile_id, state, applied_revision, push_epoch, applied_push_epoch,
         last_seen_at, last_sync_at, last_error, ip_address, revoked,
-        current_class_plan_name, metrics, created_at
+        current_class_plan_name, metrics, remark, created_at
         """;
 
     private static DeviceRow ReadDevice(SqliteDataReader reader) => new()
@@ -35,6 +35,7 @@ public sealed partial class HubStore
         Revoked = GetBool(reader, "revoked"),
         CurrentClassPlanName = GetNullableString(reader, "current_class_plan_name"),
         Metrics = GetString(reader, "metrics"),
+        Remark = GetString(reader, "remark"),
         CreatedAt = GetTimestampOrNow(reader, "created_at"),
     };
 
@@ -243,6 +244,17 @@ public sealed partial class HubStore
         await using var command = connection.CreateCommand();
         command.CommandText = "UPDATE devices SET name = $name WHERE id = $id;";
         AddParameters(command, ("$name", name), ("$id", deviceId));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>设置设备备注（仅管理端展示，不参与同步）。</summary>
+    public async Task SetDeviceRemarkAsync(string deviceId, string remark,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE devices SET remark = $remark WHERE id = $id;";
+        AddParameters(command, ("$remark", remark), ("$id", deviceId));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

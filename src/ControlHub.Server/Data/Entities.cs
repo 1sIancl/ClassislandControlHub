@@ -80,6 +80,10 @@ public sealed class DeviceRow
     public bool Revoked { get; set; }
     public string? CurrentClassPlanName { get; set; }
     public string Metrics { get; set; } = "{}";
+
+    /// <summary>管理员备注：仅管理端可见，用于标注位置、负责人等。</summary>
+    public string Remark { get; set; } = string.Empty;
+
     public DateTimeOffset CreatedAt { get; set; }
 }
 
