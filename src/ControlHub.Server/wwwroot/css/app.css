@@ -2886,3 +2886,108 @@ input.pcell-name:focus {
     width: 100%;
   }
 }
+
+/* 窄屏（手机）：保证「看设备状态 / 发通知 / 看课表」三件事在手机上能用 */
+@media (max-width: 700px) {
+  .content {
+    padding: 12px;
+  }
+
+  /* 表格：允许横向滑动，压缩留白；长文本单元格仍可换行 */
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .data th,
+  .data td {
+    padding: 7px 9px;
+    white-space: nowrap;
+  }
+  .data td .cell-sub {
+    white-space: normal;
+  }
+
+  /* 两列表单改为单列堆叠 */
+  .form-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  /* 卡片头与操作按钮允许换行 */
+  .card-head {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .card-head .card-actions,
+  .card-actions {
+    flex-wrap: wrap;
+  }
+
+  /* 弹窗贴边全宽，用 dvh 适配移动端浏览器地址栏 */
+  .modal-host {
+    padding: 10px;
+  }
+  .modal,
+  .modal.wide,
+  .modal.xwide {
+    max-width: none;
+    max-height: calc(100dvh - 20px);
+    border-radius: 14px;
+  }
+  .modal-head,
+  .modal-body,
+  .modal-foot {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  /* 顶部栏：版本号与用户菜单换行，副标题让位 */
+  .topbar,
+  .topbar-left,
+  .topbar-right {
+    flex-wrap: wrap;
+  }
+  .page-subtitle {
+    display: none;
+  }
+
+  /* 设备看板：概览与卡片压缩，备注在手机上隐藏（详情里看得到） */
+  .board-overview {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 8px;
+  }
+  .fcard {
+    padding: 10px 11px;
+  }
+  .dchip {
+    font-size: 11.5px;
+    padding: 4px 8px;
+  }
+  .dchip-remark {
+    display: none;
+  }
+
+  /* 命令历史 / 输出块 */
+  .cmd-row,
+  .cmd-output {
+    font-size: 11.5px;
+  }
+  pre.cmd-output {
+    max-height: 220px;
+  }
+
+  /* 模板下拉 + 按钮、批量操作条等横向组合改为纵向可换行 */
+  .template-row {
+    flex-wrap: wrap;
+  }
+  .template-row select {
+    flex: 1 1 100%;
+  }
+  .bulk-bar {
+    gap: 6px;
+  }
+  .picker-list {
+    grid-template-columns: minmax(0, 1fr);
+    max-height: 46dvh;
+  }
+}
