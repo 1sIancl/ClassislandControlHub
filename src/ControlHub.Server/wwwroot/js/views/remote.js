@@ -3,10 +3,10 @@
  * 数据来自 A 端 /admin/devices、/admin/backups 等接口。
  */
 
-import { api } from '../core/api.js?v=26';
+import { api } from '../core/api.js?v=27';
 import {
   h, clear, toast, loadingBlock, confirmDialog, field, select, emptyState, formatDateTime, modal,
-} from '../core/ui.js?v=26';
+} from '../core/ui.js?v=27';
 
 export const meta = {
   title: '远程管理',

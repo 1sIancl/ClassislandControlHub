@@ -2651,6 +2651,29 @@ input.pcell-name:focus {
   flex: 1;
 }
 
+/* ────────────────────────── 临时换课：星期多选 ────────────────────────── */
+.weekday-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.weekday-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.weekday-chip:hover {
+  background: var(--bg-hover);
+}
+.weekday-chip input {
+  margin: 0;
+}
+
 /* ────────────────────────── 通知：多选设备与模板 ────────────────────────── */
 .pick-info {
   display: inline-block;

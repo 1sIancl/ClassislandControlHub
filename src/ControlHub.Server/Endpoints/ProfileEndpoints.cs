@@ -258,6 +258,7 @@ public static class ProfileEndpoints
 
         await store.DeleteProfileAsync(id, cancellationToken);
         await store.DeleteProfileVersionsOfProfileAsync(id, cancellationToken);
+        await store.DeleteTimetableOverridesOfProfileAsync(id, cancellationToken);
         await sync.BumpRevisionAsync(cancellationToken);
         await store.AddAuditAsync(session.Username, "profile.delete", profile.Name,
             "删除配置档案，相关设备已恢复为继承分组/默认档案。",

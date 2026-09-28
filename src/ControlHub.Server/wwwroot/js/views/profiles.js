@@ -3,11 +3,11 @@
  * 档案是集控下发的最小单元：一个档案 = 一套时间表 + 课表 + 科目 + 自定义设置。
  */
 
-import { api } from '../core/api.js?v=26';
+import { api } from '../core/api.js?v=27';
 import {
   h, clear, formatDateTime, toast, loadingBlock, modal, confirmDialog,
   emptyState, field, select,
-} from '../core/ui.js?v=26';
+} from '../core/ui.js?v=27';
 
 export const meta = {
   title: '配置档案',
@@ -85,12 +85,233 @@ function renderCard(profile) {
       }, '编辑内容'),
       h('button.btn.btn-sm', { type: 'button', onClick: () => pushProfile(profile) }, '立即推送'),
       h('button.btn.btn-sm', { type: 'button', onClick: () => openVersionsDialog(profile) }, '历史版本'),
+      h('button.btn.btn-sm', { type: 'button', onClick: () => openOverridesDialog(profile) }, '临时换课'),
       profile.isDefault
         ? null
         : h('button.btn.btn-sm', { type: 'button', onClick: () => setDefault(profile) }, '设为默认'),
       h('button.btn.btn-sm.btn-danger', { type: 'button', onClick: () => removeProfile(profile) }, '删除'),
     ),
   );
+}
+
+/** 星期序号 → 文案（0 = 周日，与协议一致）。 */
+function weekdayText(weekdays) {
+  if (!weekdays) return '每天';
+  const labels = ['日', '一', '二', '三', '四', '五', '六'];
+  return weekdays.split(',').filter(Boolean).map((d) => `周${labels[Number(d)] ?? d}`).join('、');
+}
+
+function planLabelOf(plans, classPlanId) {
+  if (!classPlanId) return '所有课表';
+  return plans.find((p) => p.id === classPlanId)?.name || '（已删除的课表）';
+}
+
+function subjectLabelOf(subjects, subjectId) {
+  if (!subjectId) return '改为空堂';
+  return subjects.find((s) => s.id === subjectId)?.name || '（未知科目）';
+}
+
+/**
+ * 临时换课：在指定日期范围内把某节课换成别的科目。
+ * 覆盖不改动档案本身，只在设备拉取配置时合成，因此到期自动还原、也可随时撤销。
+ */
+async function openOverridesDialog(profile) {
+  let detail;
+  try {
+    detail = await api(`/admin/profiles/${profile.id}`);
+  } catch (err) {
+    toast('error', '读取档案失败', err.message);
+    return;
+  }
+
+  const content = detail.content || {};
+  const plans = content.classPlans || [];
+  const subjects = content.subjects || [];
+
+  const todayText = new Date().toLocaleDateString('sv-SE');
+  const startInput = h('input', { type: 'date', value: todayText });
+  const endInput = h('input', { type: 'date' });
+  const reasonInput = h('input', { type: 'text', placeholder: '例如：周三数学与周五语文对调' });
+
+  const planSelect = select(
+    [{ value: '', label: '（该档案下所有课表）' },
+      ...plans.map((p) => ({ value: p.id, label: p.name || '（未命名课表）' }))],
+    '',
+  );
+  const subjectSelect = select(
+    [{ value: '', label: '（改为空堂）' }, ...subjects.map((s) => ({ value: s.id, label: s.name }))],
+    '',
+  );
+  const slotSelect = select([], '0');
+
+  const refreshSlots = () => {
+    const target = planSelect.value ? plans.filter((p) => p.id === planSelect.value) : plans;
+    let maxIndex = -1;
+    for (const plan of target) {
+      for (const slot of (plan.slots || [])) {
+        maxIndex = Math.max(maxIndex, slot.index);
+      }
+    }
+
+    const max = maxIndex >= 0 ? maxIndex : 7;
+    clear(slotSelect);
+    for (let i = 0; i <= max; i++) {
+      slotSelect.appendChild(h('option', { value: String(i) }, `第 ${i + 1} 节`));
+    }
+  };
+
+  planSelect.addEventListener('change', refreshSlots);
+  refreshSlots();
+
+  const weekdayBoxes = ['日', '一', '二', '三', '四', '五', '六'].map((label, index) => {
+    const box = h('input', { type: 'checkbox' });
+    return { index, box, el: h('label.weekday-chip', box, h('span', label)) };
+  });
+
+  const listBox = h('div', { style: { marginTop: '8px' } });
+
+  const load = async () => {
+    clear(listBox);
+    listBox.appendChild(loadingBlock());
+    try {
+      const rows = await api(`/admin/timetable-overrides?profileId=${encodeURIComponent(profile.id)}`);
+      clear(listBox);
+      if (rows.length === 0) {
+        listBox.appendChild(h('div.notice.notice-info',
+          h('span.notice-icon', 'i'),
+          h('div', '还没有临时换课。换课只在设定日期内生效，过了截止日期教室会自动恢复原课表。')));
+        return;
+      }
+
+      listBox.appendChild(h('div.table-wrap',
+        h('table.data',
+          h('thead', h('tr',
+            h('th', '日期范围'),
+            h('th', '星期'),
+            h('th', '课表 / 节次'),
+            h('th', '临时科目'),
+            h('th', '原因'),
+            h('th', { style: { textAlign: 'right' } }, '操作'),
+          )),
+          h('tbody', ...rows.map((row) => h('tr',
+            h('td', { style: { fontSize: '12px' } }, `${row.startDate} ~ ${row.endDate || '撤销为止'}`),
+            h('td', { style: { fontSize: '12px' } }, weekdayText(row.weekdays)),
+            h('td', { style: { fontSize: '12px' } }, `${planLabelOf(plans, row.classPlanId)} · 第 ${row.slotIndex + 1} 节`),
+            h('td', { style: { fontSize: '12px' } }, subjectLabelOf(subjects, row.subjectId)),
+            h('td', { style: { fontSize: '12px' } }, row.reason || '—'),
+            h('td.actions',
+              h('button.btn.btn-sm.btn-danger', {
+                type: 'button',
+                onClick: async () => {
+                  if (!await confirmDialog('撤销换课', '撤销后教室会立即恢复原课表。确定撤销吗？', '撤销', true)) {
+                    return;
+                  }
+
+                  await api(`/admin/timetable-overrides/${row.id}`, { method: 'DELETE' });
+                  toast('ok', '已撤销');
+                  await load();
+                },
+              }, '撤销'),
+            ),
+          ))),
+        ),
+      ));
+    } catch (err) {
+      clear(listBox);
+      listBox.appendChild(h('div.notice.notice-danger', h('span.notice-icon', '!'), h('div', err.message)));
+    }
+  };
+
+  const previewBtn = h('button.btn.btn-sm', {
+    type: 'button',
+    onClick: async () => {
+      const date = startInput.value || todayText;
+      try {
+        const rows = await api(`/admin/timetable-overrides/preview?profileId=${encodeURIComponent(profile.id)}&date=${encodeURIComponent(date)}`);
+        const byPlan = new Map();
+        for (const row of rows) {
+          if (!byPlan.has(row.classPlanName)) byPlan.set(row.classPlanName, []);
+          byPlan.get(row.classPlanName).push(row);
+        }
+
+        const body = h('div');
+        for (const [name, items] of byPlan) {
+          body.appendChild(h('div', { style: { marginBottom: '12px' } },
+            h('strong', { style: { fontSize: '13px' } }, name),
+            h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' } },
+              ...items.map((s) => h('span.badge' + (s.isOverridden ? '.badge-accent' : '.badge-neutral'), {
+                title: s.isOverridden ? `临时换课：${s.overrideReason || '已调整'}` : '档案原样',
+              }, `第 ${s.slotIndex + 1} 节 ${s.subjectName}`))),
+          ));
+        }
+
+        modal({
+          title: `${date} 的课表预览`,
+          width: 'wide',
+          hideFooter: true,
+          body: h('div',
+            h('p', { style: { marginTop: 0, color: 'var(--text-dim)', fontSize: '12.5px' } },
+              '高亮的是当天生效的临时换课，其余为档案原样。'),
+            body),
+        });
+      } catch (err) {
+        toast('error', '预览失败', err.message);
+      }
+    },
+  }, '预览当天课表');
+
+  const createBtn = h('button.btn.btn-primary.btn-sm', {
+    type: 'button',
+    onClick: async () => {
+      const body = {
+        profileId: profile.id,
+        classPlanId: planSelect.value,
+        slotIndex: Number(slotSelect.value) || 0,
+        subjectId: subjectSelect.value,
+        startDate: startInput.value,
+        endDate: endInput.value,
+        weekdays: weekdayBoxes.filter((w) => w.box.checked).map((w) => w.index),
+        reason: reasonInput.value.trim(),
+      };
+
+      if (!body.startDate) { toast('warn', '请选择开始日期'); return; }
+      try {
+        await api('/admin/timetable-overrides', { method: 'POST', body });
+        toast('ok', '换课已生效', '教室会在下一次同步时拿到调整后的课表。');
+        await load();
+      } catch (err) {
+        toast('error', '创建失败', err.message);
+      }
+    },
+  }, '添加换课');
+
+  modal({
+    title: `临时换课 · ${profile.name}`,
+    width: 'wide',
+    hideFooter: true,
+    body: h('div',
+      h('div.notice.notice-info',
+        h('span.notice-icon', 'i'),
+        h('div', '临时换课不会改动配置档案：只在设定日期内生效，超过截止日期教室会自动恢复原课表，也可以随时撤销。')),
+      h('div.form-row',
+        field('开始日期', startInput),
+        field('结束日期', endInput, '留空表示持续到手动撤销。'),
+      ),
+      field('星期（可多选）', h('div.weekday-row', ...weekdayBoxes.map((w) => w.el)), '不勾选表示每天生效。'),
+      h('div.form-row',
+        field('课表', planSelect),
+        field('节次', slotSelect),
+      ),
+      field('临时科目', subjectSelect, '选「改为空堂」表示这一节不再上课。'),
+      field('原因', reasonInput, '仅记录在管理端，便于日后核对。'),
+      h('div', { style: { marginTop: '10px' } }, createBtn, ' ', previewBtn),
+      h('div', { style: { marginTop: '18px' } },
+        h('div', { style: { fontSize: '13px', fontWeight: '600' } }, '已设置的换课'),
+        listBox),
+    ),
+  });
+
+  load();
 }
 
 /** 历史版本面板：列出保存前的自动快照，可一键回滚（回滚前也会自动留一份）。 */

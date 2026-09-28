@@ -121,6 +121,10 @@ public sealed class SyncService(
             }
         }
 
+        // 临时换课：把「今天生效」的覆盖合成到内容包上。覆盖不写回档案，
+        // 因此过了截止日期、设备下一次同步就会自动拿回原课表。
+        await ApplyTimetableOverridesAsync(content, profile.Id, cancellationToken);
+
         return new SyncResponse
         {
             Revision = revision,
@@ -132,6 +136,46 @@ public sealed class SyncService(
             Checksum = HubChecksum.ComputeOf(content),
             Force = force,
         };
+    }
+
+    /// <summary>
+    /// 应用「临时换课」：命中当天的覆盖会把对应课表的某个节点换成临时科目。
+    /// <para>日期按服务器本地日期判断（学校作息以本地时间为准），星期几与协议的
+    /// <c>0=周日 .. 6=周六</c> 一致。</para>
+    /// </summary>
+    private async Task ApplyTimetableOverridesAsync(ContentBundleDto content, string profileId,
+        CancellationToken cancellationToken)
+    {
+        if (content.ClassPlans.Count == 0)
+        {
+            return;
+        }
+
+        var today = DateTime.Now;
+        var overrides = await store.GetActiveTimetableOverridesAsync(
+            profileId, today.ToString("yyyy-MM-dd"), (int)today.DayOfWeek, cancellationToken);
+        if (overrides.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var row in overrides)
+        {
+            foreach (var plan in content.ClassPlans)
+            {
+                if (!string.IsNullOrEmpty(row.ClassPlanId)
+                    && !string.Equals(plan.Id, row.ClassPlanId, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var slot = plan.Slots.FirstOrDefault(s => s.Index == row.SlotIndex);
+                if (slot is not null)
+                {
+                    slot.SubjectId = row.SubjectId;
+                }
+            }
+        }
     }
 
     /// <summary>设备当前是否在线（由最近心跳时间与心跳超时共同决定）。</summary>

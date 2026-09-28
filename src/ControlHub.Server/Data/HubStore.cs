@@ -176,6 +176,24 @@ public sealed partial class HubStore
         );
         CREATE INDEX IF NOT EXISTS idx_register_requests_status ON register_requests(status, created_at DESC);
 
+        -- 临时换课（跨天 / 跨周换课）：在指定日期范围内把某节课临时换成别的科目。
+        -- 覆盖不改动档案本身，只在每次下发给设备时合成，因此到期后自动还原。
+        CREATE TABLE IF NOT EXISTS timetable_overrides (
+            id            TEXT PRIMARY KEY,
+            profile_id    TEXT NOT NULL,
+            class_plan_id TEXT NOT NULL DEFAULT '',
+            slot_index    INTEGER NOT NULL DEFAULT 0,
+            subject_id    TEXT,
+            start_date    TEXT NOT NULL,
+            end_date      TEXT,
+            weekdays      TEXT NOT NULL DEFAULT '',
+            reason        TEXT NOT NULL DEFAULT '',
+            created_by    TEXT NOT NULL DEFAULT '',
+            created_at    TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_timetable_overrides_profile
+            ON timetable_overrides(profile_id, start_date);
+
         -- 配置档案历史版本：每次保存前存一份快照，改坏了可以一键回滚。
         CREATE TABLE IF NOT EXISTS profile_versions (
             id          TEXT PRIMARY KEY,
