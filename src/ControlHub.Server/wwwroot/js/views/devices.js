@@ -4,13 +4,13 @@
  * 并可切换到列表视图查看完整状态明细。注册码管理一并放在本页。
  */
 
-import { api } from '../core/api.js?v=28';
+import { api } from '../core/api.js?v=29';
 import {
   h, clear, formatDateTime, relativeTime, toast, loadingBlock,
   modal, confirmDialog, deviceStateBadge, syncBadge,
-  emptyState, field, select, copyText, append,
-} from '../core/ui.js?v=28';
-import { getLayout, saveLayout } from '../core/prefs.js?v=28';
+  emptyState, field, select, copyText, append, undoBar,
+} from '../core/ui.js?v=29';
+import { getLayout, saveLayout } from '../core/prefs.js?v=29';
 
 export const meta = {
   title: '设备管理',
@@ -944,11 +944,7 @@ async function bulkRestart(ids) {
     return;
   }
 
-  const r = await api('/admin/devices/command', {
-    method: 'POST',
-    body: { kind: 'restart', deviceIds: ids, includeOffline: false },
-  });
-  toast('ok', '已下发', broadcastSummary(r));
+  await sendGuardedCommand({ kind: 'restart', deviceIds: ids, includeOffline: false }, '重启 ClassIsland');
   selection.clear();
   await refresh();
 }
@@ -962,13 +958,29 @@ async function bulkPower(ids, kind, label, warning) {
     return;
   }
 
-  const r = await api('/admin/devices/command', {
-    method: 'POST',
-    body: { kind, deviceIds: ids, includeOffline: false },
-  });
-  toast('ok', '已下发', broadcastSummary(r));
+  await sendGuardedCommand({ kind, deviceIds: ids, includeOffline: false }, `批量${label}`);
   selection.clear();
   await refresh();
+}
+
+/**
+ * 下发危险指令：延迟 15 秒执行，并在右下角给出撤销窗口。
+ * <para>服务端在 not_before 之前不会派发，所以这段时间内撤销是真实生效的。</para>
+ */
+async function sendGuardedCommand(body, label) {
+  const r = await api('/admin/devices/command', {
+    method: 'POST',
+    body: { ...body, delaySeconds: 15 },
+  });
+  toast('ok', '已下发', `${broadcastSummary(r)}将在 15 秒后执行。`);
+  undoBar(`${label}将在 15 秒后执行`, 15, async () => {
+    const canceled = await api('/admin/devices/commands/cancel', {
+      method: 'POST',
+      body: { ids: r.commandIds || [] },
+    });
+    toast('ok', '已撤销', canceled > 0 ? `取消了 ${canceled} 条指令。` : '指令已派发或已结束，无法撤销。');
+  });
+  return r;
 }
 
 /** 批量操作结果的统一文案（不同接口返回字段略有差异）。 */

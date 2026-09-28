@@ -913,6 +913,22 @@ input[type="checkbox"] {
 .login-page[hidden] {
   display: none;
 }
+/* 学校自定义的登录页背景图（未设置时为 none，走默认渐变与光斑） */
+.login-page {
+  background-image: var(--login-bg-image, none);
+  background-size: cover;
+  background-position: center;
+  background-color: var(--bg-base);
+}
+/* 背景图淡化层：数值越大越淡，保证卡片与文字始终可读 */
+.login-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--bg-base);
+  opacity: var(--login-bg-dim, 0);
+  pointer-events: none;
+}
 
 /* 背景装饰：纯 CSS 渐变光斑，零额外网络请求 */
 .login-canvas {
@@ -2720,6 +2736,30 @@ input.pcell-name:focus {
 .template-row select {
   flex: 1;
   min-width: 0;
+}
+
+/* ────────────────────────── 撤销窗口提示条 ────────────────────────── */
+.undo-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--accent-line);
+  border-radius: 10px;
+  background: var(--bg-panel);
+  box-shadow: var(--shadow);
+  animation: modal-in 0.18s ease-out;
+}
+.undo-title {
+  font-size: 12.5px;
+  color: var(--text);
+}
+.undo-remain {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--accent);
+  min-width: 34px;
 }
 
 /* ────────────────────────── 设备批量操作条 ────────────────────────── */

@@ -10,7 +10,7 @@ public sealed partial class HubStore
 
     private const string CommandColumns =
         "id, device_id, kind, payload, status, output, exit_code, issued_at, finished_at, issued_by, "
-        + "dispatched_at, expires_at";
+        + "dispatched_at, expires_at, not_before";
 
     private static RemoteCommandRow ReadCommand(SqliteDataReader reader) => new()
     {
@@ -26,6 +26,7 @@ public sealed partial class HubStore
         IssuedBy = GetString(reader, "issued_by"),
         DispatchedAt = GetTimestamp(reader, "dispatched_at"),
         ExpiresAt = GetTimestamp(reader, "expires_at"),
+        NotBefore = GetTimestamp(reader, "not_before"),
     };
 
     /// <summary>创建一条待执行指令。</summary>
@@ -36,7 +37,7 @@ public sealed partial class HubStore
         command.CommandText = $"""
             INSERT INTO device_commands ({CommandColumns})
             VALUES ($id, $deviceId, $kind, $payload, $status, $output, $exitCode, $issuedAt, $finishedAt,
-                    $issuedBy, $dispatchedAt, $expiresAt);
+                    $issuedBy, $dispatchedAt, $expiresAt, $notBefore);
             """;
         AddParameters(command,
             ("$id", row.Id),
@@ -50,7 +51,8 @@ public sealed partial class HubStore
             ("$finishedAt", row.FinishedAt is null ? null : Ts(row.FinishedAt.Value)),
             ("$issuedBy", row.IssuedBy),
             ("$dispatchedAt", row.DispatchedAt is null ? null : Ts(row.DispatchedAt.Value)),
-            ("$expiresAt", row.ExpiresAt is null ? null : Ts(row.ExpiresAt.Value)));
+            ("$expiresAt", row.ExpiresAt is null ? null : Ts(row.ExpiresAt.Value)),
+            ("$notBefore", row.NotBefore is null ? null : Ts(row.NotBefore.Value)));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -84,9 +86,13 @@ public sealed partial class HubStore
         await using (var select = connection.CreateCommand())
         {
             select.Transaction = (SqliteTransaction)transaction;
+            // 「撤销窗口」：not_before 未到点的指令先不派发，管理员可以利用这段时间撤销。
             select.CommandText =
-                $"SELECT {CommandColumns} FROM device_commands WHERE device_id = $id AND status = 'pending' ORDER BY issued_at;";
+                $"SELECT {CommandColumns} FROM device_commands "
+                + "WHERE device_id = $id AND status = 'pending' "
+                + "AND (not_before IS NULL OR not_before <= $now) ORDER BY issued_at;";
             select.Parameters.AddWithValue("$id", deviceId);
+            select.Parameters.AddWithValue("$now", Ts(now));
             await using var reader = await select.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
@@ -144,6 +150,21 @@ public sealed partial class HubStore
         command.Parameters.AddWithValue("$id", deviceId);
         var value = await command.ExecuteScalarAsync(cancellationToken);
         return value is null or DBNull ? 0 : Convert.ToInt32(value);
+    }
+
+    /// <summary>
+    /// 撤销一条尚未派发的指令（撤销窗口内可用）。已派发或已结束的返回 <c>false</c>。
+    /// </summary>
+    public async Task<bool> CancelPendingCommandAsync(string id, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM device_commands
+             WHERE id = $id AND status = 'pending' AND dispatched_at IS NULL;
+            """;
+        command.Parameters.AddWithValue("$id", id);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
     /// <summary>
@@ -207,4 +228,9 @@ public sealed class RemoteCommandRow
 
     /// <summary>超过该时刻仍未执行就作废，避免设备离线很久后突然执行陈旧命令。</summary>
     public DateTimeOffset? ExpiresAt { get; set; }
+
+    /// <summary>
+    /// 最早可派发时间：为关机等不可逆操作预留的「撤销窗口」，未到点不会被派发给客户端。
+    /// </summary>
+    public DateTimeOffset? NotBefore { get; set; }
 }

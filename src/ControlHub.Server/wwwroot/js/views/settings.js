@@ -2,11 +2,11 @@
  * 系统设置视图：服务器信息、账号安全与部署提示。
  */
 
-import { api, session, hasPermission } from '../core/api.js?v=28';
+import { api, session, hasPermission } from '../core/api.js?v=29';
 import {
   h, clear, formatDateTime, formatDuration, toast, loadingBlock,
   field, modal, copyText, confirmDialog,
-} from '../core/ui.js?v=28';
+} from '../core/ui.js?v=29';
 
 export const meta = {
   title: '系统设置',
@@ -154,7 +154,7 @@ async function replayOnboarding() {
     return;
   }
 
-  const { startTour } = await import('../core/tour.js?v=28');
+  const { startTour } = await import('../core/tour.js?v=29');
   startTour({
     onFinish: async (skipped) => {
       if (!skipped) {
@@ -876,11 +876,40 @@ function renderBrandingCard(info) {
   const faviconInput = h('textarea', { placeholder: '粘贴图片 data URL，留空使用默认图标' });
   faviconInput.value = branding.favicon || '';
 
+  // 登录页背景：支持图片地址或本地上传（转 data URL），并可调淡化程度
+  const bgInput = h('textarea', { placeholder: '登录页背景图：粘贴图片地址或 data URL，留空使用默认渐变背景' });
+  bgInput.value = branding.loginBackground || '';
+
+  const bgDim = branding.loginBackgroundDim ?? 45;
+  const bgDimLabel = h('span', { style: { fontSize: '12px', color: 'var(--text-faint)' } }, `淡化 ${bgDim}%`);
+  const bgDimInput = h('input', { type: 'range', min: '0', max: '90', step: '5', value: String(bgDim) });
+  bgDimInput.addEventListener('input', () => {
+    bgDimLabel.textContent = `淡化 ${bgDimInput.value}%`;
+  });
+
+  const bgFileInput = h('input', { type: 'file', accept: 'image/*', style: { display: 'none' } });
+  bgFileInput.addEventListener('change', () => {
+    const file = bgFileInput.files && bgFileInput.files[0];
+    if (!file) return;
+    if (file.size > 300 * 1024) {
+      toast('warn', '图片太大', '请选择 300KB 以内的图片（背景图会随配置一起保存）。');
+      bgFileInput.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      bgInput.value = String(reader.result || '');
+      toast('ok', '已载入图片', '点「保存并应用」后生效。');
+    };
+    reader.readAsDataURL(file);
+  });
+
   return h('div.card', { style: { marginTop: '16px' } },
     h('div.card-head',
       h('div',
         h('h3', '品牌个性化'),
-        h('p.card-desc', '替换站点名称、Logo 与浏览器图标，登录页与主界面会同步生效。'),
+        h('p.card-desc', '替换校名（站点名称）、Logo、浏览器图标与登录页背景，登录页与主界面会同步生效。'),
       ),
     ),
     h('div.form-row',
@@ -889,6 +918,15 @@ function renderBrandingCard(info) {
     ),
     field('Logo 图片（可选）', logoImageInput, '填写图片地址或 data URL，会替代 Logo 文字。'),
     field('浏览器图标（可选）', faviconInput, '填写图片 data URL，会替换浏览器标签页图标。'),
+    field('登录页背景图（可选）',
+      h('div',
+        bgInput,
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', marginTop: '8px', flexWrap: 'wrap' } },
+          h('button.btn.btn-sm', { type: 'button', onClick: () => bgFileInput.click() }, '选择本地图片'),
+          bgFileInput,
+          bgDimLabel,
+          bgDimInput)),
+      '支持图片地址或本地上传（≤300KB，会转成 data URL 随配置保存）；淡化程度越高背景越淡、文字越清晰。'),
     h('div.card-actions',
       h('button.btn.btn-primary.btn-sm', {
         type: 'button',
@@ -900,6 +938,8 @@ function renderBrandingCard(info) {
               logoText: logoTextInput.value.trim(),
               logoImage: logoImageInput.value.trim(),
               favicon: faviconInput.value.trim(),
+              loginBackground: bgInput.value.trim(),
+              loginBackgroundDim: Number(bgDimInput.value) || 0,
             },
           });
           toast('ok', '已保存', '品牌设置已生效，正在刷新页面…');

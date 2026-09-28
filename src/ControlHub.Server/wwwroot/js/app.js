@@ -2,8 +2,8 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=28';
-import { h, clear, toast, icon } from './core/ui.js?v=28';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=29';
+import { h, clear, toast, icon } from './core/ui.js?v=29';
 import {
   initTheme, getTheme, applyTheme, THEMES,
   getSidebarCollapsed, setSidebarCollapsed,
@@ -11,7 +11,7 @@ import {
   applyAppearance, getAccent, setAccent, ACCENTS,
   getFont, setFont, FONTS,
   getRadius, setRadius, RADII,
-} from './core/prefs.js?v=28';
+} from './core/prefs.js?v=29';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -57,17 +57,17 @@ const NAV = [
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=28'),
-  devices: () => import('./views/devices.js?v=28'),
+  dashboard: () => import('./views/dashboard.js?v=29'),
+  devices: () => import('./views/devices.js?v=29'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=28'),
-  profiles: () => import('./views/profiles.js?v=28'),
-  profileEditor: () => import('./views/profileEditor.js?v=28'),
-  deploy: () => import('./views/deploy.js?v=28'),
-  remote: () => import('./views/remote.js?v=28'),
-  reminders: () => import('./views/reminders.js?v=28'),
-  audit: () => import('./views/audit.js?v=28'),
-  settings: () => import('./views/settings.js?v=28'),
+  groups: () => import('./views/devices.js?v=29'),
+  profiles: () => import('./views/profiles.js?v=29'),
+  profileEditor: () => import('./views/profileEditor.js?v=29'),
+  deploy: () => import('./views/deploy.js?v=29'),
+  remote: () => import('./views/remote.js?v=29'),
+  reminders: () => import('./views/reminders.js?v=29'),
+  audit: () => import('./views/audit.js?v=29'),
+  settings: () => import('./views/settings.js?v=29'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -153,6 +153,17 @@ function applyBranding(info) {
 
   applyBrandMark('brandMark', logoText, branding.logoImage);
   applyBrandMark('loginBrandMark', logoText, branding.logoImage);
+
+  // 登录页背景（可选）：学校自定义的背景图 + 淡化程度，保证表单区域可读。
+  const root = document.documentElement;
+  if (branding.loginBackground) {
+    root.style.setProperty('--login-bg-image', `url("${branding.loginBackground}")`);
+    const dim = Math.min(0.9, Math.max(0, (branding.loginBackgroundDim ?? 45) / 100));
+    root.style.setProperty('--login-bg-dim', String(dim));
+  } else {
+    root.style.removeProperty('--login-bg-image');
+    root.style.removeProperty('--login-bg-dim');
+  }
 
   if (branding.favicon) {
     let link = document.querySelector('link[rel="icon"]');
@@ -434,7 +445,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=28');
+    const { startTour } = await import('./core/tour.js?v=29');
     startTour({
       onFinish: async (skipped) => {
         try {

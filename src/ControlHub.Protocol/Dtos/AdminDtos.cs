@@ -137,6 +137,12 @@ public sealed class BrandingDto
 
     /// <summary>浏览器标签图标（data URL），为空时使用默认图标。</summary>
     public string Favicon { get; set; } = string.Empty;
+
+    /// <summary>登录页背景图（data URL 或图片地址）；为空时使用默认的蓝紫渐变背景。</summary>
+    public string LoginBackground { get; set; } = string.Empty;
+
+    /// <summary>登录页背景的淡化程度（0~90，数值越大越淡），用于保证表单区域的可读性。</summary>
+    public int LoginBackgroundDim { get; set; } = 45;
 }
 
 /// <summary>分组层级类型。层级最多两层：楼栋 → 楼层，教室由设备本身表示。</summary>

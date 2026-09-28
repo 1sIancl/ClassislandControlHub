@@ -27,6 +27,10 @@ public static class RemoteEndpoints
         group.MapPost("/devices/{id}/plugins/refresh", RefreshPluginsAsync)
             .RequirePermission(PermissionKeys.RemoteWrite);
 
+        // 撤销窗口：取消尚未派发的指令（关机等不可逆操作）
+        group.MapDelete("/devices/commands/{id}", CancelCommandAsync).RequirePermission(PermissionKeys.RemoteWrite);
+        group.MapPost("/devices/commands/cancel", CancelCommandsAsync).RequirePermission(PermissionKeys.RemoteWrite);
+
 
     }
 
@@ -93,7 +97,8 @@ public static class RemoteEndpoints
             throw HubException.Validation("设备已停用，无法下发指令。");
         }
 
-        var row = NewCommand(device, request.Kind.Trim(), request.Payload ?? string.Empty, session.Username);
+        var row = NewCommand(device, request.Kind.Trim(), request.Payload ?? string.Empty, session.Username,
+            delaySeconds: request.DelaySeconds);
         await store.CreateCommandAsync(row, cancellationToken);
         sync.PublishWakeUp();
 
@@ -122,11 +127,13 @@ public static class RemoteEndpoints
 
         // 同一批广播共用同一个签发时间，方便在历史里识别为一次操作。
         var now = DateTimeOffset.UtcNow;
+        var commandIds = new List<string>();
         foreach (var device in targets)
         {
-            await store.CreateCommandAsync(
-                NewCommand(device, request.Kind.Trim(), request.Payload ?? string.Empty, session.Username, now),
-                cancellationToken);
+            var row = NewCommand(device, request.Kind.Trim(), request.Payload ?? string.Empty, session.Username, now,
+                request.DelaySeconds);
+            await store.CreateCommandAsync(row, cancellationToken);
+            commandIds.Add(row.Id);
         }
 
         sync.PublishWakeUp();
@@ -134,7 +141,58 @@ public static class RemoteEndpoints
             $"统一下发指令 {request.Kind} 至 {targets.Count} 台设备（跳过离线 {skipped} 台）。",
             http.GetClientIpAddress(), cancellationToken);
 
-        return ApiResult<object>.Success(new { affected = targets.Count, skipped });
+        // 把本批指令的 ID 一并返回：前端据此在「撤销窗口」内提供一键撤销。
+        return ApiResult<object>.Success(new { affected = targets.Count, skipped, commandIds });
+    }
+
+    /// <summary>撤销一条尚未派发的指令（撤销窗口内可用）。</summary>
+    private static async Task<ApiResult<bool>> CancelCommandAsync(
+        string id,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        if (!await store.CancelPendingCommandAsync(id, cancellationToken))
+        {
+            throw HubException.Validation("该指令已经派发或已结束，无法撤销。");
+        }
+
+        await store.AddAuditAsync(session.Username, "device.command.cancel", id,
+            "撤销了一条尚未派发的指令。", http.GetClientIpAddress(), cancellationToken);
+        return ApiResult<bool>.Success(true);
+    }
+
+    /// <summary>批量撤销尚未派发的指令（撤销窗口内），返回实际撤销的条数。</summary>
+    private static async Task<ApiResult<int>> CancelCommandsAsync(
+        CancelCommandsRequest request,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var ids = request.Ids ?? [];
+        if (ids.Count == 0)
+        {
+            return ApiResult<int>.Success(0);
+        }
+
+        var canceled = 0;
+        foreach (var id in ids)
+        {
+            if (await store.CancelPendingCommandAsync(id, cancellationToken))
+            {
+                canceled++;
+            }
+        }
+
+        if (canceled > 0)
+        {
+            await store.AddAuditAsync(session.Username, "device.command.cancel", "多设备",
+                $"撤销了 {canceled} 条尚未派发的指令。", http.GetClientIpAddress(), cancellationToken);
+        }
+
+        return ApiResult<int>.Success(canceled);
     }
 
     // ────────────────────────────── 指令构造与目标筛选 ──────────────────────────────
@@ -144,9 +202,12 @@ public static class RemoteEndpoints
 
     /// <summary>构造一条待执行指令。</summary>
     private static RemoteCommandRow NewCommand(DeviceRow device, string kind, string payload, string issuedBy,
-        DateTimeOffset? issuedAt = null)
+        DateTimeOffset? issuedAt = null, int delaySeconds = 0)
     {
         var now = issuedAt ?? DateTimeOffset.UtcNow;
+
+        // 撤销窗口：关机这类不可逆操作先「挂一会儿」再派发，管理员可以在这段时间内撤销。
+        var delay = Math.Clamp(delaySeconds, 0, 120);
         return new RemoteCommandRow
         {
             Id = HubChecksum.NewId(),
@@ -157,6 +218,7 @@ public static class RemoteEndpoints
             IssuedAt = now,
             IssuedBy = issuedBy,
             ExpiresAt = now.Add(CommandTtl),
+            NotBefore = delay > 0 ? now.AddSeconds(delay) : null,
         };
     }
 
@@ -290,6 +352,12 @@ public sealed class SendCommandRequest
 
     /// <summary>是否把离线设备也纳入广播（命令会排队，等设备上线后执行）。默认 false。</summary>
     public bool IncludeOffline { get; set; }
+
+    /// <summary>
+    /// 延迟派发的秒数（0~120）：给关机等不可逆操作留出「撤销窗口」，
+    /// 在这段时间内可以调用撤销接口取消这条指令。
+    /// </summary>
+    public int DelaySeconds { get; set; }
 }
 
 /// <summary>
@@ -419,6 +487,13 @@ public static class NoticeTemplateEndpoints
             "删除通知模板。", http.GetClientIpAddress(), cancellationToken);
         return ApiResult<bool>.Success(true);
     }
+}
+
+/// <summary>批量撤销尚未派发的指令。</summary>
+public sealed class CancelCommandsRequest
+{
+    /// <summary>要撤销的指令 ID 列表。</summary>
+    public List<string>? Ids { get; set; }
 }
 
 /// <summary>下发外观的请求体。</summary>

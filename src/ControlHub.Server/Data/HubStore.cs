@@ -83,6 +83,9 @@ public sealed partial class HubStore
         // 迁移：设备备注（管理员自己标注，例如「三楼东侧」「班主任 张老师」）。
         await EnsureColumnAsync(connection, "devices", "remark", "TEXT NOT NULL DEFAULT ''", cancellationToken);
 
+        // 迁移：指令的「最早可派发时间」，用于给关机等不可逆操作留出撤销窗口。
+        await EnsureColumnAsync(connection, "device_commands", "not_before", "TEXT", cancellationToken);
+
         // 确保全局版本号存在，保证任何一次同步请求都能拿到确定值。
         await using var seed = connection.CreateCommand();
         seed.CommandText = """

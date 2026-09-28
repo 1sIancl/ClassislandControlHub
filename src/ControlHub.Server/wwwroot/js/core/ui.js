@@ -258,6 +258,56 @@ export function confirmDialog(title, message, confirmText = '确定', danger = f
 }
 
 /** 输入框对话框，返回输入值或 null。 */
+/**
+ * 「撤销窗口」提示条：右下角显示倒计时，点「撤销」即执行回调。
+ * <para>用于关机这类不可逆操作——服务端会延迟派发，这段时间内可以取消。</para>
+ * @returns {{ close: () => void }}
+ */
+export function undoBar(title, seconds, onUndo) {
+  const host = document.getElementById('toastHost') || document.body;
+  const remain = h('span.undo-remain', `${seconds}s`);
+
+  const bar = h('div.undo-bar',
+    h('span.undo-title', title),
+    remain,
+    h('button.btn.btn-sm.btn-primary', {
+      type: 'button',
+      onClick: async () => {
+        clearInterval(timer);
+        bar.remove();
+        await onUndo();
+      },
+    }, '撤销'),
+    h('button.btn.btn-sm.btn-ghost', {
+      type: 'button',
+      onClick: () => {
+        clearInterval(timer);
+        bar.remove();
+      },
+    }, '知道了'),
+  );
+
+  let left = seconds;
+  const timer = setInterval(() => {
+    left -= 1;
+    if (left <= 0) {
+      clearInterval(timer);
+      bar.remove();
+      return;
+    }
+
+    remain.textContent = `${left}s`;
+  }, 1000);
+
+  host.appendChild(bar);
+  return {
+    close: () => {
+      clearInterval(timer);
+      bar.remove();
+    },
+  };
+}
+
 export function promptDialog(title, label, defaultValue = '', placeholder = '') {
   return new Promise((resolve) => {
     const input = h('input', { type: 'text', value: defaultValue, placeholder });
