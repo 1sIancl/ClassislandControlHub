@@ -2,6 +2,9 @@
 
 > **一处配置，全网生效 —— 让每一块教室大屏，都准时、统一、可控。**
 
+[![构建](https://github.com/1sIancl/ClassislandControlHub/actions/workflows/build.yml/badge.svg)](https://github.com/1sIancl/ClassislandControlHub/actions/workflows/build.yml)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+
 **ClassislandControlHub集控** 是面向 **ClassIsland 2.x（.NET 10）** 的班级大屏集中管理系统，分为 A、B 两端：
 
 - **A 端 · 集控服务器**：ASP.NET Core 应用，自带可视化 Web 管理界面。可作为学校内网本地服务器运行，也可部署到服务器以网页形式访问，负责课表、时间表、科目的统一下发与设备管理。
@@ -147,6 +150,25 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 
 > 更早的改动见提交记录；上手指引见 [使用说明](USAGE.md)。
 
+## 版本兼容性
+
+本项目分 A 端（服务器）与 B 端（ClassIsland 插件）两部分，装插件前请先按下表确认版本：
+
+| 集控版本 | 插件包 | 支持的 ClassIsland | 状态 |
+|---|---|---|---|
+| A 端 `1.1.0` / 插件 `1.1.0.0` | `ControlHub.Plugin.cipx` `1.1.0.0` | `2.1.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 当前版本 |
+| A 端 `1.0.x` / 插件 `1.0.0.0` | `1.0.0.0` | `2.1.x` | ⚠️ 早期版本，建议同步升级 |
+| — | — | `2.2.x`（预览版） | ❌ 暂不支持 |
+
+补充说明：
+
+- 插件 `manifest.yml` 声明了 `apiVersion: 2.1.0.0` 与 `supportedOSPlatforms: [Windows]`，
+  即**只支持 Windows 上的 ClassIsland 2.1.x**。ClassIsland 2.2 预览期 API 变动较大（不少插件都还没适配），
+  本项目会在 2.2 正式版接口稳定后再跟进。
+- A 端与插件通过 `ControlHub.Protocol` 共享同一份协议定义（协议版本 `1.0`）。**建议两端同步升级**：
+  只升一端时注册、心跳与配置下发仍可用，但新增能力（远程命令、定时提醒等）需要两端都升级才会生效。
+- A 端需要 **.NET 10 运行时**（用 `sh/main.sh` 一键脚本会自动装）；插件随 ClassIsland 进程运行，不需要单独装运行时。
+
 ## 技术栈
 
 | 端 | 技术 |
@@ -161,3 +183,26 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 - [通信协议与数据格式](docs/protocol.md)
 - [架构与数据模型](docs/architecture.md)
 - [部署与使用指南](docs/deployment.md)
+
+## 许可证
+
+本项目以 **GNU General Public License v3.0（GPL-3.0）** 发布，全文见 [LICENSE](LICENSE)。
+
+**为什么是 GPL-3.0：**
+
+- B 端插件依赖 **ClassIsland**——通过 `ClassIsland.PluginSdk` 包，并在编译期引用 ClassIsland 主程序集
+  （`ClassIsland.dll`，`Private=false`，本身不打进插件包）。ClassIsland 本体已采用 **GPLv3**。
+- 按 GPLv3 的传染性，与 ClassIsland 结合运行的插件属于衍生作品，必须以 GPLv3 兼容的许可证分发。
+  由于插件、共享程序集 `ControlHub.Protocol` 与 A 端同处一个仓库、一起分发源码，
+  **整个仓库统一采用 GPL-3.0**，避免出现「一部分 GPL、一部分闭源」的许可冲突。
+- 第三方依赖的许可证均与 GPL-3.0 兼容：`Microsoft.Data.Sqlite`、Avalonia、FluentAvaloniaUI、
+  CommunityToolkit.Mvvm、`Microsoft.Extensions.*`（均为 MIT）。
+
+**这对使用者意味着：**
+
+- ✅ 可自由使用、修改、再分发（校内自建、商用部署均可）。
+- ✅ 再分发时（含分发编译好的 A 端 / 插件包）需同样以 GPL-3.0 提供**完整源码**并保留版权与许可声明。
+- ℹ️ 仅在校内自行部署、不对外分发二进制，则没有额外的开源义务。
+
+> A 端本身不依赖任何 GPL 组件。若你希望把 A 端单独以更宽松的许可证使用（例如闭源集成到自有系统），
+> 欢迎开 Issue 说明用途，我们再单独讨论授权方式。

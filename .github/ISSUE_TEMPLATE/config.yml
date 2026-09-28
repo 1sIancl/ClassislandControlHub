@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 使用说明（先看这里）
+    url: https://github.com/1sIancl/ClassislandControlHub/blob/main/USAGE.md
+    about: 部署、账号权限、注册方式、课表下发、定时提醒等常见操作步骤
+  - name: 安装与部署文档
+    url: https://github.com/1sIancl/ClassislandControlHub/blob/main/docs/deployment.md
+    about: Linux 一键部署、Windows 服务、反向代理与升级流程
+  - name: 通信协议与架构说明
+    url: https://github.com/1sIancl/ClassislandControlHub/tree/main/docs
+    about: 对接开发、排查同步问题时可先对照协议文档
+  - name: 版本兼容性
+    url: https://github.com/1sIancl/ClassislandControlHub#版本兼容性
+    about: 查一下你的 ClassIsland 版本是否在当前支持范围内

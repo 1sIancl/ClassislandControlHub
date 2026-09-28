@@ -1,0 +1,75 @@
+name: 功能请求
+description: 提出一个新功能或改进建议
+title: '[Feature] '
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提出前建议先看一遍 [使用说明](../blob/main/USAGE.md) 与 [README](../blob/main/README.md)，
+        有些能力可能已经存在（例如楼栋 / 楼层 / 教室看板、定时提醒、远程插件管理）。
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 涉及模块
+      multiple: true
+      options:
+        - 配置档案 / 课表 / 时间表
+        - 设备管理（楼栋 · 楼层 · 教室看板）
+        - 配置下发与同步
+        - 远程管理（命令 / 插件 / 外观 / 通知）
+        - 定时提醒
+        - 账号与权限 / 注册方式
+        - 备份、审计与日志
+        - 部署与升级
+        - 界面与易用性
+        - 其它
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你遇到的场景 / 痛点
+      description: 描述「现在怎么做、哪里别扭」，比直接给方案更有助于设计
+      placeholder: 例如：每次新学期都要手动给 60 台设备重新分组，希望能按 Excel 批量导入
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: 期望的效果
+      description: 你希望它用起来是什么样子（界面 / 行为 / 接口皆可）
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 你目前是怎么绕过的
+      description: 现阶段的替代做法，或你考虑过的其它方案
+    validations:
+      required: false
+
+  - type: dropdown
+    id: scale
+    attributes:
+      label: 规模参考
+      description: 便于评估优先级
+      options:
+        - 单机 / 几台教室设备
+        - 一个年级（10~30 台）
+        - 全校（30 台以上）
+        - 多校区 / 多学校
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已搜索过现有 Issues，确认没有重复
+          required: true

@@ -1,0 +1,95 @@
+name: 发布
+
+# 打标签即发布：标签格式与 manifest.yml 的 tagPattern（1.*.*.*）保持一致，
+# 例如 1.1.0.0 —— 插件市场按该标签抓取 ControlHub.Plugin.cipx。
+on:
+  push:
+    tags:
+      - '1.*.*.*'
+      - 'v1.*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 要发布的标签（需已存在，例如 1.1.0.0）
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  CLASSISLAND_VERSION: '2.1.1.1'
+
+jobs:
+  release:
+    name: 构建并发布
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: 解析版本号
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          echo "VERSION=${tag#v}" >> "$GITHUB_ENV"
+
+      # ── A 端：Linux / Windows 两份框架依赖发布包 ──
+      - name: 发布 A 端（linux-x64 / win-x64）
+        run: |
+          set -euo pipefail
+          for rid in linux-x64 win-x64; do
+            dotnet publish src/ControlHub.Server/ControlHub.Server.csproj \
+              -c Release -r "$rid" --self-contained false -o "dist/server-$rid"
+            (cd dist && zip -qr "controlhub-server-$rid-$VERSION.zip" "server-$rid")
+          done
+          ls -lh dist/*.zip
+
+      # ── B 端插件：先取 ClassIsland 主程序集，再打包 .cipx ──
+      - name: 下载 ClassIsland 发行包并定位主程序集
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p ci/classisland
+          cd ci/classisland
+          gh release download "v${CLASSISLAND_VERSION}" --repo ClassIsland/ClassIsland \
+            --pattern '*.zip' --dir . \
+          || gh release download "${CLASSISLAND_VERSION}" --repo ClassIsland/ClassIsland \
+            --pattern '*.zip' --dir .
+          for f in *.zip; do unzip -oq "$f" -d expanded; done
+          dll="$(find expanded -name 'ClassIsland.dll' | head -n 1)"
+          if [ -z "$dll" ]; then
+            echo "::error::未在 ClassIsland 发行包中找到 ClassIsland.dll"
+            exit 1
+          fi
+          echo "CLASSISLAND_ASSEMBLY=$PWD/$dll" >> "$GITHUB_ENV"
+
+      - name: 构建插件并打包 .cipx
+        run: |
+          dotnet build src/ControlHub.Plugin/ControlHub.Plugin.csproj -c Release \
+            -p:CreateCipx=true \
+            -p:ClassIslandAssemblyPath="$CLASSISLAND_ASSEMBLY"
+
+      - name: 整理发布资产
+        run: |
+          set -euo pipefail
+          cp src/ControlHub.Plugin/cipx/ControlHub.Plugin.cipx dist/
+          ls -lh dist/
+
+      - name: 创建 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            --title "ClassislandControlHub $VERSION" \
+            --generate-notes \
+            "dist/ControlHub.Plugin.cipx" \
+            dist/controlhub-server-linux-x64-"$VERSION".zip \
+            dist/controlhub-server-win-x64-"$VERSION".zip

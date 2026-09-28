@@ -1,0 +1,115 @@
+name: Bug 报告
+description: 报告一个可复现的问题（A 端 / B 端插件 / 部署脚本 / 文档）
+title: '[Bug] '
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！请尽量把环境信息与复现步骤填完整，这能大幅缩短排查时间。
+
+        > 安全类问题（越权、凭据泄露、拒绝服务等）**不要**公开提交，请改用仓库 **Security → Report a vulnerability** 私密上报。
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: 问题出在哪一端
+      options:
+        - A 端 · 集控服务器（Web 管理界面 / API）
+        - B 端 · ClassIsland 插件（教室大屏）
+        - 部署脚本 / 安装升级流程
+        - 文档描述有误
+        - 不确定
+    validations:
+      required: true
+
+  - type: input
+    id: hub_version
+    attributes:
+      label: 集控版本
+      description: A 端见「系统设置 → 服务器信息」，插件见 ClassIsland 插件列表里的版本号
+      placeholder: 例如 A 端 1.1.0 / 插件 1.1.0.0
+    validations:
+      required: true
+
+  - type: input
+    id: classisland_version
+    attributes:
+      label: ClassIsland 版本
+      description: B 端问题必填；请填写 ClassIsland 的完整版本号（预览版请注明）
+      placeholder: 例如 2.1.1.1 / 2.2.0.0-preview
+    validations:
+      required: false
+
+  - type: input
+    id: os
+    attributes:
+      label: 操作系统
+      placeholder: 例如 Windows 11 24H2 / Windows 10 22H2 / Ubuntu 22.04
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deploy
+    attributes:
+      label: A 端部署方式
+      options:
+        - Windows 控制台运行（启动A端服务器.bat / dotnet run）
+        - Windows 服务（sh/install-windows.ps1）
+        - Linux systemd（sh/main.sh 一键脚本）
+        - 自行发布 / 反向代理 / 容器
+        - 不适用（只有 B 端问题）
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 请写清「点了什么 / 发了什么请求 / 期待什么」，越具体越好
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      description: 有报错信息请原样粘贴（含错误码，如 ENROLL_CODE_INVALID）
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志 / 截图
+      description: |
+        - A 端：运行时控制台输出，或管理界面「审计日志」页面
+        - B 端：ClassIsland 日志目录下的最新日志（含插件异常堆栈）
+        - 部署脚本：脚本输出的完整错误片段
+        > 粘贴前请隐去服务器地址、注册码、令牌等敏感信息。
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我使用的是最新 Release（或 main 分支最新提交）
+          required: true
+        - label: 我已搜索过现有 Issues，确认没有重复
+          required: true
+        - label: 我已隐去日志中的敏感信息（地址 / 令牌 / 注册码）
+          required: true

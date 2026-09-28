@@ -1,0 +1,113 @@
+name: 构建
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - '.github/ISSUE_TEMPLATE/**'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+
+jobs:
+  # ── A 端 / 协议 / 桌面端：Linux 与 Windows 都必须能编译 ──
+  server:
+    name: 构建 A 端（${{ matrix.os }}）
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: 还原
+        run: |
+          dotnet restore src/ControlHub.Server/ControlHub.Server.csproj
+          dotnet restore src/ControlHub.Desktop/ControlHub.Desktop.csproj
+
+      - name: 构建（Release）
+        run: |
+          dotnet build src/ControlHub.Server/ControlHub.Server.csproj -c Release --no-restore
+          dotnet build src/ControlHub.Desktop/ControlHub.Desktop.csproj -c Release --no-restore
+
+      - name: 发布 A 端产物（框架依赖）
+        if: matrix.os == 'ubuntu-latest'
+        run: dotnet publish src/ControlHub.Server/ControlHub.Server.csproj -c Release --no-restore -o dist/server
+
+      - name: 上传 A 端产物
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: controlhub-server
+          path: dist/server
+          retention-days: 7
+
+  # ── B 端插件：编译期需要 ClassIsland 主程序集，从 ClassIsland 官方 Release 取 ──
+  # 说明：ControlHub.Plugin.csproj 通过 ClassIslandAssemblyPath 引用 ClassIsland.dll
+  #      （Private=false，不打进插件包）。本地开发指向自己的 ClassIsland 源码构建产物，
+  #      CI 上则从官方发行包解出该 dll 后，用 -p: 覆盖该属性。
+  plugin:
+    name: 构建 B 端插件（.cipx）
+    runs-on: ubuntu-latest
+    env:
+      # 仓库变量 CLASSISLAND_VERSION 可覆盖；未设置时用下面的默认值
+      CLASSISLAND_VERSION: ${{ vars.CLASSISLAND_VERSION || '2.1.1.1' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: 下载 ClassIsland 发行包并定位主程序集
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p ci/classisland
+          cd ci/classisland
+
+          # 官方 Release 的资产名与 tag 前缀可能变化（v2.1.1.1 / 2.1.1.1），这里两种都试。
+          # 若将来仍失败，请按实际资产名调整 --pattern（例如 '*.7z'）。
+          gh release download "v${CLASSISLAND_VERSION}" --repo ClassIsland/ClassIsland \
+            --pattern '*.zip' --dir . \
+          || gh release download "${CLASSISLAND_VERSION}" --repo ClassIsland/ClassIsland \
+            --pattern '*.zip' --dir .
+
+          for f in *.zip; do unzip -oq "$f" -d expanded; done
+
+          dll="$(find expanded -name 'ClassIsland.dll' | head -n 1)"
+          if [ -z "$dll" ]; then
+            echo "::error::未在 ClassIsland 发行包中找到 ClassIsland.dll，请检查资产名或 CLASSISLAND_VERSION"
+            exit 1
+          fi
+
+          echo "CLASSISLAND_ASSEMBLY=$PWD/$dll" >> "$GITHUB_ENV"
+          echo "使用 ClassIsland 主程序集：$PWD/$dll"
+
+      - name: 构建插件并打包 .cipx
+        run: |
+          dotnet build src/ControlHub.Plugin/ControlHub.Plugin.csproj -c Release \
+            -p:CreateCipx=true \
+            -p:ClassIslandAssemblyPath="$CLASSISLAND_ASSEMBLY"
+
+      - name: 上传插件包
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-cipx
+          path: src/ControlHub.Plugin/cipx/ControlHub.Plugin.cipx
+          retention-days: 7
