@@ -8,7 +8,7 @@
   <title>ClassislandControlHub 集控系统</title>
   <link rel="icon" href="icon.png" />
   <link rel="apple-touch-icon" href="icon.png" />
-  <link rel="stylesheet" href="css/app.css?v=22" />
+  <link rel="stylesheet" href="css/app.css?v=23" />
 </head>
 
 <body>
@@ -68,61 +68,171 @@
     </div>
   </div>
 
-  <!-- 登录页 -->
-  <div id="loginView" class="login-page">
-    <div class="login-card">
-      <div class="login-head">
-        <div class="brand-mark large" id="loginBrandMark">CI</div>
-        <h1 id="loginTitle">ClassislandControlHub</h1>
-        <p id="loginServerName" class="login-server">
-          <span class="login-server-dot"></span><span id="loginServerText">正在连接服务器…</span>
-        </p>
-      </div>
-      <form id="loginForm" class="login-form" autocomplete="on">
-        <label class="field">
-          <span>用户名</span>
-          <input type="text" id="loginUsername" autocomplete="username" placeholder="请输入用户名" required />
-        </label>
-        <label class="field">
-          <span>密码</span>
-          <input type="password" id="loginPassword" autocomplete="current-password" placeholder="请输入密码" required />
-        </label>
-        <div class="login-error" id="loginError" hidden></div>
-        <button class="btn btn-primary btn-block login-submit" type="submit" id="loginSubmit">登录</button>
-      </form>
-
-      <!-- 凭邀请码自助注册（由服务端开关决定是否展示入口） -->
-      <form id="registerForm" class="login-form" autocomplete="on" hidden>
-        <label class="field">
-          <span>邀请码</span>
-          <input type="text" id="registerCode" placeholder="由管理员发放" required />
-        </label>
-        <label class="field">
-          <span>用户名</span>
-          <input type="text" id="registerUsername" autocomplete="username" placeholder="3~32 位，字母 / 数字 / . _ -" required />
-        </label>
-        <label class="field">
-          <span>显示名称</span>
-          <input type="text" id="registerDisplayName" placeholder="留空则使用用户名" />
-        </label>
-        <label class="field">
-          <span>密码</span>
-          <input type="password" id="registerPassword" autocomplete="new-password" placeholder="至少 8 位，需同时包含字母与数字" required />
-        </label>
-        <div class="login-error" id="registerError" hidden></div>
-        <button class="btn btn-primary btn-block login-submit" type="submit" id="registerSubmit">注册并登录</button>
-      </form>
-
-      <div class="login-switch">
-        <button type="button" class="linkish" id="switchToRegister" hidden>使用邀请码注册</button>
-        <button type="button" class="linkish" id="switchToLogin" hidden>已有账号？返回登录</button>
-      </div>
-
-      <div class="login-foot">
-        <span id="loginFootHint">首次部署默认账号 <code>admin</code>，登录后请立即修改密码。</span>
-      </div>
+  <!-- 登录页：左侧产品介绍 + 右侧登录 / 邀请码注册卡片 -->
+  <main id="loginView" class="login-page">
+    <!-- 背景装饰：纯 CSS 渐变光斑，零额外请求 -->
+    <div class="login-canvas" aria-hidden="true">
+      <span class="login-orb orb-a"></span>
+      <span class="login-orb orb-b"></span>
+      <span class="login-orb orb-c"></span>
     </div>
-  </div>
+
+    <div class="login-wrapper">
+      <section class="login-hero">
+        <div class="hero-brand">
+          <div class="brand-mark large" id="loginBrandMark">CI</div>
+          <div class="hero-brand-text">
+            <h1 class="hero-title" id="loginTitle">ClassislandControlHub</h1>
+            <p class="hero-sub">ClassIsland 机房集控平台</p>
+          </div>
+        </div>
+
+        <p class="hero-desc">
+          一站式管理学校的 ClassIsland 教室终端——统一分发课表与设置、按楼栋楼层查看设备状态，
+          远程运维与定时提醒都在这一个控制台里完成。
+        </p>
+
+        <ul class="hero-features">
+          <li class="feature-item">
+            <span class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18M5 20V9.5l7-5 7 5V20M9.5 20v-5h5v5" /></svg>
+            </span>
+            <span class="feature-body">
+              <span class="feature-title">楼栋 · 楼层 · 教室看板</span>
+              <span class="feature-desc">三级视图与在线率，拖拽即可换层</span>
+            </span>
+          </li>
+          <li class="feature-item">
+            <span class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" /></svg>
+            </span>
+            <span class="feature-body">
+              <span class="feature-title">配置档案一键下发</span>
+              <span class="feature-desc">按设备 / 楼层 / 楼栋逐级回退，改动秒级生效</span>
+            </span>
+          </li>
+          <li class="feature-item">
+            <span class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8M12 17v4" /></svg>
+            </span>
+            <span class="feature-body">
+              <span class="feature-title">远程管理教室终端</span>
+              <span class="feature-desc">下发命令、启停插件、统一调整外观</span>
+            </span>
+          </li>
+          <li class="feature-item">
+            <span class="feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8" /><path d="M12 9.5V13l2.5 2.5M9 2h6" /></svg>
+            </span>
+            <span class="feature-body">
+              <span class="feature-title">定时提醒</span>
+              <span class="feature-desc">按日期与重复规则自动推送到教室大屏</span>
+            </span>
+          </li>
+        </ul>
+      </section>
+
+      <section class="login-card">
+        <div class="login-card-head">
+          <h2 id="loginHeading">欢迎回来</h2>
+          <p id="loginSubtitle">登录以继续管理您的集控服务</p>
+        </div>
+
+        <p id="loginServerName" class="login-server">
+          <span class="login-server-dot" aria-hidden="true"></span>
+          <span id="loginServerText" role="status" aria-live="polite">正在连接服务器…</span>
+        </p>
+
+        <form id="loginForm" class="login-form" autocomplete="on">
+          <label class="field">
+            <span>用户名</span>
+            <input type="text" id="loginUsername" autocomplete="username" placeholder="请输入用户名" required />
+          </label>
+          <label class="field">
+            <span>密码</span>
+            <span class="input-wrap">
+              <input type="password" id="loginPassword" autocomplete="current-password" placeholder="请输入密码" required />
+              <button type="button" class="pw-toggle" data-pw-toggle="loginPassword" aria-label="显示密码" aria-pressed="false" tabindex="-1">
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12S6.2 5.6 12 5.6 21.5 12 21.5 12 17.8 18.4 12 18.4 2.5 12 2.5 12Z" /><circle cx="12" cy="12" r="3" /></svg>
+              </button>
+            </span>
+          </label>
+          <div class="login-error" id="loginError" role="alert" hidden></div>
+          <button class="btn btn-primary btn-block login-submit" type="submit" id="loginSubmit">登录</button>
+        </form>
+
+        <!-- 凭邀请码自助注册（由服务端开关决定是否展示入口） -->
+        <form id="registerForm" class="login-form" autocomplete="on" hidden>
+          <label class="field">
+            <span>邀请码</span>
+            <input type="text" id="registerCode" placeholder="由管理员发放" spellcheck="false" required />
+          </label>
+          <label class="field">
+            <span>用户名</span>
+            <input type="text" id="registerUsername" autocomplete="username" placeholder="3~32 位，字母 / 数字 / . _ -" required />
+          </label>
+          <label class="field">
+            <span>显示名称</span>
+            <input type="text" id="registerDisplayName" placeholder="留空则使用用户名" />
+          </label>
+          <label class="field">
+            <span>密码</span>
+            <span class="input-wrap">
+              <input type="password" id="registerPassword" autocomplete="new-password" placeholder="至少 8 位，需同时包含字母与数字" required />
+              <button type="button" class="pw-toggle" data-pw-toggle="registerPassword" aria-label="显示密码" aria-pressed="false" tabindex="-1">
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12S6.2 5.6 12 5.6 21.5 12 21.5 12 17.8 18.4 12 18.4 2.5 12 2.5 12Z" /><circle cx="12" cy="12" r="3" /></svg>
+              </button>
+            </span>
+          </label>
+          <div class="login-error" id="registerError" role="alert" hidden></div>
+          <button class="btn btn-primary btn-block login-submit" type="submit" id="registerSubmit">注册并登录</button>
+        </form>
+
+        <!-- 自助注册申请：提交后进入待审批队列，管理员批准才会建号 -->
+        <form id="applyForm" class="login-form" autocomplete="on" hidden>
+          <label class="field">
+            <span>用户名</span>
+            <input type="text" id="applyUsername" autocomplete="username" placeholder="3~32 位，字母 / 数字 / . _ -" required />
+          </label>
+          <label class="field">
+            <span>显示名称</span>
+            <input type="text" id="applyDisplayName" placeholder="例如：高一(3)班 张老师" />
+          </label>
+          <label class="field">
+            <span>密码</span>
+            <span class="input-wrap">
+              <input type="password" id="applyPassword" autocomplete="new-password" placeholder="至少 8 位，需同时包含字母与数字" required />
+              <button type="button" class="pw-toggle" data-pw-toggle="applyPassword" aria-label="显示密码" aria-pressed="false" tabindex="-1">
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12S6.2 5.6 12 5.6 21.5 12 21.5 12 17.8 18.4 12 18.4 2.5 12 2.5 12Z" /><circle cx="12" cy="12" r="3" /></svg>
+              </button>
+            </span>
+          </label>
+          <label class="field">
+            <span>申请说明</span>
+            <input type="text" id="applyNote" placeholder="例如：负责机房管理，需要设备与下发权限" />
+          </label>
+          <div class="login-error" id="applyError" role="alert" hidden></div>
+          <button class="btn btn-primary btn-block login-submit" type="submit" id="applySubmit">提交申请</button>
+        </form>
+
+        <div class="apply-done" id="applyDone" hidden>
+          <strong>申请已提交</strong>
+          <p>管理员审批通过后，即可用该用户名与密码登录；若长时间未通过，请联系管理员。</p>
+          <button type="button" class="linkish" id="applyBackToLogin">返回登录</button>
+        </div>
+
+        <div class="login-switch" id="loginSwitch">
+          <button type="button" class="linkish" id="switchToRegister" hidden>使用邀请码注册</button>
+          <button type="button" class="linkish" id="switchToApply" hidden>申请账号（需审批）</button>
+          <button type="button" class="linkish" id="switchToLogin" hidden>已有账号？返回登录</button>
+        </div>
+
+        <div class="login-foot">
+          <span id="loginFootHint">首次部署默认账号 <code>admin</code>，登录后请立即修改密码。</span>
+        </div>
+      </section>
+    </div>
+  </main>
 
   <!-- 全局提示与弹窗容器 -->
   <div id="toastHost" class="toast-host"></div>
@@ -131,7 +241,7 @@
   <!-- 新手引导浮层 -->
   <div id="tourHost" class="tour-host" hidden></div>
 
-  <script type="module" src="js/app.js?v=22"></script>
+  <script type="module" src="js/app.js?v=23"></script>
 </body>
 
 </html>

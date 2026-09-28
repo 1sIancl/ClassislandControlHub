@@ -2,8 +2,8 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=22';
-import { h, clear, toast, icon } from './core/ui.js?v=22';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=23';
+import { h, clear, toast, icon } from './core/ui.js?v=23';
 import {
   initTheme, getTheme, applyTheme, THEMES,
   getSidebarCollapsed, setSidebarCollapsed,
@@ -11,7 +11,7 @@ import {
   applyAppearance, getAccent, setAccent, ACCENTS,
   getFont, setFont, FONTS,
   getRadius, setRadius, RADII,
-} from './core/prefs.js?v=22';
+} from './core/prefs.js?v=23';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -57,17 +57,17 @@ const NAV = [
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=22'),
-  devices: () => import('./views/devices.js?v=22'),
+  dashboard: () => import('./views/dashboard.js?v=23'),
+  devices: () => import('./views/devices.js?v=23'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=22'),
-  profiles: () => import('./views/profiles.js?v=22'),
-  profileEditor: () => import('./views/profileEditor.js?v=22'),
-  deploy: () => import('./views/deploy.js?v=22'),
-  remote: () => import('./views/remote.js?v=22'),
-  reminders: () => import('./views/reminders.js?v=22'),
-  audit: () => import('./views/audit.js?v=22'),
-  settings: () => import('./views/settings.js?v=22'),
+  groups: () => import('./views/devices.js?v=23'),
+  profiles: () => import('./views/profiles.js?v=23'),
+  profileEditor: () => import('./views/profileEditor.js?v=23'),
+  deploy: () => import('./views/deploy.js?v=23'),
+  remote: () => import('./views/remote.js?v=23'),
+  reminders: () => import('./views/reminders.js?v=23'),
+  audit: () => import('./views/audit.js?v=23'),
+  settings: () => import('./views/settings.js?v=23'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -87,8 +87,10 @@ const ROUTE_PERMS = {
 const runtime = {
   currentKey: '',
   refreshTimer: null,
-  /** 服务端是否开放了凭邀请码自助注册（决定登录页是否显示注册入口）。 */
+  /** 服务端是否开放了凭邀请码自助注册（决定登录页是否显示该入口）。 */
   registrationEnabled: false,
+  /** 服务端是否开放了自助注册申请（提交后需管理员审批）。 */
+  approvalEnabled: false,
 };
 
 // ────────────────────────────── 会话 ──────────────────────────────
@@ -201,36 +203,109 @@ function showLogin(message) {
   document.getElementById('loginUsername').focus();
 }
 
-/** 在「登录」与「凭邀请码注册」两张表单之间切换。 */
+/**
+ * 在「登录」「凭邀请码注册」「自助申请（需审批）」三张表单之间切换。
+ * @param {'login'|'register'|'apply'} mode
+ */
 function switchLoginMode(mode) {
-  const register = mode === 'register';
-  document.getElementById('loginForm').hidden = register;
-  document.getElementById('registerForm').hidden = !register;
-  document.getElementById('switchToRegister').hidden = register || !runtime.registrationEnabled;
-  document.getElementById('switchToLogin').hidden = !register;
+  const isLogin = mode === 'login';
+  const isApply = mode === 'apply';
+
+  document.getElementById('loginForm').hidden = !isLogin;
+  document.getElementById('registerForm').hidden = mode !== 'register';
+  document.getElementById('applyForm').hidden = !isApply;
+  document.getElementById('applyDone').hidden = true;
+
+  // 两个注册入口只在登录页展示，且各自受服务端开关控制。
+  const toRegister = document.getElementById('switchToRegister');
+  const toApply = document.getElementById('switchToApply');
+  const toLogin = document.getElementById('switchToLogin');
+  toRegister.hidden = !isLogin || !runtime.registrationEnabled;
+  toApply.hidden = !isLogin || !runtime.approvalEnabled;
+  toLogin.hidden = isLogin;
+
+  const switchBox = document.getElementById('loginSwitch');
+  if (switchBox) switchBox.hidden = toRegister.hidden && toApply.hidden && toLogin.hidden;
+
   document.getElementById('loginError').hidden = true;
   document.getElementById('registerError').hidden = true;
+  document.getElementById('applyError').hidden = true;
 
-  const first = document.getElementById(register ? 'registerCode' : 'loginUsername');
-  first?.focus();
+  // 标题与副文案跟随当前表单，避免三张表单共用一个标题造成误解。
+  const titles = {
+    login: ['欢迎回来', '登录以继续管理您的集控服务'],
+    register: ['创建账号', '凭管理员发放的邀请码即可自助注册'],
+    apply: ['申请账号', '提交后由管理员审批，通过即可登录'],
+  };
+  const [title, subtitle] = titles[mode] || titles.login;
+  const heading = document.getElementById('loginHeading');
+  const sub = document.getElementById('loginSubtitle');
+  if (heading) heading.textContent = title;
+  if (sub) sub.textContent = subtitle;
+
+  // 切走时收起已揭示的密码，避免明文停留在屏幕上。
+  resetPasswordFields();
+
+  const firstId = isApply ? 'applyUsername' : (mode === 'register' ? 'registerCode' : 'loginUsername');
+  document.getElementById(firstId)?.focus();
 }
 
-/** 询问服务端是否开放自助注册；关闭时不显示注册入口，避免误导。 */
+/** 提交按钮的忙碌态：禁用 + aria-busy + 按钮内联转圈。 */
+function setButtonLoading(button, loading, label) {
+  if (!button) return;
+  button.disabled = loading;
+  button.classList.toggle('is-loading', loading);
+  button.setAttribute('aria-busy', loading ? 'true' : 'false');
+  if (label) button.textContent = label;
+}
+
+/** 收起已揭示的密码输入框（切换表单或提交后调用）。 */
+function resetPasswordFields() {
+  for (const id of ['loginPassword', 'registerPassword', 'applyPassword']) {
+    const input = document.getElementById(id);
+    if (input) input.type = 'password';
+  }
+
+  for (const btn of document.querySelectorAll('.pw-toggle')) {
+    btn.classList.remove('is-on');
+    btn.setAttribute('aria-pressed', 'false');
+    btn.setAttribute('aria-label', '显示密码');
+  }
+}
+
+/** 密码可见切换：移动端输入长密码时尤其有用，同时给出 aria 状态。 */
+function bindPasswordToggles() {
+  for (const btn of document.querySelectorAll('[data-pw-toggle]')) {
+    btn.addEventListener('click', () => {
+      const input = document.getElementById(btn.dataset.pwToggle);
+      if (!input) return;
+
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.classList.toggle('is-on', show);
+      btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+      btn.setAttribute('aria-label', show ? '隐藏密码' : '显示密码');
+      input.focus();
+    });
+  }
+}
+
+/** 询问服务端开放了哪些注册方式；关闭的入口不显示，避免误导。 */
 async function refreshRegistrationEntry() {
   try {
     const info = await api('/admin/registration', { auth: false });
     runtime.registrationEnabled = Boolean(info.enabled);
-    document.getElementById('loginFootHint').innerHTML = info.enabled
-      ? '凭管理员发放的邀请码可自助注册；首次部署默认账号 <code>admin</code>。'
+    runtime.approvalEnabled = Boolean(info.approvalEnabled);
+    document.getElementById('loginFootHint').innerHTML = info.hint
+      ? `${info.hint}；首次部署默认账号 <code>admin</code>。`
       : '首次部署默认账号 <code>admin</code>，登录后请立即修改密码。';
   } catch {
     runtime.registrationEnabled = false;
+    runtime.approvalEnabled = false;
   }
 
-  const link = document.getElementById('switchToRegister');
-  if (link) {
-    link.hidden = runtime.registrationEnabled || !document.getElementById('loginForm').hidden;
-  }
+  // 两个注册入口的显隐统一交给 switchLoginMode，避免两处逻辑打架。
+  switchLoginMode('login');
 }
 
 /** 登录 / 注册成功后的统一收尾：补全权限与引导状态后再进主界面。 */
@@ -258,8 +333,7 @@ async function handleLogin(event) {
   const username = document.getElementById('loginUsername').value.trim();
   const password = document.getElementById('loginPassword').value;
 
-  button.disabled = true;
-  button.textContent = '登录中…';
+  setButtonLoading(button, true, '登录中…');
   errorBox.hidden = true;
 
   try {
@@ -275,8 +349,7 @@ async function handleLogin(event) {
     errorBox.textContent = err.message || '登录失败';
     errorBox.hidden = false;
   } finally {
-    button.disabled = false;
-    button.textContent = '登录';
+    setButtonLoading(button, false, '登录');
   }
 }
 
@@ -293,21 +366,49 @@ async function handleRegister(event) {
     password: document.getElementById('registerPassword').value,
   };
 
-  button.disabled = true;
-  button.textContent = '注册中…';
+  setButtonLoading(button, true, '注册中…');
   errorBox.hidden = true;
 
   try {
     const result = await api('/admin/register', { method: 'POST', auth: false, body });
     document.getElementById('registerPassword').value = '';
     await completeSignIn(result);
-    toast('ok', '注册成功', `欢迎，${result.displayName || result.username}。`);
+    toast('ok', '注册成功', `欢迎，${result.displayName || session.me?.username || '新同事'}。`);
   } catch (err) {
     errorBox.textContent = err.message || '注册失败';
     errorBox.hidden = false;
   } finally {
-    button.disabled = false;
-    button.textContent = '注册并登录';
+    setButtonLoading(button, false, '注册并登录');
+  }
+}
+
+/** 提交自助注册申请：不建号，等管理员在「系统设置 → 注册申请」中批准。 */
+async function handleApply(event) {
+  event.preventDefault();
+
+  const button = document.getElementById('applySubmit');
+  const errorBox = document.getElementById('applyError');
+  const body = {
+    username: document.getElementById('applyUsername').value.trim(),
+    displayName: document.getElementById('applyDisplayName').value.trim(),
+    note: document.getElementById('applyNote').value.trim(),
+    password: document.getElementById('applyPassword').value,
+  };
+
+  setButtonLoading(button, true, '提交中…');
+  errorBox.hidden = true;
+
+  try {
+    await api('/admin/register-requests', { method: 'POST', auth: false, body });
+    document.getElementById('applyPassword').value = '';
+    document.getElementById('applyForm').hidden = true;
+    document.getElementById('applyDone').hidden = false;
+    toast('ok', '申请已提交', '管理员审批通过后即可登录。');
+  } catch (err) {
+    errorBox.textContent = err.message || '提交失败';
+    errorBox.hidden = false;
+  } finally {
+    setButtonLoading(button, false, '提交申请');
   }
 }
 
@@ -333,7 +434,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=22');
+    const { startTour } = await import('./core/tour.js?v=23');
     startTour({
       onFinish: async (skipped) => {
         try {
@@ -607,8 +708,14 @@ function updateRevisionChip() {
 
 document.getElementById('loginForm').addEventListener('submit', handleLogin);
 document.getElementById('registerForm').addEventListener('submit', handleRegister);
+document.getElementById('applyForm').addEventListener('submit', handleApply);
 document.getElementById('switchToRegister').addEventListener('click', () => switchLoginMode('register'));
+document.getElementById('switchToApply').addEventListener('click', () => switchLoginMode('apply'));
 document.getElementById('switchToLogin').addEventListener('click', () => switchLoginMode('login'));
+document.getElementById('applyBackToLogin').addEventListener('click', () => switchLoginMode('login'));
+
+// 密码可见切换（登录 / 注册两处）
+bindPasswordToggles();
 
 // 登录页也展示在线状态，方便确认服务器是否可达。
 fetchServerInfo()

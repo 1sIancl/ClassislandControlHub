@@ -448,7 +448,7 @@ public static class AdminEndpoints
     /// <summary>
     /// 提权防护：非超级管理员既不能把别人设为超级管理员，也不能授予自己没有的权限。
     /// </summary>
-    private static void EnsureCanGrant(SessionRow session, string role, IEnumerable<string> permissions)
+    internal static void EnsureCanGrant(SessionRow session, string role, IEnumerable<string> permissions)
     {
         if (IsAdministratorRole(session.Role))
         {
@@ -481,8 +481,8 @@ public static class AdminEndpoints
         }
     }
 
-    /// <summary>校验用户名格式（新建账号与自助注册共用）。</summary>
-    private static string NormalizeUsername(string? username)
+    /// <summary>校验用户名格式（新建账号、邀请码注册与自助申请共用）。</summary>
+    internal static string NormalizeUsername(string? username)
     {
         var value = (username ?? string.Empty).Trim();
         if (value.Length < 3 || value.Length > 32)
@@ -704,18 +704,25 @@ public static class AdminEndpoints
         return ApiResult<bool>.Success(true);
     }
 
-    /// <summary>自助注册开关的公开状态（登录页据此决定是否显示「注册」入口）。</summary>
+    /// <summary>注册开关的公开状态（登录页据此决定显示哪些注册入口）。</summary>
     private static async Task<ApiResult<RegistrationInfoDto>> GetRegistrationInfoAsync(
         HubStore store,
         CancellationToken cancellationToken)
     {
         var enabled = await store.GetSettingAsync(SelfRegistrationSettingKey, "0", cancellationToken) == "1";
+        var approvalEnabled = await RegistrationEndpoints.IsApprovalEnabledAsync(store, cancellationToken);
+
         return ApiResult<RegistrationInfoDto>.Success(new RegistrationInfoDto
         {
             Enabled = enabled,
-            Hint = enabled
-                ? "凭管理员发放的邀请码自助注册"
-                : "当前未开放自助注册，请联系管理员开通账号。",
+            ApprovalEnabled = approvalEnabled,
+            Hint = (enabled, approvalEnabled) switch
+            {
+                (true, true) => "可凭邀请码自助注册，也可提交申请等待管理员审批",
+                (true, false) => "凭管理员发放的邀请码自助注册",
+                (false, true) => "可提交注册申请，管理员审批通过后即可登录",
+                (false, false) => "当前未开放自助注册，请联系管理员开通账号。",
+            },
         });
     }
 

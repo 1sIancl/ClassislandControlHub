@@ -2,11 +2,11 @@
  * 系统设置视图：服务器信息、账号安全与部署提示。
  */
 
-import { api, session, hasPermission } from '../core/api.js?v=22';
+import { api, session, hasPermission } from '../core/api.js?v=23';
 import {
   h, clear, formatDateTime, formatDuration, toast, loadingBlock,
   field, modal, copyText, confirmDialog,
-} from '../core/ui.js?v=22';
+} from '../core/ui.js?v=23';
 
 export const meta = {
   title: '系统设置',
@@ -21,13 +21,14 @@ export async function render(container) {
   const canSettings = hasPermission('settings.read');
   const canAccounts = hasPermission('accounts.read');
 
-  const [info, me, accounts, permissions, registerCodes, registration, timeOffset, updateState, aiConfig] =
+  const [info, me, accounts, permissions, registerCodes, registerRequests, registration, timeOffset, updateState, aiConfig] =
     await Promise.all([
       api('/server/info', { auth: false }),
       api('/admin/me'),
       canAccounts ? api('/admin/accounts') : Promise.resolve([]),
       canAccounts ? api('/admin/permissions') : Promise.resolve([]),
       canAccounts ? api('/admin/register-codes') : Promise.resolve([]),
+      canAccounts ? api('/admin/register-requests') : Promise.resolve([]),
       api('/admin/registration', { auth: false }).catch(() => ({ enabled: false })),
       canSettings ? api('/admin/time-offset') : Promise.resolve(null),
       canSettings ? api('/admin/update/state') : Promise.resolve(null),
@@ -50,6 +51,7 @@ export async function render(container) {
     ),
     canAccounts ? renderAccountsCard(container, accounts, me, permissions) : null,
     canAccounts ? renderRegisterCodesCard(container, registerCodes, registration) : null,
+    canAccounts ? renderRegisterRequestsCard(container, registerRequests, registration) : null,
     canSettings ? renderBrandingCard(info) : null,
     canSettings ? renderTimeCard(timeOffset) : null,
     canSettings ? renderAiCard(aiConfig) : null,
@@ -151,7 +153,7 @@ async function replayOnboarding() {
     return;
   }
 
-  const { startTour } = await import('../core/tour.js?v=22');
+  const { startTour } = await import('../core/tour.js?v=23');
   startTour({
     onFinish: async (skipped) => {
       if (!skipped) {
@@ -478,6 +480,179 @@ async function removeAccount(container, account) {
   } catch (err) {
     toast('error', '删除失败', err.message);
   }
+}
+
+// ────────────────────────────── 注册申请（需审批） ──────────────────────────────
+
+function renderRegisterRequestsCard(container, requests, registration) {
+  const toggle = h('input', { type: 'checkbox' });
+  toggle.checked = Boolean(registration?.approvalEnabled);
+  toggle.addEventListener('change', async () => {
+    toggle.disabled = true;
+    try {
+      await api('/admin/registration-approval', { method: 'PUT', query: { enabled: toggle.checked } });
+      toast('ok', toggle.checked ? '已开启自助注册申请' : '已关闭自助注册申请');
+    } catch (err) {
+      toggle.checked = !toggle.checked;
+      toast('error', '操作失败', err.message);
+    } finally {
+      toggle.disabled = false;
+    }
+  });
+
+  const pending = requests.filter((req) => req.status === 'pending');
+  const handled = requests.filter((req) => req.status !== 'pending');
+
+  return h('div.card', { style: { marginTop: '16px' } },
+    h('div.card-head',
+      h('div',
+        h('h3', '注册申请（需审批）'),
+        h('p.card-desc',
+          '开启后登录页会出现「申请账号」入口：用户填表提交，你在这里批准或拒绝，'
+          + '批准之后账号才会真正建出来（用户密码由申请人自己设置）。'),
+      ),
+      pending.length > 0
+        ? h('span.badge', { style: { background: 'var(--warn-soft)', color: 'var(--warn)' } }, `待审批 ${pending.length}`)
+        : null,
+    ),
+    h('label.checkbox-field', toggle,
+      h('span', '允许提交自助注册申请'),
+      h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } }, '（不会自动建号，必须由管理员批准）')),
+    pending.length === 0
+      ? h('div.notice.notice-info', { style: { marginTop: '12px' } },
+        h('span.notice-icon', 'i'),
+        h('div', '当前没有待审批的申请。'))
+      : h('div.table-wrap', { style: { marginTop: '12px' } },
+        h('table.data',
+          h('thead', h('tr',
+            h('th', '用户名'),
+            h('th', '显示名称'),
+            h('th', '申请说明'),
+            h('th', '提交时间'),
+            h('th', { style: { textAlign: 'right' } }, '操作'),
+          )),
+          h('tbody', ...pending.map((req) => h('tr',
+            h('td', h('code', { style: { fontWeight: '600' } }, req.username)),
+            h('td', req.displayName || h('span', { style: { color: 'var(--text-faint)' } }, '—')),
+            h('td', { style: { maxWidth: '260px', whiteSpace: 'pre-wrap', fontSize: '12px' } },
+              req.note || h('span', { style: { color: 'var(--text-faint)' } }, '—')),
+            h('td', { style: { fontSize: '12px' } }, formatDateTime(req.createdAt)),
+            h('td.actions',
+              h('button.btn.btn-primary.btn-sm', {
+                type: 'button',
+                onClick: () => openApproveDialog(container, req),
+              }, '批准'),
+              h('button.btn.btn-sm', {
+                type: 'button',
+                onClick: () => openRejectDialog(container, req),
+              }, '拒绝'),
+            ),
+          ))),
+        ),
+      ),
+    handled.length > 0 ? renderHandledRequests(container, handled) : null,
+  );
+}
+
+/** 已处理的申请折叠展示，保留追溯信息。 */
+function renderHandledRequests(container, handled) {
+  return h('details', { style: { marginTop: '14px' } },
+    h('summary', { style: { cursor: 'pointer', fontSize: '12.5px', color: 'var(--text-dim)' } },
+      `已处理的申请（${handled.length}）`),
+    h('div.table-wrap', { style: { marginTop: '10px' } },
+      h('table.data',
+        h('thead', h('tr',
+          h('th', '用户名'),
+          h('th', '结果'),
+          h('th', '审批人'),
+          h('th', '审批时间'),
+          h('th', '拒绝理由'),
+          h('th', { style: { textAlign: 'right' } }, '操作'),
+        )),
+        h('tbody', ...handled.map((req) => h('tr',
+          h('td', req.username),
+          h('td', req.status === 'approved'
+            ? h('span.badge', { style: { background: 'var(--ok-soft)', color: 'var(--ok)' } }, '已批准')
+            : h('span.badge', { style: { background: 'var(--danger-soft)', color: 'var(--danger)' } }, '已拒绝')),
+          h('td', req.reviewedBy || '—'),
+          h('td', { style: { fontSize: '12px' } }, req.reviewedAt ? formatDateTime(req.reviewedAt) : '—'),
+          h('td', { style: { fontSize: '12px' } }, req.reason || '—'),
+          h('td.actions',
+            h('button.btn.btn-ghost.btn-sm', {
+              type: 'button',
+              onClick: async () => {
+                if (!await confirmDialog('删除记录', `确定删除 ${req.username} 的申请记录吗？已建出的账号不受影响。`, '删除', true)) return;
+                await api(`/admin/register-requests/${req.id}`, { method: 'DELETE' });
+                toast('ok', '已删除');
+                await render(container);
+              },
+            }, '删除'),
+          ),
+        ))),
+      ),
+    ),
+  );
+}
+
+/** 批准申请：勾选该账号获得的权限，确认后立即建号。 */
+function openApproveDialog(container, req) {
+  const perm = createPermissionTable([], DEFAULT_PERMISSIONS, false);
+  const catalog = h('div');
+  let table = null;
+
+  api('/admin/permissions').then((modules) => {
+    table = createPermissionTable(modules, DEFAULT_PERMISSIONS, false);
+    clear(catalog);
+    catalog.appendChild(table.table);
+  }).catch((err) => {
+    clear(catalog);
+    catalog.appendChild(h('div.notice.notice-danger', h('span.notice-icon', '!'), h('div', err.message)));
+  });
+
+  modal({
+    title: `批准 ${req.username}`,
+    width: 'wide',
+    body: h('div',
+      h('div.notice.notice-info', { style: { marginBottom: '12px' } },
+        h('span.notice-icon', 'i'),
+        h('div', `批准后立即创建账号「${req.username}」，密码为该申请人自行设置的密码，角色为「自定义权限」。`)),
+      h('div', { style: { fontSize: '12.5px', color: 'var(--text-dim)', marginBottom: '8px' } }, '批准后获得的权限'),
+      catalog,
+    ),
+    confirmText: '批准并建号',
+    onConfirm: async () => {
+      const permissions = [...(table ? table.selected : perm.selected)];
+      if (permissions.length === 0) {
+        toast('warn', '请至少勾选一项权限');
+        return false;
+      }
+
+      await api(`/admin/register-requests/${req.id}/approve`, { method: 'POST', body: { permissions } });
+      toast('ok', '已批准', `账号 ${req.username} 已创建。`);
+      await render(container);
+    },
+  });
+}
+
+/** 拒绝申请：可填写理由，仅记录在管理端。 */
+function openRejectDialog(container, req) {
+  const reasonInput = h('input', { type: 'text', placeholder: '例如：请使用学校统一账号，或先联系管理员说明身份' });
+
+  modal({
+    title: `拒绝 ${req.username}`,
+    body: h('div',
+      field('拒绝理由', reasonInput, '只记录在管理端，不会自动通知申请人。'),
+    ),
+    confirmText: '拒绝申请',
+    onConfirm: async () => {
+      await api(`/admin/register-requests/${req.id}/reject`, {
+        method: 'POST',
+        body: { reason: reasonInput.value.trim() },
+      });
+      toast('ok', '已拒绝');
+      await render(container);
+    },
+  });
 }
 
 // ────────────────────────────── 注册邀请码 ──────────────────────────────

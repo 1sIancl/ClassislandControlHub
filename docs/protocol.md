@@ -104,8 +104,9 @@ HTTP 状态码与业务结果同时生效：`401` 鉴权失败、`404` 资源不
 |---|---|---|
 | GET | `/api/v1/ping` | 存活探针 |
 | GET | `/api/v1/server/info` | 服务器公开信息（名称、版本、端口、是否要求注册码等） |
-| GET | `/admin/registration` | 自助注册开关与邀请码校验所需信息 |
+| GET | `/admin/registration` | 注册方式开关（邀请码 / 自助申请）与相应提示 |
 | POST | `/admin/register` | 凭邀请码自助注册（开关关闭或邀请码无效时拒绝） |
+| POST | `/admin/register-requests` | 提交自助注册申请（进入待审批队列，不建号） |
 
 ### 5.2 设备接口（`HubDevice` 鉴权，注册/对时接口除外）
 
@@ -146,7 +147,12 @@ HTTP 状态码与业务结果同时生效：`401` 鉴权失败、`404` 资源不
 | POST | `/admin/accounts/{id}/reset-password` | `accounts.write` | 重置密码 |
 | GET/POST | `/admin/register-codes` | `accounts.read` / `accounts.write` | 邀请码列表 / 生成 |
 | DELETE | `/admin/register-codes/{code}` | `accounts.write` | 删除邀请码 |
-| PUT | `/admin/registration` | `accounts.write` | 开关自助注册 |
+| PUT | `/admin/registration` | `accounts.write` | 开关邀请码注册 |
+| GET | `/admin/register-requests` | `accounts.read` | 自助注册申请列表（待审批排在最前） |
+| POST | `/admin/register-requests/{id}/approve` | `accounts.write` | 批准申请：按勾选权限建号 |
+| POST | `/admin/register-requests/{id}/reject` | `accounts.write` | 拒绝申请（可填理由，不建号） |
+| DELETE | `/admin/register-requests/{id}` | `accounts.write` | 删除已处理的申请记录 |
+| PUT | `/admin/registration-approval` | `accounts.write` | 开关自助注册申请 |
 | GET | `/admin/devices` | `devices.read` | 设备列表（含在线状态、版本） |
 | PUT | `/admin/devices/{id}` | `devices.write` | 修改设备（改名 / 调组） |
 | POST/DELETE | `/admin/devices/{id}/revoke`、`/admin/devices/{id}` | `devices.write` | 停用 / 删除设备 |

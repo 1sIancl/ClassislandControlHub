@@ -156,6 +156,7 @@ app.MapRemoteEndpoints();
 app.MapBackupEndpoints();
 app.MapAiEndpoints();
 app.MapReminderEndpoints();
+app.MapRegistrationEndpoints();
 
 // 未匹配到的 API 路径统一返回 JSON 404，而不是落到前端页面。
 app.Map($"{HubProtocol.ApiPrefix}/{{**rest}}",

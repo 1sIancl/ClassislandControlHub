@@ -157,6 +157,22 @@ public sealed partial class HubStore
             created_at  TEXT NOT NULL
         );
 
+        -- 自助注册申请：用户自行填写密码并提交，管理员批准后才会真正建号。
+        -- 存放的是密码哈希，明文不落库；批准时直接复用该哈希，全程不接触明文。
+        CREATE TABLE IF NOT EXISTS register_requests (
+            id            TEXT PRIMARY KEY,
+            username      TEXT NOT NULL,
+            display_name  TEXT NOT NULL DEFAULT '',
+            password_hash TEXT NOT NULL,
+            note          TEXT NOT NULL DEFAULT '',
+            status        TEXT NOT NULL DEFAULT 'pending',
+            reason        TEXT NOT NULL DEFAULT '',
+            reviewed_by   TEXT NOT NULL DEFAULT '',
+            reviewed_at   TEXT,
+            created_at    TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_register_requests_status ON register_requests(status, created_at DESC);
+
         -- 定时提醒：按用户隔离（user_id），目标是共享的教室设备。
         CREATE TABLE IF NOT EXISTS reminders (
             id                TEXT PRIMARY KEY,

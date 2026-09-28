@@ -139,6 +139,70 @@ public sealed class RegistrationInfoDto
     /// <summary>是否允许凭邀请码自助注册。</summary>
     public bool Enabled { get; set; }
 
+    /// <summary>是否允许提交自助注册申请（提交后需管理员审批）。</summary>
+    public bool ApprovalEnabled { get; set; }
+
     /// <summary>邀请码前缀是否可校验（用于前端提示）。</summary>
     public string Hint { get; set; } = string.Empty;
+}
+
+/// <summary>自助注册申请（管理端审批列表）。</summary>
+public sealed class RegisterRequestDto
+{
+    /// <summary>申请 ID。</summary>
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>申请使用的登录用户名。</summary>
+    public string Username { get; set; } = string.Empty;
+
+    /// <summary>显示名称。</summary>
+    public string DisplayName { get; set; } = string.Empty;
+
+    /// <summary>申请人填写的说明（供管理员判断身份）。</summary>
+    public string Note { get; set; } = string.Empty;
+
+    /// <summary>状态：<c>pending</c> / <c>approved</c> / <c>rejected</c>。</summary>
+    public string Status { get; set; } = "pending";
+
+    /// <summary>拒绝理由。</summary>
+    public string Reason { get; set; } = string.Empty;
+
+    /// <summary>审批人用户名。</summary>
+    public string ReviewedBy { get; set; } = string.Empty;
+
+    /// <summary>审批时间。</summary>
+    public DateTimeOffset? ReviewedAt { get; set; }
+
+    /// <summary>提交时间。</summary>
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>提交自助注册申请（无需登录）。</summary>
+public sealed class RegisterRequestSubmit
+{
+    /// <summary>期望的登录用户名。</summary>
+    public string Username { get; set; } = string.Empty;
+
+    /// <summary>显示名称，留空时用用户名。</summary>
+    public string DisplayName { get; set; } = string.Empty;
+
+    /// <summary>自行设置的密码，批准后直接生效。</summary>
+    public string Password { get; set; } = string.Empty;
+
+    /// <summary>说明（例如「高二年级语文老师」），便于管理员核实。</summary>
+    public string Note { get; set; } = string.Empty;
+}
+
+/// <summary>批准注册申请：指定该账号获得的权限。</summary>
+public sealed class RegisterRequestApprove
+{
+    /// <summary>批准后授予的权限键集合；留空表示用默认权限集。</summary>
+    public List<string>? Permissions { get; set; }
+}
+
+/// <summary>拒绝注册申请。</summary>
+public sealed class RegisterRequestReject
+{
+    /// <summary>拒绝理由（会记录在申请上，便于以后追溯）。</summary>
+    public string? Reason { get; set; }
 }
