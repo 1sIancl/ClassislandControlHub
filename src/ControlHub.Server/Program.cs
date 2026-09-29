@@ -18,6 +18,11 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     ContentRootPath = AppContext.BaseDirectory,
 });
 
+// ────────────────────────────── 进程运行状态 ──────────────────────────────
+// 记录服务端自身的启动时刻，供 /server/info 的「运行时长 / 启动时间」使用。
+// 注意这不是系统开机时长（Environment.TickCount64），重启服务端必须归零。
+ServerRuntime.Init();
+
 // ────────────────────────────── 配置 ──────────────────────────────
 // 以 Windows 服务方式运行时接入服务生命周期（普通控制台/Linux 运行时空操作）。
 // 这样 `sc.exe create ... binPath=<发布目录>/ControlHub.Server.exe` 注册的服务才能正常响应 SCM。
