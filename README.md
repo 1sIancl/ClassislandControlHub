@@ -132,6 +132,8 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 
 ## 最近更新
 
+- **发布 `1.2.0.0`**（A 端 `1.2.0` / 插件 `1.2.0.0`）：从本版本起，打标签即由 GitHub Actions 自动构建并发布
+  （插件 `.cipx` + Linux / Windows 两份 A 端包），无需再手动打包上传。插件需在 ClassIsland 2.1.x 上使用。
 - **Webhook 外部通知**：设备掉线、配置应用失败、远程指令失败时，自动推送到企业微信群机器人、钉钉（支持加签）、
   飞书或自定义端点。「系统设置 → Webhook 外部通知」可增删改、按事件订阅，并支持一键测试发送（失败会告诉你具体原因）。
 - **两步验证（TOTP）**：「系统设置 → 账号安全」可开启基于时间的一次性密码（Google / Microsoft Authenticator
@@ -176,7 +178,8 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 
 | 集控版本 | 插件包 | 支持的 ClassIsland | 状态 |
 |---|---|---|---|
-| A 端 `1.1.0` / 插件 `1.1.0.0` | `ControlHub.Plugin.cipx` `1.1.0.0` | `2.1.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 当前版本 |
+| A 端 `1.2.0` / 插件 `1.2.0.0` | `ControlHub.Plugin.cipx` `1.2.0.0` | `2.1.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 当前版本 |
+| A 端 `1.1.0` / 插件 `1.1.0.0` | `1.1.0.0` | `2.1.x` | ⚠️ 上一版本，建议升级（不含两步验证 / Webhook 等） |
 | A 端 `1.0.x` / 插件 `1.0.0.0` | `1.0.0.0` | `2.1.x` | ⚠️ 早期版本，建议同步升级 |
 | — | — | `2.2.x`（预览版） | ❌ 暂不支持 |
 
