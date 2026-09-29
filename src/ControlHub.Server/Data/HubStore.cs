@@ -86,6 +86,10 @@ public sealed partial class HubStore
         // 迁移：指令的「最早可派发时间」，用于给关机等不可逆操作留出撤销窗口。
         await EnsureColumnAsync(connection, "device_commands", "not_before", "TEXT", cancellationToken);
 
+        // 迁移：账号两步验证（TOTP）。密钥在启用前只是「待绑定」，不会影响登录。
+        await EnsureColumnAsync(connection, "users", "totp_secret", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+        await EnsureColumnAsync(connection, "users", "totp_enabled", "INTEGER NOT NULL DEFAULT 0", cancellationToken);
+
         // 确保全局版本号存在，保证任何一次同步请求都能拿到确定值。
         await using var seed = connection.CreateCommand();
         seed.CommandText = """

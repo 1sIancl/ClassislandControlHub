@@ -1266,6 +1266,14 @@ input[type="checkbox"] {
   animation: login-spin 0.7s linear infinite;
 }
 
+/* 登录页：两步验证提示 */
+.totp-hint {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-dim);
+}
+
 /* 申请已提交的确认块 */
 .apply-done {
   border: 1px solid rgba(22, 179, 100, 0.32);

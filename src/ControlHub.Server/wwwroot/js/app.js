@@ -2,8 +2,8 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=29';
-import { h, clear, toast, icon } from './core/ui.js?v=29';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=30';
+import { h, clear, toast, icon } from './core/ui.js?v=30';
 import {
   initTheme, getTheme, applyTheme, THEMES,
   getSidebarCollapsed, setSidebarCollapsed,
@@ -11,7 +11,7 @@ import {
   applyAppearance, getAccent, setAccent, ACCENTS,
   getFont, setFont, FONTS,
   getRadius, setRadius, RADII,
-} from './core/prefs.js?v=29';
+} from './core/prefs.js?v=30';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -57,17 +57,17 @@ const NAV = [
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=29'),
-  devices: () => import('./views/devices.js?v=29'),
+  dashboard: () => import('./views/dashboard.js?v=30'),
+  devices: () => import('./views/devices.js?v=30'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=29'),
-  profiles: () => import('./views/profiles.js?v=29'),
-  profileEditor: () => import('./views/profileEditor.js?v=29'),
-  deploy: () => import('./views/deploy.js?v=29'),
-  remote: () => import('./views/remote.js?v=29'),
-  reminders: () => import('./views/reminders.js?v=29'),
-  audit: () => import('./views/audit.js?v=29'),
-  settings: () => import('./views/settings.js?v=29'),
+  groups: () => import('./views/devices.js?v=30'),
+  profiles: () => import('./views/profiles.js?v=30'),
+  profileEditor: () => import('./views/profileEditor.js?v=30'),
+  deploy: () => import('./views/deploy.js?v=30'),
+  remote: () => import('./views/remote.js?v=30'),
+  reminders: () => import('./views/reminders.js?v=30'),
+  audit: () => import('./views/audit.js?v=30'),
+  settings: () => import('./views/settings.js?v=30'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -91,6 +91,8 @@ const runtime = {
   registrationEnabled: false,
   /** 服务端是否开放了自助注册申请（提交后需管理员审批）。 */
   approvalEnabled: false,
+  /** 两步验证的半程票据（登录第一步返回，验证码通过后作废）。 */
+  pendingTotp: '',
 };
 
 // ────────────────────────────── 会话 ──────────────────────────────
@@ -221,11 +223,14 @@ function showLogin(message) {
 function switchLoginMode(mode) {
   const isLogin = mode === 'login';
   const isApply = mode === 'apply';
+  const isTotp = mode === 'totp';
 
   document.getElementById('loginForm').hidden = !isLogin;
   document.getElementById('registerForm').hidden = mode !== 'register';
   document.getElementById('applyForm').hidden = !isApply;
   document.getElementById('applyDone').hidden = true;
+  const totpForm = document.getElementById('totpForm');
+  if (totpForm) totpForm.hidden = !isTotp;
 
   // 两个注册入口只在登录页展示，且各自受服务端开关控制。
   const toRegister = document.getElementById('switchToRegister');
@@ -233,7 +238,8 @@ function switchLoginMode(mode) {
   const toLogin = document.getElementById('switchToLogin');
   toRegister.hidden = !isLogin || !runtime.registrationEnabled;
   toApply.hidden = !isLogin || !runtime.approvalEnabled;
-  toLogin.hidden = isLogin;
+  // 两步验证进行中不给「返回登录」：半程票据还在，切回去只会让人困惑。
+  toLogin.hidden = isLogin || isTotp;
 
   const switchBox = document.getElementById('loginSwitch');
   if (switchBox) switchBox.hidden = toRegister.hidden && toApply.hidden && toLogin.hidden;
@@ -241,12 +247,15 @@ function switchLoginMode(mode) {
   document.getElementById('loginError').hidden = true;
   document.getElementById('registerError').hidden = true;
   document.getElementById('applyError').hidden = true;
+  const totpError = document.getElementById('totpError');
+  if (totpError) totpError.hidden = true;
 
-  // 标题与副文案跟随当前表单，避免三张表单共用一个标题造成误解。
+  // 标题与副文案跟随当前表单，避免多张表单共用一个标题造成误解。
   const titles = {
     login: ['欢迎回来', '登录以继续管理您的集控服务'],
     register: ['创建账号', '凭管理员发放的邀请码即可自助注册'],
     apply: ['申请账号', '提交后由管理员审批，通过即可登录'],
+    totp: ['两步验证', '请输入验证器 App 显示的 6 位验证码'],
   };
   const [title, subtitle] = titles[mode] || titles.login;
   const heading = document.getElementById('loginHeading');
@@ -257,7 +266,9 @@ function switchLoginMode(mode) {
   // 切走时收起已揭示的密码，避免明文停留在屏幕上。
   resetPasswordFields();
 
-  const firstId = isApply ? 'applyUsername' : (mode === 'register' ? 'registerCode' : 'loginUsername');
+  const firstId = isTotp
+    ? 'totpCode'
+    : (isApply ? 'applyUsername' : (mode === 'register' ? 'registerCode' : 'loginUsername'));
   document.getElementById(firstId)?.focus();
 }
 
@@ -355,12 +366,56 @@ async function handleLogin(event) {
     });
 
     document.getElementById('loginPassword').value = '';
+
+    // 账号开启了两步验证：先拿到半程票据，切到验证码表单继续。
+    if (result.needTotp) {
+      runtime.pendingTotp = result.totpTicket || '';
+      switchLoginMode('totp');
+      toast('info', '需要两步验证', '请输入验证器 App 里的 6 位验证码。');
+      return;
+    }
+
     await completeSignIn(result);
   } catch (err) {
     errorBox.textContent = err.message || '登录失败';
     errorBox.hidden = false;
   } finally {
     setButtonLoading(button, false, '登录');
+  }
+}
+
+/** 两步验证第二步：用半程票据 + 6 位验证码换取正式会话。 */
+async function handleTotp(event) {
+  event.preventDefault();
+
+  const button = document.getElementById('totpSubmit');
+  const errorBox = document.getElementById('totpError');
+  const code = document.getElementById('totpCode').value.trim();
+
+  if (!runtime.pendingTotp) {
+    switchLoginMode('login');
+    showLogin('验证已超时，请重新登录。');
+    return;
+  }
+
+  setButtonLoading(button, true, '验证中…');
+  errorBox.hidden = true;
+
+  try {
+    const result = await api('/admin/login/totp', {
+      method: 'POST',
+      auth: false,
+      body: { ticket: runtime.pendingTotp, code },
+    });
+
+    runtime.pendingTotp = '';
+    document.getElementById('totpCode').value = '';
+    await completeSignIn(result);
+  } catch (err) {
+    errorBox.textContent = err.message || '验证失败';
+    errorBox.hidden = false;
+  } finally {
+    setButtonLoading(button, false, '验证并登录');
   }
 }
 
@@ -445,7 +500,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=29');
+    const { startTour } = await import('./core/tour.js?v=30');
     startTour({
       onFinish: async (skipped) => {
         try {
@@ -720,6 +775,7 @@ function updateRevisionChip() {
 document.getElementById('loginForm').addEventListener('submit', handleLogin);
 document.getElementById('registerForm').addEventListener('submit', handleRegister);
 document.getElementById('applyForm').addEventListener('submit', handleApply);
+document.getElementById('totpForm').addEventListener('submit', handleTotp);
 document.getElementById('switchToRegister').addEventListener('click', () => switchLoginMode('register'));
 document.getElementById('switchToApply').addEventListener('click', () => switchLoginMode('apply'));
 document.getElementById('switchToLogin').addEventListener('click', () => switchLoginMode('login'));

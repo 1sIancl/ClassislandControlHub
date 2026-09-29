@@ -26,6 +26,7 @@ public static class AdminEndpoints
 
         // ── 公开接口（无需登录）──
         group.MapPost("/login", LoginAsync).AllowAnonymous();
+        group.MapPost("/login/totp", TotpLoginAsync).AllowAnonymous();
         group.MapGet("/registration", GetRegistrationInfoAsync).AllowAnonymous();
         group.MapPost("/register", RegisterAsync).AllowAnonymous();
 
@@ -39,6 +40,11 @@ public static class AdminEndpoints
         authed.MapGet("/me", MeAsync).RequirePermission(PermissionKeys.Authenticated);
         authed.MapPost("/password", ChangePasswordAsync).RequirePermission(PermissionKeys.Authenticated);
         authed.MapPost("/onboarding", CompleteOnboardingAsync).RequirePermission(PermissionKeys.Authenticated);
+
+        // 两步验证（TOTP）：绑定 / 启用 / 关闭，都是「对自己的账号」操作，只需已登录
+        authed.MapPost("/totp/setup", TotpSetupAsync).RequirePermission(PermissionKeys.Authenticated);
+        authed.MapPost("/totp/enable", TotpEnableAsync).RequirePermission(PermissionKeys.Authenticated);
+        authed.MapPost("/totp/disable", TotpDisableAsync).RequirePermission(PermissionKeys.Authenticated);
         authed.MapGet("/dashboard", DashboardAsync).RequirePermission(PermissionKeys.Authenticated);
 
         // ── 审计 ──
@@ -146,6 +152,79 @@ public static class AdminEndpoints
         return ApiResult<LoginResponse>.Success(response);
     }
 
+    /// <summary>完成两步验证：用半程票据 + 6 位验证码换取正式令牌。</summary>
+    private static async Task<ApiResult<LoginResponse>> TotpLoginAsync(
+        TotpLoginRequest request,
+        HttpContext http,
+        AdminAuthService auth,
+        CancellationToken cancellationToken)
+    {
+        var response = await auth.CompleteTotpLoginAsync(request.Ticket ?? string.Empty, request.Code ?? string.Empty,
+            http.GetClientIpAddress(), cancellationToken);
+        return ApiResult<LoginResponse>.Success(response);
+    }
+
+    /// <summary>生成待绑定的 TOTP 密钥（此时还没启用），返回密钥与 otpauth 链接。</summary>
+    private static async Task<ApiResult<TotpSetupDto>> TotpSetupAsync(
+        HttpContext http,
+        HubStore store,
+        AdminAuthService auth,
+        IOptions<ServerOptions> options,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var user = await store.GetUserAsync(session.UserId, cancellationToken)
+                   ?? throw HubException.NotFound("账号不存在。");
+
+        var issuer = string.IsNullOrWhiteSpace(options.Value.ServerName)
+            ? "ClassislandControlHub"
+            : options.Value.ServerName;
+
+        var (secret, url) = await auth.PrepareTotpAsync(user, issuer, cancellationToken);
+        return ApiResult<TotpSetupDto>.Success(new TotpSetupDto { Secret = secret, OtpAuthUrl = url });
+    }
+
+    /// <summary>校验一次验证码并启用两步验证。</summary>
+    private static async Task<ApiResult<bool>> TotpEnableAsync(
+        TotpEnableRequest request,
+        HttpContext http,
+        HubStore store,
+        AdminAuthService auth,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var user = await store.GetUserAsync(session.UserId, cancellationToken)
+                   ?? throw HubException.NotFound("账号不存在。");
+
+        await auth.EnableTotpAsync(user, request.Code ?? string.Empty, cancellationToken);
+        await store.AddAuditAsync(session.Username, "totp.enable", session.Username,
+            "启用了两步验证（TOTP）。", http.GetClientIpAddress(), cancellationToken);
+        return ApiResult<bool>.Success(true);
+    }
+
+    /// <summary>关闭两步验证（需要当前密码确认，避免会话被劫持后直接关掉）。</summary>
+    private static async Task<ApiResult<bool>> TotpDisableAsync(
+        TotpDisableRequest request,
+        HttpContext http,
+        HubStore store,
+        AdminAuthService auth,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var user = await store.GetUserAsync(session.UserId, cancellationToken)
+                   ?? throw HubException.NotFound("账号不存在。");
+
+        if (!PasswordHasher.Verify(request.Password ?? string.Empty, user.PasswordHash))
+        {
+            throw HubException.Validation("当前密码不正确。");
+        }
+
+        await auth.DisableTotpAsync(user, cancellationToken);
+        await store.AddAuditAsync(session.Username, "totp.disable", session.Username,
+            "关闭了两步验证（TOTP）。", http.GetClientIpAddress(), cancellationToken);
+        return ApiResult<bool>.Success(true);
+    }
+
     /// <summary>登出。</summary>
     private static async Task<ApiResult<bool>> LogoutAsync(
         HttpContext http,
@@ -176,6 +255,7 @@ public static class AdminEndpoints
             permissions = IsAdministratorRole(session.Role) ? PermissionKeys.Grantable : session.Permissions,
             expiresAt = session.ExpiresAt,
             mustChangePassword = user?.MustChangePassword ?? false,
+            totpEnabled = user?.TotpEnabled ?? false,
             onboardingDone = await store.GetSettingAsync(OnboardingKey(session.UserId), "0", cancellationToken) == "1",
         });
     }
@@ -860,4 +940,38 @@ public sealed class TimeOffsetRequest
 {
     /// <summary>时间偏移（秒），正值表示整体提前。</summary>
     public double OffsetSeconds { get; set; }
+}
+
+/// <summary>完成两步验证。</summary>
+public sealed class TotpLoginRequest
+{
+    /// <summary>登录第一步返回的临时票据。</summary>
+    public string? Ticket { get; set; }
+
+    /// <summary>验证器 App 显示的 6 位验证码。</summary>
+    public string? Code { get; set; }
+}
+
+/// <summary>启用两步验证。</summary>
+public sealed class TotpEnableRequest
+{
+    /// <summary>验证器当前显示的 6 位验证码。</summary>
+    public string? Code { get; set; }
+}
+
+/// <summary>关闭两步验证。</summary>
+public sealed class TotpDisableRequest
+{
+    /// <summary>当前登录密码，用于二次确认。</summary>
+    public string? Password { get; set; }
+}
+
+/// <summary>两步验证的绑定信息。</summary>
+public sealed class TotpSetupDto
+{
+    /// <summary>Base32 密钥：可手动录入验证器，也可用于生成二维码。</summary>
+    public string Secret { get; set; } = string.Empty;
+
+    /// <summary>otpauth:// 链接（验证器 App 可直接识别）。</summary>
+    public string OtpAuthUrl { get; set; } = string.Empty;
 }

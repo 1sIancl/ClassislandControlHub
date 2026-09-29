@@ -4,13 +4,13 @@
  * 并可切换到列表视图查看完整状态明细。注册码管理一并放在本页。
  */
 
-import { api } from '../core/api.js?v=29';
+import { api } from '../core/api.js?v=30';
 import {
   h, clear, formatDateTime, relativeTime, toast, loadingBlock,
   modal, confirmDialog, deviceStateBadge, syncBadge,
   emptyState, field, select, copyText, append, undoBar,
-} from '../core/ui.js?v=29';
-import { getLayout, saveLayout } from '../core/prefs.js?v=29';
+} from '../core/ui.js?v=30';
+import { getLayout, saveLayout } from '../core/prefs.js?v=30';
 
 export const meta = {
   title: '设备管理',

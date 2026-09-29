@@ -8,7 +8,7 @@
   <title>ClassislandControlHub 集控系统</title>
   <link rel="icon" href="icon.png" />
   <link rel="apple-touch-icon" href="icon.png" />
-  <link rel="stylesheet" href="css/app.css?v=29" />
+  <link rel="stylesheet" href="css/app.css?v=30" />
 </head>
 
 <body>
@@ -215,6 +215,17 @@
           <button class="btn btn-primary btn-block login-submit" type="submit" id="applySubmit">提交申请</button>
         </form>
 
+        <!-- 两步验证：密码通过后，输入验证器 App 里的 6 位码 -->
+        <form id="totpForm" class="login-form" autocomplete="off" hidden>
+          <p class="totp-hint">该账号已开启两步验证，请输入验证器 App 显示的 6 位验证码。</p>
+          <label class="field">
+            <span>验证码</span>
+            <input type="text" id="totpCode" inputmode="numeric" autocomplete="one-time-code" placeholder="6 位数字" maxlength="6" required />
+          </label>
+          <div class="login-error" id="totpError" role="alert" hidden></div>
+          <button class="btn btn-primary btn-block login-submit" type="submit" id="totpSubmit">验证并登录</button>
+        </form>
+
         <div class="apply-done" id="applyDone" hidden>
           <strong>申请已提交</strong>
           <p>管理员审批通过后，即可用该用户名与密码登录；若长时间未通过，请联系管理员。</p>
@@ -241,7 +252,7 @@
   <!-- 新手引导浮层 -->
   <div id="tourHost" class="tour-host" hidden></div>
 
-  <script type="module" src="js/app.js?v=29"></script>
+  <script type="module" src="js/app.js?v=30"></script>
 </body>
 
 </html>

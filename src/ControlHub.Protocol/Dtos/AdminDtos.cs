@@ -39,6 +39,15 @@ public sealed class LoginResponse
     /// <summary>会话令牌。后续请求置于 <c>Authorization: Bearer &lt;token&gt;</c>。</summary>
     public string Token { get; set; } = string.Empty;
 
+    /// <summary>
+    /// 是否需要两步验证：为 <c>true</c> 时 <see cref="Token"/> 为空，
+    /// 需要再调用 <c>POST /admin/login/totp</c> 提交验证码换取正式令牌。
+    /// </summary>
+    public bool NeedTotp { get; set; }
+
+    /// <summary>两步验证的临时票据（默认 5 分钟有效），仅在 <see cref="NeedTotp"/> 为 true 时返回。</summary>
+    public string? TotpTicket { get; set; }
+
     /// <summary>令牌过期时间（UTC）。</summary>
     public DateTimeOffset ExpiresAt { get; set; }
 

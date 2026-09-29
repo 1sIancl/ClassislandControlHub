@@ -17,6 +17,14 @@ public sealed class AdminAuthService(
     private readonly ServerOptions _options = options.Value;
 
     /// <summary>
+    /// 两步验证的「半程票据」：密码校验通过、验证码还没校验时的中间状态。
+    /// <para>只存在内存里、5 分钟过期，进程重启即失效——它不是一个能当令牌用的东西。</para>
+    /// </summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, TotpTicket> _totpTickets = new();
+
+    private sealed record TotpTicket(string UserId, DateTimeOffset ExpiresAt);
+
+    /// <summary>
     /// 确保至少存在一个管理员账号。仅在数据库为空时执行。
     /// </summary>
     public async Task EnsureSeedAdminAsync(CancellationToken cancellationToken = default)
@@ -59,6 +67,91 @@ public sealed class AdminAuthService(
             throw new HubException(HubErrorCodes.AuthInvalid, "用户名或密码错误。", 401);
         }
 
+        // 启用了两步验证：先发一张 5 分钟有效的「半程票据」，验证码通过后才签发正式会话。
+        if (user.TotpEnabled)
+        {
+            var ticket = HubChecksum.NewToken(32);
+            _totpTickets[ticket] = new TotpTicket(user.Id, DateTimeOffset.UtcNow.AddMinutes(5));
+
+            await store.AddAuditAsync(user.Username, "admin.login.totp", user.Username,
+                "密码校验通过，等待两步验证码。", ipAddress, cancellationToken);
+
+            return new LoginResponse
+            {
+                NeedTotp = true,
+                TotpTicket = ticket,
+                ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5),
+                DisplayName = string.IsNullOrWhiteSpace(user.DisplayName) ? user.Username : user.DisplayName,
+                Role = user.Role,
+            };
+        }
+
+        return await IssueSessionAsync(user, ipAddress, cancellationToken);
+    }
+
+    /// <summary>完成两步验证并签发正式会话。</summary>
+    public async Task<LoginResponse> CompleteTotpLoginAsync(string ticket, string code, string? ipAddress,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(ticket) || !_totpTickets.TryRemove(ticket.Trim(), out var pending))
+        {
+            throw new HubException(HubErrorCodes.AuthInvalid, "验证已超时，请重新登录。", 401);
+        }
+
+        if (pending.ExpiresAt <= DateTimeOffset.UtcNow)
+        {
+            throw new HubException(HubErrorCodes.AuthInvalid, "验证已超时，请重新登录。", 401);
+        }
+
+        var user = await store.GetUserAsync(pending.UserId, cancellationToken)
+                   ?? throw new HubException(HubErrorCodes.AuthInvalid, "账号不存在。", 401);
+
+        if (!TotpService.Verify(user.TotpSecret, code))
+        {
+            await store.AddAuditAsync(user.Username, "admin.login.totp.failed", user.Username,
+                "两步验证码错误。", ipAddress, cancellationToken);
+            throw new HubException(HubErrorCodes.AuthInvalid, "验证码不正确，请重新输入。", 401);
+        }
+
+        return await IssueSessionAsync(user, ipAddress, cancellationToken);
+    }
+
+    /// <summary>
+    /// 生成（或重置）待绑定的 TOTP 密钥：此时尚未启用，
+    /// 需要用验证器算出一次验证码再调用 <see cref="EnableTotpAsync"/> 才算绑定成功。
+    /// </summary>
+    public async Task<(string Secret, string OtpAuthUrl)> PrepareTotpAsync(UserRow user, string issuer,
+        CancellationToken cancellationToken = default)
+    {
+        var secret = TotpService.GenerateSecret();
+        await store.SetUserTotpAsync(user.Id, secret, false, cancellationToken);
+        return (secret, TotpService.BuildOtpAuthUrl(issuer, user.Username, secret));
+    }
+
+    /// <summary>校验验证码并启用两步验证。</summary>
+    public async Task EnableTotpAsync(UserRow user, string code, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(user.TotpSecret))
+        {
+            throw HubException.Validation("请先生成密钥并把它录入验证器。");
+        }
+
+        if (!TotpService.Verify(user.TotpSecret, code))
+        {
+            throw HubException.Validation("验证码不正确，请确认验证器时间准确后重试。");
+        }
+
+        await store.SetUserTotpAsync(user.Id, user.TotpSecret, true, cancellationToken);
+    }
+
+    /// <summary>关闭两步验证并清除密钥。</summary>
+    public Task DisableTotpAsync(UserRow user, CancellationToken cancellationToken = default)
+        => store.SetUserTotpAsync(user.Id, string.Empty, false, cancellationToken);
+
+    /// <summary>签发会话令牌（密码直登与两步验证通过后的公共收尾）。</summary>
+    private async Task<LoginResponse> IssueSessionAsync(UserRow user, string? ipAddress,
+        CancellationToken cancellationToken)
+    {
         var token = HubChecksum.NewToken(48);
         var expiresAt = DateTimeOffset.UtcNow.AddHours(Math.Max(1, _options.SessionLifetimeHours));
         await store.CreateSessionAsync(token, user.Id, expiresAt, cancellationToken);

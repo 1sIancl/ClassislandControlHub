@@ -15,6 +15,13 @@ public sealed class UserRow
     public List<string> Permissions { get; set; } = [];
 
     public bool MustChangePassword { get; set; }
+
+    /// <summary>两步验证（TOTP）密钥；为空表示尚未绑定。</summary>
+    public string TotpSecret { get; set; } = string.Empty;
+
+    /// <summary>是否已启用两步验证。</summary>
+    public bool TotpEnabled { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 }
 

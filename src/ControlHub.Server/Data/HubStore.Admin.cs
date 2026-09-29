@@ -9,7 +9,8 @@ public sealed partial class HubStore
     // ────────────────────────────── 管理员账号 ──────────────────────────────
 
     private const string UserColumns =
-        "id, username, password_hash, display_name, role, permissions, must_change_password, created_at";
+        "id, username, password_hash, display_name, role, permissions, must_change_password, totp_secret, "
+        + "totp_enabled, created_at";
 
     private static UserRow ReadUser(SqliteDataReader reader) => new()
     {
@@ -21,8 +22,24 @@ public sealed partial class HubStore
         Permissions = PermissionKeys.Normalize(
             HubJson.DeserializeOrDefault<List<string>>(GetString(reader, "permissions"), [])),
         MustChangePassword = GetBool(reader, "must_change_password"),
+        TotpSecret = GetString(reader, "totp_secret"),
+        TotpEnabled = GetBool(reader, "totp_enabled"),
         CreatedAt = GetTimestampOrNow(reader, "created_at"),
     };
+
+    /// <summary>更新账号的两步验证状态（密钥 + 是否启用）。</summary>
+    public async Task SetUserTotpAsync(string userId, string secret, bool enabled,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE users SET totp_secret = $secret, totp_enabled = $enabled WHERE id = $id;";
+        AddParameters(command,
+            ("$secret", secret),
+            ("$enabled", enabled ? 1 : 0),
+            ("$id", userId));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
 
     /// <summary>按用户名查询账号。</summary>
     public async Task<UserRow?> GetUserByUsernameAsync(string username,

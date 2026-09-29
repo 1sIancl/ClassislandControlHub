@@ -3,11 +3,11 @@
  * 档案是集控下发的最小单元：一个档案 = 一套时间表 + 课表 + 科目 + 自定义设置。
  */
 
-import { api } from '../core/api.js?v=29';
+import { api } from '../core/api.js?v=30';
 import {
   h, clear, formatDateTime, toast, loadingBlock, modal, confirmDialog,
   emptyState, field, select,
-} from '../core/ui.js?v=29';
+} from '../core/ui.js?v=30';
 
 export const meta = {
   title: '配置档案',

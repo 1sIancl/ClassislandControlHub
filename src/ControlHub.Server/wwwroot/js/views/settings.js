@@ -2,11 +2,11 @@
  * 系统设置视图：服务器信息、账号安全与部署提示。
  */
 
-import { api, session, hasPermission } from '../core/api.js?v=29';
+import { api, session, hasPermission } from '../core/api.js?v=30';
 import {
   h, clear, formatDateTime, formatDuration, toast, loadingBlock,
   field, modal, copyText, confirmDialog,
-} from '../core/ui.js?v=29';
+} from '../core/ui.js?v=30';
 
 export const meta = {
   title: '系统设置',
@@ -122,6 +122,9 @@ function renderAccountCard(me) {
       row('显示名称', me.displayName || me.username),
       row('角色', isAdmin ? '超级管理员（全部权限）' : '自定义权限'),
       row('权限', isAdmin ? '全部模块' : `已勾选 ${granted} 项`),
+      row('两步验证', me.totpEnabled
+        ? h('span.badge', { style: { background: 'var(--ok-soft)', color: 'var(--ok)' } }, '已开启 TOTP')
+        : h('span', { style: { color: 'var(--text-faint)' } }, '未开启')),
       row('登录有效期至', formatDateTime(me.expiresAt)),
     ),
     h('div.card-actions',
@@ -129,6 +132,10 @@ function renderAccountCard(me) {
         type: 'button',
         onClick: () => openChangePasswordDialog(),
       }, '修改密码'),
+      h('button.btn.btn-sm', {
+        type: 'button',
+        onClick: () => openTotpDialog(me),
+      }, me.totpEnabled ? '关闭两步验证' : '开启两步验证'),
       h('button.btn.btn-sm', {
         type: 'button',
         title: '重新播放新手引导',
@@ -154,7 +161,7 @@ async function replayOnboarding() {
     return;
   }
 
-  const { startTour } = await import('../core/tour.js?v=29');
+  const { startTour } = await import('../core/tour.js?v=30');
   startTour({
     onFinish: async (skipped) => {
       if (!skipped) {
@@ -162,6 +169,72 @@ async function replayOnboarding() {
       }
     },
   });
+}
+
+/** 两步验证：开启（生成密钥 → 录入验证器 → 输入验证码确认）或关闭（用密码确认）。 */
+function openTotpDialog(me) {
+  if (me.totpEnabled) {
+    const passwordInput = h('input', { type: 'password', autocomplete: 'current-password' });
+    modal({
+      title: '关闭两步验证',
+      body: h('div',
+        h('div.notice.notice-warn',
+          h('span.notice-icon', '!'),
+          h('div', '关闭后仅凭密码即可登录，建议只在验证器丢失时临时关闭，并尽快重新绑定。')),
+        field('当前密码', passwordInput, '用于确认是本人在操作。')),
+      confirmText: '关闭两步验证',
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await api('/admin/totp/disable', { method: 'POST', body: { password: passwordInput.value } });
+          toast('ok', '已关闭两步验证');
+          await render(document.getElementById('content'));
+          return true;
+        } catch (err) {
+          toast('error', '关闭失败', err.message);
+          return false;
+        }
+      },
+    });
+    return;
+  }
+
+  api('/admin/totp/setup', { method: 'POST' }).then((setup) => {
+    const codeInput = h('input', { type: 'text', inputmode: 'numeric', maxlength: '6', placeholder: '6 位验证码' });
+    const secretBox = h('code',
+      { style: { fontFamily: 'var(--mono)', fontSize: '14px', letterSpacing: '1px' } }, setup.secret);
+    const urlArea = h('textarea', { readOnly: true, style: { minHeight: '64px' } });
+    urlArea.value = setup.otpAuthUrl;
+
+    modal({
+      title: '开启两步验证',
+      width: 'wide',
+      body: h('div',
+        h('div.notice.notice-info',
+          h('span.notice-icon', 'i'),
+          h('div', '在验证器 App（Google / Microsoft Authenticator、1Password 等）里手动添加账号，'
+            + '或用 otpauth 链接导入；然后输入它显示的 6 位验证码完成绑定。')),
+        field('密钥（手动录入）',
+          h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } },
+            secretBox,
+            h('button.btn.btn-sm', { type: 'button', onClick: () => copyText(setup.secret, '密钥已复制') }, '复制密钥')),
+          '建议把密钥单独记一份：验证器丢失时，它是恢复访问的唯一凭据。'),
+        field('otpauth 链接（可选）', urlArea, '可复制到验证器生成二维码。'),
+        field('验证码', codeInput, '输入验证器当前显示的 6 位数字。')),
+      confirmText: '启用',
+      onConfirm: async () => {
+        try {
+          await api('/admin/totp/enable', { method: 'POST', body: { code: codeInput.value.trim() } });
+          toast('ok', '已开启两步验证', '下次登录需要额外输入验证码。');
+          await render(document.getElementById('content'));
+          return true;
+        } catch (err) {
+          toast('error', '启用失败', err.message);
+          return false;
+        }
+      },
+    });
+  }).catch((err) => toast('error', '生成密钥失败', err.message));
 }
 
 function openChangePasswordDialog() {
