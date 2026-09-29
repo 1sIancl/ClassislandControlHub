@@ -2,11 +2,11 @@
  * 系统设置视图：服务器信息、账号安全与部署提示。
  */
 
-import { api, session, hasPermission } from '../core/api.js?v=30';
+import { api, session, hasPermission } from '../core/api.js?v=31';
 import {
   h, clear, formatDateTime, formatDuration, toast, loadingBlock,
   field, modal, copyText, confirmDialog,
-} from '../core/ui.js?v=30';
+} from '../core/ui.js?v=31';
 
 export const meta = {
   title: '系统设置',
@@ -21,7 +21,7 @@ export async function render(container) {
   const canSettings = hasPermission('settings.read');
   const canAccounts = hasPermission('accounts.read');
 
-  const [info, me, accounts, permissions, permissionPresets, registerCodes, registerRequests, registration, timeOffset, updateState, aiConfig] =
+  const [info, me, accounts, permissions, permissionPresets, registerCodes, registerRequests, registration, timeOffset, updateState, aiConfig, webhooks] =
     await Promise.all([
       api('/server/info', { auth: false }),
       api('/admin/me'),
@@ -34,6 +34,7 @@ export async function render(container) {
       canSettings ? api('/admin/time-offset') : Promise.resolve(null),
       canSettings ? api('/admin/update/state') : Promise.resolve(null),
       canSettings ? api('/admin/ai/config') : Promise.resolve(null),
+      canSettings ? api('/admin/webhooks') : Promise.resolve([]),
     ]);
 
   session.serverInfo = info;
@@ -56,6 +57,7 @@ export async function render(container) {
     canSettings ? renderBrandingCard(info) : null,
     canSettings ? renderTimeCard(timeOffset) : null,
     canSettings ? renderAiCard(aiConfig) : null,
+    canSettings ? renderWebhooksCard(container, webhooks) : null,
     canSettings ? renderUpdateCard(updateState) : null,
     renderDeployCard(info),
   ));
@@ -161,7 +163,7 @@ async function replayOnboarding() {
     return;
   }
 
-  const { startTour } = await import('../core/tour.js?v=30');
+  const { startTour } = await import('../core/tour.js?v=31');
   startTour({
     onFinish: async (skipped) => {
       if (!skipped) {
@@ -936,6 +938,157 @@ function openResetPasswordDialog(account) {
       });
       toast('ok', '密码已重置');
       return true;
+    },
+  });
+}
+
+// ────────────────────────────── Webhook 外部通知 ──────────────────────────────
+
+const WEBHOOK_KINDS = [
+  { value: 'wecom', label: '企业微信群机器人' },
+  { value: 'dingtalk', label: '钉钉群机器人' },
+  { value: 'feishu', label: '飞书群机器人' },
+  { value: 'generic', label: '自定义端点（JSON）' },
+];
+
+const WEBHOOK_EVENTS = [
+  { value: 'device.offline', label: '设备掉线' },
+  { value: 'device.error', label: '配置应用失败' },
+  { value: 'command.failed', label: '远程指令失败' },
+];
+
+function webhookKindLabel(kind) {
+  return WEBHOOK_KINDS.find((k) => k.value === kind)?.label || kind;
+}
+
+function renderWebhooksCard(container, hooks) {
+  const rows = hooks.map((hook) => h('tr',
+    h('td',
+      h('div.cell-main', hook.name),
+      h('div.cell-sub', webhookKindLabel(hook.kind)),
+    ),
+    h('td', { style: { fontSize: '12px', maxWidth: '260px', overflowWrap: 'anywhere' } }, hook.url),
+    h('td', { style: { fontSize: '12px' } },
+      (hook.events || []).map((e) => WEBHOOK_EVENTS.find((x) => x.value === e)?.label || e).join('、') || '—'),
+    h('td', hook.enabled
+      ? h('span.badge', { style: { background: 'var(--ok-soft)', color: 'var(--ok)' } }, '已启用')
+      : h('span.badge.badge-neutral', '已停用')),
+    h('td.actions',
+      h('button.btn.btn-sm', { type: 'button', onClick: () => testWebhook(hook) }, '测试'),
+      h('button.btn.btn-sm', { type: 'button', onClick: () => openWebhookDialog(container, hook) }, '编辑'),
+      h('button.btn.btn-sm.btn-danger', {
+        type: 'button',
+        onClick: async () => {
+          if (!await confirmDialog('删除 Webhook', `确定删除「${hook.name}」吗？`, '删除', true)) return;
+          await api(`/admin/webhooks/${hook.id}`, { method: 'DELETE' });
+          toast('ok', '已删除');
+          await render(container);
+        },
+      }, '删除'),
+    ),
+  ));
+
+  return h('div.card', { style: { marginTop: '16px' } },
+    h('div.card-head',
+      h('div',
+        h('h3', 'Webhook 外部通知'),
+        h('p.card-desc',
+          '设备掉线、配置应用失败、远程指令失败时，自动把消息推到企业微信 / 钉钉 / 飞书群，或你自己的服务。'),
+      ),
+      h('button.btn.btn-primary.btn-sm', {
+        type: 'button',
+        onClick: () => openWebhookDialog(container, null),
+      }, '+ 新建 Webhook'),
+    ),
+    hooks.length === 0
+      ? h('div.notice.notice-info', { style: { marginTop: '12px' } },
+        h('span.notice-icon', 'i'),
+        h('div', '还没有配置。建一个之后，教室里出问题会第一时间出现在群里，不用一直盯着管理界面。'))
+      : h('div.table-wrap', { style: { marginTop: '12px' } },
+        h('table.data',
+          h('thead', h('tr',
+            h('th', '名称'),
+            h('th', '接收地址'),
+            h('th', '订阅事件'),
+            h('th', '状态'),
+            h('th', { style: { textAlign: 'right' } }, '操作'),
+          )),
+          h('tbody', ...rows),
+        ),
+      ),
+  );
+}
+
+async function testWebhook(hook) {
+  try {
+    const result = await api(`/admin/webhooks/${hook.id}/test`, { method: 'POST' });
+    if (result.success) {
+      toast('ok', '测试发送成功', '去目标群里看看有没有收到消息。');
+    } else {
+      toast('error', '测试发送失败', result.message);
+    }
+  } catch (err) {
+    toast('error', '测试失败', err.message);
+  }
+}
+
+function openWebhookDialog(container, hook) {
+  const isNew = !hook;
+  const nameInput = h('input', { type: 'text', value: hook?.name || '', placeholder: '例如：高一教师群' });
+  const kindSelect = select(WEBHOOK_KINDS, hook?.kind || 'wecom');
+  const urlInput = h('input', { type: 'text', value: hook?.url || '', placeholder: '群机器人的 Webhook 地址' });
+  const secretInput = h('input', { type: 'text', value: hook?.secret || '', placeholder: '钉钉加签密钥（其它类型留空）' });
+  const enabledChk = h('input', { type: 'checkbox' });
+  enabledChk.checked = hook ? hook.enabled : true;
+
+  const eventBoxes = WEBHOOK_EVENTS.map((event) => {
+    const box = h('input', { type: 'checkbox' });
+    box.checked = isNew ? true : (hook.events || []).includes(event.value);
+    return { value: event.value, box, el: h('label.weekday-chip', box, h('span', event.label)) };
+  });
+
+  modal({
+    title: isNew ? '新建 Webhook' : `编辑 Webhook · ${hook.name}`,
+    width: 'wide',
+    body: h('div',
+      h('div.notice.notice-info',
+        h('span.notice-icon', 'i'),
+        h('div', '在群聊里添加「群机器人」，把它的 Webhook 地址填到这里即可；'
+          + '钉钉若开启了「加签」模式，把加签密钥一并填上。')),
+      h('div.form-row',
+        field('名称', nameInput),
+        field('接收端类型', kindSelect),
+      ),
+      field('Webhook 地址', urlInput),
+      field('加签密钥（可选）', secretInput, '只有钉钉机器人在加签模式下需要。'),
+      field('订阅事件', h('div.weekday-row', ...eventBoxes.map((e) => e.el)), '至少选一个。'),
+      h('label.checkbox-field', enabledChk, h('span', '启用')),
+    ),
+    confirmText: isNew ? '创建' : '保存',
+    onConfirm: async () => {
+      const body = {
+        name: nameInput.value.trim(),
+        kind: kindSelect.value,
+        url: urlInput.value.trim(),
+        secret: secretInput.value.trim(),
+        events: eventBoxes.filter((e) => e.box.checked).map((e) => e.value),
+        enabled: enabledChk.checked,
+      };
+
+      try {
+        if (isNew) {
+          await api('/admin/webhooks', { method: 'POST', body });
+        } else {
+          await api(`/admin/webhooks/${hook.id}`, { method: 'PUT', body });
+        }
+
+        toast('ok', isNew ? '已创建' : '已保存');
+        await render(container);
+        return true;
+      } catch (err) {
+        toast('error', '保存失败', err.message);
+        return false;
+      }
     },
   });
 }

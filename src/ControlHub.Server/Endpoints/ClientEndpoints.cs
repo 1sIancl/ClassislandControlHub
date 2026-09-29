@@ -297,6 +297,7 @@ public static class ClientEndpoints
         ApplyReportRequest request,
         HttpContext http,
         HubStore store,
+        WebhookService webhooks,
         CancellationToken cancellationToken)
     {
         var device = http.RequireDevice();
@@ -317,6 +318,23 @@ public static class ClientEndpoints
         await store.AddAuditAsync(device.Name, $"device.sync.{request.Result}", device.Id,
             $"版本 {request.Revision} 应用结果：{request.Result}；分区 {sections}；{request.Message}",
             http.GetClientIpAddress(), cancellationToken);
+
+        // 应用失败（既不是成功也不是部分成功）时推 Webhook。
+        var applied = string.Equals(request.Result, ApplyResults.Success, StringComparison.OrdinalIgnoreCase)
+                      || string.Equals(request.Result, ApplyResults.Partial, StringComparison.OrdinalIgnoreCase);
+        if (!applied)
+        {
+            await webhooks.NotifyAsync(WebhookEvents.DeviceError,
+                $"配置应用失败：{device.Name}",
+                $"「{device.Name}」应用配置失败：{request.Message}",
+                new Dictionary<string, object?>
+                {
+                    ["deviceId"] = device.Id,
+                    ["deviceName"] = device.Name,
+                    ["revision"] = request.Revision,
+                    ["result"] = request.Result,
+                }, cancellationToken);
+        }
 
         return ApiResult<bool>.Success(true);
     }
@@ -371,6 +389,7 @@ public static class ClientEndpoints
         CommandReportRequest request,
         HttpContext http,
         HubStore store,
+        WebhookService webhooks,
         CancellationToken cancellationToken)
     {
         var device = http.RequireDevice();
@@ -389,6 +408,21 @@ public static class ClientEndpoints
         await store.AddAuditAsync(device.Name, "device.command.result", device.Name,
             $"指令 {request.CommandId} 执行{(request.Success ? "成功" : "失败")}。",
             http.GetClientIpAddress(), cancellationToken);
+
+        // 指令失败时推 Webhook：教室那边出问题，管理员不该只能靠翻日志发现。
+        if (!request.Success)
+        {
+            await webhooks.NotifyAsync(WebhookEvents.CommandFailed,
+                $"指令执行失败：{device.Name}",
+                $"「{device.Name}」执行指令失败：{request.Error ?? "未提供错误信息"}",
+                new Dictionary<string, object?>
+                {
+                    ["deviceId"] = device.Id,
+                    ["deviceName"] = device.Name,
+                    ["commandId"] = request.CommandId,
+                    ["exitCode"] = request.ExitCode,
+                }, cancellationToken);
+        }
 
         return ApiResult<bool>.Success(true);
     }

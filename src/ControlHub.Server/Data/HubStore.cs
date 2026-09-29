@@ -216,6 +216,18 @@ public sealed partial class HubStore
         CREATE INDEX IF NOT EXISTS idx_profile_versions_profile
             ON profile_versions(profile_id, created_at DESC);
 
+        -- Webhook：把关键事件（设备掉线 / 同步失败 / 指令失败）推到企业微信、钉钉、飞书或自定义端点。
+        CREATE TABLE IF NOT EXISTS webhooks (
+            id         TEXT PRIMARY KEY,
+            name       TEXT NOT NULL DEFAULT '',
+            url        TEXT NOT NULL,
+            kind       TEXT NOT NULL DEFAULT 'generic',
+            secret     TEXT NOT NULL DEFAULT '',
+            events     TEXT NOT NULL DEFAULT '',
+            enabled    INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        );
+
         -- 通知模板：把常用的广播内容存下来，发通知时一键套用。
         CREATE TABLE IF NOT EXISTS notice_templates (
             id         TEXT PRIMARY KEY,
