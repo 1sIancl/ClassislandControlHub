@@ -31,6 +31,7 @@ public static class ClientEndpoints
         authed.MapGet("/wait", WaitAsync);
         authed.MapPost("/report", ReportAsync);
         authed.MapPost("/logs", UploadLogsAsync);
+        authed.MapPost("/diagnostics", UploadDiagnosticAsync);
         authed.MapGet("/commands", GetCommandsAsync);
         authed.MapPost("/commands/report", ReportCommandAsync);
         authed.MapPost("/plugins", ReportPluginsAsync);
@@ -359,6 +360,63 @@ public static class ClientEndpoints
             .Select(e => (e.Timestamp, string.IsNullOrWhiteSpace(e.Level) ? "info" : e.Level, e.Message ?? string.Empty));
 
         await store.InsertClientLogsAsync(device.Id, entries, cancellationToken);
+        return ApiResult<bool>.Success(true);
+    }
+
+    /// <summary>单次上传的诊断内容上限（4 MB，足以容纳 1440p 的 PNG 截图）。</summary>
+    private const int MaxDiagnosticBytes = 4 * 1024 * 1024;
+
+    /// <summary>允许上传的诊断工件类型白名单。</summary>
+    private static readonly string[] DiagnosticKinds = ["screenshot"];
+
+    /// <summary>
+    /// 上传诊断工件（屏幕截图等），内容以 Base64 传输。
+    /// <para>落库后由管理端按需读取；每个设备只保留最近若干条，客户端反复抓屏也不会撑爆数据库。</para>
+    /// </summary>
+    private static async Task<ApiResult<bool>> UploadDiagnosticAsync(
+        DiagnosticUploadRequest request,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var device = http.RequireDevice();
+
+        if (string.IsNullOrWhiteSpace(request.Kind) || !DiagnosticKinds.Contains(request.Kind))
+        {
+            throw HubException.Validation("不支持的诊断类型。");
+        }
+
+        byte[] content;
+        try
+        {
+            content = Convert.FromBase64String(request.ContentBase64 ?? string.Empty);
+        }
+        catch (FormatException)
+        {
+            throw HubException.Validation("诊断内容不是合法的 Base64。");
+        }
+
+        if (content.Length == 0)
+        {
+            throw HubException.Validation("诊断内容为空。");
+        }
+
+        if (content.Length > MaxDiagnosticBytes)
+        {
+            throw HubException.Validation(
+                $"诊断内容过大（{content.Length / 1024} KB，上限 {MaxDiagnosticBytes / 1024 / 1024} MB）。");
+        }
+
+        await store.AddDiagnosticAsync(
+            device.Id,
+            request.CommandId ?? string.Empty,
+            request.Kind,
+            request.Note ?? string.Empty,
+            string.IsNullOrWhiteSpace(request.ContentType) ? "application/octet-stream" : request.ContentType,
+            content,
+            request.CapturedAt,
+            cancellationToken);
+
         return ApiResult<bool>.Success(true);
     }
 

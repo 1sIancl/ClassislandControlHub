@@ -43,12 +43,11 @@ public class Plugin : PluginBase
         // 集控提醒提供方（AddNotificationProvider 会注册到 RegistryService 并托管）。
         services.AddNotificationProvider<HubNotificationProvider>();
 
-        // 远程指令执行器（shell / 插件 / 外观 / 提醒 / 重启）。
+        // 远程指令执行器（shell / 插件 / 外观 / 提醒 / 重启 / 诊断）。
         services.AddSingleton<RemoteCommandExecutor>(sp =>
         {
-            var executor = new RemoteCommandExecutor(
-                sp.GetRequiredService<ILogger<RemoteCommandExecutor>>());
-            executor.OnPluginsReported = async plugins =>
+            // 各上报回调的公共部分：读出服务器地址与设备令牌后发送；失败不影响主流程。
+            async Task UploadAsync(Func<HubClient, string, string, Task> send)
             {
                 var cfg = sp.GetRequiredService<HubSettingsStore>().Load();
                 if (string.IsNullOrWhiteSpace(cfg.DeviceToken))
@@ -58,14 +57,27 @@ public class Plugin : PluginBase
 
                 try
                 {
-                    await sp.GetRequiredService<HubClient>()
-                        .ReportPluginsAsync(cfg.ServerUrl, cfg.DeviceToken, plugins);
+                    await send(sp.GetRequiredService<HubClient>(), cfg.ServerUrl, cfg.DeviceToken);
                 }
                 catch
                 {
                     // 上报失败不影响主流程。
                 }
-            };
+            }
+
+            var executor = new RemoteCommandExecutor(
+                sp.GetRequiredService<ILogger<RemoteCommandExecutor>>(),
+                sp.GetRequiredService<HubState>());
+
+            executor.OnPluginsReported = plugins =>
+                UploadAsync((client, url, token) => client.ReportPluginsAsync(url, token, plugins));
+
+            executor.OnDiagnosticUploaded = request =>
+                UploadAsync((client, url, token) => client.UploadDiagnosticAsync(url, token, request));
+
+            executor.OnLogsRequested = entries =>
+                UploadAsync((client, url, token) => client.UploadLogsAsync(url, token, entries));
+
             return executor;
         });
 

@@ -41,6 +41,15 @@ public static class RemoteCommandKinds
 
     /// <summary>触发一个自动化信号，载荷为 <c>{"signal":"放学"}</c>。</summary>
     public const string AutomationTrigger = "automation.trigger";
+
+    /// <summary>抓取教室端画面并上传（内容见 <see cref="DiagnosticUploadRequest"/>），回报中给出分辨率与体积。</summary>
+    public const string DiagnosticScreenshot = "diagnostic.screenshot";
+
+    /// <summary>采集前台窗口与进程快照（结果放在命令回报的 Output 中）。</summary>
+    public const string DiagnosticProcesses = "diagnostic.processes";
+
+    /// <summary>采集诊断数据包：系统环境、应用与插件版本、集控运行状态与最近日志（结果放在 Output 中）。</summary>
+    public const string DiagnosticBundle = "diagnostic.bundle";
 }
 
 /// <summary>触发自动化信号的载荷。</summary>
@@ -130,6 +139,56 @@ public sealed class CommandReportRequest
 
     /// <summary>完成时间（UTC）。</summary>
     public DateTimeOffset FinishedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>B 端上传的诊断工件（截图等二进制内容，Base64 编码）。</summary>
+public sealed class DiagnosticUploadRequest
+{
+    /// <summary>触发本次采集的指令 ID（可空，用于与命令历史对应）。</summary>
+    public string CommandId { get; set; } = string.Empty;
+
+    /// <summary>工件类型，目前为 <c>screenshot</c>。</summary>
+    public string Kind { get; set; } = "screenshot";
+
+    /// <summary>说明（分辨率、前台窗口标题等）。</summary>
+    public string Note { get; set; } = string.Empty;
+
+    /// <summary>MIME 类型。</summary>
+    public string ContentType { get; set; } = "image/png";
+
+    /// <summary>Base64 编码的内容。</summary>
+    public string ContentBase64 { get; set; } = string.Empty;
+
+    /// <summary>采集时间（UTC）。</summary>
+    public DateTimeOffset CapturedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>A 端管理侧展示的设备诊断工件（不含内容本体）。</summary>
+public sealed class DeviceDiagnosticDto
+{
+    /// <summary>工件 ID，用于读取内容。</summary>
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>设备 ID。</summary>
+    public string DeviceId { get; set; } = string.Empty;
+
+    /// <summary>设备名称。</summary>
+    public string? DeviceName { get; set; }
+
+    /// <summary>工件类型。</summary>
+    public string Kind { get; set; } = string.Empty;
+
+    /// <summary>说明。</summary>
+    public string Note { get; set; } = string.Empty;
+
+    /// <summary>MIME 类型。</summary>
+    public string ContentType { get; set; } = "image/png";
+
+    /// <summary>内容体积（字节）。</summary>
+    public long SizeBytes { get; set; }
+
+    /// <summary>采集时间。</summary>
+    public DateTimeOffset CapturedAt { get; set; }
 }
 
 /// <summary>B 端已安装的 ClassIsland 插件信息。</summary>

@@ -295,10 +295,27 @@ public sealed partial class HubStore
     public async Task DeleteDeviceAsync(string deviceId, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = "DELETE FROM devices WHERE id = $id;";
-        command.Parameters.AddWithValue("$id", deviceId);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        // 设备删除后，它名下的日志、指令与诊断记录一并清掉，避免留下永远查不到的孤儿数据。
+        string[] statements =
+        [
+            "DELETE FROM devices WHERE id = $id;",
+            "DELETE FROM client_logs WHERE device_id = $id;",
+            "DELETE FROM device_commands WHERE device_id = $id;",
+            "DELETE FROM device_diagnostics WHERE device_id = $id;",
+        ];
+
+        foreach (var sql in statements)
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText = sql;
+            command.Parameters.AddWithValue("$id", deviceId);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
     }
 
     /// <summary>清空指定设备的上报日志。</summary>

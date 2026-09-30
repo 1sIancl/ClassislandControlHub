@@ -3,10 +3,10 @@
  * 数据来自 A 端 /admin/devices、/admin/backups 等接口。
  */
 
-import { api } from '../core/api.js?v=31';
+import { api, fetchBlob } from '../core/api.js?v=32';
 import {
   h, clear, toast, loadingBlock, confirmDialog, field, select, emptyState, formatDateTime, modal,
-} from '../core/ui.js?v=31';
+} from '../core/ui.js?v=32';
 
 export const meta = {
   title: '远程管理',
@@ -15,6 +15,7 @@ export const meta = {
 
 const TABS = [
   { key: 'command', label: '远程命令行' },
+  { key: 'diagnostic', label: '远程诊断' },
   { key: 'plugins', label: '插件管理' },
   { key: 'appearance', label: '外观下发' },
   { key: 'notify', label: '发送提醒' },
@@ -66,6 +67,7 @@ function paint(container) {
 function renderTab(container) {
   switch (state.tab) {
     case 'command': return renderCommand(container);
+    case 'diagnostic': return renderDiagnostic(container);
     case 'plugins': return renderPlugins(container);
     case 'appearance': return renderAppearance(container);
     case 'notify': return renderNotify(container);
@@ -200,6 +202,23 @@ function pollHistory(deviceId, outEl, times = 4) {
     setTimeout(tick, 1500);
   };
   setTimeout(tick, 1500);
+}
+
+/**
+ * 带鉴权下载文件。
+ * 管理端接口都需要 Authorization 头，直接用 <a href> 打开新标签不会带令牌（必然 401），
+ * 因此先取回 Blob 再触发保存。
+ */
+async function downloadFile(path, fileName) {
+  const blob = await fetchBlob(path);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // ────────────────────── 插件管理 ──────────────────────
@@ -664,6 +683,172 @@ function renderAutomation(container) {
     datalist,
     historyBox,
   );
+}
+
+// ────────────────────── 远程诊断 ──────────────────────
+
+function renderDiagnostic(container) {
+  const deviceSelect = select(deviceOptions(), state.devices[0]?.id || '');
+  const offline = offlineOption();
+  const out = h('div', { style: { display: 'none' } });
+  const gallery = h('div', { style: { marginTop: '18px' } });
+
+  const run = (kind, label) => async () => {
+    const deviceId = deviceSelect.value;
+    if (!deviceId) { toast('warn', '请先选择设备'); return; }
+
+    try {
+      await api(`/admin/devices/${deviceId}/command`, { method: 'POST', body: { kind, payload: '{}' } });
+      toast('ok', `已请求${label}`, '结果稍后出现在下方；离线设备会排队等上线后执行。');
+      await loadCommandHistory(deviceId, out);
+      pollHistory(deviceId, out, 6);
+      if (kind === 'diagnostic.screenshot') {
+        pollScreenshots(deviceId, gallery, 4);
+      }
+    } catch (e) {
+      toast('error', '下发失败', e.message);
+    }
+  };
+
+  deviceSelect.addEventListener('change', () => {
+    clear(out);
+    out.style.display = 'none';
+    loadScreenshots(deviceSelect.value, gallery);
+  });
+
+  const view = h('div',
+    h('div.toolbar',
+      h('span.toolbar-label', '目标设备'),
+      deviceSelect,
+      deviceRefreshButton(container),
+    ),
+    h('div.notice.notice-info', { style: { marginTop: '12px' } },
+      h('span.notice-icon', 'i'),
+      h('div', '诊断指令由教室端执行：截图会上传保存（每台设备保留最近 5 张），'
+        + '前台进程与诊断数据包以文本形式出现在下方结果里；诊断数据包还会顺带把教室端日志推上来，'
+        + '可在设备列表的「运行日志」中查看。')),
+    h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '12px' } },
+      h('button.btn.btn-primary', { type: 'button', onClick: run('diagnostic.screenshot', '屏幕截图') }, '抓取屏幕截图'),
+      h('button.btn', { type: 'button', onClick: run('diagnostic.processes', '进程快照') }, '请求前台进程'),
+      h('button.btn', { type: 'button', onClick: run('diagnostic.bundle', '诊断数据包') }, '请求诊断数据包'),
+    ),
+    offline.el,
+    h('div', { style: { marginTop: '16px' } }, out),
+    gallery,
+  );
+
+  // 首次进入直接把该设备已有截图拉出来。
+  loadScreenshots(deviceSelect.value, gallery);
+  return view;
+}
+
+/** 截图列表：缩略图 + 点击查看大图（图片需带鉴权读取，因此先取 Blob 再用 objectURL 展示）。 */
+async function loadScreenshots(deviceId, box) {
+  if (!deviceId) return;
+  clear(box);
+  box.appendChild(loadingBlock('正在读取截图…'));
+
+  let list = [];
+  try {
+    list = await api(`/admin/devices/${deviceId}/diagnostics`);
+  } catch (err) {
+    clear(box);
+    box.appendChild(h('div.notice.notice-danger', h('span.notice-icon', '!'), h('div', err.message)));
+    return;
+  }
+
+  clear(box);
+  box.appendChild(h('div.toolbar',
+    h('span.toolbar-label', `屏幕截图（${list.length}）`),
+    h('div.spacer'),
+    list.length > 0
+      ? h('button.btn.btn-sm', {
+        type: 'button',
+        onClick: async () => {
+          if (!await confirmDialog('清空截图', '确定清空该设备已上传的全部截图吗？', '清空', true)) return;
+          await api(`/admin/devices/${deviceId}/diagnostics`, { method: 'DELETE' });
+          toast('ok', '已清空截图');
+          await loadScreenshots(deviceId, box);
+        },
+      }, '清空截图')
+      : null,
+  ));
+
+  if (list.length === 0) {
+    box.appendChild(emptyState('devices', '暂无截图', '点上方「抓取屏幕截图」，教室端在线时会立即回传。'));
+    return;
+  }
+
+  box.appendChild(h('div.shot-grid', ...list.map(screenshotCard)));
+}
+
+function screenshotCard(item) {
+  const wrap = h('div.shot-thumb-wrap', h('div.shot-loading', '加载中…'));
+
+  fetchBlob(`/admin/devices/diagnostics/${item.id}/content`)
+    .then((blob) => {
+      const url = URL.createObjectURL(blob);
+      const img = h('img.shot-thumb', { src: url, alt: '设备截图' });
+      img.addEventListener('load', () => URL.revokeObjectURL(url), { once: true });
+      clear(wrap);
+      wrap.appendChild(img);
+    })
+    .catch((err) => {
+      clear(wrap);
+      wrap.appendChild(h('div.shot-failed', err.message));
+    });
+
+  wrap.addEventListener('click', () => openScreenshot(item));
+
+  return h('div.shot-card',
+    h('div.shot-head',
+      h('span', formatDateTime(item.capturedAt)),
+      h('span.shot-size', `${Math.max(1, Math.round(item.sizeBytes / 1024))} KB`),
+    ),
+    wrap,
+    h('div.shot-note', item.note || '—'),
+  );
+}
+
+async function openScreenshot(item) {
+  const dialog = modal({
+    title: `截图 · ${formatDateTime(item.capturedAt)}`,
+    width: 'xwide',
+    hideFooter: true,
+    body: loadingBlock('正在读取截图…'),
+  });
+
+  try {
+    const blob = await fetchBlob(`/admin/devices/diagnostics/${item.id}/content`);
+    const url = URL.createObjectURL(blob);
+    clear(dialog.bodyEl);
+    dialog.bodyEl.appendChild(h('div',
+      h('img', {
+        src: url,
+        alt: '设备截图',
+        style: { width: '100%', borderRadius: '10px', border: '1px solid var(--border)' },
+      }),
+      h('div', { style: { marginTop: '10px', fontSize: '12.5px', color: 'var(--text-dim)' } }, item.note || ''),
+      h('div', { style: { marginTop: '10px' } },
+        h('a.btn.btn-sm', { href: url, download: `screenshot-${item.id}.png` }, '下载原图')),
+    ));
+  } catch (err) {
+    clear(dialog.bodyEl);
+    dialog.bodyEl.appendChild(h('div.notice.notice-danger', h('span.notice-icon', '!'), h('div', err.message)));
+  }
+}
+
+/** 下发截图指令后自动刷新几次，省掉手动点「刷新」。 */
+function pollScreenshots(deviceId, box, times = 4) {
+  let left = times;
+  const tick = async () => {
+    if (left-- <= 0 || !deviceId) return;
+    try {
+      await loadScreenshots(deviceId, box);
+    } catch { /* 轮询失败忽略 */ }
+    setTimeout(tick, 2500);
+  };
+  setTimeout(tick, 2500);
 }
 
 // ────────────────────── 备份 ──────────────────────

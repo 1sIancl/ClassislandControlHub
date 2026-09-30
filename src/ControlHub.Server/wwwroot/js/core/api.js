@@ -132,3 +132,34 @@ export function hasPermission(perm) {
 export function fetchServerInfo() {
   return api('/server/info', { auth: false });
 }
+
+/**
+ * 以鉴权方式读取二进制内容（如教室端截图）。
+ * <para>图片无法通过 img 标签直接携带令牌，因此先取回 Blob 再用 objectURL 展示。</para>
+ * @param {string} path 以 `/` 开头的接口路径（不含 /api/v1 前缀）。
+ * @returns {Promise<Blob>} 二进制内容。
+ */
+export async function fetchBlob(path) {
+  const headers = {};
+  if (session.token) {
+    headers['Authorization'] = `Bearer ${session.token}`;
+  }
+
+  let response;
+  try {
+    response = await fetch(API_PREFIX + path, { headers });
+  } catch {
+    throw new ApiError('NETWORK', '无法连接到服务器，请检查网络或服务是否已启动。', 0);
+  }
+
+  if (response.status === 401) {
+    handleExpired();
+    throw new ApiError('AUTH_INVALID', '登录状态已失效，请重新登录。', 401);
+  }
+
+  if (!response.ok) {
+    throw new ApiError('BAD_RESPONSE', `读取失败（HTTP ${response.status}）。`, response.status);
+  }
+
+  return response.blob();
+}

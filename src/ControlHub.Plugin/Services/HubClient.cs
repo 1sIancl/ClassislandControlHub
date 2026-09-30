@@ -152,6 +152,16 @@ public sealed class HubClient
             timeout: TimeSpan.FromSeconds(20), cancellationToken);
     }
 
+    /// <summary>上传诊断工件（屏幕截图等，内容为 Base64）。</summary>
+    public async Task UploadDiagnosticAsync(string baseUrl, string deviceToken, DiagnosticUploadRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        // 截图可能上兆，给足超时。
+        await SendAsync<bool>(baseUrl, "/client/diagnostics", HttpMethod.Post,
+            auth: HubProtocol.DeviceScheme + " " + deviceToken, body: request,
+            timeout: TimeSpan.FromSeconds(60), cancellationToken);
+    }
+
     /// <summary>拉取待执行的远程指令。</summary>
     public async Task<List<RemoteCommandDto>> GetCommandsAsync(string baseUrl, string deviceToken,
         CancellationToken cancellationToken = default)

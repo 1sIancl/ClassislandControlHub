@@ -21,7 +21,8 @@ namespace ControlHub.Plugin.Services;
 /// （表现为：命令被当成整段 JSON 执行、提醒内容为空、外观配置全空、插件 ID 缺失）。</para>
 /// </summary>
 public sealed class RemoteCommandExecutor(
-    ILogger<RemoteCommandExecutor> logger)
+    ILogger<RemoteCommandExecutor> logger,
+    HubState state)
 {
     /// <summary>单条指令回报的输出上限，避免超大输出占满上行链路。</summary>
     private const int MaxOutputLength = 24 * 1024;
@@ -29,8 +30,14 @@ public sealed class RemoteCommandExecutor(
     /// <summary>ClassIsland 用插件目录下的这个文件标记「已禁用」。</summary>
     private const string DisabledMarker = ".disabled";
 
-    /// <summary>插件上报回调（由同步引擎注入，负责把插件列表回传 A 端）。</summary>
+    /// <summary>插件上报回调（由插件入口注入，负责把插件列表回传 A 端）。</summary>
     public Func<List<PluginInfoDto>, Task>? OnPluginsReported { get; set; }
+
+    /// <summary>诊断工件上传回调（截图等二进制内容经此回传 A 端）。</summary>
+    public Func<DiagnosticUploadRequest, Task>? OnDiagnosticUploaded { get; set; }
+
+    /// <summary>日志上报回调（采集诊断数据包时顺带把本地日志推给 A 端，供设备日志页查看）。</summary>
+    public Func<List<LogEntryDto>, Task>? OnLogsRequested { get; set; }
 
     /// <summary>执行一条指令。</summary>
     public async Task<CommandReportRequest> ExecuteAsync(RemoteCommandDto command)
@@ -52,6 +59,9 @@ public sealed class RemoteCommandExecutor(
                 RemoteCommandKinds.PowerSleep => Sleep(command),
                 RemoteCommandKinds.AutomationList => ReportAutomations(command),
                 RemoteCommandKinds.AutomationTrigger => TriggerAutomation(command),
+                RemoteCommandKinds.DiagnosticScreenshot => await CaptureScreenshotAsync(command),
+                RemoteCommandKinds.DiagnosticProcesses => Ok(command, DiagnosticsCollector.CollectProcesses()),
+                RemoteCommandKinds.DiagnosticBundle => await CollectDiagnosticBundleAsync(command),
                 _ => Fail(command, $"不支持的指令类型：{command.Kind}"),
             };
         }
@@ -670,6 +680,67 @@ public sealed class RemoteCommandExecutor(
         }
 
         return null;
+    }
+
+    // ────────────────────────────── 远程诊断 ──────────────────────────────
+
+    /// <summary>抓取主界面画面并上传，供管理端在「远程管理 → 诊断」中查看。</summary>
+    private async Task<CommandReportRequest> CaptureScreenshotAsync(RemoteCommandDto command)
+    {
+        var png = DiagnosticsCollector.CaptureScreen(out var note);
+        if (png is null)
+        {
+            return Fail(command, note);
+        }
+
+        if (OnDiagnosticUploaded is null)
+        {
+            return Fail(command, "诊断上传通道不可用（插件尚未完成初始化）。");
+        }
+
+        await OnDiagnosticUploaded(new DiagnosticUploadRequest
+        {
+            CommandId = command.Id,
+            Kind = "screenshot",
+            Note = note,
+            ContentType = "image/png",
+            ContentBase64 = Convert.ToBase64String(png),
+            CapturedAt = DateTimeOffset.UtcNow,
+        });
+
+        return Ok(command, $"截图已上传（{note}）。可在管理端「远程管理 → 诊断」查看。");
+    }
+
+    /// <summary>采集诊断数据包，并顺手把本地日志推给 A 端（设备日志页即可查看）。</summary>
+    private async Task<CommandReportRequest> CollectDiagnosticBundleAsync(RemoteCommandDto command)
+    {
+        var text = DiagnosticsCollector.CollectBundle(state);
+
+        if (OnLogsRequested is not null)
+        {
+            try
+            {
+                await OnLogsRequested(DiagnosticsCollector.SnapshotLogs(state)
+                    .Select(line => new LogEntryDto
+                    {
+                        Timestamp = line.Timestamp,
+                        Level = line.Level,
+                        Message = line.Message,
+                    })
+                    .ToList());
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "上传本地日志失败。");
+            }
+        }
+
+        if (text.Length > MaxOutputLength)
+        {
+            text = text[..MaxOutputLength] + "\n…（内容过长，已截断）";
+        }
+
+        return Ok(command, text);
     }
 
     // ────────────────────────────── helpers ──────────────────────────────

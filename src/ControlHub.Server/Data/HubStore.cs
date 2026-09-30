@@ -183,6 +183,22 @@ public sealed partial class HubStore
         );
         CREATE INDEX IF NOT EXISTS idx_register_requests_status ON register_requests(status, created_at DESC);
 
+        -- 设备诊断工件（屏幕截图等二进制内容）。每个设备只保留最近若干条，避免体积无限增长。
+        CREATE TABLE IF NOT EXISTS device_diagnostics (
+            id           TEXT PRIMARY KEY,
+            device_id    TEXT NOT NULL,
+            command_id   TEXT NOT NULL DEFAULT '',
+            kind         TEXT NOT NULL DEFAULT 'screenshot',
+            note         TEXT NOT NULL DEFAULT '',
+            content_type TEXT NOT NULL DEFAULT 'image/png',
+            size_bytes   INTEGER NOT NULL DEFAULT 0,
+            content      BLOB NOT NULL,
+            captured_at  TEXT NOT NULL,
+            created_at   TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_device_diagnostics_device
+            ON device_diagnostics(device_id, captured_at DESC);
+
         -- 临时换课（跨天 / 跨周换课）：在指定日期范围内把某节课临时换成别的科目。
         -- 覆盖不改动档案本身，只在每次下发给设备时合成，因此到期后自动还原。
         CREATE TABLE IF NOT EXISTS timetable_overrides (

@@ -124,6 +124,7 @@ HTTP 状态码与业务结果同时生效：`401` 鉴权失败、`404` 资源不
 | POST | `/client/commands/report` | 回报命令执行结果 |
 | POST | `/client/plugins` | 上报本机插件清单（含启用状态与版本） |
 | POST | `/client/logs` | 上传客户端日志 |
+| POST | `/client/diagnostics` | 上传诊断工件（屏幕截图，Base64，单次上限 4 MB） |
 
 > `/client/commands` 采用一次性派发：命令带 `dispatchedAt` / `expiresAt`（默认 TTL 2 小时），
 > 取走后即标记为已派发，避免断线重连时重复执行；回报时会校验命令归属，跨设备回报被拒绝。
@@ -175,6 +176,9 @@ HTTP 状态码与业务结果同时生效：`401` 鉴权失败、`404` 资源不
 | POST | `/admin/devices/appearance` | `remote.write` | 下发外观（主题 / 强调色） |
 | GET | `/admin/devices/{id}/plugins` | `remote.read` | 插件清单 |
 | POST | `/admin/devices/{id}/plugins/refresh` | `remote.write` | 命令 B 端重新上报插件清单 |
+| GET | `/admin/devices/{id}/diagnostics` | `remote.read` | 诊断工件列表（截图，不含内容本体） |
+| GET | `/admin/devices/diagnostics/{id}/content` | `remote.read` | 读取诊断内容（图片字节流） |
+| DELETE | `/admin/devices/{id}/diagnostics` | `remote.write` | 清空该设备的诊断工件 |
 | GET | `/admin/reminders`、`/admin/reminders/summary`、`/admin/reminders/fires` | `reminders.read` | 提醒列表 / 概览 / 触发历史 |
 | POST/PUT/DELETE | `/admin/reminders`、`/admin/reminders/{id}` | `reminders.write` | 新建 / 修改 / 删除提醒 |
 | POST | `/admin/reminders/{id}/run` | `reminders.write` | 立即触发（不影响原有重复计划） |

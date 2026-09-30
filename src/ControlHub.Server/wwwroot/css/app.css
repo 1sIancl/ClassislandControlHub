@@ -2821,6 +2821,71 @@ input.pcell-name:focus {
   border-color: var(--border-strong);
 }
 
+/* ────────────────────────── 远程诊断：截图 ────────────────────────── */
+.shot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.shot-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-panel-2);
+}
+.shot-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+.shot-size {
+  flex: none;
+}
+.shot-thumb-wrap {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-base);
+  cursor: zoom-in;
+}
+.shot-thumb {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.shot-loading {
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+.shot-failed {
+  padding: 0 10px;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--danger);
+}
+.shot-note {
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  word-break: break-word;
+}
+@media (max-width: 700px) {
+  .shot-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+}
+
 /* ────────────────────────── 账号权限勾选 ────────────────────────── */
 .perm-table {
   width: 100%;

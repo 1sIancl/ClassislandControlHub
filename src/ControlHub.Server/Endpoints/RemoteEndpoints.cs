@@ -27,6 +27,14 @@ public static class RemoteEndpoints
         group.MapPost("/devices/{id}/plugins/refresh", RefreshPluginsAsync)
             .RequirePermission(PermissionKeys.RemoteWrite);
 
+        // 远程诊断：抓屏、进程快照、诊断数据包的查看与清理
+        group.MapGet("/devices/{id}/diagnostics", ListDiagnosticsAsync)
+            .RequirePermission(PermissionKeys.RemoteRead);
+        group.MapGet("/devices/diagnostics/{id}/content", GetDiagnosticContentAsync)
+            .RequirePermission(PermissionKeys.RemoteRead);
+        group.MapDelete("/devices/{id}/diagnostics", ClearDiagnosticsAsync)
+            .RequirePermission(PermissionKeys.RemoteWrite);
+
         // 撤销窗口：取消尚未派发的指令（关机等不可逆操作）
         group.MapDelete("/devices/commands/{id}", CancelCommandAsync).RequirePermission(PermissionKeys.RemoteWrite);
         group.MapPost("/devices/commands/cancel", CancelCommandsAsync).RequirePermission(PermissionKeys.RemoteWrite);
@@ -258,6 +266,59 @@ public static class RemoteEndpoints
         var rows = await store.GetCommandsAsync(id, 80, cancellationToken);
         return ApiResult<List<DeviceCommandDto>>.Success(
             rows.Select(r => ToDto(r, device?.Name)).ToList());
+    }
+
+    /// <summary>列出某设备已上传的诊断工件（屏幕截图等），不含内容本体。</summary>
+    private static async Task<ApiResult<List<DeviceDiagnosticDto>>> ListDiagnosticsAsync(
+        string id,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        http.RequireAdminSession();
+        var device = await store.GetDeviceAsync(id, cancellationToken);
+        var rows = await store.GetDiagnosticsAsync(id, 20, cancellationToken);
+        return ApiResult<List<DeviceDiagnosticDto>>.Success(rows.Select(r => new DeviceDiagnosticDto
+        {
+            Id = r.Id,
+            DeviceId = r.DeviceId,
+            DeviceName = device?.Name,
+            Kind = r.Kind,
+            Note = r.Note,
+            ContentType = r.ContentType,
+            SizeBytes = r.SizeBytes,
+            CapturedAt = r.CapturedAt,
+        }).ToList());
+    }
+
+    /// <summary>读取诊断工件的原始内容（截图直接返回图片字节流，供管理端预览与下载）。</summary>
+    private static async Task<IResult> GetDiagnosticContentAsync(
+        string id,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        http.RequireAdminSession();
+        var found = await store.GetDiagnosticAsync(id, cancellationToken)
+                    ?? throw HubException.NotFound("诊断记录不存在。");
+
+        http.Response.Headers.CacheControl = "no-store";
+        var ext = found.Row.ContentType.Contains("png", StringComparison.OrdinalIgnoreCase) ? ".png" : ".bin";
+        return Results.File(found.Content, found.Row.ContentType, $"diagnostic-{id}{ext}");
+    }
+
+    /// <summary>清空某设备已上传的诊断工件。</summary>
+    private static async Task<ApiResult<int>> ClearDiagnosticsAsync(
+        string id,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var removed = await store.DeleteDiagnosticsAsync(id, cancellationToken);
+        await store.AddAuditAsync(session.Username, "device.diagnostics.clear", id,
+            $"清空诊断记录 {removed} 条", http.GetClientIpAddress(), cancellationToken);
+        return ApiResult<int>.Success(removed);
     }
 
     /// <summary>向单台设备发送提醒。</summary>
