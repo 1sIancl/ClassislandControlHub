@@ -155,6 +155,47 @@ public partial class HubStore
         command.Parameters.AddWithValue("$id", id);
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
+
+    /// <summary>
+    /// 按保留策略清理诊断工件：先删超过保留天数的，再按总容量上限从最旧的开始删。
+    /// </summary>
+    /// <param name="retentionDays">保留天数，小于 1 时按 1 处理。</param>
+    /// <param name="maxTotalBytes">总容量上限（字节），传 0 或负数表示不限制。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>被删除的记录数。</returns>
+    public async Task<int> PurgeDiagnosticsAsync(int retentionDays, long maxTotalBytes,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        var removed = 0;
+
+        // 1) 按时间清理。
+        await using (var byAge = connection.CreateCommand())
+        {
+            byAge.CommandText = "DELETE FROM device_diagnostics WHERE captured_at < $cutoff;";
+            byAge.Parameters.AddWithValue("$cutoff",
+                Ts(DateTimeOffset.UtcNow.AddDays(-Math.Max(1, retentionDays))));
+            removed += await byAge.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        // 2) 按容量清理：用窗口函数从最新往旧累加体积，把超出上限的那批旧记录整批删除。
+        //    注意 SQLite 不会把删除后的空间还给文件系统，但页会被复用，容量不会继续增长。
+        if (maxTotalBytes > 0)
+        {
+            await using var bySize = connection.CreateCommand();
+            bySize.CommandText = """
+                DELETE FROM device_diagnostics WHERE id IN (
+                    SELECT id FROM (
+                        SELECT id, SUM(size_bytes) OVER (ORDER BY captured_at DESC, rowid DESC) AS running
+                        FROM device_diagnostics
+                    ) WHERE running > $cap);
+                """;
+            bySize.Parameters.AddWithValue("$cap", maxTotalBytes);
+            removed += await bySize.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        return removed;
+    }
 }
 
 /// <summary>一条设备诊断工件记录（不含内容本体）。</summary>

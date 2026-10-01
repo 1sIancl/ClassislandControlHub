@@ -6,6 +6,7 @@ using System.Text.Json;
 using Avalonia.Media;
 using ClassIsland.Core.Abstractions.Services;
 using ClassIsland.Shared;
+using ControlHub.Plugin.Models;
 using ControlHub.Protocol;
 using ControlHub.Protocol.Dtos;
 using Microsoft.Extensions.Logging;
@@ -22,7 +23,8 @@ namespace ControlHub.Plugin.Services;
 /// </summary>
 public sealed class RemoteCommandExecutor(
     ILogger<RemoteCommandExecutor> logger,
-    HubState state)
+    HubState state,
+    HubSettingsStore settings)
 {
     /// <summary>单条指令回报的输出上限，避免超大输出占满上行链路。</summary>
     private const int MaxOutputLength = 24 * 1024;
@@ -687,6 +689,12 @@ public sealed class RemoteCommandExecutor(
     /// <summary>抓取主界面画面并上传，供管理端在「远程管理 → 诊断」中查看。</summary>
     private async Task<CommandReportRequest> CaptureScreenshotAsync(RemoteCommandDto command)
     {
+        // 教室端可在插件设置里关闭远程截图：关闭后直接拒绝并说明原因，不做「偷偷截图」。
+        if (!settings.Load().AllowRemoteScreenshot)
+        {
+            return Fail(command, "教室端已关闭远程截图（可在 ClassIsland 的插件设置「远程协助与隐私」中开启）。");
+        }
+
         var png = DiagnosticsCollector.CaptureScreen(out var note);
         if (png is null)
         {
@@ -707,6 +715,17 @@ public sealed class RemoteCommandExecutor(
             ContentBase64 = Convert.ToBase64String(png),
             CapturedAt = DateTimeOffset.UtcNow,
         });
+
+        // 教室端给出一条可见提示：截图不是无声无息发生的。
+        try
+        {
+            HubNotificationProviderHolder.Current?.Show("集控远程协助", "管理端抓取了本机画面用于排查问题", false,
+                TimeSpan.FromSeconds(6));
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "展示截图提示失败。");
+        }
 
         return Ok(command, $"截图已上传（{note}）。可在管理端「远程管理 → 诊断」查看。");
     }

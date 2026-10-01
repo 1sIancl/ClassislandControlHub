@@ -39,6 +39,7 @@ public partial class ControlHubSettingsPage : SettingsPageBase
     private CheckBox _autoSync = null!;
     private CheckBox _allowInsecureTls = null!;
     private CheckBox _enableTimeSync = null!;
+    private CheckBox _allowRemoteScreenshot = null!;
     private TextBlock _timeSyncText = null!;
 
     private TextBlock _statusText = null!;
@@ -90,6 +91,7 @@ public partial class ControlHubSettingsPage : SettingsPageBase
         stack.Children.Add(BuildServerCard());
         stack.Children.Add(BuildSyncCard());
         stack.Children.Add(BuildTimeSyncCard());
+        stack.Children.Add(BuildPrivacyCard());
         stack.Children.Add(BuildLogCard());
 
         Content = root;
@@ -173,6 +175,31 @@ public partial class ControlHubSettingsPage : SettingsPageBase
         );
     }
 
+    private Control BuildPrivacyCard()
+    {
+        _allowRemoteScreenshot = new CheckBox
+        {
+            Content = "允许管理端远程抓取本机画面（屏幕截图）",
+            IsChecked = true,
+        };
+        var explain = new TextBlock
+        {
+            Foreground = Dim(),
+            TextWrapping = TextWrapping.Wrap,
+            Text = "集控服务器可下发「抓取屏幕截图」指令，抓取的是 ClassIsland 主界面的渲染画面，用于远程排查教室端问题；"
+                 + "服务端每台设备只保留最近 5 张，并会按保留天数与总容量自动清理。"
+                 + "关闭此项后，来自服务器的截图请求会被拒绝，并在管理端的命令历史里写明原因。"
+                 + "无论开关如何，教室端在截图时会在大屏上显示一条提示。",
+        };
+
+        return Section(
+            "远程协助与隐私",
+            "集控具备远程诊断能力（命令行、截图、前台进程、诊断数据包），此处控制本机是否允许被截图。",
+            _allowRemoteScreenshot,
+            explain
+        );
+    }
+
     private Control BuildSyncCard()
     {
         _autoSync = new CheckBox { Content = "启用自动同步（接收服务器即时下发）", IsChecked = true };
@@ -239,6 +266,7 @@ public partial class ControlHubSettingsPage : SettingsPageBase
         _applySettings.IsChecked = s.ApplySettings;
         _allowInsecureTls.IsChecked = s.AllowInsecureTls;
         _enableTimeSync.IsChecked = s.EnableTimeSync;
+        _allowRemoteScreenshot.IsChecked = s.AllowRemoteScreenshot;
     }
 
     private void SaveSettings()
@@ -255,6 +283,7 @@ public partial class ControlHubSettingsPage : SettingsPageBase
             s.ApplySettings = _applySettings.IsChecked ?? true;
             s.AllowInsecureTls = _allowInsecureTls.IsChecked ?? false;
             s.EnableTimeSync = _enableTimeSync.IsChecked ?? true;
+            s.AllowRemoteScreenshot = _allowRemoteScreenshot.IsChecked ?? true;
 
             // 服务器地址或注册码变化后，旧令牌不再适用，需重新注册。
             if (!string.Equals(s.ServerUrl, _state.ServerUrl, StringComparison.Ordinal)

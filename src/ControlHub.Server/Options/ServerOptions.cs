@@ -98,6 +98,18 @@ public sealed class ServerOptions
     /// <summary>客户端日志保留天数。</summary>
     public int ClientLogRetentionDays { get; set; } = 30;
 
+    /// <summary>远程指令历史保留天数（指令载荷与输出最大各 32KB，长期不清理会持续占用）。</summary>
+    public int CommandRetentionDays { get; set; } = 30;
+
+    /// <summary>诊断工件（屏幕截图）保留天数。</summary>
+    public int DiagnosticRetentionDays { get; set; } = 30;
+
+    /// <summary>
+    /// 诊断工件总容量上限（MB）。超出后从最旧的开始删除——
+    /// 单机截图体积大，只靠「每设备 5 张」在数百台规模下仍会累积到 GB 级。
+    /// </summary>
+    public int DiagnosticMaxTotalMb { get; set; } = 512;
+
     /// <summary>审计日志保留天数。</summary>
     public int AuditLogRetentionDays { get; set; } = 180;
 

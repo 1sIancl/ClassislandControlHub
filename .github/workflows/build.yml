@@ -38,11 +38,13 @@ jobs:
         run: |
           dotnet restore src/ControlHub.Server/ControlHub.Server.csproj
           dotnet restore src/ControlHub.Desktop/ControlHub.Desktop.csproj
+          dotnet restore src/ControlHub.LoadTest/ControlHub.LoadTest.csproj
 
       - name: 构建（Release）
         run: |
           dotnet build src/ControlHub.Server/ControlHub.Server.csproj -c Release --no-restore
           dotnet build src/ControlHub.Desktop/ControlHub.Desktop.csproj -c Release --no-restore
+          dotnet build src/ControlHub.LoadTest/ControlHub.LoadTest.csproj -c Release --no-restore
 
       - name: 发布 A 端产物（框架依赖）
         if: matrix.os == 'ubuntu-latest'

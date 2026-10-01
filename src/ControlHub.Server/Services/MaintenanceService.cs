@@ -38,6 +38,13 @@ public sealed class MaintenanceService(
                     _options.AuditLogRetentionDays,
                     stoppingToken);
 
+                // 指令历史与诊断工件（截图）体积远大于普通记录，单独按保留策略清理。
+                affected += await store.PruneCommandsAsync(_options.CommandRetentionDays, stoppingToken);
+                affected += await store.PurgeDiagnosticsAsync(
+                    _options.DiagnosticRetentionDays,
+                    _options.DiagnosticMaxTotalMb * 1024L * 1024L,
+                    stoppingToken);
+
                 if (affected > 0)
                 {
                     logger.LogInformation("维护任务清理了 {Count} 条过期记录。", affected);

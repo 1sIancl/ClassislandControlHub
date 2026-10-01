@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>ControlHub.LoadTest</RootNamespace>
+    <AssemblyName>ControlHub.LoadTest</AssemblyName>
+    <Description>集控服务端规模验证工具：模拟任意数量的教室端设备（注册 / 心跳 / 长轮询）。</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 复用与真实客户端完全一致的协议定义（去掉「协议不一致」这类变量）。 -->
+    <ProjectReference Include="../ControlHub.Protocol/ControlHub.Protocol.csproj" />
+  </ItemGroup>
+
+</Project>

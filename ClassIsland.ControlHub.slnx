@@ -4,5 +4,6 @@
     <Project Path="src/ControlHub.Protocol/ControlHub.Protocol.csproj" />
     <Project Path="src/ControlHub.Server/ControlHub.Server.csproj" />
     <Project Path="src/ControlHub.Desktop/ControlHub.Desktop.csproj" />
+    <Project Path="src/ControlHub.LoadTest/ControlHub.LoadTest.csproj" />
   </Folder>
 </Solution>

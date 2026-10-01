@@ -47,6 +47,12 @@ public sealed class PluginSettings
     /// <summary>是否启用时间同步（把 ClassIsland 精确时间服务器指向集控服务器）。</summary>
     public bool EnableTimeSync { get; set; } = true;
 
+    /// <summary>
+    /// 是否允许管理端远程抓取本机画面（远程诊断截图）。
+    /// 关闭后，来自服务器的截图指令会被拒绝，并在命令回报里说明原因。
+    /// </summary>
+    public bool AllowRemoteScreenshot { get; set; } = true;
+
     /// <summary>心跳/同步周期（秒）。</summary>
     public int SyncIntervalSeconds { get; set; } = HubProtocol.DefaultHeartbeatSeconds;
 

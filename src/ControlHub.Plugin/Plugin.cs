@@ -67,7 +67,8 @@ public class Plugin : PluginBase
 
             var executor = new RemoteCommandExecutor(
                 sp.GetRequiredService<ILogger<RemoteCommandExecutor>>(),
-                sp.GetRequiredService<HubState>());
+                sp.GetRequiredService<HubState>(),
+                sp.GetRequiredService<HubSettingsStore>());
 
             executor.OnPluginsReported = plugins =>
                 UploadAsync((client, url, token) => client.ReportPluginsAsync(url, token, plugins));
