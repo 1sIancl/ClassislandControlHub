@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -16,8 +17,12 @@ internal sealed partial class MainWindowViewModel : ObservableObject
     private readonly ServerLifecycleService _lifecycle;
 
     private string _statusText = "正在准备…";
-    private string _detailText = string.Empty;
+    private string _versionText = "版本 —";
+    private string _addressText = string.Empty;
+    private string _accessText = string.Empty;
+    private string _errorText = string.Empty;
     private bool _isBusy = true;
+    private bool _isRunning;
     private string _pageTitle = "ClassislandControlHub 集控";
 
     public MainWindowViewModel(ShellOptions options, ServerLifecycleService lifecycle)
@@ -79,11 +84,42 @@ internal sealed partial class MainWindowViewModel : ObservableObject
         private set => SetProperty(ref _statusText, value);
     }
 
-    /// <summary>状态栏细节（版本、端口、数据目录、日志路径）。</summary>
-    public string DetailText
+    /// <summary>状态栏：A 端版本。</summary>
+    public string VersionText
     {
-        get => _detailText;
-        private set => SetProperty(ref _detailText, value);
+        get => _versionText;
+        private set => SetProperty(ref _versionText, value);
+    }
+
+    /// <summary>状态栏：A 端地址。</summary>
+    public string AddressText
+    {
+        get => _addressText;
+        private set => SetProperty(ref _addressText, value);
+    }
+
+    /// <summary>状态栏：免登录是否可用。</summary>
+    public string AccessText
+    {
+        get => _accessText;
+        private set => SetProperty(ref _accessText, value);
+    }
+
+    /// <summary>状态栏：失败原因（正常时为空）。</summary>
+    public string ErrorText
+    {
+        get => _errorText;
+        private set => SetProperty(ref _errorText, value);
+    }
+
+    /// <summary>状态栏：日志文件位置。</summary>
+    public string LogPathText => $"日志 {ShellLog.Path}";
+
+    /// <summary>A 端是否处于可用状态（决定状态胶囊的配色）。</summary>
+    public bool IsRunning
+    {
+        get => _isRunning;
+        private set => SetProperty(ref _isRunning, value);
     }
 
     /// <summary>是否正在忙（禁用按钮并显示进度条）。</summary>
@@ -116,7 +152,8 @@ internal sealed partial class MainWindowViewModel : ObservableObject
         catch (Exception ex)
         {
             ShellLog.Error("初始化失败", ex);
-            DetailText = ex.Message;
+            StatusText = "启动失败";
+            ErrorText = ex.Message;
         }
         finally
         {
@@ -192,16 +229,11 @@ internal sealed partial class MainWindowViewModel : ObservableObject
 
     // ────────────────────────────── 日志面板 ──────────────────────────────
 
-    private readonly List<string> _logLines = [];
-    private string _logText = string.Empty;
+    private readonly ObservableCollection<ShellLogLine> _logLines = [];
     private bool _isLogVisible;
 
-    /// <summary>日志面板文本（多行）。</summary>
-    public string LogText
-    {
-        get => _logText;
-        private set => SetProperty(ref _logText, value);
-    }
+    /// <summary>日志面板内容（按级别着色）。</summary>
+    public ObservableCollection<ShellLogLine> LogLines => _logLines;
 
     /// <summary>日志面板是否展开。</summary>
     public bool IsLogVisible
@@ -212,21 +244,16 @@ internal sealed partial class MainWindowViewModel : ObservableObject
 
     private void AppendLog(string line)
     {
-        _logLines.Add(line);
+        _logLines.Add(new ShellLogLine(line));
         while (_logLines.Count > 400)
         {
             _logLines.RemoveAt(0);
         }
 
-        LogText = string.Join(Environment.NewLine, _logLines);
         LogAppended?.Invoke();
     }
 
-    private void ClearLog()
-    {
-        _logLines.Clear();
-        LogText = string.Empty;
-    }
+    private void ClearLog() => _logLines.Clear();
 
     /// <summary>
     /// 处理来自 Web 页面的消息（WebMessage 通道）。
@@ -285,29 +312,20 @@ internal sealed partial class MainWindowViewModel : ObservableObject
             _ => "未知状态",
         };
 
-        var parts = new List<string>();
-        if (!string.IsNullOrEmpty(_lifecycle.Version))
+        VersionText = string.IsNullOrEmpty(_lifecycle.Version) ? "版本 —" : $"版本 {_lifecycle.Version}";
+        AddressText = _lifecycle.State is ServerState.Running or ServerState.ManagedExternally or ServerState.Remote
+            ? _lifecycle.BaseUrl
+            : string.Empty;
+        AccessText = _lifecycle.State switch
         {
-            parts.Add($"版本 {_lifecycle.Version}");
-        }
-
-        if (_lifecycle.State is ServerState.Running or ServerState.ManagedExternally)
-        {
-            parts.Add($"地址 {_lifecycle.BaseUrl}");
-            parts.Add(string.IsNullOrEmpty(_lifecycle.LocalShellToken) ? "免登录：不可用（缺少外壳令牌，将显示登录页）" : "免登录：已启用");
-        }
-        else if (_lifecycle.State == ServerState.Remote)
-        {
-            parts.Add("免登录：不适用（远程连接需登录）");
-        }
-
-        if (!string.IsNullOrEmpty(_lifecycle.Error))
-        {
-            parts.Add(_lifecycle.Error!);
-        }
-
-        parts.Add($"日志：{ShellLog.Path}");
-        DetailText = string.Join("    ", parts);
+            ServerState.Running or ServerState.ManagedExternally => string.IsNullOrEmpty(_lifecycle.LocalShellToken)
+                ? "免登录不可用（缺少外壳令牌，将显示登录页）"
+                : "免登录已启用",
+            ServerState.Remote => "免登录不适用（远程连接需登录）",
+            _ => string.Empty,
+        };
+        ErrorText = _lifecycle.Error ?? string.Empty;
+        IsRunning = _lifecycle.State is ServerState.Running or ServerState.ManagedExternally or ServerState.Remote;
 
         PageTitle = _lifecycle.State switch
         {
@@ -327,4 +345,17 @@ internal sealed partial class MainWindowViewModel : ObservableObject
         RestartServerCommand.NotifyCanExecuteChanged();
         StopServerCommand.NotifyCanExecuteChanged();
     }
+}
+
+/// <summary>日志面板里的一行：保留级别标记，供界面着色。</summary>
+public sealed class ShellLogLine(string text)
+{
+    /// <summary>整行文本（含时间戳与级别）。</summary>
+    public string Text { get; } = text;
+
+    /// <summary>是否为告警行。</summary>
+    public bool IsWarn { get; } = text.Contains("[WARN]", StringComparison.Ordinal);
+
+    /// <summary>是否为错误行。</summary>
+    public bool IsError { get; } = text.Contains("[ERROR]", StringComparison.Ordinal);
 }

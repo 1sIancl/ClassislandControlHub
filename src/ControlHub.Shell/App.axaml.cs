@@ -2,6 +2,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
 using ControlHub.Shell.Services;
 using ControlHub.Shell.ViewModels;
@@ -39,7 +41,8 @@ public partial class App : Application
             // 关闭窗口默认最小化到托盘（A 端继续跑）；托盘不可用时退化为直接退出。
             window.Closing += (_, e) =>
             {
-                if (!Options.MinimizeToTrayOnClose || _tray is null)
+                // 应用正在退出（托盘菜单「退出」、--screenshot 等）时不再拦截。
+                if (_shuttingDown || !Options.MinimizeToTrayOnClose || _tray is null)
                 {
                     return;
                 }
@@ -54,6 +57,11 @@ public partial class App : Application
             desktop.Exit += (_, _) => StopServerIfNeeded();
 
             _ = viewModel.InitializeAsync();
+
+            if (!string.IsNullOrWhiteSpace(Options.ScreenshotPath))
+            {
+                _ = CaptureScreenshotAndExitAsync(window);
+            }
         }
 
         base.OnFrameworkInitializationCompleted();
@@ -110,6 +118,64 @@ public partial class App : Application
         window.Show();
         window.WindowState = WindowState.Normal;
         window.Activate();
+    }
+
+    /// <summary>
+    /// 把窗口渲染成 PNG 后退出（<c>--screenshot 路径</c>）。
+    /// <para>
+    /// 只渲染本窗口的视觉树——不抓桌面，因此不会碰到用户屏幕上的其它内容；
+    /// 但也因此不包含 WebView 里的网页（那是独立的原生子窗口），只用于核对外壳自身的外观。
+    /// </para>
+    /// </summary>
+    private static async Task CaptureScreenshotAndExitAsync(Window window)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(Math.Max(1, Options.ScreenshotDelaySeconds)));
+
+        try
+        {
+            var path = Path.GetFullPath(Options.ScreenshotPath!);
+            await SaveScreenshotAsync(window, path);
+
+            // 再拍一张展开日志面板的，方便核对日志面板外观（正常使用下它是默认收起的）。
+            if (window.DataContext is MainWindowViewModel viewModel)
+            {
+                viewModel.IsLogVisible = true;
+                await Task.Delay(700);
+                await SaveScreenshotAsync(window, Path.Combine(
+                    Path.GetDirectoryName(path) ?? ".",
+                    $"{Path.GetFileNameWithoutExtension(path)}.logs{Path.GetExtension(path)}"));
+            }
+        }
+        catch (Exception ex)
+        {
+            ShellLog.Error("截图失败", ex);
+        }
+
+        static async Task SaveScreenshotAsync(Window target, string path)
+        {
+            var size = new PixelSize(
+                Math.Max(1, (int)Math.Round(target.Bounds.Width)),
+                Math.Max(1, (int)Math.Round(target.Bounds.Height)));
+
+            var png = await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                using var bitmap = new RenderTargetBitmap(size, new Vector(96, 96));
+                bitmap.Render(target);
+                using var stream = new MemoryStream();
+#pragma warning disable CS0618
+                bitmap.Save(stream);
+#pragma warning restore CS0618
+                return stream.ToArray();
+            });
+
+            await File.WriteAllBytesAsync(path, png);
+            ShellLog.Info($"已保存窗口截图：{path}（{size.Width}×{size.Height}）");
+        }
+
+        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            desktop.Shutdown();
+        }
     }
 
     private void StopServerIfNeeded()

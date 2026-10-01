@@ -6,63 +6,139 @@
         x:DataType="vm:MainWindowViewModel"
         Title="{Binding PageTitle}"
         Width="1280" Height="820"
-        MinWidth="720" MinHeight="520"
+        MinWidth="760" MinHeight="540"
         WindowStartupLocation="CenterScreen">
 
+  <Window.Styles>
+    <!-- 日志行：等宽字体 + 级别着色（浅色/深色主题下都保证可读） -->
+    <Style Selector="TextBlock.logline">
+      <Setter Property="FontFamily" Value="Consolas, Menlo, monospace" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="TextWrapping" Value="NoWrap" />
+    </Style>
+    <Style Selector="TextBlock.logline.warn">
+      <Setter Property="Foreground" Value="#C77800" />
+    </Style>
+    <Style Selector="TextBlock.logline.error">
+      <Setter Property="Foreground" Value="#D13438" />
+    </Style>
+
+    <!-- 状态胶囊：运行中绿、其余红，一眼看出 A 端状态 -->
+    <Style Selector="Border.pill">
+      <Setter Property="CornerRadius" Value="999" />
+      <Setter Property="Padding" Value="10,3" />
+      <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}" />
+    </Style>
+    <Style Selector="Border.pill.online">
+      <Setter Property="Background" Value="#1F6F3D" />
+      <Setter Property="BorderBrush" Value="#2E8B57" />
+    </Style>
+    <Style Selector="Border.pill.online > TextBlock">
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Border.pill.offline">
+      <Setter Property="Background" Value="#7A2E2E" />
+      <Setter Property="BorderBrush" Value="#A03A3A" />
+    </Style>
+    <Style Selector="Border.pill.offline > TextBlock">
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+
+    <!-- 状态栏分段 -->
+    <Style Selector="TextBlock.status">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.status.sep">
+      <Setter Property="Opacity" Value="0.45" />
+      <Setter Property="Margin" Value="8,0" />
+    </Style>
+  </Window.Styles>
+
   <DockPanel>
-    <!-- 工具条：只放外壳自己的动作，业务操作都在 Web 界面里 -->
+    <!-- 顶部：品牌 + 状态胶囊 + 外壳自己的动作（业务操作都在下方 Web 界面里） -->
     <Border DockPanel.Dock="Top"
             Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
             BorderThickness="0,0,0,1"
             BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
-            Padding="10,8">
-      <Grid ColumnDefinitions="Auto,Auto,*,Auto">
-        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-          <TextBlock Text="{Binding StatusText}" FontWeight="SemiBold" VerticalAlignment="Center" />
-          <ProgressBar IsIndeterminate="True" Width="90" Height="4"
+            Padding="12,8">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <TextBlock Text="ClassislandControlHub 集控" FontWeight="SemiBold" FontSize="13"
+                     VerticalAlignment="Center" />
+          <Border Classes="pill"
+                  Classes.online="{Binding IsRunning}"
+                  Classes.offline="{Binding !IsRunning}">
+            <TextBlock Text="{Binding StatusText}" FontSize="12" VerticalAlignment="Center" />
+          </Border>
+          <ProgressBar IsIndeterminate="True" Width="80" Height="3"
                        IsVisible="{Binding IsBusy}" VerticalAlignment="Center" />
         </StackPanel>
 
-        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="16,0,0,0">
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
           <Button Content="刷新页面" Command="{Binding ReloadCommand}" />
           <Button Content="重启 A 端" Command="{Binding RestartServerCommand}"
                   ToolTip.Tip="仅当 A 端由外壳启动时可用；服务模式与远程模式下不会重启" />
           <Button Content="停止 A 端" Command="{Binding StopServerCommand}"
                   ToolTip.Tip="仅当 A 端由外壳启动时可用" />
+          <Border Width="1" Margin="4,2" Background="{DynamicResource SystemControlForegroundBaseLowBrush}" />
           <Button Content="日志" Command="{Binding ToggleLogCommand}"
-                  ToolTip.Tip="显示 / 隐藏日志面板（外壳与 A 端的输出）" />
+                  ToolTip.Tip="显示 / 隐藏运行日志（外壳与 A 端输出）" />
+          <Button Content="在浏览器打开" Command="{Binding OpenInBrowserCommand}" />
         </StackPanel>
-
-        <Button Grid.Column="3" Content="在浏览器打开" Command="{Binding OpenInBrowserCommand}" />
       </Grid>
     </Border>
 
-    <!-- 状态栏 -->
+    <!-- 底部状态栏：分段显示，空段自动隐藏 -->
     <Border DockPanel.Dock="Bottom"
             Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
             BorderThickness="0,1,0,0"
             BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
-            Padding="10,5">
-      <TextBlock Text="{Binding DetailText}" FontSize="11" TextWrapping="NoWrap"
-                 TextTrimming="CharacterEllipsis" />
+            Padding="12,6">
+      <StackPanel Orientation="Horizontal">
+        <TextBlock Classes="status" Text="{Binding VersionText}" />
+        <TextBlock Classes="status sep" Text="·"
+                   IsVisible="{Binding AddressText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <TextBlock Classes="status" Text="{Binding AddressText}" TextTrimming="CharacterEllipsis"
+                   IsVisible="{Binding AddressText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <TextBlock Classes="status sep" Text="·"
+                   IsVisible="{Binding AccessText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <TextBlock Classes="status" Text="{Binding AccessText}" />
+        <TextBlock Classes="status sep" Text="·"
+                   IsVisible="{Binding ErrorText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <TextBlock Classes="status" Text="{Binding ErrorText}" Foreground="#D13438" />
+        <TextBlock Classes="status sep" Text="·" />
+        <TextBlock Classes="status" Text="{Binding LogPathText}" Opacity="0.7"
+                   TextTrimming="CharacterEllipsis" />
+      </StackPanel>
     </Border>
 
-    <!-- 日志面板：默认隐藏，点工具条「日志」展开（完整日志见 shell.log） -->
-    <Border DockPanel.Dock="Bottom" Height="180" IsVisible="{Binding IsLogVisible}"
+    <!-- 日志面板：默认隐藏，点工具条「日志」展开（完整日志见文件） -->
+    <Border DockPanel.Dock="Bottom" Height="190" IsVisible="{Binding IsLogVisible}"
             Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
             BorderThickness="0,1,0,0"
             BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
       <Grid RowDefinitions="Auto,*">
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="10,6,10,4">
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="12,6,12,4">
           <TextBlock Text="运行日志（外壳与 A 端输出）" FontSize="11" FontWeight="SemiBold"
                      VerticalAlignment="Center" />
           <Button Grid.Column="1" Content="清空" FontSize="11" Padding="8,2"
                   Command="{Binding ClearLogCommand}" />
         </Grid>
-        <ScrollViewer Grid.Row="1" Name="LogScroll" Margin="10,0,10,8"
+        <ScrollViewer Grid.Row="1" Name="LogScroll" Margin="12,0,12,8"
                       HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-          <TextBlock Text="{Binding LogText}" FontFamily="Consolas, Menlo, monospace" FontSize="11"
-                     TextWrapping="NoWrap" />
+          <ItemsControl ItemsSource="{Binding LogLines}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="vm:ShellLogLine">
+                <TextBlock Classes="logline"
+                           Classes.warn="{Binding IsWarn}"
+                           Classes.error="{Binding IsError}"
+                           Text="{Binding Text}" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
         </ScrollViewer>
       </Grid>
     </Border>

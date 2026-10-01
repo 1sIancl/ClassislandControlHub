@@ -33,6 +33,12 @@ internal sealed record ShellOptions
     /// <summary>无界面跑一遍「启动 → 健康检查 → 免登录 → 停止」并退出（<c>--smoke 秒</c>），用于自动化验证。</summary>
     public int SmokeSeconds { get; init; }
 
+    /// <summary>把窗口渲染成 PNG 后退出（<c>--screenshot 路径</c>），用于验证外观或上报界面问题。</summary>
+    public string? ScreenshotPath { get; init; }
+
+    /// <summary>截图前的等待秒数（<c>--screenshot-delay</c>），默认 8 秒以便页面加载完成。</summary>
+    public int ScreenshotDelaySeconds { get; init; } = 8;
+
     /// <summary>解析参数；失败返回 <c>null</c>。</summary>
     public static ShellOptions? Parse(string[] args)
     {
@@ -84,6 +90,17 @@ internal sealed record ShellOptions
 
                     result = result with { SmokeSeconds = seconds };
                     break;
+                case "--screenshot":
+                    result = result with { ScreenshotPath = Next() };
+                    break;
+                case "--screenshot-delay":
+                    if (!int.TryParse(Next(), out var delay) || delay <= 0)
+                    {
+                        return null;
+                    }
+
+                    result = result with { ScreenshotDelaySeconds = delay };
+                    break;
                 case "-h":
                 case "--help":
                     return null;
@@ -114,6 +131,8 @@ internal sealed record ShellOptions
               --exit-on-close       关闭窗口时直接退出（默认最小化到托盘）
               --check               只做环境自检（A 端位置、端口占用、WebView 运行时）后退出
               --smoke <秒>          无界面跑一遍启动/健康检查/免登录/停止，用于自动化验证
+              --screenshot <路径>   把窗口渲染成 PNG 后退出（只为自己的窗口截图，不含桌面其它内容）
+              --screenshot-delay <秒>  截图前等待多久，默认 8 秒
               -h, --help            显示本帮助
             """);
     }
