@@ -47,7 +47,9 @@ jobs:
           set -euo pipefail
           # 外壳会在自己的 server/ 子目录里找 A 端，所以直接发布进去即可。
           dotnet publish src/ControlHub.Server/ControlHub.Server.csproj -c Release -r win-x64 --self-contained false -o shell/server
-          dotnet publish src/ControlHub.Shell/ControlHub.Shell.csproj -c Release -o shell
+          # 外壳必须指定 RID 发布：不带 RID 时会把 Avalonia/Skia 的**所有平台**原生库一起带上
+          # （runtimes/ 目录 300 MB 左右，压缩后仍有 190 MB），指定 win-x64 后约 50 MB。
+          dotnet publish src/ControlHub.Shell/ControlHub.Shell.csproj -c Release -r win-x64 --self-contained false -o shell
 
       - name: 打包 zip
         shell: pwsh
