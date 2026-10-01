@@ -39,12 +39,18 @@ jobs:
           dotnet restore src/ControlHub.Server/ControlHub.Server.csproj
           dotnet restore src/ControlHub.Desktop/ControlHub.Desktop.csproj
           dotnet restore src/ControlHub.LoadTest/ControlHub.LoadTest.csproj
+          dotnet restore src/ControlHub.Shell/ControlHub.Shell.csproj
 
       - name: 构建（Release）
         run: |
           dotnet build src/ControlHub.Server/ControlHub.Server.csproj -c Release --no-restore
           dotnet build src/ControlHub.Desktop/ControlHub.Desktop.csproj -c Release --no-restore
           dotnet build src/ControlHub.LoadTest/ControlHub.LoadTest.csproj -c Release --no-restore
+
+      # 桌面外壳依赖 Windows 专有的服务控制 API，只在 Windows 上编译（其余平台仍会还原，保证依赖可解析）。
+      - name: 构建桌面外壳（仅 Windows）
+        if: matrix.os == 'windows-latest'
+        run: dotnet build src/ControlHub.Shell/ControlHub.Shell.csproj -c Release --no-restore
 
       - name: 发布 A 端产物（框架依赖）
         if: matrix.os == 'ubuntu-latest'

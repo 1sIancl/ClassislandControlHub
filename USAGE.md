@@ -342,6 +342,21 @@ ClassIsland 的档案编辑器支持导出 CSES（`.yml`）。在「配置档案
 新账号首次登录会自动播放分步引导，右上角随时可以点「跳过」；跳过后不再自动出现。
 想再看一遍：「系统设置 → 账号安全 → 重新观看引导」。
 
+### 用桌面外壳一键启动（可选）
+
+不想手动起服务又想有个「双击即用」的入口，可以用仓库里的桌面外壳 `ControlHub.Shell`：
+
+1. 打包：`dotnet publish src/ControlHub.Server -c Release -o dist/shell/server` 与
+   `dotnet publish src/ControlHub.Shell -c Release -o dist/shell`；
+2. 双击 `dist/shell/ControlHub.Shell.exe`：它会自动启动 A 端（只监听 `127.0.0.1`）、内嵌打开管理界面，**无需登录**；
+   关闭窗口默认最小化到托盘（A 端继续跑），托盘右键「退出」才会停掉它启动的 A 端。
+3. 想连远程服务器而不是起本地服务：`ControlHub.Shell.exe --server http://192.168.1.5:29800`（这种模式下需要正常登录）。
+4. 起不来时先跑 `ControlHub.Shell.exe --check`：它会检查 A 端位置、.NET 运行时、端口占用与 WebView2 运行时，
+   逐项给出结论；详细日志在 `%LOCALAPPDATA%\ClassislandControlHub\shell.log`。
+
+> 免登录只对本机生效，且需要读到 A 端数据目录里的 `local-shell.token` 文件；局域网其它电脑访问仍需登录。
+> 不需要这个能力可在 `appsettings.json` 里设 `ControlHub:LocalShellTrustEnabled=false`。
+
 ## 六、常见问题
 
 | 问题 | 处理 |

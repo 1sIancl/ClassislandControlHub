@@ -138,10 +138,19 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
   反之，**建议在桌面端完成的操作**有：周课表网格的逐格排课、设备拖拽换楼层 / 换楼栋、配置档案的完整编辑与
   CSES / AI 导入结果校对、批量设备操作（多选下发 / 关机 / 重启）、账号与权限配置、备份恢复与更新——
   这些在窄屏虽然打得开，但操作精度与信息密度明显不如桌面端。
+- **本地桌面外壳（可选）**：`ControlHub.Shell` 把「起服务 + 打开管理界面」合并成双击一次——外壳只做进程生命周期管理、
+  WebView 容器与本地信任通道三件事，**业务界面完全复用现有 Web UI**；三种模式（本地进程 / Windows 服务 / 远程服务器）
+  自动判定，退出时只停自己启动的进程。本机免登录基于数据目录里的 `local-shell.token`（仅回环地址 + 令牌有效才生效，
+  局域网访问仍需登录），详见下文「本地桌面外壳」。`--check` 可自检环境，`--smoke` 能无界面跑通整条链路。
 - **自动更新**：A 端支持检查 GitHub Release 并一键更新（保留数据）。
 - **审计与日志**：完整操作审计 + 客户端上报日志。
 
 ## 最近更新
+
+- **本地桌面外壳**：新增 `src/ControlHub.Shell`——启动 / 复用 / 停止 A 端 + 内嵌 WebView 打开管理界面 + 本机免登录。
+  免登录走「数据目录里的 `local-shell.token` + HttpOnly Cookie」，**只对回环地址生效**；A 端配套新增 `/api/health`
+  与优雅停机接口 `POST /api/v1/local-shell/shutdown`。外壳自带 `--check` 环境自检与 `--smoke` 无界面端到端验证
+  （已实测：启动 → 免登录 → 以「本地控制台」身份读到全部权限 → 停止 → 端口释放）。
 
 - **运维与隐私补强**：诊断截图、远程指令历史纳入自动清理（保留天数与全库容量上限均可配置，默认 30 天 / 512 MB）——
   此前指令历史的清理代码存在但从未被调用；新增**规模验证工具** `src/ControlHub.LoadTest`，可在自己机器上实测能扛多少台；
@@ -231,6 +240,46 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 | A 端 | ASP.NET Core（minimal API）、SQLite、原生 HTML/CSS/JS 单页应用（无构建步骤） |
 | B 端 | ClassIsland 插件 SDK（`ClassIsland.PluginSdk 2.1.1.1`）、Avalonia 12 |
 | 共享 | `ControlHub.Protocol`（net10.0，无外部依赖，System.Text.Json） |
+
+## 本地桌面外壳（可选）
+
+不想开浏览器、也不想记着「先起服务再访问」？仓库里带了一个**薄外壳** `src/ControlHub.Shell`：它只做三件事——
+
+1. **进程生命周期管理**：启动 / 复用 / 停止 A 端；
+2. **WebView 容器**：用系统原生浏览器内核（Windows 是 WebView2）内嵌管理界面；
+3. **本地信任通道**：本机免登录直接进入。
+
+**业务界面完全复用 A 端 Web UI，外壳不重写任何界面**——课表、设备、远程管理、诊断都在原页面里，A 端更新后外壳自动跟随，不存在「两套前端互相追赶」。
+
+```bash
+# 打包：外壳 + A 端（外壳会在自己的 server/ 子目录里找 A 端）
+dotnet publish src/ControlHub.Server -c Release -o dist/shell/server
+dotnet publish src/ControlHub.Shell  -c Release -o dist/shell
+# 之后双击 dist/shell/ControlHub.Shell.exe
+```
+
+三种运行模式（自动判定，无需配置）：
+
+| 模式 | 触发条件 | 外壳是否负责停止 |
+|---|---|---|
+| 本地进程 | 默认：端口空闲且没装服务 | ✅ 退出时优雅停服（先请它自己退，超时再结束进程树） |
+| Windows 服务 | 已安装同名服务（SCM 里能查到） | ❌ 服务由 SCM 管理 |
+| 远程服务器 | `--server http://服务器:29800` | ❌ 不启动本地进程 |
+
+常用参数：`--server-path`（指定 A 端位置）、`--data-dir`（与服务模式共用数据）、`--port`、`--no-stop-on-exit`、
+`--exit-on-close`（默认关闭窗口最小化到托盘）、`--check`（环境自检）、`--smoke <秒>`（无界面跑一遍启停链路）。
+日志在 `%LOCALAPPDATA%\ClassislandControlHub\shell.log`。
+
+**免登录是怎么做的（以及安全边界）**
+
+「只要来自 127.0.0.1 就放行」是不安全的——本机任何进程、甚至浏览器里打开的网页都能向 `127.0.0.1:29800` 发请求。
+所以这里要求出示一个**令牌**：A 端启动时在数据目录生成 `<数据目录>/local-shell.token`（本机文件系统权限保护），
+外壳读它并带在首次导航上，A 端校验通过后种一个 `HttpOnly + SameSite=Strict` 的 Cookie，后续请求凭 Cookie 放行；
+Cookie 里存的是令牌的 SHA-256，原始令牌不进浏览器。
+
+三条边界因此成立：**只对回环地址生效**（局域网访问 `http://服务器IP:29800` 仍需登录）；**只有能读到那个文件的进程**才能免登录；
+外壳托管时还会把 A 端限制为 `--urls 127.0.0.1`（只监听回环，外部根本连不上）。不需要这个能力时，
+把 `ControlHub:LocalShellTrustEnabled` 设为 `false` 即可整体关闭。
 
 ## 规模与部署建议
 

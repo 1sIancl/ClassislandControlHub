@@ -95,6 +95,12 @@ public sealed class ServerOptions
     /// <summary>管理员会话有效期（小时）。</summary>
     public int SessionLifetimeHours { get; set; } = 12;
 
+    /// <summary>
+    /// 是否启用本地外壳（桌面端）信任通道：仅对回环地址 + 正确的外壳令牌生效，
+    /// 让桌面外壳里嵌的 Web 界面免登录。不需要可关闭（例如多人共用的机器）。
+    /// </summary>
+    public bool LocalShellTrustEnabled { get; set; } = true;
+
     /// <summary>客户端日志保留天数。</summary>
     public int ClientLogRetentionDays { get; set; } = 30;
 

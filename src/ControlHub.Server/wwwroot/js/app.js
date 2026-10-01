@@ -107,14 +107,14 @@ setSessionExpiredHandler(() => {
 async function bootstrap() {
   await loadServerInfo();
 
-  if (session.token) {
-    try {
-      session.me = await api('/admin/me');
-      await showApp();
-      return;
-    } catch {
-      saveToken('');
-    }
+  // 无论有没有本地保存的令牌，都先问一次 /admin/me：
+  // 桌面外壳（本地控制台）下服务端凭回环信任直接放行，此时浏览器里并没有令牌。
+  try {
+    session.me = await api('/admin/me');
+    await showApp();
+    return;
+  } catch {
+    saveToken('');
   }
 
   showLogin();

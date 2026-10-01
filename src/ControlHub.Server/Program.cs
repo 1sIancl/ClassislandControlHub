@@ -91,6 +91,8 @@ builder.Services.AddSingleton<AdminAuthService>();
 builder.Services.AddSingleton<SyncService>();
 builder.Services.AddSingleton<AdminAuthFilter>();
 builder.Services.AddSingleton<DeviceAuthFilter>();
+// 本地外壳（桌面端）信任通道：仅回环地址 + 外壳令牌可免登录。
+builder.Services.AddSingleton<LocalShellTrust>();
 builder.Services.AddSingleton<NtpClient>();
 builder.Services.AddSingleton<ServerTimeService>();
 builder.Services.AddSingleton<UpdateService>();
@@ -148,6 +150,9 @@ if (serverOptions.CorsAllowedOrigins.Length > 0)
     app.UseCors();
 }
 
+// 本地外壳信任通道：准备令牌文件（已存在则复用），供桌面外壳免登录使用。
+app.Services.GetRequiredService<LocalShellTrust>().Initialize();
+
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
@@ -159,6 +164,7 @@ app.MapGet("/api/v1/ping", () => ApiResult<object>.Success(new
     time = DateTimeOffset.UtcNow,
 })).AllowAnonymous().WithTags("public");
 
+app.MapLocalShellEndpoints();
 app.MapClientEndpoints();
 app.MapAdminEndpoints();
 app.MapDeviceEndpoints();

@@ -72,7 +72,7 @@ public static class HttpContextExtensions
 /// <summary>
 /// 需要管理员身份的接口所使用的端点过滤器。
 /// </summary>
-public sealed class AdminAuthFilter(AdminAuthService authService) : IEndpointFilter
+public sealed class AdminAuthFilter(AdminAuthService authService, LocalShellTrust localShell) : IEndpointFilter
 {
     /// <inheritdoc />
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context,
@@ -81,6 +81,14 @@ public sealed class AdminAuthFilter(AdminAuthService authService) : IEndpointFil
         var http = context.HttpContext;
         var token = http.ReadToken(HubProtocol.AdminScheme);
         var session = await authService.ValidateAsync(token, http.RequestAborted);
+
+        // 本地外壳（桌面端）免登录：仅当请求来自回环地址且出示了正确的外壳令牌时才生效，
+        // 局域网访问与其它本机进程都不受影响（详见 LocalShellTrust）。
+        if (session is null && localShell.TryAuthenticate(http, out var shellSession))
+        {
+            session = shellSession;
+        }
+
         if (session is null)
         {
             throw HubException.AuthInvalid("登录状态已失效，请重新登录。");

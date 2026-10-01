@@ -1,0 +1,51 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:Avalonia.Controls"
+        xmlns:vm="using:ControlHub.Shell.ViewModels"
+        x:Class="ControlHub.Shell.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="{Binding PageTitle}"
+        Width="1280" Height="820"
+        MinWidth="720" MinHeight="520"
+        WindowStartupLocation="CenterScreen">
+
+  <DockPanel>
+    <!-- 工具条：只放外壳自己的动作，业务操作都在 Web 界面里 -->
+    <Border DockPanel.Dock="Top"
+            Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+            BorderThickness="0,0,0,1"
+            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+            Padding="10,8">
+      <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <TextBlock Text="{Binding StatusText}" FontWeight="SemiBold" VerticalAlignment="Center" />
+          <ProgressBar IsIndeterminate="True" Width="90" Height="4"
+                       IsVisible="{Binding IsBusy}" VerticalAlignment="Center" />
+        </StackPanel>
+
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" Margin="16,0,0,0">
+          <Button Content="刷新页面" Command="{Binding ReloadCommand}" />
+          <Button Content="重启 A 端" Command="{Binding RestartServerCommand}"
+                  ToolTip.Tip="仅当 A 端由外壳启动时可用；服务模式与远程模式下不会重启" />
+          <Button Content="停止 A 端" Command="{Binding StopServerCommand}"
+                  ToolTip.Tip="仅当 A 端由外壳启动时可用" />
+        </StackPanel>
+
+        <Button Grid.Column="3" Content="在浏览器打开" Command="{Binding OpenInBrowserCommand}" />
+      </Grid>
+    </Border>
+
+    <!-- 状态栏 -->
+    <Border DockPanel.Dock="Bottom"
+            Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+            BorderThickness="0,1,0,0"
+            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+            Padding="10,5">
+      <TextBlock Text="{Binding DetailText}" FontSize="11" TextWrapping="NoWrap"
+                 TextTrimming="CharacterEllipsis" />
+    </Border>
+
+    <!-- 业务界面：A 端 Web UI 原样复用，外壳不重写 -->
+    <controls:NativeWebView x:Name="Web" />
+  </DockPanel>
+</Window>

@@ -269,6 +269,13 @@ public static class AdminEndpoints
         CancellationToken cancellationToken)
     {
         var session = http.RequireAdminSession();
+
+        // 本地外壳不是数据库里的账号，没有密码可改。
+        if (LocalShellTrust.IsLocalShell(session))
+        {
+            throw HubException.Validation("本地控制台不需要密码；账号密码请在「系统设置 → 账号与权限」里维护。");
+        }
+
         var user = await store.GetUserAsync(session.UserId, cancellationToken)
                    ?? throw HubException.NotFound("账号不存在。");
 
