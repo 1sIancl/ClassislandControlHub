@@ -267,7 +267,8 @@ dotnet publish src/ControlHub.Shell  -c Release -o dist/shell
 | 远程服务器 | `--server http://服务器:29800` | ❌ 不启动本地进程 |
 
 常用参数：`--server-path`（指定 A 端位置）、`--data-dir`（与服务模式共用数据）、`--port`、`--no-stop-on-exit`、
-`--exit-on-close`（默认关闭窗口最小化到托盘）、`--check`（环境自检）、`--smoke <秒>`（无界面跑一遍启停链路）。
+`--exit-on-close`（默认关闭窗口最小化到托盘）、`--check`（环境自检）、`--smoke <秒>`（无界面跑一遍启停链路）、
+`--screenshot <路径>`（把窗口渲染成 PNG，用于验证外观或上报界面问题；只渲染本窗口，不抓桌面）。
 日志在 `%LOCALAPPDATA%\ClassislandControlHub\shell.log`。
 
 **免登录是怎么做的（以及安全边界）**
