@@ -23,8 +23,49 @@ env:
   CLASSISLAND_VERSION: '2.1.1.1'
 
 jobs:
+  # ── 桌面外壳：与 A 端一起打成「解压即用」的 Windows 包 ──
+  # 外壳是 WinExe 且依赖 Windows 专有的服务控制 API，因此在 Windows 上打包。
+  shell:
+    name: 打包桌面外壳（Windows）
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: 解析版本号
+        shell: bash
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "VERSION=${tag#v}" >> "$GITHUB_ENV"
+
+      - name: 发布外壳与 A 端到同一目录（框架依赖）
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 外壳会在自己的 server/ 子目录里找 A 端，所以直接发布进去即可。
+          dotnet publish src/ControlHub.Server/ControlHub.Server.csproj -c Release -r win-x64 --self-contained false -o shell/server
+          dotnet publish src/ControlHub.Shell/ControlHub.Shell.csproj -c Release -o shell
+
+      - name: 打包 zip
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path shell/* -DestinationPath "dist/classislandcontrolhub-shell-win-x64-$env:VERSION.zip"
+          Get-ChildItem dist | Select-Object Name, Length
+
+      - name: 上传外壳包
+        uses: actions/upload-artifact@v4
+        with:
+          name: shell-bundle
+          path: dist/classislandcontrolhub-shell-win-x64-*.zip
+          retention-days: 7
+
   release:
     name: 构建并发布
+    needs: shell
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -76,6 +117,12 @@ jobs:
             -p:CreateCipx=true \
             -p:ClassIslandAssemblyPath="$CLASSISLAND_ASSEMBLY"
 
+      - name: 取回桌面外壳包
+        uses: actions/download-artifact@v4
+        with:
+          name: shell-bundle
+          path: dist
+
       - name: 整理发布资产
         run: |
           set -euo pipefail
@@ -92,4 +139,5 @@ jobs:
             --generate-notes \
             "dist/ControlHub.Plugin.cipx" \
             dist/controlhub-server-linux-x64-"$VERSION".zip \
-            dist/controlhub-server-win-x64-"$VERSION".zip
+            dist/controlhub-server-win-x64-"$VERSION".zip \
+            dist/classislandcontrolhub-shell-win-x64-"$VERSION".zip

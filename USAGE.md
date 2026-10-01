@@ -346,9 +346,11 @@ ClassIsland 的档案编辑器支持导出 CSES（`.yml`）。在「配置档案
 
 不想手动起服务又想有个「双击即用」的入口，可以用仓库里的桌面外壳 `ControlHub.Shell`：
 
-1. 打包：`dotnet publish src/ControlHub.Server -c Release -o dist/shell/server` 与
+1. 拿到外壳有两条路：**从 [Releases](https://github.com/1sIancl/ClassislandControlHub/releases) 下载
+   `classislandcontrolhub-shell-win-x64-<版本>.zip` 解压即用**（里面已经把 A 端放在 `server/` 子目录）；
+   或者自己打包：`dotnet publish src/ControlHub.Server -c Release -o dist/shell/server` 与
    `dotnet publish src/ControlHub.Shell -c Release -o dist/shell`；
-2. 双击 `dist/shell/ControlHub.Shell.exe`：它会自动启动 A 端（只监听 `127.0.0.1`）、内嵌打开管理界面，**无需登录**；
+2. 双击 `ControlHub.Shell.exe`：它会自动启动 A 端（只监听 `127.0.0.1`）、内嵌打开管理界面，**无需登录**；
    关闭窗口默认最小化到托盘（A 端继续跑），托盘右键「退出」才会停掉它启动的 A 端。
 3. 想连远程服务器而不是起本地服务：`ControlHub.Shell.exe --server http://192.168.1.5:29800`（这种模式下需要正常登录）。
 4. 起不来时先跑 `ControlHub.Shell.exe --check`：它会检查 A 端位置、.NET 运行时、端口占用与 WebView2 运行时，

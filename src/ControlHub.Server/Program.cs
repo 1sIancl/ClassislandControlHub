@@ -93,6 +93,13 @@ builder.Services.AddSingleton<AdminAuthFilter>();
 builder.Services.AddSingleton<DeviceAuthFilter>();
 // 本地外壳（桌面端）信任通道：仅回环地址 + 外壳令牌可免登录。
 builder.Services.AddSingleton<LocalShellTrust>();
+
+// 单个后台服务出错不应该把整个服务端拖垮（例如同机已有实例占着 UDP 发现端口）：
+// 各后台服务自己负责降级并记录原因，HTTP 服务继续可用。
+builder.Services.Configure<HostOptions>(options =>
+{
+    options.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore;
+});
 builder.Services.AddSingleton<NtpClient>();
 builder.Services.AddSingleton<ServerTimeService>();
 builder.Services.AddSingleton<UpdateService>();

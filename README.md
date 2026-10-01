@@ -147,6 +147,13 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 
 ## 最近更新
 
+- **发布带桌面外壳的安装包**：Release 里新增 `classislandcontrolhub-shell-win-x64-<版本>.zip`——外壳 + A 端打包在一起，
+  解压双击即用（A 端放在 `server/` 子目录，外壳自动识别），不再需要自己 `dotnet publish`。
+- **外壳界面优化**：状态胶囊（运行中绿）、按钮按用途分组、状态栏改为分段显示（版本 / 地址 / 免登录 / 日志路径）、
+  日志面板支持 WARN/ERROR 分级着色与自动滚动，外壳配色跟随网页主题；新增 `--screenshot` 便于上报界面问题。
+- **修复同机多实例时自动发现端口冲突拖垮服务**：以前同机已有实例占用 UDP 发现端口时，新实例的后台服务异常会
+  直接让整个宿主退出；现在与 NTP 端口冲突一样降级处理——记录警告、跳过自动发现、HTTP 服务继续可用。
+
 - **本地桌面外壳**：新增 `src/ControlHub.Shell`——启动 / 复用 / 停止 A 端 + 内嵌 WebView 打开管理界面 + 本机免登录。
   免登录走「数据目录里的 `local-shell.token` + HttpOnly Cookie」，**只对回环地址生效**；A 端配套新增 `/api/health`
   与优雅停机接口 `POST /api/v1/local-shell/shutdown`。外壳自带 `--check` 环境自检与 `--smoke` 无界面端到端验证
@@ -214,7 +221,8 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 
 | 集控版本 | 插件包 | 支持的 ClassIsland | 插件市场 | 状态 |
 |---|---|---|---|---|
-| A 端 `1.3.0` / 插件 `1.3.0.0` | `ControlHub.Plugin.cipx` `1.3.0.0` | `2.1.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ✅ 当前版本 |
+| A 端 `1.3.1` / 插件 `1.3.1.0` | `ControlHub.Plugin.cipx` `1.3.1.0` | `2.1.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ✅ 当前版本 |
+| A 端 `1.3.0` / 插件 `1.3.0.0` | `ControlHub.Plugin.cipx` `1.3.0.0` | `2.1.x` | ✅ 可直接安装 | ⚠️ 上一版本（无本地外壳与教室端截图开关） |
 | A 端 `1.2.x` / 插件 `1.2.x` | `1.2.1.0` | `2.1.x` | ✅ 可直接安装 | ⚠️ 上一版本（不含远程诊断） |
 | A 端 `1.1.0` / 插件 `1.1.0.0` | `1.1.0.0` | `2.1.x` | ✅ 可直接安装 | ⚠️ 旧版本（不含两步验证 / Webhook 等） |
 | A 端 `1.0.x` / 插件 `1.0.0.0` | `1.0.0.0` | `2.1.x` | ✅ 可直接安装 | ⚠️ 早期版本，建议同步升级 |
@@ -251,9 +259,12 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 
 **业务界面完全复用 A 端 Web UI，外壳不重写任何界面**——课表、设备、远程管理、诊断都在原页面里，A 端更新后外壳自动跟随，不存在「两套前端互相追赶」。
 
+**最省事的方式**：从 [Releases](https://github.com/1sIancl/ClassislandControlHub/releases) 下载
+`classislandcontrolhub-shell-win-x64-<版本>.zip` 解压，双击 `ControlHub.Shell.exe` 即可——包里已经带上 A 端
+（放在 `server/` 子目录，外壳会自动找到它）。想自己打包：
+
 ```bash
-# 打包：外壳 + A 端（外壳会在自己的 server/ 子目录里找 A 端）
-dotnet publish src/ControlHub.Server -c Release -o dist/shell/server
+dotnet publish src/ControlHub.Server -c Release -o dist/shell/server   # 外壳会在 server/ 子目录里找 A 端
 dotnet publish src/ControlHub.Shell  -c Release -o dist/shell
 # 之后双击 dist/shell/ControlHub.Shell.exe
 ```

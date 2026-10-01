@@ -26,6 +26,32 @@ public sealed class DiscoveryService(
     /// <summary>单次接收缓冲大小。发现报文很小，4KB 足够。</summary>
     private const int BufferSize = 4096;
 
+    /// <summary>
+    /// 绑定发现端口；失败时返回 <c>null</c> 并降级（只关自动发现，不影响 HTTP 服务）。
+    /// <para>
+    /// 典型场景：同一台机器上已经有另一个集控实例占着 UDP 端口
+    /// （例如临时在别的端口起一个实例做验证）。以前这里会直接把整个宿主拖垮，
+    /// 与 NTP 端口冲突时的「记录警告并继续」行为不一致。
+    /// </para>
+    /// </summary>
+    private UdpClient? TryBindDiscovery()
+    {
+        try
+        {
+            return new UdpClient(new IPEndPoint(IPAddress.Any, _options.DiscoveryPort))
+            {
+                EnableBroadcast = true,
+            };
+        }
+        catch (SocketException ex)
+        {
+            logger.LogWarning(ex,
+                "无法监听 UDP {Port} 端口，已跳过局域网自动发现（HTTP 服务不受影响，客户端可手动填写服务器地址）。",
+                _options.DiscoveryPort);
+            return null;
+        }
+    }
+
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -35,10 +61,13 @@ public sealed class DiscoveryService(
             return;
         }
 
-        using var client = new UdpClient(new IPEndPoint(IPAddress.Any, _options.DiscoveryPort))
+        var bound = TryBindDiscovery();
+        if (bound is null)
         {
-            EnableBroadcast = true,
-        };
+            return;
+        }
+
+        using var client = bound;
 
         logger.LogInformation("局域网自动发现已启动，监听 UDP 端口 {Port}。", _options.DiscoveryPort);
 
