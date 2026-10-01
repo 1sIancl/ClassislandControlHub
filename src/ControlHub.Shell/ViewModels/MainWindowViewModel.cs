@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using ControlHub.Shell.Services;
@@ -30,6 +31,15 @@ internal sealed partial class MainWindowViewModel : ObservableObject
         ReloadCommand = new AsyncRelayCommand(ReloadAsync, () => !_isBusy);
         RestartServerCommand = new AsyncRelayCommand(RestartAsync, () => !_isBusy);
         StopServerCommand = new AsyncRelayCommand(StopAsync, () => !_isBusy);
+        ToggleLogCommand = new RelayCommand(() => IsLogVisible = !IsLogVisible);
+        ClearLogCommand = new RelayCommand(ClearLog);
+
+        foreach (var line in ShellLog.RecentLines)
+        {
+            AppendLog(line);
+        }
+
+        ShellLog.LineWritten += line => Avalonia.Threading.Dispatcher.UIThread.Post(() => AppendLog(line));
     }
 
     /// <summary>请求把 WebView 导航到指定地址。</summary>
@@ -38,6 +48,9 @@ internal sealed partial class MainWindowViewModel : ObservableObject
     /// <summary>请求把窗口带回前台。</summary>
     public event Action? ShowRequested;
 
+    /// <summary>有新日志写入（界面据此把日志面板滚到底部）。</summary>
+    public event Action? LogAppended;
+
     public RelayCommand OpenInBrowserCommand { get; }
 
     public AsyncRelayCommand ReloadCommand { get; }
@@ -45,6 +58,12 @@ internal sealed partial class MainWindowViewModel : ObservableObject
     public AsyncRelayCommand RestartServerCommand { get; }
 
     public AsyncRelayCommand StopServerCommand { get; }
+
+    /// <summary>显示 / 隐藏日志面板。</summary>
+    public RelayCommand ToggleLogCommand { get; }
+
+    /// <summary>清空日志面板（只清界面，不动日志文件）。</summary>
+    public RelayCommand ClearLogCommand { get; }
 
     /// <summary>窗口标题。</summary>
     public string PageTitle
@@ -108,6 +127,7 @@ internal sealed partial class MainWindowViewModel : ObservableObject
     /// <summary>重新加载页面。</summary>
     public Task ReloadAsync()
     {
+        ShellLog.Info("刷新页面。");
         NavigateRequested?.Invoke(_lifecycle.EntryUrl);
         return Task.CompletedTask;
     }
@@ -115,6 +135,7 @@ internal sealed partial class MainWindowViewModel : ObservableObject
     /// <summary>重启 A 端并重新进入（服务模式与远程模式下只刷新页面）。</summary>
     public async Task RestartAsync()
     {
+        ShellLog.Info("重启 A 端。");
         IsBusy = true;
         try
         {
@@ -168,6 +189,87 @@ internal sealed partial class MainWindowViewModel : ObservableObject
 
     /// <summary>把窗口带回前台（托盘点击）。</summary>
     public void RequestShow() => ShowRequested?.Invoke();
+
+    // ────────────────────────────── 日志面板 ──────────────────────────────
+
+    private readonly List<string> _logLines = [];
+    private string _logText = string.Empty;
+    private bool _isLogVisible;
+
+    /// <summary>日志面板文本（多行）。</summary>
+    public string LogText
+    {
+        get => _logText;
+        private set => SetProperty(ref _logText, value);
+    }
+
+    /// <summary>日志面板是否展开。</summary>
+    public bool IsLogVisible
+    {
+        get => _isLogVisible;
+        set => SetProperty(ref _isLogVisible, value);
+    }
+
+    private void AppendLog(string line)
+    {
+        _logLines.Add(line);
+        while (_logLines.Count > 400)
+        {
+            _logLines.RemoveAt(0);
+        }
+
+        LogText = string.Join(Environment.NewLine, _logLines);
+        LogAppended?.Invoke();
+    }
+
+    private void ClearLog()
+    {
+        _logLines.Clear();
+        LogText = string.Empty;
+    }
+
+    /// <summary>
+    /// 处理来自 Web 页面的消息（WebMessage 通道）。
+    /// <para>页面里发 <c>{"action":"restart" | "stop" | "open-browser"}</c> 即可控制外壳。</para>
+    /// </summary>
+    public void HandleShellMessage(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return;
+        }
+
+        string action;
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            action = document.RootElement.TryGetProperty("action", out var value)
+                ? value.GetString() ?? string.Empty
+                : string.Empty;
+        }
+        catch (JsonException)
+        {
+            ShellLog.Warn($"忽略无法解析的页面消息：{body}");
+            return;
+        }
+
+        ShellLog.Info($"收到页面消息：{action}");
+        switch (action)
+        {
+            case "restart":
+                _ = RestartAsync();
+                break;
+            case "stop":
+                _ = StopAsync();
+                break;
+            case "open-browser":
+                OpenInBrowser();
+                break;
+            default:
+                ShellLog.Warn($"未知的页面命令：{action}");
+                break;
+        }
+    }
 
     private void RefreshState()
     {

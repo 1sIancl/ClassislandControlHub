@@ -16,6 +16,7 @@ public partial class App : Application
 {
     private ServerLifecycleService? _lifecycle;
     private TrayIcon? _tray;
+    private bool _shuttingDown;
 
     /// <summary>启动参数（由 <see cref="Program"/> 注入）。</summary>
     internal static ShellOptions Options { get; set; } = new();
@@ -113,8 +114,15 @@ public partial class App : Application
 
     private void StopServerIfNeeded()
     {
-        if (_lifecycle is null || !Options.StopServerOnExit ||
-            _lifecycle.State != ServerState.Running)
+        // ShutdownRequested 与 Exit 都会走到这里，加个闸门避免重复停机（白等一轮超时）。
+        if (_shuttingDown)
+        {
+            return;
+        }
+
+        _shuttingDown = true;
+
+        if (_lifecycle is null || !Options.StopServerOnExit || _lifecycle.State != ServerState.Running)
         {
             return;
         }
@@ -122,7 +130,12 @@ public partial class App : Application
         try
         {
             ShellLog.Info("退出外壳：停止由它启动的 A 端…");
-            _lifecycle.StopAsync().GetAwaiter().GetResult();
+
+            // 必须丢到线程池再等：StopAsync 内部的 await 续体会回到 UI 线程，
+            // 在 UI 线程上 GetResult() 会直接死锁（表现为「停完 A 端但外壳不退出」）。
+            Task.Run(() => _lifecycle.StopAsync()).GetAwaiter().GetResult();
+
+            ShellLog.Info("A 端已停止，外壳退出。");
         }
         catch (Exception ex)
         {

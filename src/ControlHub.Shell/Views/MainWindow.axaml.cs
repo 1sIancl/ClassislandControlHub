@@ -11,6 +11,7 @@ namespace ControlHub.Shell.Views;
 public partial class MainWindow : Window
 {
     private MainWindowViewModel? _viewModel;
+    private bool _webMessageBound;
 
     public MainWindow()
     {
@@ -35,6 +36,43 @@ public partial class MainWindow : Window
         {
             _viewModel.NavigateRequested += Navigate;
             _viewModel.ShowRequested += BringToFront;
+            _viewModel.LogAppended += ScrollLogToEnd;
+
+            if (!_webMessageBound && this.FindControl<NativeWebView>("Web") is { } web)
+            {
+                _webMessageBound = true;
+
+                // 页面 ↔ 外壳通道：页面里 window.chrome.webview.postMessage 的内容会从这里进来。
+                web.WebMessageReceived += OnWebMessage;
+
+                // 记录加载结果：GUI 模式下没有控制台，这行日志是「界面到底有没有起来」的唯一线索。
+                web.NavigationCompleted += (_, _) => ShellLog.Info($"页面加载完成：{web.Source}");
+            }
+        }
+    }
+
+    private void ScrollLogToEnd()
+    {
+        try
+        {
+            this.FindControl<ScrollViewer>("LogScroll")?.ScrollToEnd();
+        }
+        catch
+        {
+            // 面板未展开时忽略。
+        }
+    }
+
+    /// <summary>把 WebView 的消息转发给视图模型（页面里也能重启 A 端）。</summary>
+    private void OnWebMessage(object? sender, WebMessageReceivedEventArgs e)
+    {
+        try
+        {
+            _viewModel?.HandleShellMessage(e.Body ?? string.Empty);
+        }
+        catch (Exception ex)
+        {
+            ShellLog.Error("处理页面消息失败", ex);
         }
     }
 

@@ -59,6 +59,7 @@ export async function render(container) {
     canSettings ? renderAiCard(aiConfig) : null,
     canSettings ? renderWebhooksCard(container, webhooks) : null,
     canSettings ? renderUpdateCard(updateState) : null,
+    renderShellCard(),
     renderDeployCard(info),
   ));
 }
@@ -1279,6 +1280,51 @@ function renderUpdateCard(update) {
       checkBtn,
       update.hasUpdate ? applyBtn : null,
     ),
+  );
+}
+
+/**
+ * 本地外壳（桌面端）专用卡片：只在被外壳内嵌时出现。
+ * 页面通过 WebMessage 通道请求外壳执行动作（见 src/ControlHub.Shell 的 HandleShellMessage）。
+ */
+function renderShellCard() {
+  const webview = window.chrome?.webview;
+  if (!webview) {
+    return null;
+  }
+
+  const post = (action) => webview.postMessage(JSON.stringify({ action }));
+  const actionButton = (action, label, primary) => h(primary ? 'button.btn.btn-primary.btn-sm' : 'button.btn.btn-sm', {
+    type: 'button',
+    onClick: () => {
+      post(action);
+      toast('ok', '已通知本地外壳', `${label} 指令已发送。`);
+    },
+  }, label);
+
+  return h('div.card', { style: { marginTop: '16px' } },
+    h('div.card-head',
+      h('div',
+        h('h3', '本地外壳'),
+        h('p.card-desc', '当前界面运行在 ClassislandControlHub 桌面外壳里，可以在这里直接控制 A 端进程。'),
+      ),
+    ),
+    h('div.toolbar',
+      actionButton('restart', '重启 A 端', true),
+      actionButton('open-browser', '在浏览器打开'),
+      h('div.spacer'),
+      h('button.btn.btn-sm', {
+        type: 'button',
+        onClick: async () => {
+          if (!await confirmDialog('停止 A 端', '将停止由外壳启动的 A 端进程，本页面会随即断开。确定继续吗？', '停止')) return;
+          post('stop');
+          toast('ok', '已通知本地外壳', 'A 端正在停止。');
+        },
+      }, '停止 A 端'),
+    ),
+    h('div.notice.notice-info', { style: { marginTop: '10px' } },
+      h('span.notice-icon', 'i'),
+      h('div', '「停止 A 端」只对由外壳启动的进程有效；A 端作为 Windows 服务运行、或外壳连的是远程服务器时不会生效。')),
   );
 }
 

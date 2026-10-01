@@ -29,6 +29,8 @@
                   ToolTip.Tip="仅当 A 端由外壳启动时可用；服务模式与远程模式下不会重启" />
           <Button Content="停止 A 端" Command="{Binding StopServerCommand}"
                   ToolTip.Tip="仅当 A 端由外壳启动时可用" />
+          <Button Content="日志" Command="{Binding ToggleLogCommand}"
+                  ToolTip.Tip="显示 / 隐藏日志面板（外壳与 A 端的输出）" />
         </StackPanel>
 
         <Button Grid.Column="3" Content="在浏览器打开" Command="{Binding OpenInBrowserCommand}" />
@@ -43,6 +45,26 @@
             Padding="10,5">
       <TextBlock Text="{Binding DetailText}" FontSize="11" TextWrapping="NoWrap"
                  TextTrimming="CharacterEllipsis" />
+    </Border>
+
+    <!-- 日志面板：默认隐藏，点工具条「日志」展开（完整日志见 shell.log） -->
+    <Border DockPanel.Dock="Bottom" Height="180" IsVisible="{Binding IsLogVisible}"
+            Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+            BorderThickness="0,1,0,0"
+            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
+      <Grid RowDefinitions="Auto,*">
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="10,6,10,4">
+          <TextBlock Text="运行日志（外壳与 A 端输出）" FontSize="11" FontWeight="SemiBold"
+                     VerticalAlignment="Center" />
+          <Button Grid.Column="1" Content="清空" FontSize="11" Padding="8,2"
+                  Command="{Binding ClearLogCommand}" />
+        </Grid>
+        <ScrollViewer Grid.Row="1" Name="LogScroll" Margin="10,0,10,8"
+                      HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+          <TextBlock Text="{Binding LogText}" FontFamily="Consolas, Menlo, monospace" FontSize="11"
+                     TextWrapping="NoWrap" />
+        </ScrollViewer>
+      </Grid>
     </Border>
 
     <!-- 业务界面：A 端 Web UI 原样复用，外壳不重写 -->

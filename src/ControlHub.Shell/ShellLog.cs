@@ -8,11 +8,30 @@ namespace ControlHub.Shell;
 /// </summary>
 internal static class ShellLog
 {
+    /// <summary>内存里保留的最近日志条数（供界面上的日志面板显示）。</summary>
+    private const int MaxRecent = 400;
+
     private static readonly Lock Gate = new();
+    private static readonly Queue<string> Recent = new();
     private static readonly string LogPath = BuildLogPath();
+
+    /// <summary>每写一行日志触发一次（供界面订阅）。</summary>
+    public static event Action<string>? LineWritten;
 
     /// <summary>日志文件路径。</summary>
     public static string Path => LogPath;
+
+    /// <summary>最近的日志（供日志面板初始化）。</summary>
+    public static IReadOnlyList<string> RecentLines
+    {
+        get
+        {
+            lock (Gate)
+            {
+                return Recent.ToArray();
+            }
+        }
+    }
 
     public static void Info(string message) => Write("INFO", message);
 
@@ -45,6 +64,24 @@ internal static class ShellLog
         catch
         {
             // 日志写不进去不应影响主流程。
+        }
+
+        lock (Gate)
+        {
+            Recent.Enqueue(line);
+            while (Recent.Count > MaxRecent)
+            {
+                Recent.Dequeue();
+            }
+        }
+
+        try
+        {
+            LineWritten?.Invoke(line);
+        }
+        catch
+        {
+            // 订阅方出错不应影响日志本身。
         }
     }
 
