@@ -49,6 +49,7 @@ public static class AdminEndpoints
 
         // ── 审计 ──
         authed.MapGet("/audit", AuditAsync).RequirePermission(PermissionKeys.AuditRead);
+        authed.MapGet("/audit/export", AuditExportAsync).RequirePermission(PermissionKeys.AuditRead);
 
         // ── 账号与权限 ──
         authed.MapGet("/permissions", PermissionsAsync).RequirePermission(PermissionKeys.AccountsRead);
@@ -326,18 +327,36 @@ public static class AdminEndpoints
         });
     }
 
-    /// <summary>分页查询审计日志。</summary>
+    /// <summary>
+    /// 分页查询审计日志，支持按操作者 / 动作前缀 / 来源 IP / 时间范围 / 关键词筛选。
+    /// <para>与导出共用同一套筛选条件，保证「屏幕上看到的」和「导出的」是同一批数据。</para>
+    /// </summary>
     private static async Task<ApiResult<PagedResult<AuditLogDto>>> AuditAsync(
         HttpContext http,
         HubStore store,
-        int? page,
-        int? pageSize,
-        string? search,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int? page = null,
+        int? pageSize = null,
+        string? search = null,
+        string? actor = null,
+        string? action = null,
+        string? ip = null,
+        string? from = null,
+        string? to = null)
     {
         http.RequireAdminSession();
 
-        var (items, total) = await store.GetAuditLogsAsync(page ?? 1, pageSize ?? 50, search, cancellationToken);
+        var filter = new AuditFilter
+        {
+            Search = search,
+            Actor = actor,
+            ActionPrefix = action,
+            Ip = ip,
+            From = ParseAuditTime(from),
+            To = ParseAuditTime(to, endOfDay: true),
+        };
+
+        var (items, total) = await store.QueryAuditLogsAsync(filter, page ?? 1, pageSize ?? 50, cancellationToken);
 
         return ApiResult<PagedResult<AuditLogDto>>.Success(new PagedResult<AuditLogDto>
         {
@@ -346,6 +365,119 @@ public static class AdminEndpoints
             Page = page ?? 1,
             PageSize = pageSize ?? 50,
         });
+    }
+
+    /// <summary>导出审计日志 CSV（最多 2 万条，新的在前），筛选条件与列表页一致。</summary>
+    private static async Task<IResult> AuditExportAsync(
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken,
+        string? search = null,
+        string? actor = null,
+        string? action = null,
+        string? ip = null,
+        string? from = null,
+        string? to = null,
+        bool mask = true)
+    {
+        var session = http.RequireAdminSession();
+        var filter = new AuditFilter
+        {
+            Search = search,
+            Actor = actor,
+            ActionPrefix = action,
+            Ip = ip,
+            From = ParseAuditTime(from),
+            To = ParseAuditTime(to, endOfDay: true),
+        };
+
+        var rows = await store.ExportAuditLogsAsync(filter, 20_000, cancellationToken);
+
+        var lines = new List<string>
+        {
+            string.Join(',', new[] { "时间", "操作者", "动作", "目标", "详情", "来源IP" }.Select(CsvCell)),
+        };
+
+        foreach (var row in rows)
+        {
+            lines.Add(string.Join(',', new[]
+            {
+                row.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"),
+                row.Actor,
+                row.Action,
+                row.Target,
+                row.Detail,
+                mask ? MaskIpForExport(row.IpAddress) : row.IpAddress ?? string.Empty,
+            }.Select(CsvCell)));
+        }
+
+        await store.AddAuditAsync(session.Username, "audit.export.csv", "审计日志",
+            $"导出 {rows.Count} 条（来源 IP {(mask ? "已脱敏" : "未脱敏")}；筛选：{DescribeAuditFilter(filter)}）。",
+            http.GetClientIpAddress(), cancellationToken);
+
+        // 带 BOM：否则 Excel 打开中文列名是乱码。
+        var bytes = System.Text.Encoding.UTF8.GetPreamble()
+            .Concat(System.Text.Encoding.UTF8.GetBytes(string.Join("\r\n", lines)))
+            .ToArray();
+
+        return Results.File(bytes, "text/csv; charset=utf-8", $"audit-{DateTime.Now:yyyyMMdd-HHmmss}.csv");
+    }
+
+    /// <summary>把「筛选条件」写成一句人话，方便在审计里回看这次导出到底导了什么。</summary>
+    private static string DescribeAuditFilter(AuditFilter filter)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(filter.Search)) parts.Add($"关键词={filter.Search}");
+        if (!string.IsNullOrWhiteSpace(filter.Actor)) parts.Add($"操作者={filter.Actor}");
+        if (!string.IsNullOrWhiteSpace(filter.ActionPrefix)) parts.Add($"动作前缀={filter.ActionPrefix}");
+        if (!string.IsNullOrWhiteSpace(filter.Ip)) parts.Add($"来源={filter.Ip}");
+        if (filter.From.HasValue) parts.Add($"从 {filter.From.Value.ToLocalTime():yyyy-MM-dd HH:mm}");
+        if (filter.To.HasValue) parts.Add($"到 {filter.To.Value.ToLocalTime():yyyy-MM-dd HH:mm}");
+        return parts.Count == 0 ? "无（全部）" : string.Join("，", parts);
+    }
+
+    /// <summary>解析筛选时间：支持 <c>2026-10-02</c> 与完整 ISO 时间。</summary>
+    private static DateTimeOffset? ParseAuditTime(string? text, bool endOfDay = false)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var value = text.Trim();
+        if (DateTimeOffset.TryParse(value, out var parsed))
+        {
+            // 只给了日期时，把「到」的边界推到当天结束，否则「到 10-02」会把当天全漏掉。
+            if (endOfDay && value.Length <= 10)
+            {
+                parsed = parsed.Date.AddDays(1).AddSeconds(-1);
+            }
+
+            return parsed.ToUniversalTime();
+        }
+
+        return null;
+    }
+
+    /// <summary>导出时脱敏内网 IP：保留前两段。</summary>
+    private static string MaskIpForExport(string? ip)
+    {
+        if (string.IsNullOrWhiteSpace(ip))
+        {
+            return string.Empty;
+        }
+
+        var parts = ip.Split('.');
+        return parts.Length == 4 ? $"{parts[0]}.{parts[1]}.*.*" : "***";
+    }
+
+    /// <summary>CSV 单元格转义（含逗号 / 引号 / 换行时用双引号包裹）。</summary>
+    private static string CsvCell(string? value)
+    {
+        var text = value ?? string.Empty;
+        return text.Contains(',') || text.Contains('"') || text.Contains('\n') || text.Contains('\r')
+            ? '"' + text.Replace("\"", "\"\"") + '"'
+            : text;
     }
 
     /// <summary>列出管理员账号（含各自的权限集合）。</summary>
