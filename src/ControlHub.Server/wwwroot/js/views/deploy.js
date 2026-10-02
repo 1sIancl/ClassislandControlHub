@@ -159,23 +159,38 @@ function renderPushPanel(groups, profiles, devices) {
     }
 
     const scopeText = scope === 'all' ? '全部在线设备' : `${scope === 'group' ? '分组' : '设备'}（${targetIds.length} 个）`;
+
+    const push = async () => {
+      pushButton.disabled = true;
+      try {
+        const result = await api('/admin/push', {
+          method: 'POST',
+          body: { scope, targetIds, force: false, message: messageInput.value.trim() },
+        });
+        toast('ok', '推送已发出', `影响 ${result.affected} 台设备，当前版本 #${result.revision}。`);
+        await render(document.getElementById('content'));
+      } catch (err) {
+        toast('error', '推送失败', err.message);
+      } finally {
+        pushButton.disabled = false;
+      }
+    };
+
+    // 先对比「设备当前实际应用的档案」与「即将下发的档案」：有变化时用差异清单替代一句确认，
+    // 避免管理员在不知情的情况下把整间教室的课表换掉。
+    pushButton.disabled = true;
+    const diffs = await loadApplyDiffs(scope, targetIds, devices);
+    pushButton.disabled = false;
+
+    if (diffs.some((d) => d.changes > 0)) {
+      openDiffDialog(diffs, scopeText, push);
+      return;
+    }
+
     const ok = await confirmDialog('确认推送',
       `将立即通知 ${scopeText} 重新拉取当前配置。确定继续吗？`, '推送');
     if (!ok) return;
-
-    pushButton.disabled = true;
-    try {
-      const result = await api('/admin/push', {
-        method: 'POST',
-        body: { scope, targetIds, force: false, message: messageInput.value.trim() },
-      });
-      toast('ok', '推送已发出', `影响 ${result.affected} 台设备，当前版本 #${result.revision}。`);
-      await render(document.getElementById('content'));
-    } catch (err) {
-      toast('error', '推送失败', err.message);
-    } finally {
-      pushButton.disabled = false;
-    }
+    await push();
   });
 
   return h('div.card',
@@ -189,6 +204,75 @@ function renderPushPanel(groups, profiles, devices) {
     targetHost,
     field('附带消息', messageInput, '客户端同步成功后可在插件界面看到该提示，10 分钟内有效。'),
     h('div.card-actions', pushButton),
+  );
+}
+
+/**
+ * 拉取推送目标的差异预览。
+ * <para>最多对比 20 台：预览是为了「点下去之前心里有数」，而不是审计，没必要为几百台各打一次请求。</para>
+ */
+async function loadApplyDiffs(scope, targetIds, devices) {
+  let ids = targetIds;
+  if (scope === 'all') {
+    ids = devices.filter((d) => d.online && !d.revoked).map((d) => d.id);
+  } else if (scope === 'group') {
+    ids = devices.filter((d) => !d.revoked && targetIds.includes(d.groupId)).map((d) => d.id);
+  }
+
+  const result = [];
+  for (const id of ids.slice(0, 20)) {
+    try {
+      const diff = await api(`/admin/devices/${id}/apply-diff`);
+      const device = devices.find((d) => d.id === id);
+      const changes = diff.sections.reduce(
+        (sum, s) => sum + s.added.length + s.removed.length + s.changed.length, 0);
+      result.push({ deviceName: device ? device.name : id, changes, ...diff });
+    } catch {
+      // 单台对比失败不影响整体预览。
+    }
+  }
+
+  return result;
+}
+
+/** 差异预览对话框：列出每台设备的「新增 / 修改 / 删除」，确认后才真正推送。 */
+function openDiffDialog(diffs, scopeText, onConfirm) {
+  const changed = diffs.filter((d) => d.changes > 0).length;
+
+  return modal({
+    title: '下发前差异预览',
+    width: 'wide',
+    confirmText: '确认推送',
+    body: h('div',
+      h('div.notice.notice-info',
+        h('span.notice-icon', 'i'),
+        h('div', `即将推送给${scopeText}。已对比 ${diffs.length} 台设备，其中 ${changed} 台的配置内容会发生变化；`
+          + '内容未变化的设备只会刷新一次同步时间。')),
+      h('div.cmd-list', { style: { marginTop: '12px' } }, ...diffs.map(diffBlock)),
+    ),
+    onConfirm,
+  });
+}
+
+/** 单台设备的差异条目。 */
+function diffBlock(entry) {
+  const sections = entry.sections.filter(
+    (s) => s.added.length + s.removed.length + s.changed.length > 0);
+
+  return h('div.cmd-row',
+    h('div.cmd-head',
+      h('span.cmd-kind', entry.deviceName),
+      h('span.log-level.' + (entry.hasBaseline ? 'warn' : 'info'), entry.hasBaseline ? '对比基线' : '首次下发'),
+      h('span.log-time', `${entry.appliedProfileName || '—'} → ${entry.targetProfileName || '—'}`),
+    ),
+    entry.note ? h('div.shot-note', entry.note) : null,
+    ...sections.flatMap((s) => [
+      h('div.shot-note', { style: { color: 'var(--text)', fontWeight: '600' } },
+        `${s.section}：改动 ${s.added.length + s.removed.length + s.changed.length} 项`),
+      ...s.added.map((x) => h('div.shot-note', { style: { color: 'var(--ok, #1a7f37)' } }, `+ 新增 ${x}`)),
+      ...s.changed.map((x) => h('div.shot-note', { style: { color: 'var(--warn, #b26a00)' } }, `~ 修改 ${x}`)),
+      ...s.removed.map((x) => h('div.shot-note', { style: { color: 'var(--danger)' } }, `- 删除 ${x}`)),
+    ]),
   );
 }
 

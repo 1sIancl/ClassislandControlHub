@@ -116,6 +116,16 @@ public sealed class ServerOptions
     /// </summary>
     public int DiagnosticMaxTotalMb { get; set; } = 512;
 
+    /// <summary>
+    /// 配置下发分批大小（台）。设为 0（默认）表示一次性推进全部设备。
+    /// <para>大校「一键全推」时建议设为 20~50：推送只改生效时机，分批是安全的，
+    /// 但能避免数百台设备在同一秒涌上来拉配置、把学校上行带宽打满。</para>
+    /// </summary>
+    public int PushBatchSize { get; set; }
+
+    /// <summary>批与批之间的间隔秒数（仅分批下发生效，最小按 1 秒处理）。</summary>
+    public int PushBatchDelaySeconds { get; set; } = 5;
+
     /// <summary>审计日志保留天数。</summary>
     public int AuditLogRetentionDays { get; set; } = 180;
 

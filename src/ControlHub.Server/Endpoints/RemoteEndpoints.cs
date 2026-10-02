@@ -152,8 +152,20 @@ public static class RemoteEndpoints
             $"统一下发指令 {request.Kind} 至 {targets.Count} 台设备（跳过离线 {skipped} 台）。",
             http.GetClientIpAddress(), cancellationToken);
 
-        // 把本批指令的 ID 一并返回：前端据此在「撤销窗口」内提供一键撤销。
-        return ApiResult<object>.Success(new { affected = targets.Count, skipped, commandIds });
+        // 把本批指令的 ID 与逐台对应关系一并返回：前端据此提供「撤销窗口」内的一键撤销，
+        // 以及逐台成功 / 失败 / 超时的结果面板。
+        return ApiResult<object>.Success(new
+        {
+            affected = targets.Count,
+            skipped,
+            commandIds,
+            items = targets.Select((device, index) => new
+            {
+                deviceId = device.Id,
+                deviceName = device.Name,
+                commandId = index < commandIds.Count ? commandIds[index] : null,
+            }).ToList(),
+        });
     }
 
     /// <summary>撤销一条尚未派发的指令（撤销窗口内可用）。</summary>

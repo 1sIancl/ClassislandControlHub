@@ -219,8 +219,58 @@ public sealed class SyncService(
             LastError = device.LastError,
             Revoked = device.Revoked,
             CreatedAt = device.CreatedAt,
+            OfflineReason = BuildOfflineReason(device, online),
+            OfflineMinutes = OfflineMinutes(device, online),
         };
     }
+
+    /// <summary>
+    /// 把「离线」细分成可行动的原因，而不是让管理员只看到一个灰点：
+    /// 从未连接 / 已停用 / 离线多久 + 最近一次报错。
+    /// </summary>
+    public static string? BuildOfflineReason(DeviceRow device, bool online)
+    {
+        if (online)
+        {
+            return null;
+        }
+
+        if (device.Revoked)
+        {
+            return "已被停用（恢复后才会重新上报）";
+        }
+
+        if (device.LastSeenAt is null)
+        {
+            return "从未连接：设备已注册但从未成功心跳，检查教室端插件的服务器地址、网络与防火墙";
+        }
+
+        var minutes = (int)Math.Round((DateTimeOffset.UtcNow - device.LastSeenAt.Value).TotalMinutes);
+        var elapsed = minutes >= 60
+            ? $"已离线 {minutes / 60} 小时 {minutes % 60} 分钟"
+            : $"已离线 {minutes} 分钟";
+
+        if (!string.IsNullOrWhiteSpace(device.LastError))
+        {
+            var error = device.LastError.Trim();
+            if (error.Length > 120)
+            {
+                error = error[..120] + "…";
+            }
+
+            return $"{elapsed}，最近一次报错：{error}";
+        }
+
+        return device.LastSyncAt is null
+            ? $"{elapsed}（从未成功同步过配置）"
+            : $"{elapsed}（常见原因：教室机断电 / 关机、网线或无线中断、插件被退出）";
+    }
+
+    /// <summary>离线时长（分钟）；在线或从未上线时为 <c>null</c>。</summary>
+    public static double? OfflineMinutes(DeviceRow device, bool online) =>
+        online || device.LastSeenAt is null
+            ? null
+            : Math.Max(0, (DateTimeOffset.UtcNow - device.LastSeenAt.Value).TotalMinutes);
 
     /// <summary>批量转换设备摘要，避免逐条查询分组。</summary>
     public async Task<List<DeviceSummaryDto>> GetDeviceSummariesAsync(
@@ -269,6 +319,14 @@ public sealed class SyncService(
         CancellationToken cancellationToken = default)
     {
         var scope = (request.Scope ?? "all").Trim().ToLowerInvariant();
+
+        // 大校「一键全推」保护：分批推进推送世代号，避免数百台设备在同一秒涌上来拉配置。
+        // 默认关闭（PushBatchSize = 0），走下面的一次性路径。
+        if (_options.PushBatchSize > 0)
+        {
+            return await PushInBatchesAsync(scope, request, cancellationToken);
+        }
+
         int affected;
 
         switch (scope)
@@ -351,6 +409,95 @@ public sealed class SyncService(
         notifier.Publish(scope == "all" ? revision : null);
 
         return (affected, revision);
+    }
+
+    /// <summary>
+    /// 分批下发：每批只推进 N 台设备的推送世代号并唤醒一次，批间留出间隔。
+    /// <para>推送只改「生效时机」而不改内容，所以分批是安全的——所有设备最终都会拿到同一份配置，
+    /// 但不会在同一秒一起涌上来。</para>
+    /// </summary>
+    private async Task<(int Affected, long Revision)> PushInBatchesAsync(string scope, PushRequest request,
+        CancellationToken cancellationToken)
+    {
+        var batchSize = Math.Max(1, _options.PushBatchSize);
+        var delaySeconds = Math.Max(1, _options.PushBatchDelaySeconds);
+
+        var all = await store.GetDevicesAsync(cancellationToken);
+        var targets = scope switch
+        {
+            "all" => all.Where(d => !d.Revoked).ToList(),
+            "group" => await ExpandGroupTargetsAsync(all, request.TargetIds, cancellationToken),
+            "device" => all.Where(d => !d.Revoked && request.TargetIds.Contains(d.Id, StringComparer.Ordinal)).ToList(),
+            _ => throw HubException.Validation($"不支持的下发范围：{scope}。"),
+        };
+
+        if (targets.Count == 0)
+        {
+            throw HubException.Validation(scope switch
+            {
+                "group" => "所选分组（含下级）内没有可推送的设备。",
+                "device" => "所选设备不存在或已被停用。",
+                _ => "没有可推送的设备。",
+            });
+        }
+
+        // 附带消息与一次性路径保持一致：写入设置后由心跳应答在有效期内带回。
+        if (!string.IsNullOrWhiteSpace(request.Message))
+        {
+            await store.SetSettingAsync("push_message", request.Message.Trim(), cancellationToken);
+            await store.SetSettingAsync("push_message_expires",
+                Ts(DateTimeOffset.UtcNow.AddMinutes(10)), cancellationToken);
+        }
+
+        var affected = 0;
+        var batches = (int)Math.Ceiling(targets.Count / (double)batchSize);
+        for (var index = 0; index < batches; index++)
+        {
+            var chunk = targets.Skip(index * batchSize).Take(batchSize).Select(d => d.Id).ToList();
+            affected += await store.BumpPushEpochAsync(chunk, cancellationToken);
+
+            var currentRevision = await store.GetRevisionAsync(cancellationToken);
+            notifier.Publish(scope == "all" ? currentRevision : null);
+
+            if (index < batches - 1)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
+            }
+        }
+
+        return (affected, await store.GetRevisionAsync(cancellationToken));
+    }
+
+    /// <summary>把分组（含下级楼层）展开成目标设备列表。</summary>
+    private async Task<List<DeviceRow>> ExpandGroupTargetsAsync(List<DeviceRow> all, List<string> groupIds,
+        CancellationToken cancellationToken)
+    {
+        var groups = await store.GetGroupsAsync(cancellationToken);
+        var wanted = new HashSet<string>(StringComparer.Ordinal);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        var pending = new Queue<string>(groupIds);
+
+        while (pending.Count > 0)
+        {
+            var groupId = pending.Dequeue();
+            if (!visited.Add(groupId))
+            {
+                continue;
+            }
+
+            foreach (var device in all.Where(d => !d.Revoked
+                         && string.Equals(d.GroupId, groupId, StringComparison.Ordinal)))
+            {
+                wanted.Add(device.Id);
+            }
+
+            foreach (var child in groups.Where(g => string.Equals(g.ParentId, groupId, StringComparison.Ordinal)))
+            {
+                pending.Enqueue(child.Id);
+            }
+        }
+
+        return all.Where(d => wanted.Contains(d.Id)).ToList();
     }
 
     /// <summary>

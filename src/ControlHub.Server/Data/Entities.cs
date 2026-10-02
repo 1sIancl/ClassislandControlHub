@@ -72,6 +72,21 @@ public sealed class DeviceRow
     public string PluginVersion { get; set; } = string.Empty;
     public string? GroupId { get; set; }
     public string? ProfileId { get; set; }
+
+    /// <summary>
+    /// 设备**上一次成功应用**的是哪个档案（回报成功时落定）。
+    /// <para>与 <see cref="ProfileId"/>（设备「应当」使用哪个档案）配合，才能算出「本次下发会改什么」。
+    /// 老库升级后该列为空，表示还没有可对比的基线。</para>
+    /// </summary>
+    public string? AppliedProfileId { get; set; }
+
+    /// <summary>
+    /// 设备应用该档案时，档案处于第几版。
+    /// <para>档案之后被编辑时，靠它配合 <c>profile_versions</c> 快照还原「设备当前真正在用的内容」，
+    /// 否则对比双方会指向同一份最新内容，差异永远是空的。</para>
+    /// </summary>
+    public long AppliedProfileRevision { get; set; }
+
     public string State { get; set; } = "offline";
     public long AppliedRevision { get; set; }
 

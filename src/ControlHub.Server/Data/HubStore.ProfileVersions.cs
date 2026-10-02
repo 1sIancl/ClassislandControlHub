@@ -47,6 +47,23 @@ public sealed partial class HubStore
         return result;
     }
 
+    /// <summary>
+    /// 按「档案 + 版本号」查找快照：用于还原设备**应用当时**的内容（下发前差异预览的基线）。
+    /// <para>快照是「保存前留的那一份」，因此版本号 <c>v</c> 的快照内容 = 第 v 版的内容。</para>
+    /// </summary>
+    public async Task<ProfileVersionRow?> GetProfileVersionByRevisionAsync(string profileId, long revision,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT {ProfileVersionColumns} FROM profile_versions WHERE profile_id = $profileId AND revision = $revision LIMIT 1;";
+        command.Parameters.AddWithValue("$profileId", profileId);
+        command.Parameters.AddWithValue("$revision", revision);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadProfileVersion(reader) : null;
+    }
+
     /// <summary>按 ID 查询某个历史版本。</summary>
     public async Task<ProfileVersionRow?> GetProfileVersionAsync(string versionId,
         CancellationToken cancellationToken = default)

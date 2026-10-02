@@ -278,6 +278,15 @@ public sealed class DeviceSummaryDto
     /// <summary>最近同步时间（UTC）。</summary>
     public DateTimeOffset? LastSyncAt { get; set; }
 
+    /// <summary>
+    /// 离线原因诊断（在线时为空）：把「为什么看不到这台设备」直接说清楚，
+    /// 而不是只给一个灰点让管理员自己猜。
+    /// </summary>
+    public string? OfflineReason { get; set; }
+
+    /// <summary>已离线时长（分钟）。在线或从未上线时为 <c>null</c>。</summary>
+    public double? OfflineMinutes { get; set; }
+
     /// <summary>机器名。</summary>
     public string MachineName { get; set; } = string.Empty;
 

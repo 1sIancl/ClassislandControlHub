@@ -257,6 +257,9 @@ function renderCommand(container) {
             body: { ...body, includeOffline: offline.input.checked },
           });
           toast('ok', '已下发', broadcastResult(r));
+          if (Array.isArray(r.items) && r.items.length > 0) {
+            openBroadcastPanel(r.items, command);
+          }
         } else {
           await api(`/admin/devices/${targetSelect.value}/command`, { method: 'POST', body });
           const target = state.devices.find((d) => d.id === targetSelect.value);
@@ -802,6 +805,72 @@ function renderAutomation(container) {
     datalist,
     historyBox,
   );
+}
+
+/**
+ * 广播结果面板：逐台显示「排队中 / 已派发 / 成功 / 失败 / 过期」，并自动刷新几次。
+ * <para>逐台结果按 <c>commandId</c> 精确匹配（服务端签发时保证顺序一致），不靠时间猜，
+ * 因此同一台设备上并发下发的其它指令不会互相串台。</para>
+ */
+function openBroadcastPanel(items, commandText) {
+  const cells = new Map();
+  const list = h('div.cmd-list', { style: { marginTop: '12px' } });
+
+  items.forEach((item) => {
+    const status = h('span.log-level.warn', '排队中');
+    const output = h('pre.cmd-output', '等待执行…');
+    cells.set(item.commandId, { status, output, done: false });
+    list.appendChild(h('div.cmd-row',
+      h('div.cmd-head',
+        h('span.cmd-kind', item.deviceName || item.deviceId),
+        status,
+      ),
+      output,
+    ));
+  });
+
+  const dialog = modal({
+    title: '批量执行结果',
+    width: 'wide',
+    hideFooter: true,
+    body: h('div',
+      h('div.notice.notice-info',
+        h('span.notice-icon', 'i'),
+        h('div', `命令：${commandText}　共 ${items.length} 台。结果会自动刷新；关掉这个窗口也可以稍后在设备的指令历史里查看。`)),
+      list,
+    ),
+  });
+
+  let left = 12;
+  const tick = async () => {
+    if (left-- <= 0 || dialog.closed?.()) return;
+
+    await Promise.all(items.map(async (item) => {
+      const cell = cells.get(item.commandId);
+      if (!cell || cell.done) return;
+      try {
+        const history = await api(`/admin/devices/${item.deviceId}/commands`);
+        const found = history.find((c) => c.id === item.commandId);
+        if (found) applyCommandState(cell, found);
+      } catch { /* 单台失败忽略，下一轮再试 */ }
+    }));
+
+    if (left > 0) setTimeout(tick, 3000);
+  };
+  setTimeout(tick, 2000);
+
+  return dialog;
+}
+
+/** 把某条指令的当前状态刷到面板单元格上。 */
+function applyCommandState(cell, command) {
+  cell.status.textContent = STATUS_LABEL[command.status] || command.status;
+  cell.status.className = 'log-level ' + (STATUS_LEVEL[command.status] || 'warn');
+  if (command.output) cell.output.textContent = command.output;
+
+  if (command.status !== 'pending' && command.status !== 'dispatched') {
+    cell.done = true;
+  }
 }
 
 // ────────────────────── 远程诊断 ──────────────────────

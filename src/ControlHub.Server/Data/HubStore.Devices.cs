@@ -8,7 +8,7 @@ public sealed partial class HubStore
 {
     private const string DeviceColumns = """
         id, token, name, machine_name, os_version, classisland_version, plugin_version,
-        group_id, profile_id, state, applied_revision, push_epoch, applied_push_epoch,
+        group_id, profile_id, applied_profile_id, applied_profile_revision, state, applied_revision, push_epoch, applied_push_epoch,
         last_seen_at, last_sync_at, last_error, ip_address, revoked,
         current_class_plan_name, metrics, remark, created_at
         """;
@@ -24,6 +24,8 @@ public sealed partial class HubStore
         PluginVersion = GetString(reader, "plugin_version"),
         GroupId = GetNullableString(reader, "group_id"),
         ProfileId = GetNullableString(reader, "profile_id"),
+        AppliedProfileId = GetNullableString(reader, "applied_profile_id"),
+        AppliedProfileRevision = GetInt64(reader, "applied_profile_revision"),
         State = GetString(reader, "state"),
         AppliedRevision = GetInt64(reader, "applied_revision"),
         PushEpoch = GetInt64(reader, "push_epoch"),
@@ -168,22 +170,28 @@ public sealed partial class HubStore
 
     /// <summary>记录一次成功的配置应用。</summary>
     public async Task UpdateAppliedAsync(string deviceId, long revision, long pushEpoch,
-        CancellationToken cancellationToken = default)
+        string? appliedProfileId, long appliedProfileRevision, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE devices SET
-                applied_revision   = $revision,
-                applied_push_epoch = $pushEpoch,
-                last_sync_at       = $now,
-                last_seen_at       = $now
+                applied_revision         = $revision,
+                applied_push_epoch       = $pushEpoch,
+                last_sync_at             = $now,
+                last_seen_at             = $now,
+                applied_profile_id       = COALESCE($profileId, applied_profile_id),
+                applied_profile_revision = CASE WHEN $profileId IS NULL
+                                                THEN applied_profile_revision
+                                                ELSE $profileRevision END
             WHERE id = $id;
             """;
         AddParameters(command,
             ("$revision", revision),
             ("$pushEpoch", pushEpoch),
             ("$now", Ts(DateTimeOffset.UtcNow)),
+            ("$profileId", TextOrNull(appliedProfileId)),
+            ("$profileRevision", appliedProfileRevision),
             ("$id", deviceId));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

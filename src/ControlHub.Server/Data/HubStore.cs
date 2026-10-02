@@ -90,6 +90,13 @@ public sealed partial class HubStore
         await EnsureColumnAsync(connection, "users", "totp_secret", "TEXT NOT NULL DEFAULT ''", cancellationToken);
         await EnsureColumnAsync(connection, "users", "totp_enabled", "INTEGER NOT NULL DEFAULT 0", cancellationToken);
 
+        // 迁移：设备上一次成功应用的档案 ID 与该档案当时的版本号。用于「下发前差异预览」——
+        // 只记 ID 不够：档案被编辑后，对比双方会指向同一份最新内容，差异永远是空的，
+        // 因此必须同时记住「应用时是第几版」，再配合 profile_versions 快照还原当时的内容。
+        await EnsureColumnAsync(connection, "devices", "applied_profile_id", "TEXT", cancellationToken);
+        await EnsureColumnAsync(connection, "devices", "applied_profile_revision", "INTEGER NOT NULL DEFAULT 0",
+            cancellationToken);
+
         // 确保全局版本号存在，保证任何一次同步请求都能拿到确定值。
         await using var seed = connection.CreateCommand();
         seed.CommandText = """

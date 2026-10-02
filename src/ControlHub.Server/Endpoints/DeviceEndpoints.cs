@@ -24,6 +24,8 @@ public static class DeviceEndpoints
         group.MapPost("/devices/{id}/revoke", RevokeDeviceAsync).RequirePermission(PermissionKeys.DevicesWrite);
         group.MapDelete("/devices/{id}", DeleteDeviceAsync).RequirePermission(PermissionKeys.DevicesWrite);
         group.MapGet("/devices/{id}/logs", GetDeviceLogsAsync).RequirePermission(PermissionKeys.DevicesRead);
+        // 下发前差异预览：这次下发会把设备从「当前档案」改成什么
+        group.MapGet("/devices/{id}/apply-diff", GetApplyDiffAsync).RequirePermission(PermissionKeys.DevicesRead);
         group.MapDelete("/devices/{id}/logs", ClearDeviceLogsAsync).RequirePermission(PermissionKeys.DevicesWrite);
 
         // ── 分组（楼栋 / 楼层）──
@@ -56,6 +58,49 @@ public static class DeviceEndpoints
         var devices = await store.GetDevicesAsync(cancellationToken);
         return ApiResult<List<DeviceSummaryDto>>.Success(
             await sync.GetDeviceSummariesAsync(devices, cancellationToken));
+    }
+
+    /// <summary>
+    /// 下发前差异预览：对比设备**当前实际应用**的档案与**将要下发**的档案
+    /// （时间表 / 课表 / 科目 / 自定义设置的新增、删除、修改）。
+    /// </summary>
+    private static async Task<ApiResult<ApplyDiffDto>> GetApplyDiffAsync(
+        string id,
+        HttpContext http,
+        HubStore store,
+        SyncService sync,
+        CancellationToken cancellationToken)
+    {
+        http.RequireAdminSession();
+        var device = await store.GetDeviceAsync(id, cancellationToken)
+                     ?? throw HubException.NotFound("设备不存在。");
+
+        var target = await sync.ResolveProfileAsync(device, cancellationToken);
+        if (target is null)
+        {
+            // 没有可下发的档案：如实说明，不假装「无差异」。
+            return ApiResult<ApplyDiffDto>.Success(new ApplyDiffDto
+            {
+                HasBaseline = false,
+                Note = "当前没有可下发的配置档案（设备未绑定档案、所属分组未设默认、也没有全局默认档案）。",
+            });
+        }
+
+        ProfileRow? applied = null;
+        ProfileVersionRow? snapshot = null;
+        if (!string.IsNullOrWhiteSpace(device.AppliedProfileId))
+        {
+            applied = await store.GetProfileAsync(device.AppliedProfileId, cancellationToken);
+            if (applied is not null)
+            {
+                // 「设备应用当时」的内容要靠历史快照还原：档案行本身可能已经被改过了。
+                snapshot = await store.GetProfileVersionByRevisionAsync(
+                    applied.Id, device.AppliedProfileRevision, cancellationToken);
+            }
+        }
+
+        return ApiResult<ApplyDiffDto>.Success(
+            ApplyDiffService.Compare(applied, device.AppliedProfileRevision, snapshot, target));
     }
 
     /// <summary>修改设备名称、所属分组与绑定档案。</summary>

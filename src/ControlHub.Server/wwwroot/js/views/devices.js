@@ -54,7 +54,11 @@ const COLUMN_DEFS = [
       d.lastError ? h('div', {
         title: d.lastError,
         style: { fontSize: '11px', color: 'var(--danger)', marginTop: '3px', maxWidth: '190px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-      }, d.lastError) : null,
+      }, d.lastError) : (d.offlineReason ? h('div', {
+        // 离线原因诊断：把「为什么看不到这台设备」直接摆在状态下方，鼠标悬停可看完整说明。
+        title: d.offlineReason,
+        style: { fontSize: '11px', color: 'var(--text-faint)', marginTop: '3px', maxWidth: '190px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+      }, d.offlineReason) : null),
     ),
   },
   {
@@ -1063,6 +1067,11 @@ function openDeviceDialog(device) {
         h('div.summary-line',
           h('span.summary-key', '机器名'), device.machineName || '—',
           h('span.summary-key', 'IP'), device.ipAddress || '—'),
+        // 离线原因诊断：在线时不显示，离线时给出可行动的原因（从未连接 / 离线多久 / 最近报错）。
+        device.offlineReason
+          ? h('div.summary-line', { style: { color: 'var(--text-dim)' } },
+            h('span.summary-key', '离线原因'), device.offlineReason)
+          : null,
         h('div.summary-line',
           h('span.summary-key', 'ClassIsland'), device.classIslandVersion || '—',
           h('span.summary-key', '插件'), device.pluginVersion || '—'),

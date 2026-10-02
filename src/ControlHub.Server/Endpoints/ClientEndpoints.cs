@@ -298,6 +298,7 @@ public static class ClientEndpoints
         ApplyReportRequest request,
         HttpContext http,
         HubStore store,
+        SyncService sync,
         WebhookService webhooks,
         CancellationToken cancellationToken)
     {
@@ -306,7 +307,11 @@ public static class ClientEndpoints
         if (string.Equals(request.Result, ApplyResults.Success, StringComparison.OrdinalIgnoreCase)
             || string.Equals(request.Result, ApplyResults.Partial, StringComparison.OrdinalIgnoreCase))
         {
-            await store.UpdateAppliedAsync(device.Id, request.Revision, request.PushEpoch, cancellationToken);
+            // 记下「这台设备现在实际用的是哪个档案、哪一版」，它是「下发前差异预览」的对比基线。
+            // 必须连版本号一起记：档案之后被编辑时，只有版本号能定位到当时那份内容。
+            var appliedProfile = await sync.ResolveProfileAsync(device, cancellationToken);
+            await store.UpdateAppliedAsync(device.Id, request.Revision, request.PushEpoch, appliedProfile?.Id,
+                appliedProfile?.Revision ?? 0, cancellationToken);
         }
         else
         {
