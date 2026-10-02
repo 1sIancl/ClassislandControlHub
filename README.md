@@ -363,10 +363,30 @@ dotnet run --project src/ControlHub.LoadTest -- --server http://127.0.0.1:29800 
 
 ## 文档
 
+**上手与部署**
+
 - [使用说明](USAGE.md)
-- [通信协议与数据格式](docs/protocol.md)
-- [架构与数据模型](docs/architecture.md)
 - [部署与使用指南](docs/deployment.md)
+
+**遇到问题**
+
+- [故障排查指南](docs/troubleshooting.md)
+- [常见问题 FAQ](USAGE.md#常见问题)
+
+**对接与二次开发**
+
+- [对外 API 指南](docs/api.md)（鉴权、常用接口、监控脚本示例）
+- [通信协议与数据格式](docs/protocol.md)
+- [插件扩展协议（草案）](docs/plugin-protocol.md)
+- [架构与数据模型](docs/architecture.md)
+- [架构决策记录 ADR](docs/adr/README.md)
+
+**参与与规划**
+
+- [路线图与 backlog](docs/roadmap.md)
+- [变更日志](CHANGELOG.md)
+- [贡献指南](CONTRIBUTING.md)
+- [安全加固指南](docs/security.md)
 
 ## 许可证
 

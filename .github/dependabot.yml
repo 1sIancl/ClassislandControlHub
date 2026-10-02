@@ -1,0 +1,32 @@
+# 依赖更新自动化：每周一让 Dependabot 提 PR，避免依赖长期冻结在旧版本。
+# 只提 PR 不自动合并——这个项目的使用者是学校，升级节奏应由维护者决定。
+version: 2
+updates:
+  # .NET（A 端 / B 端插件 / 外壳 / 压测工具共用一个解决方案）
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # 小版本与补丁合并成一个 PR，减少噪音；主版本仍单独提，便于评估破坏性变更。
+      nuget-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # GitHub Actions（工作流里用到的 action 也属于依赖）
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(ci)"
