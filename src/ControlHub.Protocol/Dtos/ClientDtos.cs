@@ -245,6 +245,9 @@ public sealed class DeviceSummaryDto
     /// <summary>分组 ID。</summary>
     public string? GroupId { get; set; }
 
+    /// <summary>单独绑定的配置档案 ID（为空表示继承分组或全局默认档案）。</summary>
+    public string? ProfileId { get; set; }
+
     /// <summary>分组名称。</summary>
     public string? GroupName { get; set; }
 

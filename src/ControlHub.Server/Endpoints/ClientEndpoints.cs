@@ -72,6 +72,14 @@ public static class ClientEndpoints
         // 设备重新注册（例如重装系统后）时若已存在记录，允许直接放行，无需再次消耗注册码。
         var existing = await store.GetDeviceAsync(deviceId, cancellationToken);
 
+        // 预注册匹配：按机器名找「还没有令牌」的占位记录（CSV 批量导入时建的），注册后认领它的绑定关系。
+        DeviceRow? preRegistered = null;
+        if (existing is null && !string.IsNullOrWhiteSpace(request.MachineName))
+        {
+            preRegistered = await store.GetPreRegisteredDeviceByMachineNameAsync(
+                request.MachineName.Trim(), cancellationToken);
+        }
+
         if (opts.RequireEnrollCode && existing is null)
         {
             if (string.IsNullOrWhiteSpace(request.EnrollCode))
@@ -111,6 +119,16 @@ public static class ClientEndpoints
             deviceId, token, name, request.MachineName, request.OsVersion,
             request.ClassIslandVersion, request.PluginVersion,
             http.GetClientIpAddress(), cancellationToken);
+
+        // 预注册认领：管理员可先用 CSV 录好「教室名称 / 分组 / 档案 / 备注」（此时该记录没有令牌），
+        // 教室端首次注册时按机器名认领这条记录，从而保留事先配好的绑定关系。
+        if (preRegistered is not null)
+        {
+            await store.AdoptPreRegisteredDeviceAsync(preRegistered, device.Id, cancellationToken);
+            device = await store.GetDeviceAsync(device.Id, cancellationToken) ?? device;
+            logger.LogInformation("设备 {Name}（{Id}）已认领预注册记录 {Placeholder}。",
+                device.Name, device.Id, preRegistered.Id);
+        }
 
         var groupRow = device.GroupId is null ? null : await store.GetGroupAsync(device.GroupId, cancellationToken);
         var revision = await store.GetRevisionAsync(cancellationToken);

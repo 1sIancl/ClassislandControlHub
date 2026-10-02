@@ -235,6 +235,115 @@ public sealed partial class HubStore
         return affected;
     }
 
+    /// <summary>
+    /// 按机器名查找「预注册」设备（CSV 导入时录入、**尚无令牌**的占位记录）。
+    /// <para>用空令牌当标记：真实设备注册后一定会拿到令牌，因此空令牌 = 还没上线。</para>
+    /// </summary>
+    public async Task<DeviceRow?> GetPreRegisteredDeviceByMachineNameAsync(string machineName,
+        CancellationToken cancellationToken = default)
+    {
+        var devices = await GetDevicesAsync(cancellationToken);
+        return devices.FirstOrDefault(d => string.IsNullOrEmpty(d.Token)
+            && string.Equals(d.MachineName, machineName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>CSV 导入用：创建一条预注册设备（无令牌），等待教室端上线认领。</summary>
+    public async Task CreatePreRegisteredDeviceAsync(string id, string name, string machineName, string? groupId,
+        string? profileId, string remark, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO devices (id, token, name, machine_name, os_version, classisland_version,
+                                 plugin_version, group_id, profile_id, state, applied_revision, remark,
+                                 ip_address, created_at)
+            VALUES ($id, '', $name, $machine, '', '', '', $groupId, $profileId, 'offline', 0, $remark, NULL, $now);
+            """;
+        AddParameters(command,
+            ("$id", id),
+            ("$name", name),
+            ("$machine", machineName ?? string.Empty),
+            ("$groupId", TextOrNull(groupId)),
+            ("$profileId", TextOrNull(profileId)),
+            ("$remark", remark ?? string.Empty),
+            ("$now", Ts(DateTimeOffset.UtcNow)));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// CSV 导入用：更新设备的分组 / 档案 / 备注。某项传 <c>null</c> 表示「这一列留空，不要改」，
+    /// 因此不会因为表格里有空单元格就把已有绑定清掉。
+    /// </summary>
+    public async Task UpdateDeviceBindingsAsync(string deviceId, string? groupId, string? profileId, string? remark,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE devices SET
+                group_id   = CASE WHEN $groupId   IS NULL THEN group_id   ELSE $groupId   END,
+                profile_id = CASE WHEN $profileId IS NULL THEN profile_id ELSE $profileId END,
+                remark     = CASE WHEN $remark    IS NULL THEN remark     ELSE $remark    END
+            WHERE id = $id;
+            """;
+        AddParameters(command,
+            ("$groupId", TextOrNull(groupId)),
+            ("$profileId", TextOrNull(profileId)),
+            ("$remark", remark is null ? null : remark.Trim()),
+            ("$id", deviceId));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// 教室端首次上线「认领」预注册记录：把占位行上事先配好的分组 / 档案 / 备注搬到真实设备上，再删除占位行。
+    /// <para>放在一个事务里，避免出现「占位行还在、绑定却丢了」的中间状态。</para>
+    /// </summary>
+    public async Task AdoptPreRegisteredDeviceAsync(DeviceRow placeholder, string deviceId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.Equals(placeholder.Id, deviceId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await using (var copy = connection.CreateCommand())
+        {
+            copy.Transaction = (SqliteTransaction)transaction;
+            copy.CommandText = """
+                UPDATE devices SET
+                    group_id   = COALESCE(NULLIF(group_id, ''), $groupId),
+                    profile_id = COALESCE(NULLIF(profile_id, ''), $profileId),
+                    remark     = CASE WHEN remark = '' THEN $remark ELSE remark END
+                 WHERE id = $id;
+                """;
+            AddParameters(copy,
+                ("$groupId", TextOrNull(placeholder.GroupId)),
+                ("$profileId", TextOrNull(placeholder.ProfileId)),
+                ("$remark", placeholder.Remark ?? string.Empty),
+                ("$id", deviceId));
+            await copy.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var drop = connection.CreateCommand())
+        {
+            drop.Transaction = (SqliteTransaction)transaction;
+            // 占位行理论上没有日志 / 指令 / 诊断，但一并清理，避免留下查不到的孤儿数据。
+            drop.CommandText = """
+                DELETE FROM devices WHERE id = $id;
+                DELETE FROM client_logs WHERE device_id = $id;
+                DELETE FROM device_commands WHERE device_id = $id;
+                DELETE FROM device_diagnostics WHERE device_id = $id;
+                """;
+            drop.Parameters.AddWithValue("$id", placeholder.Id);
+            await drop.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     /// <summary>递增全部设备的推送世代号，返回受影响设备数。</summary>
     public async Task<int> BumpPushEpochAllAsync(CancellationToken cancellationToken = default)
     {

@@ -201,6 +201,7 @@ public sealed class SyncService(
             Name = device.Name,
             GroupId = device.GroupId,
             GroupName = group?.Name,
+            ProfileId = device.ProfileId,
             State = state,
             Online = online,
             AppliedRevision = device.AppliedRevision,

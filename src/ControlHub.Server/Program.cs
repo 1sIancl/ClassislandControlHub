@@ -211,6 +211,7 @@ app.MapLocalShellEndpoints();
 app.MapClientEndpoints();
 app.MapAdminEndpoints();
 app.MapDeviceEndpoints();
+app.MapDeviceCsvEndpoints();
 app.MapProfileEndpoints();
 app.MapRemoteEndpoints();
 app.MapBackupEndpoints();
