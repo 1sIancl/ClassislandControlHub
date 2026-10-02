@@ -2,11 +2,11 @@
  * 系统设置视图：服务器信息、账号安全与部署提示。
  */
 
-import { api, session, hasPermission } from '../core/api.js?v=34';
+import { api, session, hasPermission } from '../core/api.js?v=35';
 import {
   h, clear, formatDateTime, formatDuration, toast, loadingBlock,
   field, modal, copyText, confirmDialog,
-} from '../core/ui.js?v=34';
+} from '../core/ui.js?v=35';
 
 export const meta = {
   title: '系统设置',
@@ -21,7 +21,7 @@ export async function render(container) {
   const canSettings = hasPermission('settings.read');
   const canAccounts = hasPermission('accounts.read');
 
-  const [info, me, accounts, permissions, permissionPresets, registerCodes, registerRequests, registration, timeOffset, updateState, aiConfig, webhooks] =
+  const [info, me, accounts, permissions, permissionPresets, registerCodes, registerRequests, registration, timeOffset, updateState, aiConfig, webhooks, apiKeys] =
     await Promise.all([
       api('/server/info', { auth: false }),
       api('/admin/me'),
@@ -35,6 +35,7 @@ export async function render(container) {
       canSettings ? api('/admin/update/state') : Promise.resolve(null),
       canSettings ? api('/admin/ai/config') : Promise.resolve(null),
       canSettings ? api('/admin/webhooks') : Promise.resolve([]),
+      canAccounts ? api('/admin/api-keys') : Promise.resolve([]),
     ]);
 
   session.serverInfo = info;
@@ -54,6 +55,7 @@ export async function render(container) {
     canAccounts ? renderAccountsCard(container, accounts, me, permissions, permissionPresets) : null,
     canAccounts ? renderRegisterCodesCard(container, registerCodes, registration) : null,
     canAccounts ? renderRegisterRequestsCard(container, registerRequests, registration) : null,
+    canAccounts ? renderApiKeysCard(container, apiKeys) : null,
     canSettings ? renderBrandingCard(info) : null,
     canSettings ? renderTimeCard(timeOffset) : null,
     canSettings ? renderAiCard(aiConfig) : null,
@@ -164,7 +166,7 @@ async function replayOnboarding() {
     return;
   }
 
-  const { startTour } = await import('../core/tour.js?v=34');
+  const { startTour } = await import('../core/tour.js?v=35');
   startTour({
     onFinish: async (skipped) => {
       if (!skipped) {
@@ -940,6 +942,177 @@ function openResetPasswordDialog(account) {
       toast('ok', '密码已重置');
       return true;
     },
+  });
+}
+
+// ────────────────────────────── API 密钥（开放 API 接入） ──────────────────────────────
+
+/** 可签发的权限（默认只读）：密钥不该拿它去做管理动作，需要写权限时应有意识地勾选。 */
+const API_KEY_READ_SCOPES = [
+  { key: 'devices.read', label: '设备只读（设备清单、状态、日志）' },
+  { key: 'profiles.read', label: '配置档案只读' },
+  { key: 'audit.read', label: '审计日志只读' },
+  { key: 'remote.read', label: '远程信息只读（指令历史、诊断记录）' },
+];
+
+const API_KEY_WRITE_SCOPES = [
+  { key: 'remote.write', label: '远程下发（指令、通知、外观）' },
+  { key: 'deploy.write', label: '触发配置下发' },
+];
+
+function renderApiKeysCard(container, keys) {
+  const canWrite = hasPermission('accounts.write');
+  const active = keys.filter((k) => k.active);
+
+  const rows = keys.map((key) => h('tr',
+    h('td',
+      h('div.cell-main', key.name),
+      h('div.cell-sub', `${key.prefix}…　由 ${key.createdBy || '—'} 签发${key.note ? `　${key.note}` : ''}`),
+    ),
+    h('td', { style: { fontSize: '12px', maxWidth: '260px', overflowWrap: 'anywhere' } },
+      (key.permissions || []).join('、') || '—'),
+    h('td', { style: { fontSize: '12px' } },
+      key.active
+        ? h('span.badge', { style: { background: 'var(--ok-soft)', color: 'var(--ok)' } }, '可用')
+        : h('span.badge.badge-neutral', key.revoked ? '已撤销' : '已过期'),
+      h('div.cell-sub', key.expiresAt ? `至 ${formatDateTime(key.expiresAt)}` : '长期有效'),
+    ),
+    h('td', { style: { fontSize: '12px' } }, key.lastUsedAt ? formatDateTime(key.lastUsedAt) : '从未使用'),
+    h('td.actions',
+      canWrite && key.active
+        ? h('button.btn.btn-sm.btn-danger', {
+          type: 'button',
+          onClick: async () => {
+            if (!await confirmDialog('撤销密钥',
+              `撤销后「${key.name}」立刻失效，正在使用它的脚本会收到 401。确定撤销吗？`, '撤销', true)) return;
+            try {
+              await api(`/admin/api-keys/${key.id}`, { method: 'DELETE' });
+              toast('ok', '已撤销');
+              await render(container);
+            } catch (err) {
+              toast('error', '撤销失败', err.message);
+            }
+          },
+        }, '撤销')
+        : null,
+    ),
+  ));
+
+  return h('div.card', { style: { marginTop: '16px' } },
+    h('div.card-head',
+      h('div',
+        h('h3', `API 密钥（${active.length} 把可用）`),
+        h('p.card-desc',
+          '给监控脚本、第三方系统用的凭据：可只给只读权限、可设期限、可随时撤销，不必再共用管理员账号或密码。'),
+      ),
+      canWrite
+        ? h('button.btn.btn-primary.btn-sm', {
+          type: 'button',
+          onClick: () => openApiKeyDialog(container),
+        }, '+ 签发密钥')
+        : null,
+    ),
+    keys.length === 0
+      ? h('div.notice.notice-info', { style: { marginTop: '12px' } },
+        h('span.notice-icon', 'i'),
+        h('div', '还没有密钥。要让脚本读设备状态或拉审计日志，建议签发一把**只读**密钥，而不是直接用管理员账号。'))
+      : h('div.table-wrap', { style: { marginTop: '12px' } },
+        h('table.table',
+          h('thead', h('tr',
+            h('th', '名称'), h('th', '权限'), h('th', '状态'), h('th', '最近使用'), h('th', ''))),
+          h('tbody', ...rows))),
+  );
+}
+
+/** 签发密钥：选权限（默认只读）、设期限；明文只在返回时显示一次。 */
+function openApiKeyDialog(container) {
+  const nameInput = h('input', { type: 'text', placeholder: '例如：机房监控脚本 / 教务导出工具' });
+  const daysInput = h('input', { type: 'number', min: '0', max: '3650', value: '90' });
+  const noteInput = h('input', { type: 'text', placeholder: '谁在用、用来做什么（便于将来判断该不该撤销）' });
+
+  const boxes = [...API_KEY_READ_SCOPES, ...API_KEY_WRITE_SCOPES].map((scope) => ({
+    ...scope,
+    box: h('input', { type: 'checkbox', checked: scope.key.endsWith('.read') }),
+  }));
+
+  modal({
+    title: '签发 API 密钥',
+    width: 'wide',
+    confirmText: '签发',
+    body: h('div',
+      h('div.notice.notice-info',
+        h('span.notice-icon', 'i'),
+        h('div', '密钥明文**只会显示这一次**（服务端只存哈希），丢了只能重新签发。'
+          + '建议只勾只读权限；出于安全考虑，「密钥管理」权限不允许授予密钥，避免一把密钥无限自我复制。')),
+      field('名称', nameInput, '必填：写清是谁在用，否则将来无法判断该不该撤销。'),
+      field('有效天数', daysInput, '填 0 表示长期有效；建议给脚本设一个期限，到期自动失效。'),
+      h('div', { style: { marginTop: '10px' } },
+        h('div', { style: { fontSize: '12.5px', marginBottom: '6px' } }, '权限（默认只勾只读）'),
+        h('div', { style: { display: 'grid', gap: '4px' } },
+          ...boxes.map(({ box, label }) => h('label.checkbox-field', box, label)))),
+      field('备注', noteInput, '可选：便于交接与日后排查。'),
+    ),
+    onConfirm: async () => {
+      const permissions = boxes.filter((b) => b.box.checked).map((b) => b.key);
+      try {
+        const result = await api('/admin/api-keys', {
+          method: 'POST',
+          body: {
+            name: nameInput.value.trim(),
+            permissions,
+            expiresInDays: Number(daysInput.value || 0),
+            note: noteInput.value.trim(),
+          },
+        });
+        showApiKeySecret(result);
+        await render(container);
+        return true;
+      } catch (err) {
+        toast('error', '签发失败', err.message);
+        return false;
+      }
+    },
+  });
+}
+
+/** 明文展示（一次性）：给出密钥与一句可直接粘贴的用法示例。 */
+function showApiKeySecret(result) {
+  const secretBox = h('input', {
+    readOnly: true,
+    value: result.secret,
+    style: { fontFamily: 'var(--mono)', fontSize: '13px' },
+  });
+  const sampleBox = h('textarea', {
+    readOnly: true,
+    rows: '2',
+    style: { width: '100%', fontFamily: 'var(--mono)', fontSize: '12px' },
+  });
+  sampleBox.value = `curl -H "Authorization: ApiKey ${result.secret}" `
+    + `${(session.serverInfo && session.serverInfo.publicBaseUrl) || 'http://<服务器>:29800'}/api/v1/admin/devices`;
+
+  modal({
+    title: '密钥已签发（请立刻保存）',
+    width: 'wide',
+    confirmText: '我已保存',
+    body: h('div',
+      h('div.notice.notice-warn',
+        h('span.notice-icon', '!'),
+        h('div', '这是唯一一次显示明文的机会。关闭后无法再查看，只能重新签发。')),
+      field('密钥', secretBox, `名称：${result.key.name}`),
+      h('div', { style: { marginTop: '8px' } },
+        h('button.btn.btn-sm', {
+          type: 'button',
+          onClick: async () => {
+            try {
+              await navigator.clipboard.writeText(result.secret);
+              toast('ok', '已复制密钥');
+            } catch {
+              toast('warn', '复制失败', '请手动选中输入框内容复制。');
+            }
+          },
+        }, '复制密钥')),
+      field('用法示例', sampleBox, '也可以改用 X-Api-Key 请求头。'),
+    ),
   });
 }
 

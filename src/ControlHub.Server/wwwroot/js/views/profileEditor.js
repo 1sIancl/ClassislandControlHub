@@ -3,11 +3,11 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=34';
+import { api } from '../core/api.js?v=35';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, icon,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=34';
+} from '../core/ui.js?v=35';
 
 export const meta = {
   title: '编辑配置档案',
