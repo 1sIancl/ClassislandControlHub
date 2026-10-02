@@ -38,6 +38,9 @@ public sealed class MaintenanceService(
                     _options.AuditLogRetentionDays,
                     stoppingToken);
 
+                // 登录尝试记录只用于短期锁定判定，过期即清（它也属于安全日志，保留天数单独可配）。
+                affected += await store.PruneLoginAttemptsAsync(_options.LoginAttemptRetentionDays, stoppingToken);
+
                 // 指令历史与诊断工件（截图）体积远大于普通记录，单独按保留策略清理。
                 affected += await store.PruneCommandsAsync(_options.CommandRetentionDays, stoppingToken);
                 affected += await store.PurgeDiagnosticsAsync(

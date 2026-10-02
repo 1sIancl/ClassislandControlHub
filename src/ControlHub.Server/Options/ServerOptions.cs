@@ -126,6 +126,47 @@ public sealed class ServerOptions
     /// <summary>批与批之间的间隔秒数（仅分批下发生效，最小按 1 秒处理）。</summary>
     public int PushBatchDelaySeconds { get; set; } = 5;
 
+    /// <summary>
+    /// 是否发送安全响应头（CSP / X-Frame-Options / X-Content-Type-Options / Referrer-Policy 等）。
+    /// <para>默认开启；若接入的某个前端定制与 CSP 冲突，可临时关掉排查（关掉会降低浏览器侧防护）。</para>
+    /// </summary>
+    public bool SecurityHeadersEnabled { get; set; } = true;
+
+    /// <summary>
+    /// 是否把 HTTP 请求强制跳转到 HTTPS。默认关闭。
+    /// <para>开启前请确认 HTTPS 已可用（<see cref="EnableHttps"/> 或有反代终结 TLS），
+    /// 否则会把所有访问者挡在门外。回环地址永远不跳转——桌面外壳的本机免登录依赖 http://127.0.0.1。</para>
+    /// </summary>
+    public bool RequireHttpsRedirect { get; set; }
+
+    /// <summary>
+    /// 管理端来源允许列表（IP 或 CIDR，例如 <c>192.168.1.0/24</c>）。为空表示不限制。
+    /// <para>只约束 <c>/api/v1/admin</c>：教室端接口不受影响（否则教室就上不来了）。
+    /// 回环地址始终放行，便于本机运维与桌面外壳。</para>
+    /// </summary>
+    public string[] AdminIpAllowList { get; set; } = [];
+
+    /// <summary>是否记录 API 访问日志（每个 /api 请求一条结构化日志，含耗时与追踪 ID）。</summary>
+    public bool AccessLogEnabled { get; set; } = true;
+
+    /// <summary>
+    /// 是否改用 JSON 控制台日志（便于日志平台按字段检索）。默认关闭，保持人类友好的文本日志。
+    /// </summary>
+    public bool LogJson { get; set; }
+
+    /// <summary>
+    /// 连续登录失败多少次要临时锁定账号（#27）。设为 0 表示不锁定（不建议）。
+    /// <para>只按用户名计数、不按来源 IP：学校的出口 IP 往往是同一个，
+    /// 按 IP 统计会因为一台机器被扫而误伤整栋楼的所有人。</para>
+    /// </summary>
+    public int LoginMaxFailures { get; set; } = 5;
+
+    /// <summary>锁定与失败计数的时间窗口（分钟）：超过这个时间的失败不再计入。</summary>
+    public int LoginLockoutMinutes { get; set; } = 15;
+
+    /// <summary>登录尝试记录的保留天数（维护任务清理）。</summary>
+    public int LoginAttemptRetentionDays { get; set; } = 30;
+
     /// <summary>审计日志保留天数。</summary>
     public int AuditLogRetentionDays { get; set; } = 180;
 

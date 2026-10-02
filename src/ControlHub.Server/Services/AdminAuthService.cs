@@ -59,13 +59,34 @@ public sealed class AdminAuthService(
     public async Task<LoginResponse> LoginAsync(string username, string password,
         string? ipAddress, CancellationToken cancellationToken = default)
     {
-        var user = await store.GetUserByUsernameAsync(username?.Trim() ?? string.Empty, cancellationToken);
+        var trimmed = username?.Trim() ?? string.Empty;
+
+        // 账号临时锁定：连续失败达到阈值后先拒绝，避免在线暴力尝试。
+        // 只按用户名计数（不按来源 IP）：学校出口 IP 常常只有一个，按 IP 会因一台机器被扫而误伤所有人。
+        if (_options.LoginMaxFailures > 0
+            && await store.CountRecentLoginFailuresAsync(trimmed, _options.LoginLockoutMinutes, cancellationToken)
+                >= _options.LoginMaxFailures)
+        {
+            await store.AddAuditAsync(trimmed, "admin.login.locked", trimmed,
+                $"连续 {_options.LoginMaxFailures} 次登录失败，已临时锁定 {_options.LoginLockoutMinutes} 分钟。",
+                ipAddress, cancellationToken);
+
+            throw new HubException(HubErrorCodes.AccountLocked,
+                $"连续登录失败次数过多，账号已临时锁定，请 {_options.LoginLockoutMinutes} 分钟后再试。", 429);
+        }
+
+        var user = await store.GetUserByUsernameAsync(trimmed, cancellationToken);
         if (user is null || !PasswordHasher.Verify(password, user.PasswordHash))
         {
-            await store.AddAuditAsync(username ?? "(空)", "admin.login.failed", username ?? string.Empty,
+            await store.AddLoginAttemptAsync(trimmed, ipAddress, success: false, cancellationToken);
+            await store.AddAuditAsync(username ?? "(空)", "admin.login.failed", trimmed,
                 "用户名或密码错误。", ipAddress, cancellationToken);
             throw new HubException(HubErrorCodes.AuthInvalid, "用户名或密码错误。", 401);
         }
+
+        // 密码正确即清空失败计数：成功登录后不应再被之前的失败拖累。
+        await store.AddLoginAttemptAsync(trimmed, ipAddress, success: true, cancellationToken);
+        await store.ClearLoginFailuresAsync(trimmed, cancellationToken);
 
         // 启用了两步验证：先发一张 5 分钟有效的「半程票据」，验证码通过后才签发正式会话。
         if (user.TotpEnabled)

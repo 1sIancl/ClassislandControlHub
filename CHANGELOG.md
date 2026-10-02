@@ -29,6 +29,23 @@
   `docs/troubleshooting.md`（故障排查）、`docs/security.md`（安全加固）、`docs/api.md`（对外 API 指南）、
   `docs/adr/`（架构决策记录）、`README` 能力边界与规模建议。
 
+### 安全与可观测性
+
+- **登录失败锁定**：按账号计数（不按 IP，避免误伤整栋楼），窗口内连错达阈值即临时锁定；
+  `LoginMaxFailures` / `LoginLockoutMinutes`，默认 5 次 / 15 分钟。
+- **管理端来源限制** `AdminIpAllowList`（IP 或 CIDR）：只约束 `/api/v1/admin`，
+  教室端与公开接口不受影响，回环地址始终放行。
+- **安全响应头**：CSP / X-Frame-Options / X-Content-Type-Options / Referrer-Policy / Permissions-Policy，
+  HTTPS 下附带 HSTS；可用 `SecurityHeadersEnabled=false` 临时关闭排查兼容问题。
+- **HTTPS 强制跳转** `RequireHttpsRedirect`（默认关闭；回环地址永不跳转）。
+- **API 访问日志与追踪 ID**：每个 `/api` 请求一条结构化日志（方法 / 路径 / 最终状态码 / 耗时 / 来源 / 追踪 ID），
+  响应回写 `X-Request-Id`；心跳与长轮询降为 Debug，避免高频日志写满磁盘。
+- **结构化 JSON 日志** `LogJson`（便于日志平台按字段检索）。
+- **分级健康检查**：`/api/health/live`（不查库）、`/api/health/ready`（数据库不可用返回 503）、
+  `/api/health/deep`（数据目录可写 + 磁盘余量 + 设备统计）。
+- 新增 **`docs/security-testing.md`**（安全自检清单）、`docs/troubleshooting.md`、`docs/api.md`、
+  `docs/adr/`（4 篇架构决策记录）、`CONTRIBUTING.md`、`CHANGELOG.md`、`.github/dependabot.yml`。
+
 ### 修复
 
 - **「运行时长 / 启动时间」显示的是系统开机时长**：原实现取 `Environment.TickCount64`，

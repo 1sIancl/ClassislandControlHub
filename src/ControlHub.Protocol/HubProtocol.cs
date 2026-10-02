@@ -115,6 +115,12 @@ public static class HubErrorCodes
     /// <summary>请求过于频繁。</summary>
     public const string RateLimited = "RATE_LIMITED";
 
+    /// <summary>来源地址不在管理端允许列表内（ControlHub:AdminIpAllowList）。</summary>
+    public const string IpNotAllowed = "IP_NOT_ALLOWED";
+
+    /// <summary>账号因连续登录失败被临时锁定。</summary>
+    public const string AccountLocked = "ACCOUNT_LOCKED";
+
     /// <summary>协议版本不受支持。</summary>
     public const string ProtocolUnsupported = "PROTOCOL_UNSUPPORTED";
 

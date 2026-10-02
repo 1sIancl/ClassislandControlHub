@@ -97,6 +97,26 @@ public sealed partial class HubStore
         await EnsureColumnAsync(connection, "devices", "applied_profile_revision", "INTEGER NOT NULL DEFAULT 0",
             cancellationToken);
 
+        // 迁移：账号密码最后修改时间（为「密码到期提醒」留的字段；提醒逻辑尚未接到界面上）。
+        await EnsureColumnAsync(connection, "users", "password_changed_at", "TEXT", cancellationToken);
+
+        // 迁移：登录尝试记录（#27 账号锁定）。成功与失败都记：失败用于判定锁定，成功用于清空失败计数。
+        await using (var attempts = connection.CreateCommand())
+        {
+            attempts.CommandText = """
+                CREATE TABLE IF NOT EXISTS login_attempts (
+                    id         TEXT PRIMARY KEY,
+                    username   TEXT NOT NULL DEFAULT '',
+                    ip_address TEXT,
+                    success    INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_login_attempts_user
+                    ON login_attempts(username, created_at DESC);
+                """;
+            await attempts.ExecuteNonQueryAsync(cancellationToken);
+        }
+
         // 确保全局版本号存在，保证任何一次同步请求都能拿到确定值。
         await using var seed = connection.CreateCommand();
         seed.CommandText = """

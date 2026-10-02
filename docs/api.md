@@ -21,16 +21,26 @@
 | 鉴权（教室端） | `Authorization: HubDevice <设备令牌>`（**不是** `Bearer`，写错会 401） |
 | 权限 | 每个管理端接口都标注所需权限键，权限不足直接拒绝（fail-closed） |
 
-### 错误码（常见）
+### 错误码（完整列表，取自 `HubErrorCodes`）
 
 | 错误码 | 含义 | 处理 |
 |---|---|---|
-| `AUTH_INVALID` | 令牌缺失 / 失效 | 重新登录 |
-| `FORBIDDEN` | 已登录但权限不足 | 补权限，不要重试 |
-| `VALIDATION` | 参数不合法（消息里会说明哪个字段） | 修参数 |
-| `NOT_FOUND` | 目标不存在（设备 / 档案 / 记录） | 核对 ID |
+| `AUTH_REQUIRED` | 请求未携带凭证 | 带上令牌 |
+| `AUTH_INVALID` | 凭证无效或已过期 | 重新登录 |
+| `PERMISSION_DENIED` | 已登录但当前账号没有该操作的权限 | 补权限，**不要重试** |
+| `ACCOUNT_LOCKED` | 连续登录失败，账号被临时锁定（默认 5 次 / 15 分钟） | 等锁定窗口过去，别继续试 |
+| `IP_NOT_ALLOWED` | 来源地址不在 `ControlHub:AdminIpAllowList` 内 | 从允许网段访问 |
+| `VALIDATION_FAILED` | 参数不合法（消息里会说明哪个字段） | 修参数 |
+| `NOT_FOUND` | 目标不存在（设备 / 档案 / 指令 / 记录） | 核对 ID |
+| `CONFLICT` | 唯一约束冲突（例如重名） | 换一个值 |
+| `RATE_LIMITED` | 请求过于频繁 | 退避后重试 |
 | `DEVICE_UNKNOWN` | 设备令牌无效 | 设备需重新注册 |
-| `INTERNAL` | 服务端异常 | 看服务端日志 |
+| `DEVICE_REVOKED` | 设备已被管理员停用 | 在设备列表恢复 |
+| `ENROLL_CODE_INVALID` / `ENROLL_CODE_EXPIRED` | 注册码错误 / 过期或用完 | 重新签发注册码 |
+| `PROTOCOL_UNSUPPORTED` | 协议版本不受支持 | 升级客户端或服务端 |
+| `INTERNAL` | 服务端异常 | 看服务端日志（带 `X-Request-Id` 一起查） |
+
+> 每个响应都会回写 `X-Request-Id`；把它和服务端日志里的 `traceId` 对上，就能定位某一次请求的完整处理过程。
 
 ## 二、一分钟上手
 

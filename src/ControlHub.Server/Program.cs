@@ -133,6 +133,13 @@ if (serverOptions.CorsAllowedOrigins.Length > 0)
         .AllowAnyMethod()));
 }
 
+// 结构化（JSON）日志：给日志平台按字段检索用。默认保持人类友好的文本日志——现场排查时更可读。
+if (serverOptions.LogJson)
+{
+    builder.Logging.ClearProviders();
+    builder.Logging.AddJsonConsole(options => options.IncludeScopes = true);
+}
+
 var app = builder.Build();
 
 // ────────────────────────────── 初始化 ──────────────────────────────
@@ -147,10 +154,39 @@ await using (var scope = app.Services.CreateAsyncScope())
     var options = scope.ServiceProvider.GetRequiredService<IOptions<ServerOptions>>().Value;
     var dataDirectory = options.ResolveDataDirectory(app.Environment.ContentRootPath);
     app.Logger.LogInformation("集控服务器已就绪。数据目录：{Directory}", dataDirectory);
+
+    // 启动时说清安全相关的开关状态：这类配置「以为配上了其实没生效」是最危险的。
+    app.Logger.LogInformation("管理端来源限制：{AllowList}",
+        serverOptions.AdminIpAllowList.Length == 0
+            ? "未配置（不限制来源）"
+            : string.Join(", ", serverOptions.AdminIpAllowList));
+    app.Logger.LogInformation("安全响应头：{Headers}；HTTPS 强制跳转：{Redirect}；API 访问日志：{AccessLog}",
+        serverOptions.SecurityHeadersEnabled ? "开启" : "关闭",
+        serverOptions.RequireHttpsRedirect ? "开启" : "关闭",
+        serverOptions.AccessLogEnabled ? "开启" : "关闭");
 }
 
 // ────────────────────────────── 中间件 ──────────────────────────────
+// 访问日志放在**最外层**：HubExceptionMiddleware 会把业务异常改写成 4xx/5xx，
+// 只有包在它外面，日志里的状态码才是客户端真正看到的那一个。
+app.UseMiddleware<ApiAccessLogMiddleware>();
+
 app.UseMiddleware<HubExceptionMiddleware>();
+
+// 安全响应头（CSP / X-Frame-Options / nosniff / Referrer-Policy 等）
+if (serverOptions.SecurityHeadersEnabled)
+{
+    app.UseMiddleware<SecurityHeadersMiddleware>();
+}
+
+// HTTPS 强制跳转（默认关闭；回环地址永不跳转——桌面外壳的本机免登录依赖 http://127.0.0.1）
+if (serverOptions.RequireHttpsRedirect)
+{
+    app.UseMiddleware<HttpsRedirectMiddleware>();
+}
+
+// 管理端来源限制（ControlHub:AdminIpAllowList；留空 = 不限制，教室端接口不受影响）
+app.UseMiddleware<AdminIpAllowListMiddleware>();
 
 if (serverOptions.CorsAllowedOrigins.Length > 0)
 {
