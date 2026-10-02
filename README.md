@@ -249,6 +249,16 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 | B 端 | ClassIsland 插件 SDK（`ClassIsland.PluginSdk 2.1.1.1`）、Avalonia 12 |
 | 共享 | `ControlHub.Protocol`（net10.0，无外部依赖，System.Text.Json） |
 
+> **能力边界（容易误解，故单独说明）**：三部分的跨平台能力**并不相同**——
+>
+> | 部分 | 支持平台 |
+> |---|---|
+> | A 端服务端 + Web 管理界面 | **跨平台**：Windows / Linux 都能部署（Linux 一键 systemd、Windows 一键注册服务），浏览器访问即可管理 |
+> | B 端插件（教室端） | **仅 Windows** 上的 ClassIsland 2.1.x（`supportedOSPlatforms: [Windows]`） |
+> | 本地桌面外壳 `ControlHub.Shell` | **仅 Windows**（用 WebView2 内嵌界面，并依赖 Windows 服务控制 API） |
+>
+> 也就是说：**外壳只是「双击即用」的可选入口，没有它任何功能都不受影响**——其它平台直接用浏览器访问 A 端即可。
+
 ## 本地桌面外壳（可选）
 
 不想开浏览器、也不想记着「先起服务再访问」？仓库里带了一个**薄外壳** `src/ControlHub.Shell`：它只做三件事——

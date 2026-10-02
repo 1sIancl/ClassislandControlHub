@@ -3,10 +3,10 @@
  * 数据来自 A 端 /admin/devices、/admin/backups 等接口。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=32';
+import { api, fetchBlob } from '../core/api.js?v=33';
 import {
   h, clear, toast, loadingBlock, confirmDialog, field, select, emptyState, formatDateTime, modal,
-} from '../core/ui.js?v=32';
+} from '../core/ui.js?v=33';
 
 export const meta = {
   title: '远程管理',
@@ -114,6 +114,111 @@ function broadcastResult(result) {
     + (skipped > 0 ? `；${skipped} 台离线未下发（如需排队，请勾选「含离线设备」）` : '');
 }
 
+/**
+ * 待执行指令队列视图：显示「还没被设备取走」的指令（离线排队 / 定时等待），带到期倒计时与逐条取消。
+ * <para>与指令历史的区别：历史回答「过去发生了什么」，队列回答「还有什么没执行、什么时候作废」。</para>
+ * @param {HTMLSelectElement} deviceSelect 目标设备下拉框（值为设备 ID；`__all__` 表示全部在线设备）。
+ * @returns {{ el: HTMLElement, refresh: Function }} 视图元素与手动刷新函数。
+ */
+function createQueueView(deviceSelect) {
+  const box = h('div', { style: { marginTop: '16px' } });
+
+  const refresh = async () => {
+    const deviceId = deviceSelect.value;
+    if (!deviceId || deviceId === '__all__') { clear(box); return; }
+
+    let list = [];
+    try {
+      list = await api(`/admin/devices/${deviceId}/commands/queue`);
+    } catch (err) {
+      clear(box);
+      box.appendChild(h('div.notice.notice-danger', h('span.notice-icon', '!'), h('div', err.message)));
+      return;
+    }
+
+    clear(box);
+    const device = state.devices.find((d) => d.id === deviceId);
+
+    box.appendChild(h('div.toolbar',
+      h('span.toolbar-label', `待执行指令队列（${list.length}）`),
+      h('div.spacer'),
+      h('button.btn.btn-sm', { type: 'button', onClick: refresh }, '刷新队列'),
+    ));
+
+    if (list.length === 0) {
+      box.appendChild(h('div', { style: { padding: '6px 0', color: 'var(--text-faint)', fontSize: '12.5px' } },
+        '队列为空。设备在线时指令会立即执行；要让离线设备排队执行，请勾选「含离线设备」。'));
+      return;
+    }
+
+    box.appendChild(h('div.cmd-list', ...list.map((c) => {
+      const inflight = Boolean(c.dispatchedAt);
+      const remaining = formatRemaining(c.expiresAt);
+      return h('div.cmd-row',
+        h('div.cmd-head',
+          h('span.log-time', formatDateTime(c.issuedAt)),
+          h('span.log-level.warn', inflight ? '已派发' : '排队中'),
+          h('span.cmd-kind', c.kind),
+          remaining ? h('span.cmd-kind', remaining) : null,
+          h('div.spacer'),
+          inflight
+            ? null
+            : h('button.btn.btn-sm', {
+              type: 'button',
+              onClick: async () => {
+                if (!await confirmDialog('取消指令',
+                  `确定取消这条「${c.kind}」指令吗？取消后设备不会执行它。`, '取消指令')) return;
+                try {
+                  await api(`/admin/devices/commands/${c.id}`, { method: 'DELETE' });
+                  toast('ok', '已取消指令');
+                } catch (err) {
+                  toast('error', '取消失败', err.message);
+                }
+                await refresh();
+              },
+            }, '取消'),
+        ),
+        h('div.shot-note', queueStateText(c, device, inflight)),
+      );
+    })));
+  };
+
+  deviceSelect.addEventListener('change', () => { refresh(); });
+  refresh();
+
+  return { el: box, refresh };
+}
+
+/** 队列条目「为什么还没执行」的说明文案。 */
+function queueStateText(command, device, inflight) {
+  if (inflight) return '设备已取走指令，正在执行，等待回报结果。';
+
+  const notBefore = command.notBefore ? new Date(command.notBefore).getTime() : 0;
+  if (notBefore > Date.now()) {
+    return `定时指令：${formatDateTime(command.notBefore)} 生效后执行。`;
+  }
+
+  if (device && device.online === false) {
+    return '设备当前离线，将在下次上线心跳时立即执行。';
+  }
+
+  return '设备在线，将在下一次心跳时执行。';
+}
+
+/** 到期倒计时文案（队列条目右侧）。 */
+function formatRemaining(expiresAt) {
+  if (!expiresAt) return '';
+  const left = new Date(expiresAt).getTime() - Date.now();
+  if (!Number.isFinite(left)) return '';
+  if (left <= 0) return '已过期';
+
+  const minutes = Math.round(left / 60000);
+  if (minutes < 60) return `${minutes} 分钟后作废`;
+
+  const hours = Math.floor(minutes / 60);
+  return `${hours} 小时 ${minutes % 60} 分钟后作废`;
+}
+
 // ────────────────────── 远程命令行 ──────────────────────
 
 function renderCommand(container) {
@@ -124,6 +229,15 @@ function renderCommand(container) {
   const cmdInput = h('input', { type: 'text', placeholder: '例如：ipconfig /all 或 uname -a' });
   const offline = offlineOption();
   const out = h('div', { style: { display: 'none' } });
+  const queue = createQueueView(targetSelect);
+
+  // 「含离线设备」只对「全部在线设备」有意义：单台下发时服务端本来就会把离线设备的指令排队，
+  // 因此单台模式下隐藏该勾选，避免让人以为勾了才排队。
+  const syncOfflineOption = () => {
+    offline.el.style.display = targetSelect.value === '__all__' ? '' : 'none';
+  };
+  targetSelect.addEventListener('change', syncOfflineOption);
+  syncOfflineOption();
 
   const runBtn = h('button.btn.btn-primary', {
     type: 'button',
@@ -145,9 +259,13 @@ function renderCommand(container) {
           toast('ok', '已下发', broadcastResult(r));
         } else {
           await api(`/admin/devices/${targetSelect.value}/command`, { method: 'POST', body });
-          toast('ok', '已下发', '请在下方查看执行结果。');
+          const target = state.devices.find((d) => d.id === targetSelect.value);
+          toast('ok', '已下发', target && target.online === false
+            ? '设备当前离线，指令已进入队列，上线后自动执行（可在下方队列里取消）。'
+            : '请在下方查看执行结果。');
           await loadCommandHistory(targetSelect.value, out);
           pollHistory(targetSelect.value, out);
+          await queue.refresh();
         }
       } catch (e) {
         toast('error', '下发失败', e.message);
@@ -166,6 +284,7 @@ function renderCommand(container) {
     field('命令', cmdInput, '在 Windows 上以 cmd /c 执行，其它平台以 bash -c 执行。'),
     offline.el,
     h('div', { style: { display: 'flex', gap: '8px', marginTop: '12px' } }, runBtn),
+    queue.el,
     h('div', { style: { marginTop: '16px' } }, out),
   );
 }
@@ -692,6 +811,7 @@ function renderDiagnostic(container) {
   const offline = offlineOption();
   const out = h('div', { style: { display: 'none' } });
   const gallery = h('div', { style: { marginTop: '18px' } });
+  const queue = createQueueView(deviceSelect);
 
   const run = (kind, label) => async () => {
     const deviceId = deviceSelect.value;
@@ -702,6 +822,7 @@ function renderDiagnostic(container) {
       toast('ok', `已请求${label}`, '结果稍后出现在下方；离线设备会排队等上线后执行。');
       await loadCommandHistory(deviceId, out);
       pollHistory(deviceId, out, 6);
+      await queue.refresh();
       if (kind === 'diagnostic.screenshot') {
         pollScreenshots(deviceId, gallery, 4);
       }
@@ -733,6 +854,7 @@ function renderDiagnostic(container) {
       h('button.btn', { type: 'button', onClick: run('diagnostic.bundle', '诊断数据包') }, '请求诊断数据包'),
     ),
     offline.el,
+    queue.el,
     h('div', { style: { marginTop: '16px' } }, out),
     gallery,
   );

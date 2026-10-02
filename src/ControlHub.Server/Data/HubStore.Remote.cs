@@ -139,6 +139,34 @@ public sealed partial class HubStore
         return result;
     }
 
+    /// <summary>
+    /// 查询某设备「待执行指令队列」：尚未被取走的 pending 指令，按生效时间与下发时间排序。
+    /// <para>与指令历史的区别：历史按时间倒序取最近若干条，而队列只关心还没执行的，不受历史条数上限影响。</para>
+    /// </summary>
+    public async Task<List<RemoteCommandRow>> GetPendingCommandsAsync(string deviceId, int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT {CommandColumns} FROM device_commands
+             WHERE device_id = $id AND status = 'pending' AND dispatched_at IS NULL
+             ORDER BY COALESCE(not_before, issued_at) ASC, issued_at ASC
+             LIMIT $limit;
+            """;
+        command.Parameters.AddWithValue("$id", deviceId);
+        command.Parameters.AddWithValue("$limit", limit);
+
+        var result = new List<RemoteCommandRow>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(ReadCommand(reader));
+        }
+
+        return result;
+    }
+
     /// <summary>该设备最近一次派发后仍未回报的指令数量（用于管理端提示）。</summary>
     public async Task<int> CountInFlightCommandsAsync(string deviceId,
         CancellationToken cancellationToken = default)

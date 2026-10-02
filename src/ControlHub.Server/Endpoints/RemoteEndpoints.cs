@@ -21,6 +21,9 @@ public static class RemoteEndpoints
         group.MapPost("/devices/{id}/command", SendCommandAsync).RequirePermission(PermissionKeys.RemoteWrite);
         group.MapPost("/devices/command", SendBroadcastCommandAsync).RequirePermission(PermissionKeys.RemoteWrite);
         group.MapGet("/devices/{id}/commands", ListCommandsAsync).RequirePermission(PermissionKeys.RemoteRead);
+        // 待执行指令队列：离线设备排队、定时指令等待生效时，管理员能看到「还有哪些没执行、什么时候作废」
+        group.MapGet("/devices/{id}/commands/queue", GetCommandQueueAsync)
+            .RequirePermission(PermissionKeys.RemoteRead);
         group.MapPost("/devices/{id}/notify", NotifyAsync).RequirePermission(PermissionKeys.RemoteWrite);
         group.MapPost("/devices/appearance", ApplyAppearanceAsync).RequirePermission(PermissionKeys.RemoteWrite);
         group.MapGet("/devices/{id}/plugins", GetPluginsAsync).RequirePermission(PermissionKeys.RemoteRead);
@@ -254,6 +257,20 @@ public static class RemoteEndpoints
         return (online, candidates.Count - online.Count);
     }
 
+    /// <summary>查询某设备的待执行指令队列（尚未被设备取走的指令）。</summary>
+    private static async Task<ApiResult<List<DeviceCommandDto>>> GetCommandQueueAsync(
+        string id,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        http.RequireAdminSession();
+        var device = await store.GetDeviceAsync(id, cancellationToken);
+        var rows = await store.GetPendingCommandsAsync(id, 100, cancellationToken);
+        return ApiResult<List<DeviceCommandDto>>.Success(
+            rows.Select(r => ToDto(r, device?.Name)).ToList());
+    }
+
     /// <summary>查询某设备的指令历史。</summary>
     private static async Task<ApiResult<List<DeviceCommandDto>>> ListCommandsAsync(
         string id,
@@ -396,6 +413,9 @@ public static class RemoteEndpoints
         IssuedAt = row.IssuedAt,
         FinishedAt = row.FinishedAt,
         IssuedBy = row.IssuedBy,
+        DispatchedAt = row.DispatchedAt,
+        NotBefore = row.NotBefore,
+        ExpiresAt = row.ExpiresAt,
     };
 }
 

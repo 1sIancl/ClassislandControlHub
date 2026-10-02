@@ -296,6 +296,15 @@ public sealed class DeviceCommandDto
 
     /// <summary>下发管理员。</summary>
     public string IssuedBy { get; set; } = string.Empty;
+
+    /// <summary>被设备取走的时刻（为空表示仍在排队）。</summary>
+    public DateTimeOffset? DispatchedAt { get; set; }
+
+    /// <summary>最早生效时间（定时指令用；为空表示立即生效）。</summary>
+    public DateTimeOffset? NotBefore { get; set; }
+
+    /// <summary>过期时间：超过此刻仍未派发则作废，管理端据此显示「剩余时间」。</summary>
+    public DateTimeOffset? ExpiresAt { get; set; }
 }
 
 /// <summary>A 端备份条目。</summary>
