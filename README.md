@@ -233,7 +233,8 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 
 | 集控版本 | 插件包 | 支持的 ClassIsland | 插件市场 | 状态 |
 |---|---|---|---|---|
-| A 端 `1.3.2` / 插件 `1.3.2.0` | `ControlHub.Plugin.cipx` `1.3.2.0` | `2.1.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ✅ 当前版本 |
+| A 端 `1.3.3` / 插件 `1.3.3.0` | `ControlHub.Plugin.cipx` `1.3.3.0` | `2.1.x / 2.2.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ✅ 当前版本 |
+| A 端 `1.3.2` / 插件 `1.3.2.0` | `ControlHub.Plugin.cipx` `1.3.2.0` | `2.1.x` | ✅ 可直接安装 | ⚠️ 上一版本（无 API 密钥、无界面导入导出） |
 | A 端 `1.3.1` / 插件 `1.3.1.0` | `ControlHub.Plugin.cipx` `1.3.1.0` | `2.1.x` | ✅ 可直接安装 | ⚠️ 上一版本（无差异预览 / 安全加固 / 批量导入导出等） |
 | A 端 `1.3.0` / 插件 `1.3.0.0` | `ControlHub.Plugin.cipx` `1.3.0.0` | `2.1.x` | ✅ 可直接安装 | ⚠️ 旧版本（无本地外壳与教室端截图开关） |
 | A 端 `1.2.x` / 插件 `1.2.x` | `1.2.1.0` | `2.1.x` | ✅ 可直接安装 | ⚠️ 上一版本（不含远程诊断） |
@@ -248,8 +249,11 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 补充说明：
 
 - 插件 `manifest.yml` 声明了 `apiVersion: 2.1.0.0` 与 `supportedOSPlatforms: [Windows]`，
-  即**只支持 Windows 上的 ClassIsland 2.1.x**。ClassIsland 2.2 预览期 API 变动较大（不少插件都还没适配），
-  本项目会在 2.2 正式版接口稳定后再跟进。
+  即**只支持 Windows 上的 ClassIsland**。
+- **关于 ClassIsland 2.2**：本插件编译所依赖的 ClassIsland 2.1.1.1 与 `PluginSdk 2.1.1.1`
+  **本身就是 2.2 同期的技术栈**（Avalonia 12 / .NET 10），因此 2.2 上应当可以直接使用。
+  目前 `apiVersion` 仍按 2.1.0.0 声明——如果 2.2 主程序按更高 `apiVersion` 校验插件，可能需要在 2.2 正式版
+  发布后再调整该字段；在 2.2 预览版上实测通过前，这一条以"技术栈同源、预期可用"为准，不宣称已验证。
 - A 端与插件通过 `ControlHub.Protocol` 共享同一份协议定义（协议版本 `1.0`）。**建议两端同步升级**：
   只升一端时注册、心跳与配置下发仍可用，但新增能力（远程命令、定时提醒等）需要两端都升级才会生效。
 - A 端需要 **.NET 10 运行时**（用 `sh/main.sh` 一键脚本会自动装）；插件随 ClassIsland 进程运行，不需要单独装运行时。
