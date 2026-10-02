@@ -167,6 +167,12 @@ public sealed class ServerOptions
     /// <summary>登录尝试记录的保留天数（维护任务清理）。</summary>
     public int LoginAttemptRetentionDays { get; set; } = 30;
 
+    /// <summary>
+    /// <c>/metrics</c> 的访问令牌。<para>留空时只允许**本机**访问（同机 Prometheus / Zabbix agent 的场景）；
+    /// 填了令牌后，外部采集器需带 <c>?token=</c> 或 <c>Authorization: Bearer</c>。</para>
+    /// </summary>
+    public string MetricsToken { get; set; } = string.Empty;
+
     /// <summary>审计日志保留天数。</summary>
     public int AuditLogRetentionDays { get; set; } = 180;
 
