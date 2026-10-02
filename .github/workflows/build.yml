@@ -58,7 +58,7 @@ jobs:
 
       - name: 上传 A 端产物
         if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: controlhub-server
           path: dist/server
@@ -114,7 +114,7 @@ jobs:
             -p:ClassIslandAssemblyPath="$CLASSISLAND_ASSEMBLY"
 
       - name: 上传插件包
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: plugin-cipx
           path: src/ControlHub.Plugin/cipx/ControlHub.Plugin.cipx

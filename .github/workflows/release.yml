@@ -59,7 +59,7 @@ jobs:
           Get-ChildItem dist | Select-Object Name, Length
 
       - name: 上传外壳包
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: shell-bundle
           path: dist/classislandcontrolhub-shell-win-x64-*.zip
