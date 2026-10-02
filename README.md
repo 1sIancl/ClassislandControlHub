@@ -74,6 +74,18 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 脚本会发布服务端并注册为 Windows 服务（开机自启、崩溃自动重启），同时放行防火墙端口。数据保存在
 `C:\ProgramData\ClassislandControlHub\data`，升级只需重新执行该命令。卸载用 `.\sh\uninstall-windows.ps1`。
 
+### 选择 A 端安装包：框架依赖 or 自带运行时
+
+同一版本会发布**两种 A 端包**，**功能完全一致**，唯一区别是「要不要目标机先装 .NET 10 运行时」：
+
+| 包名 | 体积（约） | 说明 | 适合场景 |
+|---|---|---|---|
+| `controlhub-server-<平台>-<版本>.zip` | Linux 1.6 MB / Windows 2 MB | **框架依赖**：目标机需已装 .NET 10 运行时 | 服务器已装 .NET 10，或愿意让 `sh/main.sh` 自动安装 |
+| `controlhub-server-<平台>-full-<版本>.zip` | 约 48 MB | **自带运行时**：解压即可运行，不依赖目标机环境 | 不想在服务器上装运行时的多数学校场景 |
+
+两者**可以互换**：换包时保留 `data/` 目录即可，设备无需重新注册，配置项与数据目录完全相同。
+教室端插件（`.cipx`）不分形态，只有一种。
+
 ### 二、安装 B 端（ClassislandControlHub集控接收端）
 
 1. 构建插件包（或在 GitHub Releases 下载现成的 `.cipx`）：
@@ -221,8 +233,9 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 
 | 集控版本 | 插件包 | 支持的 ClassIsland | 插件市场 | 状态 |
 |---|---|---|---|---|
-| A 端 `1.3.1` / 插件 `1.3.1.0` | `ControlHub.Plugin.cipx` `1.3.1.0` | `2.1.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ✅ 当前版本 |
-| A 端 `1.3.0` / 插件 `1.3.0.0` | `ControlHub.Plugin.cipx` `1.3.0.0` | `2.1.x` | ✅ 可直接安装 | ⚠️ 上一版本（无本地外壳与教室端截图开关） |
+| A 端 `1.3.2` / 插件 `1.3.2.0` | `ControlHub.Plugin.cipx` `1.3.2.0` | `2.1.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ✅ 当前版本 |
+| A 端 `1.3.1` / 插件 `1.3.1.0` | `ControlHub.Plugin.cipx` `1.3.1.0` | `2.1.x` | ✅ 可直接安装 | ⚠️ 上一版本（无差异预览 / 安全加固 / 批量导入导出等） |
+| A 端 `1.3.0` / 插件 `1.3.0.0` | `ControlHub.Plugin.cipx` `1.3.0.0` | `2.1.x` | ✅ 可直接安装 | ⚠️ 旧版本（无本地外壳与教室端截图开关） |
 | A 端 `1.2.x` / 插件 `1.2.x` | `1.2.1.0` | `2.1.x` | ✅ 可直接安装 | ⚠️ 上一版本（不含远程诊断） |
 | A 端 `1.1.0` / 插件 `1.1.0.0` | `1.1.0.0` | `2.1.x` | ✅ 可直接安装 | ⚠️ 旧版本（不含两步验证 / Webhook 等） |
 | A 端 `1.0.x` / 插件 `1.0.0.0` | `1.0.0.0` | `2.1.x` | ✅ 可直接安装 | ⚠️ 早期版本，建议同步升级 |

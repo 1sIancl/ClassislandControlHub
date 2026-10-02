@@ -82,14 +82,21 @@ jobs:
           echo "TAG=$tag" >> "$GITHUB_ENV"
           echo "VERSION=${tag#v}" >> "$GITHUB_ENV"
 
-      # ── A 端：Linux / Windows 两份框架依赖发布包 ──
-      - name: 发布 A 端（linux-x64 / win-x64）
+      # ── A 端：Linux / Windows 各发两种形态 ──
+      #   controlhub-server-<平台>-<版本>.zip       框架依赖：小，但目标机需先装 .NET 10 运行时
+      #   controlhub-server-<平台>-full-<版本>.zip  自带运行时：大，解压即跑，不依赖目标机环境
+      # 两种包功能完全一致、数据目录与配置项相同，可以互换（换包时保留 data/ 即可）。
+      - name: 发布 A 端（linux-x64 / win-x64 × 框架依赖 / 自带运行时）
         run: |
           set -euo pipefail
           for rid in linux-x64 win-x64; do
             dotnet publish src/ControlHub.Server/ControlHub.Server.csproj \
               -c Release -r "$rid" --self-contained false -o "dist/server-$rid"
             (cd dist && zip -qr "controlhub-server-$rid-$VERSION.zip" "server-$rid")
+
+            dotnet publish src/ControlHub.Server/ControlHub.Server.csproj \
+              -c Release -r "$rid" --self-contained true -o "dist/server-$rid-full"
+            (cd dist && zip -qr "controlhub-server-$rid-full-$VERSION.zip" "server-$rid-full")
           done
           ls -lh dist/*.zip
 
@@ -141,5 +148,35 @@ jobs:
             --generate-notes \
             "dist/ControlHub.Plugin.cipx" \
             dist/controlhub-server-linux-x64-"$VERSION".zip \
+            dist/controlhub-server-linux-x64-full-"$VERSION".zip \
             dist/controlhub-server-win-x64-"$VERSION".zip \
+            dist/controlhub-server-win-x64-full-"$VERSION".zip \
             dist/classislandcontrolhub-shell-win-x64-"$VERSION".zip
+
+      # 在自动生成的变更列表后追加「下载哪个包」：两种 A 端包只差「要不要先装 .NET 运行时」，
+      # 这件事必须在下载页说清楚，否则用户会下到需要运行时的那种然后启动失败。
+      - name: 追加「下载哪个包」说明
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --json body -q .body > notes.md
+          cat >> notes.md <<'EOF'
+
+          ---
+
+          ## 下载哪个包？
+
+          | 资产 | 说明 | 适合谁 |
+          |---|---|---|
+          | `ControlHub.Plugin.cipx` | 教室端插件（与插件市场同款） | 每台教室机 |
+          | `controlhub-server-<平台>-<版本>.zip` | A 端，**框架依赖**：体积小，但目标机需先装 **.NET 10 运行时** | 已装 .NET 10，或用 `sh/main.sh` 自动安装的服务器 |
+          | `controlhub-server-<平台>-full-<版本>.zip` | A 端，**自带运行时**：体积大，解压即可运行 | 不想在服务器上装运行时的场景（多数学校选它） |
+          | `classislandcontrolhub-shell-win-x64-<版本>.zip` | Windows 桌面外壳（内置 A 端，双击即用） | 只有一台 Windows 机器、不想记命令的场景 |
+
+          两种 A 端包的**功能完全一致**，唯一区别是「要不要目标机先装 .NET 10 运行时」：
+          前者把运行时留给系统，后者把运行时一起打包。数据目录与配置项完全相同，**可以互换**——
+          换包时保留 `data/` 目录即可，无需重新注册设备。
+          EOF
+          gh release edit "$TAG" --notes-file notes.md
+          echo "发布说明已追加「下载哪个包」对照表。"
