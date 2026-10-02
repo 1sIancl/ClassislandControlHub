@@ -72,7 +72,8 @@ public static class HttpContextExtensions
 /// <summary>
 /// 需要管理员身份的接口所使用的端点过滤器。
 /// </summary>
-public sealed class AdminAuthFilter(AdminAuthService authService, LocalShellTrust localShell) : IEndpointFilter
+public sealed class AdminAuthFilter(AdminAuthService authService, LocalShellTrust localShell, HubStore store)
+    : IEndpointFilter
 {
     /// <inheritdoc />
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context,
@@ -89,6 +90,9 @@ public sealed class AdminAuthFilter(AdminAuthService authService, LocalShellTrus
             session = shellSession;
         }
 
+        // 开放 API（#74）：脚本 / 第三方用 API 密钥访问，权限按密钥创建时选定的子集授予。
+        session ??= await TryApiKeyAsync(http, store);
+
         if (session is null)
         {
             throw HubException.AuthInvalid("登录状态已失效，请重新登录。");
@@ -96,6 +100,51 @@ public sealed class AdminAuthFilter(AdminAuthService authService, LocalShellTrus
 
         http.SetAdminSession(session);
         return await next(context);
+    }
+
+    /// <summary>
+    /// 用 API 密钥建立会话。支持 <c>Authorization: ApiKey &lt;密钥&gt;</c> 与 <c>X-Api-Key</c> 两种携带方式
+    /// （后者是为了让不方便自定义 Authorization 头的工具也能接入）。
+    /// <para>会话的权限就是密钥的权限——密钥被撤销或过期即立刻失效，不需要额外踢会话。</para>
+    /// </summary>
+    private static async Task<SessionRow?> TryApiKeyAsync(HttpContext http, HubStore store)
+    {
+        var key = http.ReadToken(HubStore.ApiKeyScheme);
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            key = http.Request.Headers["X-Api-Key"].FirstOrDefault()?.Trim();
+        }
+
+        // 前缀检查能在绝大多数「传错凭证」的情况下直接跳过查库。
+        if (string.IsNullOrWhiteSpace(key) || !key.StartsWith(HubStore.ApiKeyPrefix, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var row = await store.GetApiKeyByHashAsync(HubStore.HashApiKey(key), http.RequestAborted);
+        if (row is null || row.Revoked)
+        {
+            return null;
+        }
+
+        if (row.ExpiresAt.HasValue && row.ExpiresAt.Value < DateTimeOffset.UtcNow)
+        {
+            return null;
+        }
+
+        await store.TouchApiKeyAsync(row.Id, http.RequestAborted);
+
+        return new SessionRow
+        {
+            Token = string.Empty,
+            UserId = "apikey:" + row.Id,
+            Username = $"API密钥（{row.Name}）",
+            DisplayName = row.Name,
+            Role = "apikey",
+            Permissions = row.Permissions,
+            // 会话自身不设短过期：有效性完全由密钥表决定（撤销 / 过期即失效）。
+            ExpiresAt = row.ExpiresAt ?? DateTimeOffset.UtcNow.AddYears(10),
+        };
     }
 }
 

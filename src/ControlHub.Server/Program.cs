@@ -213,6 +213,7 @@ app.MapAdminEndpoints();
 app.MapDeviceEndpoints();
 app.MapDeviceCsvEndpoints();
 app.MapMetricsEndpoints();
+app.MapApiKeyEndpoints();
 app.MapProfileEndpoints();
 app.MapRemoteEndpoints();
 app.MapBackupEndpoints();

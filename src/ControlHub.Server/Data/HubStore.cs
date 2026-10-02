@@ -100,6 +100,28 @@ public sealed partial class HubStore
         // 迁移：账号密码最后修改时间（为「密码到期提醒」留的字段；提醒逻辑尚未接到界面上）。
         await EnsureColumnAsync(connection, "users", "password_changed_at", "TEXT", cancellationToken);
 
+        // 迁移：开放 API 的密钥（#74）。只存哈希与前缀——明文只在创建响应里出现一次。
+        await using (var keys = connection.CreateCommand())
+        {
+            keys.CommandText = """
+                CREATE TABLE IF NOT EXISTS api_keys (
+                    id           TEXT PRIMARY KEY,
+                    name         TEXT NOT NULL DEFAULT '',
+                    prefix       TEXT NOT NULL DEFAULT '',
+                    key_hash     TEXT NOT NULL,
+                    permissions  TEXT NOT NULL DEFAULT '',
+                    created_by   TEXT NOT NULL DEFAULT '',
+                    created_at   TEXT NOT NULL,
+                    expires_at   TEXT,
+                    last_used_at TEXT,
+                    revoked      INTEGER NOT NULL DEFAULT 0,
+                    note         TEXT NOT NULL DEFAULT ''
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
+                """;
+            await keys.ExecuteNonQueryAsync(cancellationToken);
+        }
+
         // 迁移：登录尝试记录（#27 账号锁定）。成功与失败都记：失败用于判定锁定，成功用于清空失败计数。
         await using (var attempts = connection.CreateCommand())
         {
