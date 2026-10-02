@@ -3,7 +3,7 @@
  * 走完或跳过后由调用方（app.js）把「已完成」记到当前账号上。
  */
 
-import { h, clear } from './ui.js?v=33';
+import { h, clear } from './ui.js?v=34';
 
 /** 引导步骤。`target` 返回 null 时该步会被自动跳过（例如账号没有对应权限）。 */
 const STEPS = [

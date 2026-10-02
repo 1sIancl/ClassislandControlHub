@@ -3,12 +3,12 @@
  * 统计模块支持自定义（显隐与顺序，持久化于本地偏好 `controlhub.ui.layout.dashboard.stats`）。
  */
 
-import { api, session } from '../core/api.js?v=33';
+import { api, session } from '../core/api.js?v=34';
 import {
   h, clear, formatDateTime, formatDuration, relativeTime,
   loadingBlock, modal, append, icon,
-} from '../core/ui.js?v=33';
-import { getLayout, saveLayout } from '../core/prefs.js?v=33';
+} from '../core/ui.js?v=34';
+import { getLayout, saveLayout } from '../core/prefs.js?v=34';
 
 export const meta = {
   title: '仪表盘',

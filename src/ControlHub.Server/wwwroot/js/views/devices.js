@@ -4,13 +4,13 @@
  * 并可切换到列表视图查看完整状态明细。注册码管理一并放在本页。
  */
 
-import { api } from '../core/api.js?v=33';
+import { api, fetchBlob } from '../core/api.js?v=34';
 import {
   h, clear, formatDateTime, relativeTime, toast, loadingBlock,
   modal, confirmDialog, deviceStateBadge, syncBadge,
   emptyState, field, select, copyText, append, undoBar,
-} from '../core/ui.js?v=33';
-import { getLayout, saveLayout } from '../core/prefs.js?v=33';
+} from '../core/ui.js?v=34';
+import { getLayout, saveLayout } from '../core/prefs.js?v=34';
 
 export const meta = {
   title: '设备管理',
@@ -259,6 +259,8 @@ function renderToolbar() {
       })
       : null,
     h('div.spacer'),
+    h('button.btn.btn-sm', { type: 'button', onClick: exportDevices }, '导出 CSV'),
+    h('button.btn.btn-sm', { type: 'button', onClick: openImportDialog }, '批量导入'),
     view === 'groups' && tree.length > 0
       ? h('div.segmented',
         h('button', {
@@ -898,6 +900,116 @@ function selectionBar() {
       onClick: () => { selection.clear(); repaintAll(); },
     }, '取消选择'),
   );
+}
+
+// ── 批量导入 / 导出（CSV）────────────────────────────────────────────────
+
+/** 下载一个受保护的文件（管理端接口都需要令牌，不能用 <a href> 直链）。 */
+async function downloadFromApi(path, fileName, okMessage) {
+  const blob = await fetchBlob(path);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  if (okMessage) toast('ok', '已下载', okMessage);
+}
+
+/** 导出设备清单为 CSV：默认脱敏内网 IP —— 导出文件常被当附件转发，默认脱敏比事后追责划算。 */
+async function exportDevices() {
+  try {
+    await downloadFromApi('/admin/devices/export',
+      `devices-${new Date().toISOString().slice(0, 10)}.csv`,
+      '文件里的内网 IP 已脱敏；需要完整地址请用接口加 mask=false。');
+  } catch (err) {
+    toast('error', '导出失败', err.message);
+  }
+}
+
+/**
+ * 批量导入：粘贴 CSV → **先预演**（只出报告）→ 确认后正式导入。
+ * <para>预注册出来的设备还没有令牌，等教室端以相同机器名首次注册时自动认领分组 / 档案 / 备注。</para>
+ */
+function openImportDialog() {
+  const csvBox = h('textarea', {
+    rows: '9',
+    placeholder: '粘贴 CSV 内容（需含表头）。可以先「导出 CSV」拿一份改，或用下方「下载模板」。',
+    style: { width: '100%', fontFamily: 'ui-monospace, Consolas, monospace', fontSize: '12.5px' },
+  });
+  const result = h('div', { style: { marginTop: '12px' } });
+
+  const run = async (dryRun) => {
+    if (!csvBox.value.trim()) { toast('warn', '请先粘贴 CSV 内容'); return; }
+    clear(result);
+    result.appendChild(loadingBlock(dryRun ? '正在预演…' : '正在导入…'));
+    try {
+      const report = await api('/admin/devices/import', {
+        method: 'POST',
+        body: { csv: csvBox.value, dryRun },
+      });
+      clear(result);
+      result.appendChild(renderImportReport(report, dryRun));
+      if (!dryRun) await refresh();
+    } catch (err) {
+      clear(result);
+      result.appendChild(h('div.notice.notice-danger', h('span.notice-icon', '!'), h('div', err.message)));
+    }
+  };
+
+  return modal({
+    title: '批量导入设备（CSV）',
+    width: 'xwide',
+    hideFooter: true,
+    body: h('div',
+      h('div.notice.notice-info',
+        h('span.notice-icon', 'i'),
+        h('div', '先用「预演」看一遍逐行结果，确认无误后再正式导入。'
+          + '分组与配置档案按**名称**匹配，名字写错的那一行会报错并跳过；'
+          + '更新已有设备时，空单元格表示「这一项不改」。')),
+      h('div', { style: { marginTop: '12px' } }, csvBox),
+      h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' } },
+        h('button.btn', { type: 'button', onClick: () => run(true) }, '预演（不写入）'),
+        h('button.btn.btn-primary', { type: 'button', onClick: () => run(false) }, '正式导入'),
+        h('div.spacer'),
+        h('button.btn.btn-ghost', {
+          type: 'button',
+          onClick: () => downloadFromApi('/admin/devices/import/template', 'devices-import-template.csv'),
+        }, '下载模板'),
+      ),
+      result,
+    ),
+  });
+}
+
+/** 逐行结果表：把「哪几行会新增、哪几行报错」直接摊开，避免盲导。 */
+function renderImportReport(report, dryRun) {
+  const head = h('div', { style: { fontSize: '12.5px', marginBottom: '6px' } },
+    `${dryRun ? '预演结果' : '导入结果'}：`,
+    h('b', `${report.created}`), ' 台预注册，',
+    h('b', `${report.updated}`), ' 台更新，',
+    report.failed > 0 ? h('span', { style: { color: 'var(--danger)' } }, `${report.failed} 行出错`) : '0 行出错');
+
+  if (report.rows.length === 0) {
+    return h('div', head, '没有可处理的数据行。');
+  }
+
+  const table = h('div.table-wrap', { style: { maxHeight: '260px', overflowY: 'auto' } },
+    h('table.table',
+      h('thead', h('tr', h('th', '行'), h('th', '动作'), h('th', '设备'), h('th', '说明'))),
+      h('tbody', ...report.rows.map((row) => h('tr',
+        h('td', `${row.line}`),
+        h('td', h('span.badge' + (row.action === '错误' ? '.badge-danger' : '.badge-info'), row.action)),
+        h('td', row.deviceName || '—'),
+        h('td', { style: { fontSize: '12px' } }, row.message || '—'),
+      )))));
+
+  return h('div', head, table, dryRun
+    ? h('div', { style: { marginTop: '8px', fontSize: '12px', color: 'var(--text-dim)' } },
+      '这只是预演，还没有写入任何数据。确认无误后点「正式导入」。')
+    : null);
 }
 
 /** 批量通知：填一次内容，向选中的多台设备统一下发（离线设备不排队，通知讲时效）。 */
