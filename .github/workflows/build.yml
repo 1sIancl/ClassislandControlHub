@@ -40,12 +40,44 @@ jobs:
           dotnet restore src/ControlHub.Desktop/ControlHub.Desktop.csproj
           dotnet restore src/ControlHub.LoadTest/ControlHub.LoadTest.csproj
           dotnet restore src/ControlHub.Shell/ControlHub.Shell.csproj
+          dotnet restore tests/ControlHub.Tests/ControlHub.Tests.csproj
 
       - name: 构建（Release）
         run: |
           dotnet build src/ControlHub.Server/ControlHub.Server.csproj -c Release --no-restore
           dotnet build src/ControlHub.Desktop/ControlHub.Desktop.csproj -c Release --no-restore
           dotnet build src/ControlHub.LoadTest/ControlHub.LoadTest.csproj -c Release --no-restore
+
+      - name: 单元测试
+        run: dotnet test tests/ControlHub.Tests/ControlHub.Tests.csproj -c Release --no-restore --logger "console;verbosity=normal"
+
+      # 冒烟：真的把服务端起起来打一次接口。编译通过但运行起不来（缺依赖、端口/配置问题）这类失败
+      # 只有跑到这一步才会暴露，所以在 CI 里固定跑一遍。
+      - name: 冒烟（启动服务端并探活）
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          set -euo pipefail
+          dotnet run --project src/ControlHub.Server/ControlHub.Server.csproj -c Release --no-build -- \
+            --ControlHub:HttpPort=29800 --ControlHub:DataDirectory="$RUNNER_TEMP/ch-data" \
+            --ControlHub:AutoCheckUpdates=false --ControlHub:EnableDiscovery=false &
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:29800/api/health/ready >/dev/null 2>&1; then ok=1; break; fi
+            sleep 1
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::服务端未在 30 秒内就绪"
+            exit 1
+          fi
+          echo "── 就绪探针 ──"
+          curl -fsS http://127.0.0.1:29800/api/health/ready; echo
+          echo "── 深度健康检查 ──"
+          curl -fsS http://127.0.0.1:29800/api/health/deep; echo
+          echo "── 指标（前 9 行）──"
+          curl -fsS http://127.0.0.1:29800/metrics | head -9
+          echo "── 安全响应头 ──"
+          curl -fsS -o /dev/null -D - http://127.0.0.1:29800/ | grep -iE 'content-security-policy|x-frame-options|x-content-type-options' || true
+          pkill -f ControlHub.Server || true
 
       # 桌面外壳依赖 Windows 专有的服务控制 API，只在 Windows 上编译（其余平台仍会还原，保证依赖可解析）。
       - name: 构建桌面外壳（仅 Windows）

@@ -124,13 +124,13 @@
 
 | # | 事项 | 状态 | 说明 |
 |---|---|---|---|
-| 77 | CI 集成 smoke + LoadTest | 🔨 | CI 已编译 LoadTest 与 Shell；尚未在 CI 里实际跑 `--smoke` |
-| 78 | 核心逻辑单元测试 | ⬜ | 目前无测试项目 |
+| 77 | CI 集成 smoke + LoadTest | ✅ | CI 新增**服务端冒烟**步骤（ubuntu）：起真实例 → 等 `/api/health/ready` → 打印 `/deep`、`/metrics` 与安全响应头，30 秒内不就绪直接失败。CI 仍编译 LoadTest 与 Shell。桌面外壳的 `--smoke` 属 Windows 端，未纳入 |
+| 78 | 核心逻辑单元测试 | ✅ | 新增 `tests/ControlHub.Tests`（xunit）：**11 个用例全部通过**，集中在最容易静默出错的两块——①下发差异预览（无基线 / 同版本 / 改版用快照对比 / 内容实质相同 / 换档案 / 同名项修改）②协议约束（校验和稳定性、令牌 URL 安全、权限去重、版本号格式、心跳与长轮询区间）。测试项目同样 `TreatWarningsAsErrors`，并启用 xUnit 分析器 |
 | 79 | 集成测试（注册 → 下发 → 同步） | ⬜ | 有手工回归脚本，未固化为测试 |
 | 80 | 性能基准测试 | 🔨 | 提供 `src/ControlHub.LoadTest` 模拟客户端，可手工压测 |
 | 81 | 错误码体系 | 🔨 | `HubErrorCodes` 已覆盖鉴权 / 注册码 / 校验等；远程指令失败原因仍是自由文本 |
-| 82 | 代码静态分析 | 🔨 | 构建 0 警告 + CA1416 等分析器生效；未接 SonarQube |
-| 83 | 依赖更新自动化 | ⬜ | |
+| 82 | 代码静态分析 | 🔨 | 主工程构建 0 警告 + CA1416 等分析器生效，测试项目 `TreatWarningsAsErrors` 且启用 xUnit 分析器（实测：`Assert.False(Any(...))` 被分析器拦下并要求改用 `DoesNotContain`）；**未接 SonarQube / CodeQL 这类全量扫描** |
+| 83 | 依赖更新自动化 | ✅ | 与 #38 同一机制：`.github/dependabot.yml` 每周一提 PR（NuGet 小版本合并、主版本单独提；Actions 单独一组），只提不自动合并 |
 | 84 | 日志结构化（JSON） | ✅ | `LogJson=true` 切到 JSON 控制台日志（含作用域）；默认保留文本日志，现场排查更可读 |
 | 85 | 追踪 ID | ✅ | 每个响应回写 `X-Request-Id`（沿用调用方带来的，便于与前端报错对齐），并写入访问日志的作用域，可直接用它在日志里定位某一次请求 |
 | 86 | 健康检查分级（live / ready / deep） | ✅ | `/api/health`（兼容保留）、`/live`（**不查库**，避免数据库抖动导致进程被存活探针杀掉）、`/ready`（数据库不可用返回 **503**）、`/deep`（数据目录可写 + 磁盘余量 + 设备统计）。实测四个端点均可用 |
