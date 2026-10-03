@@ -87,6 +87,9 @@ public sealed class AdminIpAllowListMiddleware(RequestDelegate next, IOptions<Se
     private readonly IReadOnlyList<(byte[] Network, int Prefix)> _ranges =
         ParseRanges(options.Value.AdminIpAllowList);
 
+    /// <summary>解析出的规则条数（供启动日志打印，便于排查「配了却没生效」）。</summary>
+    internal int RuleCount => _ranges.Count;
+
     public async Task InvokeAsync(HttpContext context)
     {
         if (_ranges.Count == 0 || !IsAdminApi(context.Request.Path))
@@ -160,7 +163,7 @@ public sealed class AdminIpAllowListMiddleware(RequestDelegate next, IOptions<Se
         return (address[fullBytes] & mask) == (network[fullBytes] & mask);
     }
 
-    private static List<(byte[] Network, int Prefix)> ParseRanges(string[] entries)
+    internal static List<(byte[] Network, int Prefix)> ParseRanges(string[] entries)
     {
         var ranges = new List<(byte[], int)>();
         foreach (var entry in entries)

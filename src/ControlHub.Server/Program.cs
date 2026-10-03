@@ -32,6 +32,27 @@ builder.Services.Configure<ServerOptions>(builder.Configuration.GetSection(Serve
 var serverOptions = builder.Configuration.GetSection(ServerOptions.SectionName).Get<ServerOptions>()
                     ?? new ServerOptions();
 
+// 环境变量只能给标量值：`ControlHub__AdminIpAllowList=192.168.1.0/24` **不会**被绑定到 string[]，
+// 结果是「明明配了却全部放行」——这比不配更危险（实测踩到：局域网来源照样能访问管理端）。
+// 这里把标量 / 逗号分隔写法补回数组，让环境变量与 appsettings.json 两种写法都能用。
+var allowListRaw = builder.Configuration[$"{ServerOptions.SectionName}:AdminIpAllowList"];
+if (!string.IsNullOrWhiteSpace(allowListRaw) && serverOptions.AdminIpAllowList.Length == 0)
+{
+    serverOptions.AdminIpAllowList = SplitAllowList(allowListRaw);
+}
+
+builder.Services.PostConfigure<ServerOptions>(options =>
+{
+    if (!string.IsNullOrWhiteSpace(allowListRaw) && options.AdminIpAllowList.Length == 0)
+    {
+        options.AdminIpAllowList = SplitAllowList(allowListRaw);
+    }
+});
+
+static string[] SplitAllowList(string raw) => raw
+    .Split([',', ';', ' ', '\n', '\r', '\t'],
+        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
 // ────────────────────────────── 序列化 ──────────────────────────────
 // 两端共用同一套 JSON 约定（camelCase、保留中文、忽略 null）。
 builder.Services.Configure<JsonOptions>(options =>
@@ -190,6 +211,12 @@ if (serverOptions.RequireHttpsRedirect)
 
 // 管理端来源限制（ControlHub:AdminIpAllowList；留空 = 不限制，教室端接口不受影响）
 app.UseMiddleware<AdminIpAllowListMiddleware>();
+
+// 「我明明配了却没生效」的第一现场证据：启动时把「配置项数」与「解析出的规则数」都打出来。
+// 两者不一致时能立刻定位是配置写法问题还是规则格式问题。
+app.Logger.LogInformation("管理端来源允许列表：配置 {Configured} 项，解析出 {Rules} 条有效规则（0 条 = 不限制）。",
+    serverOptions.AdminIpAllowList.Length,
+    AdminIpAllowListMiddleware.ParseRanges(serverOptions.AdminIpAllowList).Count);
 
 if (serverOptions.CorsAllowedOrigins.Length > 0)
 {
