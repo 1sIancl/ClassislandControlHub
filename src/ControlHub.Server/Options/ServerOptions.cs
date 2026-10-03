@@ -178,6 +178,13 @@ public sealed class ServerOptions
     public int PasswordExpiryWarnDays { get; set; } = 14;
 
     /// <summary>
+    /// 静态敏感数据加密的密钥文件路径（#36，见 <c>docs/adr/0005</c>）。
+    /// <para>留空 = 数据目录下的 <c>secrets.key</c>。建议指到数据库目录之外（例如宿主机受控目录），
+    /// 并**确保它不会被一起打包进外发的备份**——否则加密就失去意义。</para>
+    /// </summary>
+    public string SecretsKeyPath { get; set; } = string.Empty;
+
+    /// <summary>
     /// <c>/metrics</c> 的访问令牌。<para>留空时只允许**本机**访问（同机 Prometheus / Zabbix agent 的场景）；
     /// 填了令牌后，外部采集器需带 <c>?token=</c> 或 <c>Authorization: Bearer</c>。</para>
     /// </summary>

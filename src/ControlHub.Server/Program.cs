@@ -126,6 +126,11 @@ builder.Services.AddSingleton<ServerTimeService>();
 builder.Services.AddSingleton<UpdateService>();
 builder.Services.AddSingleton<BackupService>();
 builder.Services.AddSingleton<AiTimetableService>();
+
+// 静态敏感数据加密（#36）：注册码、Webhook 加签密钥等「必须能还原」的值以密文落库。
+// 密钥文件路径留空 = 数据目录下的 secrets.key；读取兼容明文，因此老库无需停机迁移。
+builder.Services.AddSingleton(_ => new SecretProtector(
+    string.IsNullOrWhiteSpace(serverOptions.SecretsKeyPath) ? null : serverOptions.SecretsKeyPath));
 // 定时提醒：ReminderService 负责推算触发时间与投递，ReminderScheduler 每 15 秒检查一次。
 builder.Services.AddSingleton<ReminderService>();
 builder.Services.AddHostedService<DiscoveryService>();
