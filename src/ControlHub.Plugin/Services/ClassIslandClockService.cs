@@ -27,13 +27,22 @@ public sealed class ClassIslandClockService(ILogger<ClassIslandClockService> log
         // 改宿主时钟配置要写 ClassIsland 的 Settings.json，而宿主自己在打开设置页、保存设置时也写同一个文件；
         // 两个写入方撞上时，宿主会把「文件被其它进程占用」当成严重错误直接退出（表现为「打开设置页就崩」）。
         // 因此这里**只在确实需要改的时候写一次**：宿主已经在用集控作时间源就直接返回，不再重复写。
+        // ① 先探测可达性——**必须在「已是目标状态」判断之前**。
+        //    否则会出现这样的死角：时间源早就被指过去了、但那边根本没有 NTP，
+        //    于是「已经是目标状态」直接返回，永远不去纠正它，宿主就一直超时报错。
+        //    交给 Core 处理：它内部会「探测失败 → 若宿主正指向集控则改回系统时间 → 返回可执行说明」。
+        if (!CanReachNtp(ntpHost))
+        {
+            return ConfigureNtpSyncCore(ntpHost);
+        }
+
+        // ② 可达且已经是目标状态：不重复写宿主配置（写一次原则，避免与宿主的保存撞车）。
         var settings = IAppHost.TryGetService<SettingsService>();
         if (settings is not null
             && settings.Settings.IsExactTimeEnabled
             && string.Equals(settings.Settings.ExactTimeServer?.Trim(), ntpHost.Trim(),
                 StringComparison.OrdinalIgnoreCase))
         {
-            // 已经是目标状态：连同步都不必触发（宿主自己会按周期同步）。
             return $"ClassIsland 已经在使用集控服务器（{ntpHost}）作为精确时间源。";
         }
 
