@@ -403,10 +403,12 @@ ClassIsland 的档案编辑器支持导出 CSES（`.yml`）。在「配置档案
 | Web 后台打不开 | 确认服务在运行、端口未被占用；本机用 `127.0.0.1:29800` 试 |
 | 插件连不上服务器 | 检查地址是否可 ping 通、http/https 是否写错 |
 | 忘记管理员密码 | 服务端 `data/controlhub.db` 里 `users` 表可重置（或重新初始化数据目录） |
+| 升级后注册码全失效、Webhook 报「密钥不可用」 | 数据目录里的加密密钥 `secrets.key` 丢了或被换了（换机器 / 恢复备份时只搬了 `controlhub.db`）。找回原密钥放回即恢复；确认找不回就重新生成注册码、重填 Webhook 密钥。详见 [`docs/troubleshooting.md`](docs/troubleshooting.md) |
+| 换服务器或恢复数据要注意什么 | 数据库 `controlhub.db` 与加密密钥 `secrets.key` 必须**一起**搬；备份包对外发送时不要带上密钥文件（见 [`docs/security.md`](docs/security.md)） |
 
 ---
 
-## 六、更多
+## 七、更多
 
 - 完整协议与数据格式：见 [`docs/protocol.md`](docs/protocol.md)
 - 架构与数据模型：见 [`docs/architecture.md`](docs/architecture.md)

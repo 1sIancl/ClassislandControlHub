@@ -89,6 +89,7 @@ public static class AdminEndpoints
         var opts = options.Value;
         var revision = await store.GetRevisionAsync(cancellationToken);
         var devices = await store.GetDevicesAsync(cancellationToken);
+        var secrets = await store.GetSecretEncryptionStatsAsync(cancellationToken);
         var now = DateTimeOffset.UtcNow;
         var online = devices.Count(d => !d.Revoked && d.LastSeenAt.HasValue
             && (now - d.LastSeenAt.Value).TotalSeconds < opts.OnlineTimeoutSeconds);
@@ -113,8 +114,24 @@ public static class AdminEndpoints
             NtpServerEnabled = opts.EnableNtpServer,
             NtpPort = opts.NtpPort,
             Branding = await LoadBrandingAsync(store, cancellationToken),
+            SecretsEncrypted = new SecretEncryptionDto
+            {
+                EnrollCodes = ToSecretKindDto(secrets.EnrollCodes),
+                RegisterCodes = ToSecretKindDto(secrets.RegisterCodes),
+                Webhooks = ToSecretKindDto(secrets.Webhooks),
+                KeyFile = secrets.KeyFile,
+                KeyGenerated = secrets.KeyGenerated,
+            },
         });
     }
+
+    /// <summary>静态敏感数据计数（#36）→ 对外 DTO。</summary>
+    private static SecretKindDto ToSecretKindDto(SecretKindStats stats) => new()
+    {
+        Total = stats.Total,
+        Encrypted = stats.Encrypted,
+        Unavailable = stats.Unavailable,
+    };
 
     /// <summary>读取品牌个性化配置，缺省返回默认值。</summary>
     private static async Task<BrandingDto> LoadBrandingAsync(HubStore store, CancellationToken cancellationToken)
@@ -647,6 +664,8 @@ public static class AdminEndpoints
     private static RegisterCodeDto ToRegisterCodeDto(RegisterCodeRow row) => new()
     {
         Code = row.Code,
+        Available = !row.CodeUnavailable,
+        Reference = HubStore.SecretReference(row.CodeHash),
         Note = row.Note,
         Permissions = PermissionKeys.Normalize(row.Permissions),
         MaxUses = row.MaxUses,
@@ -911,7 +930,8 @@ public static class AdminEndpoints
         };
 
         await store.CreateRegisterCodeAsync(row, cancellationToken);
-        await store.AddAuditAsync(session.Username, "register-code.create", row.Code,
+        // 审计日志里不落邀请码明文（否则加密存储会被审计表旁路掉），只用指纹引用便于对照。
+        await store.AddAuditAsync(session.Username, "register-code.create", store.ComputeCodeReference(row.Code),
             $"生成邀请码（权限 {permissions.Count} 项，可用 {row.MaxUses} 次）。",
             http.GetClientIpAddress(), cancellationToken);
 
@@ -925,9 +945,11 @@ public static class AdminEndpoints
         CancellationToken cancellationToken)
     {
         var session = http.RequireAdminSession();
-        await store.DeleteRegisterCodeAsync(code.ToUpperInvariant(), cancellationToken);
-        await store.AddAuditAsync(session.Username, "register-code.delete", code,
-            "删除了邀请码。", http.GetClientIpAddress(), cancellationToken);
+        var row = await store.GetRegisterCodeAsync(code, cancellationToken);
+        await store.DeleteRegisterCodeAsync(code, cancellationToken);
+        await store.AddAuditAsync(session.Username, "register-code.delete", HubStore.SecretReference(row?.CodeHash),
+            row is null ? "删除邀请码（记录不存在）。" : $"删除了邀请码（备注「{row.Note}」）。",
+            http.GetClientIpAddress(), cancellationToken);
         return ApiResult<bool>.Success(true);
     }
 
@@ -976,6 +998,12 @@ public static class AdminEndpoints
             return "邀请码不存在。";
         }
 
+        if (row.CodeUnavailable)
+        {
+            // 指纹匹配到了但密文解密失败（密钥文件被更换 / 数据被改坏）：按不可用处理，绝不静默放行。
+            return "邀请码不可用：服务端加密密钥已更换，请让管理员重新生成。";
+        }
+
         if (row.ExpiresAt.HasValue && row.ExpiresAt.Value <= DateTimeOffset.UtcNow)
         {
             return "邀请码已过期。";
@@ -1004,7 +1032,15 @@ public static class AdminEndpoints
 
         var username = NormalizeUsername(request.Username);
         EnsurePasswordStrength(request.Password ?? string.Empty);
-        var code = (request.Code ?? string.Empty).Trim().ToUpperInvariant();
+
+        // 自助注册必须输入邀请码明文：显式拒绝管理端专用的指纹引用格式（ref:xxxxxxxx，#36）。
+        if ((request.Code ?? string.Empty).Trim()
+            .StartsWith(HubStore.SecretReferencePrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new HubException(HubErrorCodes.EnrollCodeInvalid, "邀请码格式不正确。", 400);
+        }
+
+        var code = HubStore.NormalizeEnrollCode(request.Code);
 
         // 先只读校验邀请码，再查用户名重名：否则没有有效邀请码的人也能靠 400/409 的差异探测用户名是否存在。
         var previewError = ValidateRegisterCode(await store.GetRegisterCodeAsync(code, cancellationToken));

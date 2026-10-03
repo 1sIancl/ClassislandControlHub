@@ -87,11 +87,26 @@ public static class ClientEndpoints
                 throw new HubException(HubErrorCodes.EnrollCodeInvalid, "请输入注册码。", 400);
             }
 
-            var code = request.EnrollCode.Trim().ToUpperInvariant();
+            // 教室端输入必须是注册码明文：显式拒绝管理端专用的指纹引用格式（ref:xxxxxxxx），
+            // 否则知道引用的人可以不猜出注册码就直接注册（#36）。
+            if (request.EnrollCode.Trim().StartsWith(HubStore.SecretReferencePrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new HubException(HubErrorCodes.EnrollCodeInvalid, "注册码格式不正确。", 400);
+            }
+
+            // 规范化后按 HMAC 指纹查找（#36）：库里存的是密文，无法按明文比对。
+            var code = HubStore.NormalizeEnrollCode(request.EnrollCode);
             var codeRow = await store.GetEnrollCodeAsync(code, cancellationToken);
             if (codeRow is null)
             {
                 throw new HubException(HubErrorCodes.EnrollCodeInvalid, "注册码不存在。", 400);
+            }
+
+            if (codeRow.CodeUnavailable)
+            {
+                // 指纹匹配到了但密文解密失败（密钥文件被更换 / 数据被改坏）：按不可用处理，绝不静默放行。
+                throw new HubException(HubErrorCodes.EnrollCodeInvalid,
+                    "注册码不可用：服务端加密密钥已更换，请重新生成注册码。", 400);
             }
 
             if (!codeRow.Enabled)

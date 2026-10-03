@@ -137,7 +137,15 @@ public sealed class ProfileRow
 /// <summary>设备注册码。</summary>
 public sealed class EnrollCodeRow
 {
+    /// <summary>注册码明文：写入时加密落库，读取时由密文解密而来（#36）。</summary>
     public string Code { get; set; } = string.Empty;
+
+    /// <summary>HMAC-SHA256 指纹（确定性，用于精确查找；密文本体无法等值查找）。</summary>
+    public string CodeHash { get; set; } = string.Empty;
+
+    /// <summary>读取时解密失败（密钥文件被更换 / 丢失）→ 该行不可用，界面应提示重新生成。</summary>
+    public bool CodeUnavailable { get; set; }
+
     public string Note { get; set; } = string.Empty;
     public int MaxUses { get; set; } = 1;
     public int UsedCount { get; set; }

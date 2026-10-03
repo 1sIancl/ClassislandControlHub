@@ -488,7 +488,8 @@ public static class DeviceEndpoints
         };
 
         await store.CreateEnrollCodeAsync(row, cancellationToken);
-        await store.AddAuditAsync(session.Username, "enrollcode.create", row.Code,
+        // 审计日志里不落注册码明文（否则加密存储会被审计表旁路掉），只用指纹引用便于对照。
+        await store.AddAuditAsync(session.Username, "enrollcode.create", store.ComputeCodeReference(row.Code),
             $"生成注册码，可用次数 {row.MaxUses}。", http.GetClientIpAddress(), cancellationToken);
 
         return ApiResult<EnrollCodeDto>.Success(ToEnrollCodeDto(row));
@@ -513,8 +514,8 @@ public static class DeviceEndpoints
         await store.UpdateEnrollCodeAsync(code, request.Note?.Trim() ?? row.Note,
             Math.Max(0, request.MaxUses), expiresAt, true, cancellationToken);
 
-        await store.AddAuditAsync(session.Username, "enrollcode.update", code,
-            "更新了注册码。", http.GetClientIpAddress(), cancellationToken);
+        await store.AddAuditAsync(session.Username, "enrollcode.update", HubStore.SecretReference(row.CodeHash),
+            $"更新了注册码（备注「{row.Note}」）。", http.GetClientIpAddress(), cancellationToken);
 
         return ApiResult<bool>.Success(true);
     }
@@ -527,9 +528,11 @@ public static class DeviceEndpoints
         CancellationToken cancellationToken)
     {
         var session = http.RequireAdminSession();
+        var row = await store.GetEnrollCodeAsync(code, cancellationToken);
         await store.DeleteEnrollCodeAsync(code, cancellationToken);
-        await store.AddAuditAsync(session.Username, "enrollcode.delete", code,
-            "删除了注册码。", http.GetClientIpAddress(), cancellationToken);
+        await store.AddAuditAsync(session.Username, "enrollcode.delete", HubStore.SecretReference(row?.CodeHash),
+            row is null ? "删除注册码（记录不存在）。" : $"删除了注册码（备注「{row.Note}」）。",
+            http.GetClientIpAddress(), cancellationToken);
         return ApiResult<bool>.Success(true);
     }
 
@@ -612,6 +615,8 @@ public static class DeviceEndpoints
     private static EnrollCodeDto ToEnrollCodeDto(EnrollCodeRow row) => new()
     {
         Code = row.Code,
+        Available = !row.CodeUnavailable,
+        Reference = HubStore.SecretReference(row.CodeHash),
         Note = row.Note,
         MaxUses = row.MaxUses,
         UsedCount = row.UsedCount,

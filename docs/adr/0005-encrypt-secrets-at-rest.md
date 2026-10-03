@@ -1,6 +1,6 @@
 # ADR 0005：静态敏感数据加密（注册码 / Webhook 加签密钥）
 
-- 状态：**已决定，待实现**（路线图 `#36`，安全清单里最后一条已知限制）
+- 状态：**已实现**（路线图 `#36`，2026-10-03；实现细节见文末「实现记录」）
 - 日期：2026-10-03
 - 相关：`docs/security.md`、`docs/pentest-checklist.md`、ADR 0001（SQLite + 轮询）
 
@@ -160,3 +160,20 @@ UPDATE webhooks SET secret = $enc WHERE id = $id AND secret <> '' AND secret NOT
 6. 文档：`security.md`（密钥文件保管清单）、`deployment.md`（迁移机器必须带 `.key`）、`troubleshooting.md`（密钥丢失表现与处置）。
 7. 端到端实测（必须）：创建注册码 + 配 Webhook → 直接读数据库确认是密文 → **用明文形态手工塞一条老数据** →
    验证仍能正常使用 → 重启后迁移把它变成密文 → 停服删掉 `.key` → 验证表现为"注册码失效 + Webhook 提示密钥无效"而不是崩溃。
+
+## 实现记录（2026-10-03）
+
+实现时在原方案上补了三处，均已落地：
+
+1. **管理端邀请码 `register_codes` 一并加密**（原 ADR 漏了它）：
+   它是「凭码自助注册出管理账号」的凭据，泄露后果比设备注册码更重，与 `enroll_codes` 完全同构处理。
+2. **指纹引用 `ref:xxxxxxxx`**：`code_hash` 前 8 位。两个用途：① 审计日志等非加密表引用某个码时不落明文、
+   也不用掩码（掩码缩短未知位数，等于给在线爆破让路）；② 明文解密失败时管理端仍能删除 / 编辑该行。
+   管理端专用：教室端与自助注册端点**显式拒绝**以 `ref:` 开头的输入。
+3. **Webhook 密钥的更新语义**：解密失败且本次未填新密钥时保留库中原密文（不覆盖成空），
+   否则管理员改个名字就会把还能救回来的密文抹掉；投递时直接报「密钥无法解密」而不是按未配置处理。
+
+代码位置：`Services/SecretProtector.cs`、`Data/HubStore.Secrets.cs`（迁移与统计）、
+`Data/HubStore.Admin.cs` / `HubStore.Reminders.cs` / `HubStore.Webhooks.cs`（读写路径）、
+`Endpoints/AdminEndpoints.cs`（`server/info` 计数）、`Program.cs`（启动迁移与日志）。
+回归测试：`tests/ControlHub.Tests/SecretProtectorTests.cs`、`SecretStorageTests.cs`（含密钥丢失、老库迁移、引用删除等）。

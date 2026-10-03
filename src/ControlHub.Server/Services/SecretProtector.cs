@@ -133,6 +133,19 @@ public sealed class SecretProtector
         }
     }
 
+    /// <summary>
+    /// 基于密钥文件的**确定性** HMAC-SHA256（Base64）。用于「既要能精确查找、又不能明文落库」的值，
+    /// 例如注册码指纹 <c>code_hash</c>（见 ADR 0005「实现期修正」）。
+    /// <para>不用裸 SHA-256 的原因：注册码通常只有 8 位左右，裸哈希可被离线爆破；
+    /// 加 HMAC 后，只拿到数据库也推不出注册码。</para>
+    /// </summary>
+    public string ComputeLookupHash(string value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        using var hmac = new HMACSHA256(EnsureKey());
+        return Convert.ToBase64String(hmac.ComputeHash(Encoding.UTF8.GetBytes(value)));
+    }
+
     /// <summary>解密；失败时抛出（调用方需要区分失败原因时请用 <see cref="TryUnprotect"/>）。</summary>
     public string Unprotect(string? stored)
     {

@@ -180,6 +180,15 @@ public sealed class WebhookService(
         string eventName, string title, string message, Dictionary<string, object?>? detail,
         CancellationToken cancellationToken)
     {
+        // 加签密钥解密失败（密钥文件被更换 / 丢失，见 #36）：直接报错。
+        // 不能按「未配置密钥」继续发送——那样钉钉会因缺少签名返回一个与密钥无关的错误，
+        // 管理员按提示排查半天也找不到根因。
+        if (hook.SecretUnavailable)
+        {
+            return (false, 0, "加签密钥无法解密：服务端加密密钥已更换或丢失，请在管理端重新填写密钥。",
+                string.Empty);
+        }
+
         try
         {
             var client = httpClientFactory.CreateClient("webhook");

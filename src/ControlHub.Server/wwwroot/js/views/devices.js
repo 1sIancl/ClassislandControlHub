@@ -1342,16 +1342,27 @@ function renderCodeRow(code) {
   const remaining = code.remainingUses < 0 ? '不限' : code.remainingUses;
   const expired = code.expiresAt && new Date(code.expiresAt) < new Date();
   const exhausted = code.remainingUses === 0;
+  const unavailable = code.available === false;
+  // 明文不可用时用指纹引用操作该行（#36）：界面拿不到注册码本体，但编辑 / 删除仍然可用。
+  const target = unavailable ? code.reference : code.code;
 
   return h('tr',
     h('td',
       h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
-        h('code', { style: { fontSize: '14px', letterSpacing: '1.5px', fontWeight: '700' } }, code.code),
-        h('button.btn.btn-ghost.btn-sm', {
-          type: 'button',
-          title: '复制注册码',
-          onClick: () => copyText(code.code, '注册码已复制'),
-        }, '复制'),
+        unavailable
+          ? [
+            h('span.badge.badge-danger', '不可用'),
+            h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } },
+              `加密密钥已更换，${code.reference}（请重新生成）`),
+          ]
+          : [
+            h('code', { style: { fontSize: '14px', letterSpacing: '1.5px', fontWeight: '700' } }, code.code),
+            h('button.btn.btn-ghost.btn-sm', {
+              type: 'button',
+              title: '复制注册码',
+              onClick: () => copyText(code.code, '注册码已复制'),
+            }, '复制'),
+          ],
       ),
     ),
     h('td', code.note || h('span', { style: { color: 'var(--text-faint)' } }, '—')),
@@ -1372,8 +1383,8 @@ function renderCodeRow(code) {
       h('button.btn.btn-sm.btn-danger', {
         type: 'button',
         onClick: async () => {
-          if (!await confirmDialog('删除注册码', `确定删除注册码 ${code.code} 吗？已注册的设备不受影响。`, '删除', true)) return;
-          await api(`/admin/enroll-codes/${encodeURIComponent(code.code)}`, { method: 'DELETE' });
+          if (!await confirmDialog('删除注册码', `确定删除注册码 ${target} 吗？已注册的设备不受影响。`, '删除', true)) return;
+          await api(`/admin/enroll-codes/${encodeURIComponent(target)}`, { method: 'DELETE' });
           toast('ok', '已删除');
           await refresh();
         },
@@ -1435,9 +1446,12 @@ function openEditCodeDialog(code) {
   const noteInput = h('input', { type: 'text', value: code.note || '' });
   const maxUsesInput = h('input', { type: 'number', value: String(code.maxUses), min: '0' });
   const hoursInput = h('input', { type: 'number', value: '72', min: '0' });
+  // 明文不可用时用指纹引用操作该行（#36）。
+  const unavailable = code.available === false;
+  const target = unavailable ? code.reference : code.code;
 
   modal({
-    title: `编辑注册码 · ${code.code}`,
+    title: unavailable ? `编辑注册码 · ${code.reference}（不可用）` : `编辑注册码 · ${code.code}`,
     width: 'wide',
     body: h('div',
       field('备注', noteInput),
@@ -1452,7 +1466,7 @@ function openEditCodeDialog(code) {
     ),
     confirmText: '保存',
     onConfirm: async () => {
-      await api(`/admin/enroll-codes/${encodeURIComponent(code.code)}`, {
+      await api(`/admin/enroll-codes/${encodeURIComponent(target)}`, {
         method: 'PUT',
         body: {
           note: noteInput.value.trim(),

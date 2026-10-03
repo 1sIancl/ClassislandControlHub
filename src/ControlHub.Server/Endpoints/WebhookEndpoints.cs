@@ -85,6 +85,7 @@ public static class WebhookEndpoints
         // 密钥不回传：只告诉前端「已设置」，避免只读账号拿到群机器人密钥。
         Secret = string.Empty,
         HasSecret = !string.IsNullOrEmpty(row.Secret),
+        SecretUnavailable = row.SecretUnavailable,
         Events = HubJson.DeserializeOrDefault(row.Events, new List<string>())
             .Where(WebhookEvents.All.Contains)
             .ToList(),
@@ -224,6 +225,8 @@ public static class WebhookEndpoints
         if (request.Secret is not null)
         {
             row.Secret = request.Secret.Trim();
+            // 明确填写（含明确清空）意味着这是新值，不再处于「解密失败」状态（#36）。
+            row.SecretUnavailable = false;
         }
 
         row.Events = HubJson.Serialize(events);

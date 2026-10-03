@@ -64,6 +64,12 @@ public sealed class WebhookDto
     /// <summary>是否已设置加签密钥（读取时用它判断，而不是把密钥本身发出去）。</summary>
     public bool HasSecret { get; set; }
 
+    /// <summary>
+    /// 已设置的加签密钥**无法解密**（服务端密钥文件被更换 / 丢失，见 #36）。
+    /// 此时投递会直接失败，需要在管理端重新填写密钥。
+    /// </summary>
+    public bool SecretUnavailable { get; set; }
+
     /// <summary>最近一次投递尝试时间（含失败；从未投递过时为空）。</summary>
     public DateTimeOffset? LastAttemptAt { get; set; }
 

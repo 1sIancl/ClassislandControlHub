@@ -13,19 +13,26 @@ public sealed partial class HubStore
     // ────────────────────────────── 邀请码 ──────────────────────────────
 
     private const string RegisterCodeColumns =
-        "code, note, permissions, max_uses, used_count, expires_at, created_at";
+        "code, code_hash, note, permissions, max_uses, used_count, expires_at, created_at";
 
-    private static RegisterCodeRow ReadRegisterCode(SqliteDataReader reader) => new()
+    /// <summary>读取一行邀请码：<c>code</c> 列是密文，这里解密为可展示的明文（失败则置空并标记不可用）。</summary>
+    private RegisterCodeRow ReadRegisterCode(SqliteDataReader reader)
     {
-        Code = GetString(reader, "code"),
-        Note = GetString(reader, "note"),
-        Permissions = PermissionKeys.Normalize(
-            HubJson.DeserializeOrDefault<List<string>>(GetString(reader, "permissions"), [])),
-        MaxUses = GetInt32(reader, "max_uses"),
-        UsedCount = GetInt32(reader, "used_count"),
-        ExpiresAt = GetTimestamp(reader, "expires_at"),
-        CreatedAt = GetTimestampOrNow(reader, "created_at"),
-    };
+        var code = ReadSecret(GetString(reader, "code"), out var available);
+        return new RegisterCodeRow
+        {
+            Code = code,
+            CodeHash = GetString(reader, "code_hash"),
+            CodeUnavailable = !available,
+            Note = GetString(reader, "note"),
+            Permissions = PermissionKeys.Normalize(
+                HubJson.DeserializeOrDefault<List<string>>(GetString(reader, "permissions"), [])),
+            MaxUses = GetInt32(reader, "max_uses"),
+            UsedCount = GetInt32(reader, "used_count"),
+            ExpiresAt = GetTimestamp(reader, "expires_at"),
+            CreatedAt = GetTimestampOrNow(reader, "created_at"),
+        };
+    }
 
     /// <summary>查询全部邀请码（新创建的排在前面）。</summary>
     public async Task<List<RegisterCodeRow>> GetRegisterCodesAsync(CancellationToken cancellationToken = default)
@@ -43,29 +50,38 @@ public sealed partial class HubStore
         return result;
     }
 
-    /// <summary>按码查询邀请码。</summary>
+    /// <summary>按码查询邀请码（支持明文或 <c>ref:</c> 指纹引用；明文先规范化，再按 HMAC 指纹查找）。</summary>
     public async Task<RegisterCodeRow?> GetRegisterCodeAsync(string code,
         CancellationToken cancellationToken = default)
     {
+        var (lookup, hash, plain) = ResolveSecretLookup(code);
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = $"SELECT {RegisterCodeColumns} FROM register_codes WHERE code = $code LIMIT 1;";
-        command.Parameters.AddWithValue("$code", code);
+        command.CommandText =
+            $"SELECT {RegisterCodeColumns} FROM register_codes WHERE {lookup} LIMIT 1;";
+        AddParameters(command, ("$hash", hash), ("$plain", plain));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken) ? ReadRegisterCode(reader) : null;
     }
 
-    /// <summary>创建邀请码。</summary>
+    /// <summary>创建邀请码（<c>code</c> 以密文落库，并写入 HMAC 指纹；传入的 <paramref name="row"/> 保持明文）。</summary>
     public async Task CreateRegisterCodeAsync(RegisterCodeRow row, CancellationToken cancellationToken = default)
     {
+        var plain = NormalizeEnrollCode(row.Code);
+        var hash = _secrets.ComputeLookupHash(plain);
+        row.Code = plain;
+        // 回填指纹：调用方（端点）用它生成 DTO 的指纹引用，创建响应里不能是空引用。
+        row.CodeHash = hash;
+
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO register_codes (code, note, permissions, max_uses, used_count, expires_at, created_at)
-            VALUES ($code, $note, $permissions, $maxUses, $usedCount, $expiresAt, $createdAt);
+            INSERT INTO register_codes (code, code_hash, note, permissions, max_uses, used_count, expires_at, created_at)
+            VALUES ($code, $hash, $note, $permissions, $maxUses, $usedCount, $expiresAt, $createdAt);
             """;
         AddParameters(command,
-            ("$code", row.Code),
+            ("$code", ProtectSecret(plain)),
+            ("$hash", hash),
             ("$note", row.Note),
             ("$permissions", HubJson.Serialize(PermissionKeys.Normalize(row.Permissions))),
             ("$maxUses", row.MaxUses),
@@ -75,13 +91,14 @@ public sealed partial class HubStore
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    /// <summary>删除邀请码。</summary>
+    /// <summary>删除邀请码（按指纹查找，兼容未迁移的明文老行；也接受 <c>ref:</c> 引用）。</summary>
     public async Task DeleteRegisterCodeAsync(string code, CancellationToken cancellationToken = default)
     {
+        var (lookup, hash, plain) = ResolveSecretLookup(code);
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = "DELETE FROM register_codes WHERE code = $code;";
-        command.Parameters.AddWithValue("$code", code);
+        command.CommandText = $"DELETE FROM register_codes WHERE {lookup};";
+        AddParameters(command, ("$hash", hash), ("$plain", plain));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -92,6 +109,7 @@ public sealed partial class HubStore
     public async Task<(RegisterCodeRow? Code, string? Error)> ConsumeRegisterCodeAsync(string code,
         CancellationToken cancellationToken = default)
     {
+        var (lookup, hash, plain) = ResolveSecretLookup(code);
         await using var connection = await OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
@@ -99,8 +117,9 @@ public sealed partial class HubStore
         await using (var select = connection.CreateCommand())
         {
             select.Transaction = (SqliteTransaction)transaction;
-            select.CommandText = $"SELECT {RegisterCodeColumns} FROM register_codes WHERE code = $code LIMIT 1;";
-            select.Parameters.AddWithValue("$code", code);
+            select.CommandText =
+                $"SELECT {RegisterCodeColumns} FROM register_codes WHERE {lookup} LIMIT 1;";
+            AddParameters(select, ("$hash", hash), ("$plain", plain));
             await using var reader = await select.ExecuteReaderAsync(cancellationToken);
             if (await reader.ReadAsync(cancellationToken))
             {
@@ -111,6 +130,12 @@ public sealed partial class HubStore
         if (row is null)
         {
             return (null, "邀请码不存在。");
+        }
+
+        if (row.CodeUnavailable)
+        {
+            // 指纹匹配但密文解密失败：按不可用处理，绝不静默放行（#36）。
+            return (null, "邀请码不可用：服务端加密密钥已更换，请让管理员重新生成。");
         }
 
         if (row.ExpiresAt.HasValue && row.ExpiresAt.Value <= DateTimeOffset.UtcNow)
@@ -126,8 +151,9 @@ public sealed partial class HubStore
         await using (var update = connection.CreateCommand())
         {
             update.Transaction = (SqliteTransaction)transaction;
-            update.CommandText = "UPDATE register_codes SET used_count = used_count + 1 WHERE code = $code;";
-            update.Parameters.AddWithValue("$code", code);
+            update.CommandText =
+                $"UPDATE register_codes SET used_count = used_count + 1 WHERE {lookup};";
+            AddParameters(update, ("$hash", hash), ("$plain", plain));
             await update.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -384,7 +410,15 @@ public sealed partial class HubStore
 /// <summary>邀请码记录。</summary>
 public sealed class RegisterCodeRow
 {
+    /// <summary>邀请码明文：写入时加密落库，读取时由密文解密而来（#36）。</summary>
     public string Code { get; set; } = string.Empty;
+
+    /// <summary>HMAC-SHA256 指纹（确定性，用于精确查找）。</summary>
+    public string CodeHash { get; set; } = string.Empty;
+
+    /// <summary>读取时解密失败（密钥文件被更换 / 丢失）→ 该行不可用，界面应提示重新生成。</summary>
+    public bool CodeUnavailable { get; set; }
+
     public string Note { get; set; } = string.Empty;
 
     /// <summary>注册后授予的权限键集合。</summary>

@@ -246,16 +246,23 @@ public sealed partial class HubStore
 
     // ────────────────────────────── 注册码 ──────────────────────────────
 
-    private static EnrollCodeRow ReadEnrollCode(SqliteDataReader reader) => new()
+    /// <summary>读取一行注册码：<c>code</c> 列是密文，这里解密为可展示的明文（失败则置空并标记不可用）。</summary>
+    private EnrollCodeRow ReadEnrollCode(SqliteDataReader reader)
     {
-        Code = GetString(reader, "code"),
-        Note = GetString(reader, "note"),
-        MaxUses = GetInt32(reader, "max_uses"),
-        UsedCount = GetInt32(reader, "used_count"),
-        ExpiresAt = GetTimestamp(reader, "expires_at"),
-        Enabled = GetBool(reader, "enabled"),
-        CreatedAt = GetTimestampOrNow(reader, "created_at"),
-    };
+        var code = ReadSecret(GetString(reader, "code"), out var available);
+        return new EnrollCodeRow
+        {
+            Code = code,
+            CodeHash = GetString(reader, "code_hash"),
+            CodeUnavailable = !available,
+            Note = GetString(reader, "note"),
+            MaxUses = GetInt32(reader, "max_uses"),
+            UsedCount = GetInt32(reader, "used_count"),
+            ExpiresAt = GetTimestamp(reader, "expires_at"),
+            Enabled = GetBool(reader, "enabled"),
+            CreatedAt = GetTimestampOrNow(reader, "created_at"),
+        };
+    }
 
     /// <summary>查询全部注册码。</summary>
     public async Task<List<EnrollCodeRow>> GetEnrollCodesAsync(CancellationToken cancellationToken = default)
@@ -263,7 +270,7 @@ public sealed partial class HubStore
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT code, note, max_uses, used_count, expires_at, enabled, created_at
+            SELECT code, code_hash, note, max_uses, used_count, expires_at, enabled, created_at
             FROM enroll_codes ORDER BY created_at DESC;
             """;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -276,32 +283,40 @@ public sealed partial class HubStore
         return result;
     }
 
-    /// <summary>按注册码查询。</summary>
+    /// <summary>按注册码查询（支持明文或 <c>ref:</c> 指纹引用；明文先规范化，再按 HMAC 指纹查找）。</summary>
     public async Task<EnrollCodeRow?> GetEnrollCodeAsync(string code,
         CancellationToken cancellationToken = default)
     {
+        var (lookup, hash, plain) = ResolveSecretLookup(code);
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT code, note, max_uses, used_count, expires_at, enabled, created_at
-            FROM enroll_codes WHERE code = $code LIMIT 1;
+        command.CommandText = $"""
+            SELECT code, code_hash, note, max_uses, used_count, expires_at, enabled, created_at
+            FROM enroll_codes WHERE {lookup} LIMIT 1;
             """;
-        command.Parameters.AddWithValue("$code", code);
+        AddParameters(command, ("$hash", hash), ("$plain", plain));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken) ? ReadEnrollCode(reader) : null;
     }
 
-    /// <summary>新增注册码。</summary>
+    /// <summary>新增注册码（<c>code</c> 以密文落库，并写入 HMAC 指纹；传入的 <paramref name="row"/> 保持明文）。</summary>
     public async Task CreateEnrollCodeAsync(EnrollCodeRow row, CancellationToken cancellationToken = default)
     {
+        var plain = NormalizeEnrollCode(row.Code);
+        var hash = _secrets.ComputeLookupHash(plain);
+        row.Code = plain;
+        // 回填指纹：调用方（端点）用它生成 DTO 的指纹引用，创建响应里不能是空引用。
+        row.CodeHash = hash;
+
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO enroll_codes (code, note, max_uses, used_count, expires_at, enabled, created_at)
-            VALUES ($code, $note, $maxUses, $usedCount, $expiresAt, $enabled, $createdAt);
+            INSERT INTO enroll_codes (code, code_hash, note, max_uses, used_count, expires_at, enabled, created_at)
+            VALUES ($code, $hash, $note, $maxUses, $usedCount, $expiresAt, $enabled, $createdAt);
             """;
         AddParameters(command,
-            ("$code", row.Code),
+            ("$code", ProtectSecret(plain)),
+            ("$hash", hash),
             ("$note", row.Note),
             ("$maxUses", row.MaxUses),
             ("$usedCount", row.UsedCount),
@@ -311,48 +326,55 @@ public sealed partial class HubStore
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    /// <summary>更新注册码的可注册次数与状态。</summary>
+    /// <summary>更新注册码的可注册次数与状态（按指纹查找，兼容未迁移的明文老行）。</summary>
     public async Task UpdateEnrollCodeAsync(string code, string note, int maxUses, DateTimeOffset? expiresAt,
         bool enabled, CancellationToken cancellationToken = default)
     {
+        var (lookup, hash, plain) = ResolveSecretLookup(code);
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = """
+        command.CommandText = $"""
             UPDATE enroll_codes SET note = $note, max_uses = $maxUses, expires_at = $expiresAt, enabled = $enabled
-            WHERE code = $code;
+            WHERE {lookup};
             """;
         AddParameters(command,
             ("$note", note),
             ("$maxUses", maxUses),
             ("$expiresAt", TsOrNull(expiresAt)),
             ("$enabled", Bool(enabled)),
-            ("$code", code));
+            ("$hash", hash),
+            ("$plain", plain));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    /// <summary>删除注册码。</summary>
+    /// <summary>删除注册码（按指纹查找，兼容未迁移的明文老行；也接受 <c>ref:</c> 引用）。</summary>
     public async Task DeleteEnrollCodeAsync(string code, CancellationToken cancellationToken = default)
     {
+        var (lookup, hash, plain) = ResolveSecretLookup(code);
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = "DELETE FROM enroll_codes WHERE code = $code;";
-        command.Parameters.AddWithValue("$code", code);
+        command.CommandText = $"DELETE FROM enroll_codes WHERE {lookup};";
+        AddParameters(command, ("$hash", hash), ("$plain", plain));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     /// <summary>原子地占用一次注册码名额。返回是否成功。</summary>
     public async Task<bool> ConsumeEnrollCodeAsync(string code, CancellationToken cancellationToken = default)
     {
+        var (lookup, hash, plain) = ResolveSecretLookup(code);
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = """
+        command.CommandText = $"""
             UPDATE enroll_codes SET used_count = used_count + 1
-            WHERE code = $code
+            WHERE {lookup}
               AND enabled = 1
               AND (expires_at IS NULL OR expires_at > $now)
               AND (max_uses <= 0 OR used_count < max_uses);
             """;
-        AddParameters(command, ("$code", code), ("$now", Ts(DateTimeOffset.UtcNow)));
+        AddParameters(command,
+            ("$hash", hash),
+            ("$plain", plain),
+            ("$now", Ts(DateTimeOffset.UtcNow)));
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 

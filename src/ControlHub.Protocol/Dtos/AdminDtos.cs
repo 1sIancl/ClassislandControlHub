@@ -133,6 +133,41 @@ public sealed class ServerInfoDto
 
     /// <summary>品牌个性化配置（站点名称 / Logo / 图标）。</summary>
     public BrandingDto Branding { get; set; } = new();
+
+    /// <summary>静态敏感数据加密状态（#36，见 ADR 0005）：供管理端核对「到底加密了没有」。</summary>
+    public SecretEncryptionDto SecretsEncrypted { get; set; } = new();
+}
+
+/// <summary>静态敏感数据加密状态（#36）。</summary>
+public sealed class SecretEncryptionDto
+{
+    /// <summary>设备注册码。</summary>
+    public SecretKindDto EnrollCodes { get; set; } = new();
+
+    /// <summary>管理端邀请码。</summary>
+    public SecretKindDto RegisterCodes { get; set; } = new();
+
+    /// <summary>Webhook 加签密钥。</summary>
+    public SecretKindDto Webhooks { get; set; } = new();
+
+    /// <summary>密钥文件路径（现场核对与备份排除清单都要用到）。</summary>
+    public string KeyFile { get; set; } = string.Empty;
+
+    /// <summary>密钥文件是否为本次启动新建（首次部署时应在界面上提示妥善保管）。</summary>
+    public bool KeyGenerated { get; set; }
+}
+
+/// <summary>某一类敏感数据的加密情况。</summary>
+public sealed class SecretKindDto
+{
+    /// <summary>总条数。</summary>
+    public int Total { get; set; }
+
+    /// <summary>已加密条数。</summary>
+    public int Encrypted { get; set; }
+
+    /// <summary>解密失败条数（密钥文件被更换 / 丢失）。</summary>
+    public int Unavailable { get; set; }
 }
 
 /// <summary>
@@ -326,6 +361,18 @@ public sealed class EnrollCodeDto
 {
     /// <summary>注册码。</summary>
     public string Code { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 该注册码是否可用。<c>false</c> 表示密文解密失败（密钥文件被更换 / 丢失）——此时 <see cref="Code"/>
+    /// 为空，界面应显示「不可用」并提示重新生成（#36）。
+    /// </summary>
+    public bool Available { get; set; } = true;
+
+    /// <summary>
+    /// 指纹引用（<c>ref:xxxxxxxx</c>）：明文不可用时，管理端仍可用它查询 / 删除该行（#36）。
+    /// 不含注册码的任何原始字符，可安全展示。
+    /// </summary>
+    public string Reference { get; set; } = string.Empty;
 
     /// <summary>备注，例如「高一（3）班」。绑定到设备后会记录设备名。</summary>
     public string Note { get; set; } = string.Empty;

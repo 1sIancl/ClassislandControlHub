@@ -10,27 +10,33 @@ public sealed partial class HubStore
         + "last_attempt_at, last_success_at, last_status, last_error, fail_count, "
         + "mention_all, headers, quiet_hours, timeout_seconds, max_retries";
 
-    private static WebhookRow ReadWebhook(SqliteDataReader reader) => new()
+    /// <summary>读取一行 Webhook：<c>secret</c> 列是密文，这里解密为明文（失败则置空并标记不可用）。</summary>
+    private WebhookRow ReadWebhook(SqliteDataReader reader)
     {
-        Id = GetString(reader, "id"),
-        Name = GetString(reader, "name"),
-        Url = GetString(reader, "url"),
-        Kind = GetString(reader, "kind"),
-        Secret = GetString(reader, "secret"),
-        Events = GetString(reader, "events"),
-        Enabled = GetBool(reader, "enabled"),
-        CreatedAt = GetTimestampOrNow(reader, "created_at"),
-        LastAttemptAt = GetTimestamp(reader, "last_attempt_at"),
-        LastSuccessAt = GetTimestamp(reader, "last_success_at"),
-        LastStatusCode = GetInt32(reader, "last_status"),
-        LastError = GetNullableString(reader, "last_error"),
-        FailCount = GetInt32(reader, "fail_count"),
-        MentionAll = GetBool(reader, "mention_all"),
-        Headers = GetString(reader, "headers"),
-        QuietHours = GetString(reader, "quiet_hours"),
-        TimeoutSeconds = GetInt32(reader, "timeout_seconds"),
-        MaxRetries = GetInt32(reader, "max_retries"),
-    };
+        var secret = ReadSecret(GetString(reader, "secret"), out var secretAvailable);
+        return new WebhookRow
+        {
+            Id = GetString(reader, "id"),
+            Name = GetString(reader, "name"),
+            Url = GetString(reader, "url"),
+            Kind = GetString(reader, "kind"),
+            Secret = secret,
+            SecretUnavailable = !secretAvailable,
+            Events = GetString(reader, "events"),
+            Enabled = GetBool(reader, "enabled"),
+            CreatedAt = GetTimestampOrNow(reader, "created_at"),
+            LastAttemptAt = GetTimestamp(reader, "last_attempt_at"),
+            LastSuccessAt = GetTimestamp(reader, "last_success_at"),
+            LastStatusCode = GetInt32(reader, "last_status"),
+            LastError = GetNullableString(reader, "last_error"),
+            FailCount = GetInt32(reader, "fail_count"),
+            MentionAll = GetBool(reader, "mention_all"),
+            Headers = GetString(reader, "headers"),
+            QuietHours = GetString(reader, "quiet_hours"),
+            TimeoutSeconds = GetInt32(reader, "timeout_seconds"),
+            MaxRetries = GetInt32(reader, "max_retries"),
+        };
+    }
 
     /// <summary>全部 Webhook 配置（新的排在前面）。</summary>
     public async Task<List<WebhookRow>> GetWebhooksAsync(CancellationToken cancellationToken = default)
@@ -76,7 +82,8 @@ public sealed partial class HubStore
             ("$name", row.Name),
             ("$url", row.Url),
             ("$kind", row.Kind),
-            ("$secret", row.Secret),
+            // 加签密钥以密文落库（#36）；ProtectSecret 幂等，重复保存不会二次加密。
+            ("$secret", ProtectSecret(row.Secret)),
             ("$events", row.Events),
             ("$enabled", row.Enabled ? 1 : 0),
             ("$createdAt", Ts(row.CreatedAt)),
@@ -93,9 +100,14 @@ public sealed partial class HubStore
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
+        // 密钥列特殊处理：若原值解密失败（密钥文件被更换 / 丢失）且本次没有填新密钥，
+        // 保留库中的原密文不动——否则管理员改个名字就会把还能救回来的密文覆盖成空。
+        var keepSecret = row.SecretUnavailable && row.Secret.Length == 0;
         command.CommandText = """
             UPDATE webhooks
-               SET name = $name, url = $url, kind = $kind, secret = $secret, events = $events,
+               SET name = $name, url = $url, kind = $kind,
+                   secret = CASE WHEN $keepSecret = 1 THEN secret ELSE $secret END,
+                   events = $events,
                    enabled = $enabled, mention_all = $mentionAll, headers = $headers,
                    quiet_hours = $quietHours, timeout_seconds = $timeoutSeconds, max_retries = $maxRetries
              WHERE id = $id;
@@ -104,7 +116,9 @@ public sealed partial class HubStore
             ("$name", row.Name),
             ("$url", row.Url),
             ("$kind", row.Kind),
-            ("$secret", row.Secret),
+            // 加签密钥以密文落库（#36）；ProtectSecret 幂等，重复保存不会二次加密。
+            ("$keepSecret", keepSecret ? 1 : 0),
+            ("$secret", ProtectSecret(row.Secret)),
             ("$events", row.Events),
             ("$enabled", row.Enabled ? 1 : 0),
             ("$mentionAll", row.MentionAll ? 1 : 0),
@@ -288,8 +302,11 @@ public sealed class WebhookRow
     /// <summary>接收端类型（wecom / dingtalk / feishu / generic）。</summary>
     public string Kind { get; set; } = "generic";
 
-    /// <summary>加签密钥（钉钉可选）。</summary>
+    /// <summary>加签密钥（钉钉可选）。写入时加密落库，读取时已解密为明文（#36）。</summary>
     public string Secret { get; set; } = string.Empty;
+
+    /// <summary>密钥解密失败（密钥文件被更换 / 丢失）→ 不能按「未配置」静默处理，投递时应直接报错。</summary>
+    public bool SecretUnavailable { get; set; }
 
     /// <summary>订阅的事件类型（JSON 数组文本）。</summary>
     public string Events { get; set; } = string.Empty;

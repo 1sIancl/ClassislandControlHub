@@ -88,6 +88,8 @@ function renderServerCard(info) {
       row('设备注册', info.requiresEnrollCode ? '需要注册码' : '无需注册码'),
       row('设备统计', `共 ${info.deviceCount} 台，在线 ${info.onlineDeviceCount} 台，待同步 ${info.pendingDeviceCount} 台`),
       row('数据目录', info.dataDirectory, true),
+      row('敏感数据加密', formatSecrets(info.secretsEncrypted)),
+      row('加密密钥文件', info.secretsEncrypted?.keyFile || '—', true),
     ),
     h('div.card-actions', { style: { marginTop: '14px' } },
       h('button.btn.btn-sm', {
@@ -96,6 +98,26 @@ function renderServerCard(info) {
       }, '复制访问地址'),
     ),
   );
+}
+
+/**
+ * 静态敏感数据加密状态（#36）：注册码 / 邀请码 / Webhook 密钥分别有多少条已加密。
+ * 有一条解不开就明确报警——「以为加密了其实没有」正是这个功能要防的。
+ */
+function formatSecrets(secrets) {
+  if (!secrets) return '—';
+  const parts = [
+    `注册码 ${secrets.enrollCodes.encrypted}/${secrets.enrollCodes.total}`,
+    `邀请码 ${secrets.registerCodes.encrypted}/${secrets.registerCodes.total}`,
+    `Webhook 密钥 ${secrets.webhooks.encrypted}/${secrets.webhooks.total}`,
+  ];
+  const unavailable = (secrets.enrollCodes.unavailable || 0)
+    + (secrets.registerCodes.unavailable || 0)
+    + (secrets.webhooks.unavailable || 0);
+  if (unavailable > 0) {
+    return `${parts.join('，')} 已加密；${unavailable} 条无法解密（密钥文件已更换或丢失），需重新生成 / 重新填写`;
+  }
+  return `${parts.join('，')} 已加密`;
 }
 
 function row(label, value, mono = false) {
@@ -813,11 +835,19 @@ function renderRegisterCodesCard(container, codes, registration) {
           h('tbody', ...codes.map((code) => h('tr',
             h('td',
               h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
-                h('code', { style: { fontSize: '14px', letterSpacing: '1.5px', fontWeight: '700' } }, code.code),
-                h('button.btn.btn-ghost.btn-sm', {
-                  type: 'button',
-                  onClick: () => copyText(code.code, '邀请码已复制'),
-                }, '复制'),
+                code.available === false
+                  ? h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
+                    h('span.badge.badge-danger', '不可用'),
+                    h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } },
+                      `加密密钥已更换，${code.reference}（请重新生成）`),
+                  )
+                  : [
+                    h('code', { style: { fontSize: '14px', letterSpacing: '1.5px', fontWeight: '700' } }, code.code),
+                    h('button.btn.btn-ghost.btn-sm', {
+                      type: 'button',
+                      onClick: () => copyText(code.code, '邀请码已复制'),
+                    }, '复制'),
+                  ],
               ),
             ),
             h('td', code.note || h('span', { style: { color: 'var(--text-faint)' } }, '—')),
@@ -830,8 +860,11 @@ function renderRegisterCodesCard(container, codes, registration) {
               h('button.btn.btn-sm.btn-danger', {
                 type: 'button',
                 onClick: async () => {
-                  if (!await confirmDialog('删除邀请码', `确定删除邀请码 ${code.code} 吗？已注册的账号不受影响。`, '删除', true)) return;
-                  await api(`/admin/register-codes/${encodeURIComponent(code.code)}`, { method: 'DELETE' });
+                  // 明文不可用时用指纹引用操作该行（#36）：界面拿不到邀请码本体，但删除仍然可用。
+                  const target = code.available === false ? code.reference : code.code;
+                  const label = code.available === false ? code.reference : code.code;
+                  if (!await confirmDialog('删除邀请码', `确定删除邀请码 ${label} 吗？已注册的账号不受影响。`, '删除', true)) return;
+                  await api(`/admin/register-codes/${encodeURIComponent(target)}`, { method: 'DELETE' });
                   toast('ok', '已删除');
                   await render(container);
                 },
@@ -1334,7 +1367,9 @@ function openWebhookDialogInner(container, hook) {
   const secretInput = h('input', {
     type: 'text',
     value: '',
-    placeholder: hook?.hasSecret ? '已设置（留空保持不变）' : '钉钉加签密钥（其它类型留空）',
+    placeholder: hook?.secretUnavailable
+      ? '原密钥无法解密（加密密钥已更换），请重新填写'
+      : hook?.hasSecret ? '已设置（留空保持不变）' : '钉钉加签密钥（其它类型留空）',
   });
   let secretTouched = false;
   secretInput.addEventListener('input', () => { secretTouched = true; });

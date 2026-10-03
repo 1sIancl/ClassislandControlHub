@@ -67,7 +67,7 @@ curl -s "$BASE/admin/devices" -H "Authorization: Bearer $TOKEN" \
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/server/info` | 版本、启动时间、运行时长、设备统计、数据目录 |
+| GET | `/server/info` | 版本、启动时间、运行时长、设备统计、数据目录、`secretsEncrypted`（注册码 / 邀请码 / Webhook 密钥的已加密与不可用条数，可用于监控「加密到底生效没有」） |
 | GET | `/ping` | 探针 |
 | GET | `/api/health` | 健康检查（注意：不在 `/api/v1` 下） |
 

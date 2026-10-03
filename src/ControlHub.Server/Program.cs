@@ -97,7 +97,8 @@ builder.Services.AddSingleton(sp =>
 {
     var options = sp.GetRequiredService<IOptions<ServerOptions>>().Value;
     var environment = sp.GetRequiredService<IHostEnvironment>();
-    return new HubStore(options.ResolveDatabasePath(environment.ContentRootPath));
+    return new HubStore(options.ResolveDatabasePath(environment.ContentRootPath),
+        sp.GetRequiredService<SecretProtector>());
 });
 
 builder.Services.AddSingleton(sp =>
@@ -127,10 +128,19 @@ builder.Services.AddSingleton<UpdateService>();
 builder.Services.AddSingleton<BackupService>();
 builder.Services.AddSingleton<AiTimetableService>();
 
-// 静态敏感数据加密（#36）：注册码、Webhook 加签密钥等「必须能还原」的值以密文落库。
-// 密钥文件路径留空 = 数据目录下的 secrets.key；读取兼容明文，因此老库无需停机迁移。
-builder.Services.AddSingleton(_ => new SecretProtector(
-    string.IsNullOrWhiteSpace(serverOptions.SecretsKeyPath) ? null : serverOptions.SecretsKeyPath));
+// 静态敏感数据加密（#36，见 docs/adr/0005）：设备注册码、管理端邀请码、Webhook 加签密钥
+// 以密文落库（这几种值必须能还原，因此不能用哈希）。读取兼容明文，因此老库无需停机迁移。
+// 密钥文件路径留空 = 数据目录下的 secrets.key；可用 ControlHub:SecretsKeyPath 指到别处，
+// 但**不要**把它和数据库放进同一个会被外发的备份包里（ADR 0005「密钥管理」）。
+builder.Services.AddSingleton(sp =>
+{
+    var options = sp.GetRequiredService<IOptions<ServerOptions>>().Value;
+    var environment = sp.GetRequiredService<IHostEnvironment>();
+    var keyPath = string.IsNullOrWhiteSpace(options.SecretsKeyPath)
+        ? Path.Combine(options.ResolveDataDirectory(environment.ContentRootPath), "secrets.key")
+        : options.SecretsKeyPath.Trim();
+    return new SecretProtector(keyPath);
+});
 // 定时提醒：ReminderService 负责推算触发时间与投递，ReminderScheduler 每 15 秒检查一次。
 builder.Services.AddSingleton<ReminderService>();
 builder.Services.AddHostedService<DiscoveryService>();
@@ -176,6 +186,50 @@ await using (var scope = app.Services.CreateAsyncScope())
 {
     var store = scope.ServiceProvider.GetRequiredService<HubStore>();
     await store.InitializeAsync();
+
+    // 静态敏感数据加密（#36）：把老库里的明文注册码 / 邀请码 / Webhook 密钥就地升级为密文（幂等）。
+    var migration = await store.MigrateSecretsAsync();
+    if (migration.Changed || migration.AuditReferencesScrubbed > 0)
+    {
+        app.Logger.LogInformation(
+            "静态敏感数据迁移完成：注册码新加密 {Enroll} 条（补指纹 {EnrollHash} 条），"
+            + "邀请码新加密 {Register} 条（补指纹 {RegisterHash} 条），Webhook 密钥新加密 {Hooks} 条，"
+            + "清理审计中的明文引用 {Audit} 处。",
+            migration.EnrollCodesEncrypted, migration.EnrollCodesFingerprinted,
+            migration.RegisterCodesEncrypted, migration.RegisterCodesFingerprinted,
+            migration.WebhooksEncrypted, migration.AuditReferencesScrubbed);
+    }
+
+    foreach (var error in migration.Errors)
+    {
+        app.Logger.LogWarning("静态敏感数据迁移失败（已跳过该条，不阻断启动）：{Error}", error);
+    }
+
+    if (migration.Unrecoverable > 0)
+    {
+        app.Logger.LogWarning(
+            "静态敏感数据：{Count} 条记录已是密文但缺少查找指纹，明文不可得、无法自动修复（请重新生成）。",
+            migration.Unrecoverable);
+    }
+
+    // 打印加密覆盖率与密钥文件位置：现场最需要核对「到底加密了没有」「密钥在哪里」。
+    var secretStats = await store.GetSecretEncryptionStatsAsync();
+    app.Logger.LogInformation(
+        "静态敏感数据：注册码 {EnrollEncrypted}/{EnrollTotal} 已加密，邀请码 {RegisterEncrypted}/{RegisterTotal} 已加密，"
+        + "Webhook 密钥 {HookEncrypted}/{HookTotal} 已加密（密钥文件：{KeyFile}，本次新建：{KeyGenerated}）",
+        secretStats.EnrollCodes.Encrypted, secretStats.EnrollCodes.Total,
+        secretStats.RegisterCodes.Encrypted, secretStats.RegisterCodes.Total,
+        secretStats.Webhooks.Encrypted, secretStats.Webhooks.Total,
+        secretStats.KeyFile, secretStats.KeyGenerated);
+
+    if (secretStats.HasUnavailable)
+    {
+        app.Logger.LogWarning(
+            "静态敏感数据：存在无法解密的值（密钥文件已更换或丢失）——注册码 {Enroll} 条、邀请码 {Register} 条、"
+            + "Webhook 密钥 {Hooks} 条不可用，需重新生成 / 重新填写。",
+            secretStats.EnrollCodes.Unavailable, secretStats.RegisterCodes.Unavailable,
+            secretStats.Webhooks.Unavailable);
+    }
 
     var auth = scope.ServiceProvider.GetRequiredService<AdminAuthService>();
     await auth.EnsureSeedAdminAsync();

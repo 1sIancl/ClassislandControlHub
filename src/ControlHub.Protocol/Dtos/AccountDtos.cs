@@ -95,6 +95,18 @@ public sealed class RegisterCodeDto
     /// <summary>邀请码本体。</summary>
     public string Code { get; set; } = string.Empty;
 
+    /// <summary>
+    /// 该邀请码是否可用。<c>false</c> 表示密文解密失败（密钥文件被更换 / 丢失）——此时 <see cref="Code"/>
+    /// 为空，界面应显示「不可用」并提示重新生成（#36）。
+    /// </summary>
+    public bool Available { get; set; } = true;
+
+    /// <summary>
+    /// 指纹引用（<c>ref:xxxxxxxx</c>）：明文不可用时，管理端仍可用它查询 / 删除该行（#36）。
+    /// 不含邀请码的任何原始字符，可安全展示。
+    /// </summary>
+    public string Reference { get; set; } = string.Empty;
+
     /// <summary>备注，便于管理端识别用途。</summary>
     public string Note { get; set; } = string.Empty;
 

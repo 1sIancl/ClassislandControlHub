@@ -63,7 +63,7 @@
 | 33 | 会话超时可配置 | ✅ | `SessionLifetimeHours` |
 | 34 | IP 白名单 | ✅ | `AdminIpAllowList`（IP 或 CIDR，只约束 `/api/v1/admin`，教室端与公开接口不受影响，回环始终放行）。实现中修掉一个**危险缺陷**：曾把 IPv4 映射成 IPv6 后比较前缀，导致任何 IPv4 都匹配、配置了却全部放行；现按地址族归一化比较。正反向均实测（白名单内放行 / 白名单外 403 `IP_NOT_ALLOWED`） |
 | 35 | 操作审批流 | ⬜ | |
-| 36 | 敏感数据加密存储（注册码 / Webhook 密钥） | 🔨 | 账号密码为哈希；注册码明文存储、Webhook 密钥明文存储（见「现有实现缺口」） |
+| 36 | 敏感数据加密存储（注册码 / Webhook 密钥） | ✅ | ADR 0005：设备注册码、管理端邀请码、Webhook 加签密钥改为 AES-256-GCM 密文落库（`enc:v1:…`），密钥为数据目录下 `secrets.key`（可用 `SecretsKeyPath` 换位置）；`code` 改密文后无法等值查找 → 新增确定性 HMAC 指纹列 `code_hash`（ADR 的「实现期修正」），查找 / 消费 / 删除全走指纹；老库明文零停机，启动幂等迁移就地升级；解密失败 fail-closed（注册码视为不可用、Webhook 投递直接报密钥不可用），并在 `/server/info` 的 `secretsEncrypted` 计数与启动日志暴露；审计日志只记指纹引用（`ref:xxxxxxxx`）不落明文；单测 + 库底原始值实测见 `docs/pentest-checklist.md` |
 | 37 | 安全响应头（CSP / X-Frame-Options 等） | ✅ | CSP / X-Frame-Options: DENY / nosniff / Referrer-Policy / Permissions-Policy，HTTPS 下附带 HSTS；`SecurityHeadersEnabled=false` 可作逃生开关。CSP 保留 `'unsafe-inline'` 的原因写在代码注释里（前端依赖内联样式，收紧需先改造加载方式） |
 | 38 | 依赖漏洞扫描（Dependabot / Snyk） | ✅ | `.github/dependabot.yml`：NuGet 与 GitHub Actions 每周一提 PR（小版本合并、主版本单独提）；只提不自动合并 |
 | 39 | 渗透测试清单 | ✅ | `docs/security-testing.md`：部署前 10 条必测（含「白名单必须正反两向都测」这类会漏测的项）+ 改动安全代码后 5 条 + 定位顺序 + 已知未覆盖 |
@@ -150,7 +150,7 @@
 | 95 | API 文档（OpenAPI / Swagger） | 🔨 | 已有 `docs/api.md` 对外集成指南（鉴权模型、常用接口表、错误码、监控脚本示例）；**尚无机器可读的 OpenAPI 规范**，也未接 Swagger UI |
 | 96 | 架构决策记录（ADR） | ✅ | `docs/adr/`：0001 SQLite + 长轮询、0002 权限 fail-closed、0003 先冻结插件协议、0004 截图走渲染管线；含索引与「什么时候该写 ADR」 |
 | 97 | 性能调优指南 | ✅ | README「规模与部署建议」含机制、估算与实测参考 |
-| 98 | 安全加固指南 | ✅ | `docs/security.md`：部署前检查清单、三条信任边界、远程能力与隐私对照表、账号 / 备份 / 处置流程，并**如实列出 5 条已知限制**（注册码与 Webhook 密钥明文、无登录锁定、无 IP 白名单、无逐请求访问日志、对称设备令牌） |
+| 98 | 安全加固指南 | ✅ | `docs/security.md`：部署前检查清单、三条信任边界、远程能力与隐私对照表、账号 / 备份 / 处置流程，并**如实列出已知限制**（加密密钥与数据库同机、无逐请求访问日志、对称设备令牌、无代码级扫描）。#36 完成后「注册码 / Webhook 密钥明文」一条已从清单移除，并补入密钥文件保管要求 |
 | 99 | 升级指南 | 🔨 | USAGE 覆盖升级与备份恢复流程 |
 | 100 | FAQ | 🔨 | USAGE「常见问题」 |
 | 101 | 示例配置 | 🔨 | 新建档案可选示例档案 |

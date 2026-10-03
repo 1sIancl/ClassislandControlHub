@@ -1,4 +1,5 @@
 using ControlHub.Protocol;
+using ControlHub.Server.Services;
 using Microsoft.Data.Sqlite;
 
 namespace ControlHub.Server.Data;
@@ -10,11 +11,19 @@ namespace ControlHub.Server.Data;
 public sealed partial class HubStore
 {
     private readonly string _connectionString;
+    private readonly SecretProtector _secrets;
 
     /// <summary>创建数据存储。</summary>
     /// <param name="databasePath">SQLite 数据库文件路径。</param>
-    public HubStore(string databasePath)
+    /// <param name="secrets">
+    /// 静态敏感数据加解密器（#36 / ADR 0005）。注册码与 Webhook 加签密钥以密文落库，
+    /// 读取时解密；老库中的明文值按兼容路径继续可用，启动迁移会把它升级为密文。
+    /// 由 DI 注入，正常运行时**不允许为 null**：缺了它就等于静默退回明文存储。
+    /// </param>
+    public HubStore(string databasePath, SecretProtector secrets)
     {
+        _secrets = secrets ?? throw new ArgumentNullException(nameof(secrets));
+
         var directory = Path.GetDirectoryName(databasePath);
         if (!string.IsNullOrEmpty(directory))
         {
@@ -155,6 +164,20 @@ public sealed partial class HubStore
         await EnsureColumnAsync(connection, "webhooks", "timeout_seconds", "INTEGER NOT NULL DEFAULT 8", cancellationToken);
         await EnsureColumnAsync(connection, "webhooks", "max_retries", "INTEGER NOT NULL DEFAULT 2", cancellationToken);
 
+        // 迁移：注册码 / 邀请码的「可查找指纹」列（#36，见 docs/adr/0005）。code 列改为存密文后无法等值查找，
+        // 因此新增确定性的 HMAC-SHA256 指纹列 code_hash，按它查行。
+        // 唯一索引允许重复 NULL：老库在启动迁移补指纹之前整列都是 NULL，不影响建索引。
+        await EnsureColumnAsync(connection, "enroll_codes", "code_hash", "TEXT", cancellationToken);
+        await EnsureColumnAsync(connection, "register_codes", "code_hash", "TEXT", cancellationToken);
+        await using (var secretIndexes = connection.CreateCommand())
+        {
+            secretIndexes.CommandText = """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_enroll_codes_hash ON enroll_codes(code_hash);
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_register_codes_hash ON register_codes(code_hash);
+                """;
+            await secretIndexes.ExecuteNonQueryAsync(cancellationToken);
+        }
+
         // 迁移：Webhook 投递明细。只保留每个 Webhook 最近若干条（写入时顺带清理）。
         // 「最近一次结果」不够用——排查时要知道「这条通知到底发出去了没有、对方回了什么、耗时多久」。
         await using (var deliveries = connection.CreateCommand())
@@ -247,8 +270,10 @@ public sealed partial class HubStore
         CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 
         -- 邀请码：凭码自助注册为一个拥有预设权限的账号。
+        -- code 存密文（#36，见 ADR 0005）；code_hash 是 HMAC 指纹，用于精确查找（确定性，密文无法等值查找）。
         CREATE TABLE IF NOT EXISTS register_codes (
             code        TEXT PRIMARY KEY,
+            code_hash   TEXT,
             note        TEXT NOT NULL DEFAULT '',
             permissions TEXT NOT NULL DEFAULT '',
             max_uses    INTEGER NOT NULL DEFAULT 1,
@@ -437,6 +462,7 @@ public sealed partial class HubStore
 
         CREATE TABLE IF NOT EXISTS enroll_codes (
             code       TEXT PRIMARY KEY,
+            code_hash  TEXT,
             note       TEXT NOT NULL DEFAULT '',
             max_uses   INTEGER NOT NULL DEFAULT 1,
             used_count INTEGER NOT NULL DEFAULT 0,
