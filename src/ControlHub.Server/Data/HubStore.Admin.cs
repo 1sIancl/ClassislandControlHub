@@ -10,12 +10,13 @@ public sealed partial class HubStore
 
     private const string UserColumns =
         "id, username, password_hash, display_name, role, permissions, must_change_password, totp_secret, "
-        + "totp_enabled, created_at";
+        + "totp_enabled, created_at, password_changed_at";
 
     private static UserRow ReadUser(SqliteDataReader reader) => new()
     {
         Id = GetString(reader, "id"),
         Username = GetString(reader, "username"),
+        PasswordChangedAt = GetTimestamp(reader, "password_changed_at"),
         PasswordHash = GetString(reader, "password_hash"),
         DisplayName = GetString(reader, "display_name"),
         Role = GetString(reader, "role"),
@@ -150,9 +151,12 @@ public sealed partial class HubStore
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            UPDATE users SET password_hash = $hash, must_change_password = $mustChange WHERE id = $id;
+            UPDATE users SET password_hash = $hash, must_change_password = $mustChange,
+                             password_changed_at = $now
+             WHERE id = $id;
             """;
         AddParameters(command,
+            ("$now", Ts(DateTimeOffset.UtcNow)),
             ("$hash", passwordHash),
             ("$mustChange", Bool(mustChangePassword)),
             ("$id", userId));

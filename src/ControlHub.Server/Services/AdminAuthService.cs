@@ -203,6 +203,41 @@ public sealed class AdminAuthService(
     public Task DisableTotpAsync(UserRow user, CancellationToken cancellationToken = default)
         => store.SetUserTotpAsync(user.Id, string.Empty, false, cancellationToken);
 
+    /// <summary>
+    /// 计算密码到期提醒（#28）。**只提醒、不拦截**：学校场景强制改密会打断教学，
+    /// 交给管理员自己安排时间；到期与临近两种情况给出不同文案。
+    /// <para>老库升级后没有「上次改密时间」的账号以账号创建时间兜底，否则这些账号永远不会被提醒。</para>
+    /// </summary>
+    private async Task<string?> BuildPasswordWarningAsync(UserRow user, string? ipAddress,
+        CancellationToken cancellationToken)
+    {
+        if (_options.PasswordExpiryDays <= 0)
+        {
+            return null;
+        }
+
+        var baseline = user.PasswordChangedAt ?? user.CreatedAt;
+        if (baseline == default)
+        {
+            return null;
+        }
+
+        var daysLeft = (baseline.AddDays(_options.PasswordExpiryDays) - DateTimeOffset.UtcNow).TotalDays;
+        var warning = daysLeft <= 0
+            ? $"登录密码已使用超过 {_options.PasswordExpiryDays} 天，建议尽快在「系统设置 → 修改密码」里更换。"
+            : daysLeft <= _options.PasswordExpiryWarnDays
+                ? $"登录密码将在 {Math.Ceiling(daysLeft):0} 天后到期，建议安排时间更换。"
+                : null;
+
+        if (warning is not null)
+        {
+            await store.AddAuditAsync(user.Username, "admin.password.expiring", user.Username, warning,
+                ipAddress, cancellationToken);
+        }
+
+        return warning;
+    }
+
     /// <summary>签发会话令牌（密码直登与两步验证通过后的公共收尾）。</summary>
     private async Task<LoginResponse> IssueSessionAsync(UserRow user, string? ipAddress,
         CancellationToken cancellationToken)
@@ -214,10 +249,13 @@ public sealed class AdminAuthService(
         await store.AddAuditAsync(user.Username, "admin.login", user.Username,
             "登录成功。", ipAddress, cancellationToken);
 
+        var passwordWarning = await BuildPasswordWarningAsync(user, ipAddress, cancellationToken);
+
         return new LoginResponse
         {
             Token = token,
             ExpiresAt = expiresAt,
+            PasswordWarning = passwordWarning,
             DisplayName = string.IsNullOrWhiteSpace(user.DisplayName) ? user.Username : user.DisplayName,
             Role = user.Role,
         };

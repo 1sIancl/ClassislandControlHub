@@ -168,6 +168,16 @@ public sealed class ServerOptions
     public int LoginAttemptRetentionDays { get; set; } = 30;
 
     /// <summary>
+    /// 密码有效期天数（#28）。到期只在登录应答里给出提示、**不强制改密**——强制换密码会打断教学，
+    /// 学校场景更合适「提醒 + 由管理员自行安排」。设为 0 表示不提醒。
+    /// <para>老库升级后没有「上次改密时间」的账号以账号创建时间兜底，否则这些账号永远不会被提醒。</para>
+    /// </summary>
+    public int PasswordExpiryDays { get; set; } = 90;
+
+    /// <summary>提前多少天开始提醒（默认 14 天）。</summary>
+    public int PasswordExpiryWarnDays { get; set; } = 14;
+
+    /// <summary>
     /// <c>/metrics</c> 的访问令牌。<para>留空时只允许**本机**访问（同机 Prometheus / Zabbix agent 的场景）；
     /// 填了令牌后，外部采集器需带 <c>?token=</c> 或 <c>Authorization: Bearer</c>。</para>
     /// </summary>

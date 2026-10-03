@@ -5,6 +5,14 @@ public sealed class UserRow
 {
     public string Id { get; set; } = string.Empty;
     public string Username { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 密码最后修改时间（#28 密码到期提醒的基准）。
+    /// <para>老库升级后该列为空，此时以 <see cref="CreatedAt"/> 兜底——否则老账号永远不会提醒，
+    /// 功能等于没做。</para>
+    /// </summary>
+    public DateTimeOffset? PasswordChangedAt { get; set; }
+
     public string PasswordHash { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
 

@@ -40,6 +40,11 @@ public sealed class LoginResponse
     public string Token { get; set; } = string.Empty;
 
     /// <summary>
+    /// 密码到期提醒（#28）：临近有效期或已过期时给出可读提示，不阻止登录；为空表示无需提醒。
+    /// </summary>
+    public string? PasswordWarning { get; set; }
+
+    /// <summary>
     /// 是否需要两步验证：为 <c>true</c> 时 <see cref="Token"/> 为空，
     /// 需要再调用 <c>POST /admin/login/totp</c> 提交验证码换取正式令牌。
     /// </summary>
