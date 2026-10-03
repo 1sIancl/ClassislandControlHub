@@ -1236,6 +1236,10 @@ async function testWebhook(hook) {
  * <para>这是排查 Webhook 最直接的入口——比只看「最近一次结果」有用得多。</para>
  */
 async function openDeliveriesDialog(hook) {
+  await guardUi('打开投递明细', async () => openDeliveriesDialogInner(hook));
+}
+
+async function openDeliveriesDialogInner(hook) {
   let list = [];
   try {
     list = await api(`/admin/webhooks/${hook.id}/deliveries`);
@@ -1299,7 +1303,28 @@ function webhookDeliveryCell(hook) {
     h('div.cell-sub', { title: hook.lastError, style: { overflowWrap: 'anywhere' } }, hook.lastError));
 }
 
+/**
+ * 界面操作的异常兜底。
+ * <para>没有它时，处理函数里任何一处抛错，用户看到的就是「**点了没反应**」——
+ * 现场只能靠猜（「新建按钮点不开」就是这么来的：ReferenceError: select is not defined）。
+ * 有了它，原因会直接弹在界面上，截图即可定位。</para>
+ */
+function guardUi(label, action) {
+  try {
+    const result = action();
+    if (result && typeof result.catch === 'function') {
+      result.catch((err) => toast('error', `${label}失败`, (err && err.message) || String(err)));
+    }
+  } catch (err) {
+    toast('error', `${label}失败`, (err && err.message) || String(err));
+  }
+}
+
 function openWebhookDialog(container, hook) {
+  guardUi('打开 Webhook 窗口', () => openWebhookDialogInner(container, hook));
+}
+
+function openWebhookDialogInner(container, hook) {
   const isNew = !hook;
   const nameInput = h('input', { type: 'text', value: hook?.name || '', placeholder: '例如：高一教师群' });
   const kindSelect = select(WEBHOOK_KINDS, hook?.kind || 'wecom');
