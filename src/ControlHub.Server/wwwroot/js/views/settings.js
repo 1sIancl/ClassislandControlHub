@@ -2,11 +2,11 @@
  * 系统设置视图：服务器信息、账号安全与部署提示。
  */
 
-import { api, session, hasPermission } from '../core/api.js?v=40';
+import { api, session, hasPermission } from '../core/api.js?v=41';
 import {
   h, clear, formatDateTime, formatDuration, toast, loadingBlock,
   field, modal, copyText, confirmDialog,
-} from '../core/ui.js?v=40';
+} from '../core/ui.js?v=41';
 
 export const meta = {
   title: '系统设置',
@@ -166,7 +166,7 @@ async function replayOnboarding() {
     return;
   }
 
-  const { startTour } = await import('../core/tour.js?v=40');
+  const { startTour } = await import('../core/tour.js?v=41');
   startTour({
     onFinish: async (skipped) => {
       if (!skipped) {
@@ -1130,6 +1130,7 @@ const WEBHOOK_EVENTS = [
   { value: 'device.online', label: '设备恢复上线' },
   { value: 'device.error', label: '配置应用失败' },
   { value: 'command.failed', label: '远程指令失败' },
+  { value: 'admin.login.failed', label: '登录失败（安全预警）' },
 ];
 
 function webhookKindLabel(kind) {
@@ -1151,6 +1152,7 @@ function renderWebhooksCard(container, hooks) {
     webhookDeliveryCell(hook),
     h('td.actions',
       h('button.btn.btn-sm', { type: 'button', onClick: () => testWebhook(hook) }, '测试'),
+      h('button.btn.btn-sm', { type: 'button', onClick: () => openDeliveriesDialog(hook) }, '投递明细'),
       h('button.btn.btn-sm', { type: 'button', onClick: () => openWebhookDialog(container, hook) }, '编辑'),
       h('button.btn.btn-sm.btn-danger', {
         type: 'button',
@@ -1212,6 +1214,53 @@ async function testWebhook(hook) {
 }
 
 /**
+ * 投递明细：每条通知「发出去了没有、对方回了什么、耗时多久、为什么被跳过」。
+ * <para>这是排查 Webhook 最直接的入口——比只看「最近一次结果」有用得多。</para>
+ */
+async function openDeliveriesDialog(hook) {
+  let list = [];
+  try {
+    list = await api(`/admin/webhooks/${hook.id}/deliveries`);
+  } catch (err) {
+    toast('error', '读取投递明细失败', err.message);
+    return;
+  }
+
+  const color = (d) => (d.skipped ? 'var(--warn, #b26a00)'
+    : (d.success ? 'var(--ok, #1a7f37)' : 'var(--danger)'));
+
+  modal({
+    title: `投递明细 · ${hook.name}`,
+    width: 'wide',
+    hideFooter: true,
+    body: h('div',
+      h('div.notice.notice-info',
+        h('span.notice-icon', 'i'),
+        h('div', `最近 ${list.length} 条记录（每个 Webhook 最多保留 50 条）。`
+          + '真实推送失败会自动重试；被跳过通常是静默时段或短时间重复触发。')),
+      list.length === 0
+        ? h('div', { style: { padding: '10px 0', color: 'var(--text-faint)' } }, '还没有投递记录。')
+        : h('div.cmd-list', { style: { marginTop: '12px' } }, ...list.map((d) => h('div.cmd-row',
+          h('div.cmd-head',
+            h('span.log-time', new Date(d.createdAt).toLocaleString('zh-CN', { hour12: false })),
+            h('span.log-level', { style: { color: color(d) } },
+              d.skipped ? '已跳过' : (d.success ? '成功' : '失败')),
+            h('span.cmd-kind', d.event),
+            h('span.cmd-kind', `HTTP ${d.statusCode}`),
+            h('span.cmd-kind', `尝试 ${d.attempts} 次`),
+            h('span.cmd-kind', `${d.durationMs} ms`),
+          ),
+          h('div.shot-note', d.title),
+          d.error ? h('div.shot-note', { style: { color: 'var(--danger)' } }, d.error) : null,
+          d.response
+            ? h('div.shot-note', { style: { color: 'var(--text-dim)' } }, `对方响应：${d.response}`)
+            : null,
+        ))),
+    ),
+  });
+}
+
+/**
  * 「最近投递」单元格：把「最后一次发出去没有 / 为什么没发出去」直接摆在列表里，
  * 而不是只能去翻服务端日志。
  */
@@ -1246,6 +1295,21 @@ function openWebhookDialog(container, hook) {
   });
   let secretTouched = false;
   secretInput.addEventListener('input', () => { secretTouched = true; });
+
+  const mentionChk = h('input', { type: 'checkbox' });
+  mentionChk.checked = Boolean(hook?.mentionAll);
+  const headersInput = h('textarea', {
+    placeholder: '每行一条，例如：\nAuthorization: Bearer 你的令牌',
+    style: { minHeight: '62px' },
+  });
+  headersInput.value = hook?.headers || '';
+  const quietInput = h('input', {
+    type: 'text',
+    value: hook?.quietHours || '',
+    placeholder: '例如 22:00-07:00（留空 = 不静默，支持跨夜）',
+  });
+  const timeoutInput = h('input', { type: 'number', value: String(hook?.timeoutSeconds ?? 8) });
+  const retryInput = h('input', { type: 'number', value: String(hook?.maxRetries ?? 2) });
   const enabledChk = h('input', { type: 'checkbox' });
   enabledChk.checked = hook ? hook.enabled : true;
 
@@ -1270,6 +1334,13 @@ function openWebhookDialog(container, hook) {
       field('Webhook 地址', urlInput),
       field('加签密钥（可选）', secretInput, '只有钉钉机器人在加签模式下需要。'),
       field('订阅事件', h('div.weekday-row', ...eventBoxes.map((e) => e.el)), '至少选一个。'),
+      h('div.form-row',
+        field('单次超时（秒）', timeoutInput, '1 ~ 60'),
+        field('失败重试次数', retryInput, '0 ~ 3（间隔 1 / 5 / 15 秒）'),
+      ),
+      field('静默时段', quietInput, '该区间内不推送，避免半夜刷屏；留空表示不静默。'),
+      field('自定义请求头', headersInput, '对接需要鉴权的自建端点时填写；# 开头为注释。'),
+      h('label.checkbox-field', mentionChk, h('span', '推送时 @所有人（紧急通知用）')),
       h('label.checkbox-field', enabledChk, h('span', '启用')),
     ),
     confirmText: isNew ? '创建' : '保存',
@@ -1282,6 +1353,11 @@ function openWebhookDialog(container, hook) {
         secret: secretTouched ? secretInput.value.trim() : null,
         events: eventBoxes.filter((e) => e.box.checked).map((e) => e.value),
         enabled: enabledChk.checked,
+        mentionAll: mentionChk.checked,
+        headers: headersInput.value,
+        quietHours: quietInput.value.trim(),
+        timeoutSeconds: Number(timeoutInput.value) || 8,
+        maxRetries: Number(retryInput.value) || 0,
       };
 
       try {

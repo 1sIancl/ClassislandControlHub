@@ -15,8 +15,12 @@ public static class WebhookEvents
     /// <summary>设备从离线恢复上线（与掉线配对：出问题要通知，恢复了同样要知道）。</summary>
     public const string DeviceOnline = "device.online";
 
+    /// <summary>管理员登录失败（连续失败会触发账号锁定，可用于安全预警）。</summary>
+    public const string LoginFailed = "admin.login.failed";
+
     /// <summary>全部事件（前端渲染勾选框用）。</summary>
-    public static readonly string[] All = [DeviceOffline, DeviceOnline, DeviceError, CommandFailed];
+    public static readonly string[] All =
+        [DeviceOffline, DeviceOnline, DeviceError, CommandFailed, LoginFailed];
 }
 
 /// <summary>Webhook 接收端类型：决定推送的报文格式。</summary>
@@ -75,6 +79,21 @@ public sealed class WebhookDto
     /// <summary>连续失败次数（成功一次即清零）。</summary>
     public int FailCount { get; set; }
 
+    /// <summary>推送时是否 @所有人（企微 / 钉钉 / 飞书群机器人支持；紧急通知才用）。</summary>
+    public bool MentionAll { get; set; }
+
+    /// <summary>自定义请求头，每行一条 <c>名称: 值</c>。对接需要鉴权头的自建端点时使用。</summary>
+    public string Headers { get; set; } = string.Empty;
+
+    /// <summary>静默时段，如 <c>22:00-07:00</c>（支持跨夜）。该区间内不推送，避免半夜刷屏；留空表示不静默。</summary>
+    public string QuietHours { get; set; } = string.Empty;
+
+    /// <summary>单次请求超时秒数（1~60）。</summary>
+    public int TimeoutSeconds { get; set; } = 8;
+
+    /// <summary>失败重试次数（0~5）。</summary>
+    public int MaxRetries { get; set; } = 2;
+
     /// <summary>订阅的事件类型集合。</summary>
     public List<string> Events { get; set; } = [];
 
@@ -105,6 +124,58 @@ public sealed class WebhookUpsertRequest
 
     /// <summary>是否启用。</summary>
     public bool Enabled { get; set; } = true;
+
+    /// <summary>推送时是否 @所有人。</summary>
+    public bool? MentionAll { get; set; }
+
+    /// <summary>自定义请求头（每行 <c>名称: 值</c>）；传空字符串表示清空，传 null 表示不修改。</summary>
+    public string? Headers { get; set; }
+
+    /// <summary>静默时段（如 <c>22:00-07:00</c>）；传空字符串表示清空，传 null 表示不修改。</summary>
+    public string? QuietHours { get; set; }
+
+    /// <summary>单次请求超时秒数（1~60）；null 表示不修改。</summary>
+    public int? TimeoutSeconds { get; set; }
+
+    /// <summary>失败重试次数（0~5）；null 表示不修改。</summary>
+    public int? MaxRetries { get; set; }
+}
+
+/// <summary>一条 Webhook 投递明细，用于回答「这条通知到底发出去了没有、对方回了什么、耗时多久」。</summary>
+public sealed class WebhookDeliveryDto
+{
+    /// <summary>记录 ID。</summary>
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>事件名（如 <c>device.offline</c>；测试消息为 <c>test</c>）。</summary>
+    public string Event { get; set; } = string.Empty;
+
+    /// <summary>消息标题。</summary>
+    public string Title { get; set; } = string.Empty;
+
+    /// <summary>是否投递成功。</summary>
+    public bool Success { get; set; }
+
+    /// <summary>是否因静默时段被跳过（跳过不算失败）。</summary>
+    public bool Skipped { get; set; }
+
+    /// <summary>HTTP 状态码（0 = 网络错误 / 超时 / 未投递）。</summary>
+    public int StatusCode { get; set; }
+
+    /// <summary>实际尝试次数。</summary>
+    public int Attempts { get; set; }
+
+    /// <summary>总耗时（毫秒，含重试）。</summary>
+    public int DurationMs { get; set; }
+
+    /// <summary>失败原因（成功或跳过时为空）。</summary>
+    public string? Error { get; set; }
+
+    /// <summary>接收端响应片段（截断保存，便于对接调试）。</summary>
+    public string? Response { get; set; }
+
+    /// <summary>发生时间。</summary>
+    public DateTimeOffset CreatedAt { get; set; }
 }
 
 /// <summary>Webhook 测试发送的结果。</summary>

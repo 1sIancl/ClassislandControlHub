@@ -147,6 +147,39 @@ public sealed partial class HubStore
         await EnsureColumnAsync(connection, "webhooks", "last_error", "TEXT", cancellationToken);
         await EnsureColumnAsync(connection, "webhooks", "fail_count", "INTEGER NOT NULL DEFAULT 0", cancellationToken);
 
+        // 迁移：Webhook 的可用性增强。@所有人（紧急通知要能@到人）、自定义请求头（对接带鉴权的自建端点）、
+        // 静默时段（半夜不刷屏）、超时与重试次数（不同接收端的脾气不一样）。
+        await EnsureColumnAsync(connection, "webhooks", "mention_all", "INTEGER NOT NULL DEFAULT 0", cancellationToken);
+        await EnsureColumnAsync(connection, "webhooks", "headers", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+        await EnsureColumnAsync(connection, "webhooks", "quiet_hours", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+        await EnsureColumnAsync(connection, "webhooks", "timeout_seconds", "INTEGER NOT NULL DEFAULT 8", cancellationToken);
+        await EnsureColumnAsync(connection, "webhooks", "max_retries", "INTEGER NOT NULL DEFAULT 2", cancellationToken);
+
+        // 迁移：Webhook 投递明细。只保留每个 Webhook 最近若干条（写入时顺带清理）。
+        // 「最近一次结果」不够用——排查时要知道「这条通知到底发出去了没有、对方回了什么、耗时多久」。
+        await using (var deliveries = connection.CreateCommand())
+        {
+            deliveries.CommandText = """
+                CREATE TABLE IF NOT EXISTS webhook_deliveries (
+                    id          TEXT PRIMARY KEY,
+                    webhook_id  TEXT NOT NULL,
+                    event       TEXT NOT NULL DEFAULT '',
+                    title       TEXT NOT NULL DEFAULT '',
+                    ok          INTEGER NOT NULL DEFAULT 0,
+                    skipped     INTEGER NOT NULL DEFAULT 0,
+                    status      INTEGER NOT NULL DEFAULT 0,
+                    attempts    INTEGER NOT NULL DEFAULT 1,
+                    duration_ms INTEGER NOT NULL DEFAULT 0,
+                    error       TEXT,
+                    response    TEXT,
+                    created_at  TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_hook
+                    ON webhook_deliveries(webhook_id, created_at DESC);
+                """;
+            await deliveries.ExecuteNonQueryAsync(cancellationToken);
+        }
+
         // 确保全局版本号存在，保证任何一次同步请求都能拿到确定值。
         await using var seed = connection.CreateCommand();
         seed.CommandText = """

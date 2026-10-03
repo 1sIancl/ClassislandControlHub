@@ -12,6 +12,7 @@ namespace ControlHub.Server.Services;
 public sealed class AdminAuthService(
     HubStore store,
     IOptions<ServerOptions> options,
+    WebhookService webhooks,
     ILogger<AdminAuthService> logger)
 {
     private readonly ServerOptions _options = options.Value;
@@ -71,6 +72,18 @@ public sealed class AdminAuthService(
                 $"连续 {_options.LoginMaxFailures} 次登录失败，已临时锁定 {_options.LoginLockoutMinutes} 分钟。",
                 ipAddress, cancellationToken);
 
+            // 安全预警：账号被锁定是「有人在猜密码」的强信号，单独推一条（标题不同，不会被重复抑制吞掉）。
+            await webhooks.NotifyAsync(WebhookEvents.LoginFailed,
+                $"账号已锁定：{trimmed}",
+                $"账号「{trimmed}」因连续 {_options.LoginMaxFailures} 次登录失败，"
+                + $"已临时锁定 {_options.LoginLockoutMinutes} 分钟。",
+                new Dictionary<string, object?>
+                {
+                    ["username"] = trimmed,
+                    ["ip"] = ipAddress,
+                    ["attempts"] = _options.LoginMaxFailures,
+                }, cancellationToken);
+
             throw new HubException(HubErrorCodes.AccountLocked,
                 $"连续登录失败次数过多，账号已临时锁定，请 {_options.LoginLockoutMinutes} 分钟后再试。", 429);
         }
@@ -81,6 +94,27 @@ public sealed class AdminAuthService(
             await store.AddLoginAttemptAsync(trimmed, ipAddress, success: false, cancellationToken);
             await store.AddAuditAsync(username ?? "(空)", "admin.login.failed", trimmed,
                 "用户名或密码错误。", ipAddress, cancellationToken);
+
+            // 安全预警：登录失败推给订阅了该事件的 Webhook（带来源 IP 与「还剩几次锁定」）。
+            var failures = await store.CountRecentLoginFailuresAsync(trimmed, _options.LoginLockoutMinutes,
+                cancellationToken);
+            var remaining = _options.LoginMaxFailures > 0
+                ? Math.Max(0, _options.LoginMaxFailures - failures)
+                : 0;
+
+            await webhooks.NotifyAsync(WebhookEvents.LoginFailed,
+                $"登录失败：{trimmed}",
+                _options.LoginMaxFailures > 0
+                    ? $"账号「{trimmed}」登录失败（用户名或密码错误），再失败 {remaining} 次将临时锁定 "
+                      + $"{_options.LoginLockoutMinutes} 分钟。"
+                    : $"账号「{trimmed}」登录失败（用户名或密码错误）。",
+                new Dictionary<string, object?>
+                {
+                    ["username"] = trimmed,
+                    ["ip"] = ipAddress,
+                    ["attempts"] = failures,
+                }, cancellationToken);
+
             throw new HubException(HubErrorCodes.AuthInvalid, "用户名或密码错误。", 401);
         }
 

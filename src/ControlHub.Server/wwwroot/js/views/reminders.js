@@ -3,11 +3,11 @@
  * 提醒按账号隔离：这里只会看到、也只能改到自己创建的提醒；到点由服务端调度器推送到教室大屏。
  */
 
-import { api } from '../core/api.js?v=40';
+import { api } from '../core/api.js?v=41';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, select,
   emptyState, formatDateTime, relativeTime,
-} from '../core/ui.js?v=40';
+} from '../core/ui.js?v=41';
 
 export const meta = {
   title: '定时提醒',
