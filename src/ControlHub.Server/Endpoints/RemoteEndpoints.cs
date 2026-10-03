@@ -373,6 +373,15 @@ public static class RemoteEndpoints
             throw HubException.Validation("设备已停用，无法发送提醒。");
         }
 
+        // 模板变量（#43）：在这里（序列化之前）就地替换，因为指令载荷是整份 request，
+        // 而且通知是「一次一台设备」下发的，所以 {教室名} 之类一定对得上目标教室。
+        var groupName = device.GroupId is null
+            ? null
+            : (await store.GetGroupAsync(device.GroupId, cancellationToken))?.Name;
+        var now = DateTimeOffset.UtcNow;
+        request.Title = NotifyTemplate.Apply(request.Title, device, groupName, now);
+        request.Message = NotifyTemplate.Apply(request.Message, device, groupName, now);
+
         var row = NewCommand(device, RemoteCommandKinds.Notify, HubJson.Serialize(request), session.Username);
         await store.CreateCommandAsync(row, cancellationToken);
         sync.PublishWakeUp();

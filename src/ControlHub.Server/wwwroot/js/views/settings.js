@@ -2,11 +2,11 @@
  * 系统设置视图：服务器信息、账号安全与部署提示。
  */
 
-import { api, session, hasPermission } from '../core/api.js?v=36';
+import { api, session, hasPermission } from '../core/api.js?v=37';
 import {
   h, clear, formatDateTime, formatDuration, toast, loadingBlock,
   field, modal, copyText, confirmDialog,
-} from '../core/ui.js?v=36';
+} from '../core/ui.js?v=37';
 
 export const meta = {
   title: '系统设置',
@@ -166,7 +166,7 @@ async function replayOnboarding() {
     return;
   }
 
-  const { startTour } = await import('../core/tour.js?v=36');
+  const { startTour } = await import('../core/tour.js?v=37');
   startTour({
     onFinish: async (skipped) => {
       if (!skipped) {

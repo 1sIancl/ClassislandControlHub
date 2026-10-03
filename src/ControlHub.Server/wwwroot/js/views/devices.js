@@ -4,13 +4,13 @@
  * 并可切换到列表视图查看完整状态明细。注册码管理一并放在本页。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=36';
+import { api, fetchBlob } from '../core/api.js?v=37';
 import {
   h, clear, formatDateTime, relativeTime, toast, loadingBlock,
   modal, confirmDialog, deviceStateBadge, syncBadge,
   emptyState, field, select, copyText, append, undoBar,
-} from '../core/ui.js?v=36';
-import { getLayout, saveLayout } from '../core/prefs.js?v=36';
+} from '../core/ui.js?v=37';
+import { getLayout, saveLayout } from '../core/prefs.js?v=37';
 
 export const meta = {
   title: '设备管理',
@@ -1023,8 +1023,8 @@ function bulkNotify(ids) {
   modal({
     title: `向 ${ids.length} 台设备发送通知`,
     body: h('div',
-      field('标题', titleInput, '可留空，只发正文。'),
-      field('内容', msgInput),
+      field('标题', titleInput, '可留空，只发正文。支持变量：{教室名} {机器名} {分组} {IP} {时间} {日期}'),
+      field('内容', msgInput, '同样支持上面那组变量，按各教室自动替换——例如「请 {教室名} 于 {时间} 关闭投影」。'),
       h('label.checkbox-field', speakChk,
         h('span', '语音播报'),
         h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } }, '（教室大屏会朗读这条内容）')),
