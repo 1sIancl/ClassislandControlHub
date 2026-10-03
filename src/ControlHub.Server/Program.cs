@@ -114,9 +114,12 @@ builder.Services.AddHostedService<AutoBackupService>();
 builder.Services.AddHostedService<ReminderScheduler>();
 // 临时换课：跨天时递增一次版本号，让教室重新拉取「今天该上的课」。
 builder.Services.AddHostedService<TimetableOverrideScheduler>();
-// Webhook 外部通知：设备掉线 / 同步失败 / 指令失败推送到企业微信、钉钉、飞书或自定义端点。
+// Webhook 外部通知：设备掉线/恢复、同步失败、指令失败推送到企业微信、钉钉、飞书或自定义端点。
+// WebhookService 既是「可被端点注入的单例」，也是「后台投递服务」：投递走队列并带重试，
+// 因此慢的 / 挂起的接收端不会拖慢设备心跳与指令回报。
 builder.Services.AddHttpClient("webhook");
 builder.Services.AddSingleton<WebhookService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<WebhookService>());
 builder.Services.AddHostedService<DeviceWatchService>();
 // ServerTimeService 同时是「可被端点注入的单例」与「后台授时服务」，用工厂引用同一实例。
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ServerTimeService>());

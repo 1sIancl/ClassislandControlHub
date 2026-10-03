@@ -139,6 +139,14 @@ public sealed partial class HubStore
             await attempts.ExecuteNonQueryAsync(cancellationToken);
         }
 
+        // 迁移：Webhook 投递运行态。以前推送失败只写日志，管理端看不到「为什么没发出去」，
+        // 因此把最近一次投递的时间 / 状态码 / 失败原因 / 连续失败次数落库，供界面直接显示。
+        await EnsureColumnAsync(connection, "webhooks", "last_attempt_at", "TEXT", cancellationToken);
+        await EnsureColumnAsync(connection, "webhooks", "last_success_at", "TEXT", cancellationToken);
+        await EnsureColumnAsync(connection, "webhooks", "last_status", "INTEGER NOT NULL DEFAULT 0", cancellationToken);
+        await EnsureColumnAsync(connection, "webhooks", "last_error", "TEXT", cancellationToken);
+        await EnsureColumnAsync(connection, "webhooks", "fail_count", "INTEGER NOT NULL DEFAULT 0", cancellationToken);
+
         // 确保全局版本号存在，保证任何一次同步请求都能拿到确定值。
         await using var seed = connection.CreateCommand();
         seed.CommandText = """

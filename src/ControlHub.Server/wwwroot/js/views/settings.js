@@ -2,11 +2,11 @@
  * 系统设置视图：服务器信息、账号安全与部署提示。
  */
 
-import { api, session, hasPermission } from '../core/api.js?v=38';
+import { api, session, hasPermission } from '../core/api.js?v=39';
 import {
   h, clear, formatDateTime, formatDuration, toast, loadingBlock,
   field, modal, copyText, confirmDialog,
-} from '../core/ui.js?v=38';
+} from '../core/ui.js?v=39';
 
 export const meta = {
   title: '系统设置',
@@ -166,7 +166,7 @@ async function replayOnboarding() {
     return;
   }
 
-  const { startTour } = await import('../core/tour.js?v=38');
+  const { startTour } = await import('../core/tour.js?v=39');
   startTour({
     onFinish: async (skipped) => {
       if (!skipped) {
@@ -1127,6 +1127,7 @@ const WEBHOOK_KINDS = [
 
 const WEBHOOK_EVENTS = [
   { value: 'device.offline', label: '设备掉线' },
+  { value: 'device.online', label: '设备恢复上线' },
   { value: 'device.error', label: '配置应用失败' },
   { value: 'command.failed', label: '远程指令失败' },
 ];
@@ -1147,6 +1148,7 @@ function renderWebhooksCard(container, hooks) {
     h('td', hook.enabled
       ? h('span.badge', { style: { background: 'var(--ok-soft)', color: 'var(--ok)' } }, '已启用')
       : h('span.badge.badge-neutral', '已停用')),
+    webhookDeliveryCell(hook),
     h('td.actions',
       h('button.btn.btn-sm', { type: 'button', onClick: () => testWebhook(hook) }, '测试'),
       h('button.btn.btn-sm', { type: 'button', onClick: () => openWebhookDialog(container, hook) }, '编辑'),
@@ -1185,6 +1187,7 @@ function renderWebhooksCard(container, hooks) {
             h('th', '接收地址'),
             h('th', '订阅事件'),
             h('th', '状态'),
+            h('th', '最近投递'),
             h('th', { style: { textAlign: 'right' } }, '操作'),
           )),
           h('tbody', ...rows),
@@ -1197,8 +1200,10 @@ async function testWebhook(hook) {
   try {
     const result = await api(`/admin/webhooks/${hook.id}/test`, { method: 'POST' });
     if (result.success) {
-      toast('ok', '测试发送成功', '去目标群里看看有没有收到消息。');
+      toast('ok', '测试发送成功', result.message || '去目标群里看看有没有收到消息。');
     } else {
+      // 失败原因来自服务端解析：HTTP 状态码之外，还包括接收端在 200 响应里返回的业务错误码
+      // （机器人被停用、key 失效、被移出群等）——这正是「提示成功但群里没消息」的根源。
       toast('error', '测试发送失败', result.message);
     }
   } catch (err) {
@@ -1206,12 +1211,41 @@ async function testWebhook(hook) {
   }
 }
 
+/**
+ * 「最近投递」单元格：把「最后一次发出去没有 / 为什么没发出去」直接摆在列表里，
+ * 而不是只能去翻服务端日志。
+ */
+function webhookDeliveryCell(hook) {
+  if (!hook.lastAttemptAt) {
+    return h('td', { style: { fontSize: '12px', color: 'var(--text-faint)' } }, '尚未投递');
+  }
+
+  const at = new Date(hook.lastAttemptAt).toLocaleString('zh-CN', { hour12: false });
+  if (!hook.lastError) {
+    return h('td', { style: { fontSize: '12px' } },
+      h('div', { style: { color: 'var(--ok)' } }, `成功 · ${at}`),
+      h('div.cell-sub', `HTTP ${hook.lastStatusCode}`));
+  }
+
+  return h('td', { style: { fontSize: '12px', maxWidth: '250px' } },
+    h('div', { style: { color: 'var(--danger)' } }, `失败 ${hook.failCount} 次 · ${at}`),
+    h('div.cell-sub', { title: hook.lastError, style: { overflowWrap: 'anywhere' } }, hook.lastError));
+}
+
 function openWebhookDialog(container, hook) {
   const isNew = !hook;
   const nameInput = h('input', { type: 'text', value: hook?.name || '', placeholder: '例如：高一教师群' });
   const kindSelect = select(WEBHOOK_KINDS, hook?.kind || 'wecom');
   const urlInput = h('input', { type: 'text', value: hook?.url || '', placeholder: '群机器人的 Webhook 地址' });
-  const secretInput = h('input', { type: 'text', value: hook?.secret || '', placeholder: '钉钉加签密钥（其它类型留空）' });
+  // 密钥不再回传给前端（服务端只给「已设置」标记），因此这里始终从空开始：
+  // 留空 = 保持原密钥，填了 = 覆盖。避免「改个名字就把加签密钥清掉」。
+  const secretInput = h('input', {
+    type: 'text',
+    value: '',
+    placeholder: hook?.hasSecret ? '已设置（留空保持不变）' : '钉钉加签密钥（其它类型留空）',
+  });
+  let secretTouched = false;
+  secretInput.addEventListener('input', () => { secretTouched = true; });
   const enabledChk = h('input', { type: 'checkbox' });
   enabledChk.checked = hook ? hook.enabled : true;
 
@@ -1244,7 +1278,8 @@ function openWebhookDialog(container, hook) {
         name: nameInput.value.trim(),
         kind: kindSelect.value,
         url: urlInput.value.trim(),
-        secret: secretInput.value.trim(),
+        // null = 不改动已保存的密钥（服务端据此保留原值）。
+        secret: secretTouched ? secretInput.value.trim() : null,
         events: eventBoxes.filter((e) => e.box.checked).map((e) => e.value),
         enabled: enabledChk.checked,
       };

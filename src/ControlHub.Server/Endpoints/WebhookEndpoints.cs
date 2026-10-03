@@ -31,12 +31,19 @@ public static class WebhookEndpoints
         Name = row.Name,
         Url = row.Url,
         Kind = row.Kind,
-        Secret = row.Secret,
+        // 密钥不回传：只告诉前端「已设置」，避免只读账号拿到群机器人密钥。
+        Secret = string.Empty,
+        HasSecret = !string.IsNullOrEmpty(row.Secret),
         Events = HubJson.DeserializeOrDefault(row.Events, new List<string>())
             .Where(WebhookEvents.All.Contains)
             .ToList(),
         Enabled = row.Enabled,
         CreatedAt = row.CreatedAt,
+        LastAttemptAt = row.LastAttemptAt,
+        LastSuccessAt = row.LastSuccessAt,
+        LastStatusCode = row.LastStatusCode,
+        LastError = row.LastError,
+        FailCount = row.FailCount,
     };
 
     /// <summary>Webhook 列表。</summary>
@@ -155,7 +162,14 @@ public static class WebhookEndpoints
         row.Name = string.IsNullOrWhiteSpace(request.Name) ? "未命名 Webhook" : request.Name.Trim();
         row.Url = url;
         row.Kind = kind;
-        row.Secret = (request.Secret ?? string.Empty).Trim();
+
+        // 密钥只在明确传入时覆盖：前端读不到密钥，编辑时留空表示「保持原值」，
+        // 否则每次改个名字都会把已配好的加签密钥清掉。
+        if (request.Secret is not null)
+        {
+            row.Secret = request.Secret.Trim();
+        }
+
         row.Events = HubJson.Serialize(events);
         row.Enabled = request.Enabled;
     }

@@ -12,8 +12,11 @@ public static class WebhookEvents
     /// <summary>远程指令执行失败。</summary>
     public const string CommandFailed = "command.failed";
 
+    /// <summary>设备从离线恢复上线（与掉线配对：出问题要通知，恢复了同样要知道）。</summary>
+    public const string DeviceOnline = "device.online";
+
     /// <summary>全部事件（前端渲染勾选框用）。</summary>
-    public static readonly string[] All = [DeviceOffline, DeviceError, CommandFailed];
+    public static readonly string[] All = [DeviceOffline, DeviceOnline, DeviceError, CommandFailed];
 }
 
 /// <summary>Webhook 接收端类型：决定推送的报文格式。</summary>
@@ -47,8 +50,30 @@ public sealed class WebhookDto
     /// <summary>接收端类型，取值见 <see cref="WebhookKinds"/>。</summary>
     public string Kind { get; set; } = WebhookKinds.Generic;
 
-    /// <summary>加签密钥（钉钉需要时填写，其它类型留空）。</summary>
+    /// <summary>
+    /// 加签密钥（钉钉需要时填写，其它类型留空）。
+    /// <para>只在写入时使用；**读取时固定为空**——密钥不回传给前端（任何只有只读权限的账号
+    /// 都不该拿到群机器人密钥），用 <see cref="HasSecret"/> 表示「已设置」。</para>
+    /// </summary>
     public string Secret { get; set; } = string.Empty;
+
+    /// <summary>是否已设置加签密钥（读取时用它判断，而不是把密钥本身发出去）。</summary>
+    public bool HasSecret { get; set; }
+
+    /// <summary>最近一次投递尝试时间（含失败；从未投递过时为空）。</summary>
+    public DateTimeOffset? LastAttemptAt { get; set; }
+
+    /// <summary>最近一次投递成功时间（失败时保留旧值，便于看出「多久没成功过了」）。</summary>
+    public DateTimeOffset? LastSuccessAt { get; set; }
+
+    /// <summary>最近一次投递的 HTTP 状态码（0 = 网络错误 / 超时）。</summary>
+    public int LastStatusCode { get; set; }
+
+    /// <summary>最近一次投递失败的原因——「为什么没发出去」看这里（成功时为空）。</summary>
+    public string? LastError { get; set; }
+
+    /// <summary>连续失败次数（成功一次即清零）。</summary>
+    public int FailCount { get; set; }
 
     /// <summary>订阅的事件类型集合。</summary>
     public List<string> Events { get; set; } = [];
@@ -91,6 +116,9 @@ public sealed class WebhookTestResult
     /// <summary>HTTP 状态码（网络错误时为 0）。</summary>
     public int StatusCode { get; set; }
 
-    /// <summary>说明文字（失败原因或接收端返回片段）。</summary>
+    /// <summary>实际尝试次数（测试发送为 1；真实推送失败会重试，次数记在日志里）。</summary>
+    public int Attempts { get; set; } = 1;
+
+    /// <summary>说明文字：成功说明，或失败原因（含接收端返回的业务错误码）。</summary>
     public string Message { get; set; } = string.Empty;
 }

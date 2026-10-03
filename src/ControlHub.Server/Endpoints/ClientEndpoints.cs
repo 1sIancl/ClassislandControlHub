@@ -344,14 +344,15 @@ public static class ClientEndpoints
             $"版本 {request.Revision} 应用结果：{request.Result}；分区 {sections}；{request.Message}",
             http.GetClientIpAddress(), cancellationToken);
 
-        // 应用失败（既不是成功也不是部分成功）时推 Webhook。
-        var applied = string.Equals(request.Result, ApplyResults.Success, StringComparison.OrdinalIgnoreCase)
-                      || string.Equals(request.Result, ApplyResults.Partial, StringComparison.OrdinalIgnoreCase);
-        if (!applied)
+        // 只要不是「完全成功」就推 Webhook：部分成功同样意味着教室那边有分区没应用上。
+        // 以前 partial 被当成成功静默掉了，表现为「课表换了但时间表没换，管理端却毫无提示」。
+        var fullyApplied = string.Equals(request.Result, ApplyResults.Success, StringComparison.OrdinalIgnoreCase);
+        var partiallyApplied = string.Equals(request.Result, ApplyResults.Partial, StringComparison.OrdinalIgnoreCase);
+        if (!fullyApplied)
         {
             await webhooks.NotifyAsync(WebhookEvents.DeviceError,
-                $"配置应用失败：{device.Name}",
-                $"「{device.Name}」应用配置失败：{request.Message}",
+                partiallyApplied ? $"配置部分应用：{device.Name}" : $"配置应用失败：{device.Name}",
+                $"「{device.Name}」{(partiallyApplied ? "部分配置未能应用" : "应用配置失败")}：{request.Message}",
                 new Dictionary<string, object?>
                 {
                     ["deviceId"] = device.Id,

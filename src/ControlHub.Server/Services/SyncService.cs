@@ -62,6 +62,10 @@ public sealed class SyncService(
     /// </summary>
     /// <param name="device">目标设备。</param>
     /// <param name="clientRevision">客户端当前持有的版本号。与服务器一致且非强制时返回 <c>null</c> 表示无需下发。</param>
+    /// <param name="clientPushEpoch">
+    /// 客户端已送达的推送世代号。定向推送 / 分批下发只推进世代号而不改内容，
+    /// 因此「是否需要下发」必须同时看它与 <see cref="DeviceRow.PushEpoch"/>。
+    /// </param>
     /// <param name="sections">客户端声明支持的同步分区，为空表示全部。</param>
     /// <param name="force">是否强制下发。</param>
     /// <param name="cancellationToken">取消令牌。</param>

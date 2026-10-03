@@ -5,7 +5,9 @@ namespace ControlHub.Server.Data;
 /// <summary>Webhook 配置的数据访问。</summary>
 public sealed partial class HubStore
 {
-    private const string WebhookColumns = "id, name, url, kind, secret, events, enabled, created_at";
+    private const string WebhookColumns =
+        "id, name, url, kind, secret, events, enabled, created_at, "
+        + "last_attempt_at, last_success_at, last_status, last_error, fail_count";
 
     private static WebhookRow ReadWebhook(SqliteDataReader reader) => new()
     {
@@ -17,6 +19,11 @@ public sealed partial class HubStore
         Events = GetString(reader, "events"),
         Enabled = GetBool(reader, "enabled"),
         CreatedAt = GetTimestampOrNow(reader, "created_at"),
+        LastAttemptAt = GetTimestamp(reader, "last_attempt_at"),
+        LastSuccessAt = GetTimestamp(reader, "last_success_at"),
+        LastStatusCode = GetInt32(reader, "last_status"),
+        LastError = GetNullableString(reader, "last_error"),
+        FailCount = GetInt32(reader, "fail_count"),
     };
 
     /// <summary>全部 Webhook 配置（新的排在前面）。</summary>
@@ -93,10 +100,37 @@ public sealed partial class HubStore
     public async Task<bool> DeleteWebhookAsync(string id, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
+        await using         var command = connection.CreateCommand();
         command.CommandText = "DELETE FROM webhooks WHERE id = $id;";
         command.Parameters.AddWithValue("$id", id);
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
+    /// <summary>
+    /// 记录一次投递结果，供管理端显示「最近投递 / 失败原因 / 连续失败次数」。
+    /// <para>失败时保留上一次成功时间——这样「多久没成功过了」一眼可见。</para>
+    /// </summary>
+    public async Task RecordWebhookResultAsync(string id, bool ok, int statusCode, string? error,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE webhooks SET
+                last_attempt_at = $now,
+                last_success_at = CASE WHEN $ok = 1 THEN $now ELSE last_success_at END,
+                last_status     = $status,
+                last_error      = $error,
+                fail_count      = CASE WHEN $ok = 1 THEN 0 ELSE fail_count + 1 END
+            WHERE id = $id;
+            """;
+        AddParameters(command,
+            ("$now", Ts(DateTimeOffset.UtcNow)),
+            ("$ok", ok ? 1 : 0),
+            ("$status", statusCode),
+            ("$error", TextOrNull(ok ? null : error)),
+            ("$id", id));
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 }
 
@@ -126,4 +160,19 @@ public sealed class WebhookRow
 
     /// <summary>创建时间。</summary>
     public DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>最近一次投递尝试时间（含失败）。</summary>
+    public DateTimeOffset? LastAttemptAt { get; set; }
+
+    /// <summary>最近一次投递成功时间。</summary>
+    public DateTimeOffset? LastSuccessAt { get; set; }
+
+    /// <summary>最近一次投递的 HTTP 状态码（0 = 网络错误 / 超时）。</summary>
+    public int LastStatusCode { get; set; }
+
+    /// <summary>最近一次投递失败的原因（成功时为空）。</summary>
+    public string? LastError { get; set; }
+
+    /// <summary>连续失败次数（成功一次即清零）。</summary>
+    public int FailCount { get; set; }
 }

@@ -2,8 +2,8 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=38';
-import { h, clear, toast, icon } from './core/ui.js?v=38';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=39';
+import { h, clear, toast, icon } from './core/ui.js?v=39';
 import {
   initTheme, getTheme, applyTheme, THEMES,
   getSidebarCollapsed, setSidebarCollapsed,
@@ -11,7 +11,7 @@ import {
   applyAppearance, getAccent, setAccent, ACCENTS,
   getFont, setFont, FONTS,
   getRadius, setRadius, RADII,
-} from './core/prefs.js?v=38';
+} from './core/prefs.js?v=39';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -57,17 +57,17 @@ const NAV = [
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=38'),
-  devices: () => import('./views/devices.js?v=38'),
+  dashboard: () => import('./views/dashboard.js?v=39'),
+  devices: () => import('./views/devices.js?v=39'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=38'),
-  profiles: () => import('./views/profiles.js?v=38'),
-  profileEditor: () => import('./views/profileEditor.js?v=38'),
-  deploy: () => import('./views/deploy.js?v=38'),
-  remote: () => import('./views/remote.js?v=38'),
-  reminders: () => import('./views/reminders.js?v=38'),
-  audit: () => import('./views/audit.js?v=38'),
-  settings: () => import('./views/settings.js?v=38'),
+  groups: () => import('./views/devices.js?v=39'),
+  profiles: () => import('./views/profiles.js?v=39'),
+  profileEditor: () => import('./views/profileEditor.js?v=39'),
+  deploy: () => import('./views/deploy.js?v=39'),
+  remote: () => import('./views/remote.js?v=39'),
+  reminders: () => import('./views/reminders.js?v=39'),
+  audit: () => import('./views/audit.js?v=39'),
+  settings: () => import('./views/settings.js?v=39'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -500,7 +500,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=38');
+    const { startTour } = await import('./core/tour.js?v=39');
     startTour({
       onFinish: async (skipped) => {
         try {
