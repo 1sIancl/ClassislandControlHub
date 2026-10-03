@@ -626,9 +626,12 @@ public sealed class RemoteCommandExecutor(
 
         if (TryParseColor(cfg.ForegroundColor, out var foreground))
         {
-            s.IsCustomForegroundColorEnabled = true;
+            // 开关同样按反射写：部分宿主版本没有这个设置项（CI 上实测编译失败过一次）。
+            var enabled = TrySetSetting(s, "IsCustomForegroundColorEnabled", true);
             s.CustomForegroundColor = foreground;
-            applied.Add($"前景色={cfg.ForegroundColor!.Trim()}");
+            applied.Add(enabled
+                ? $"前景色={cfg.ForegroundColor!.Trim()}"
+                : $"前景色={cfg.ForegroundColor!.Trim()}（当前版本无「启用自定义前景色」开关，已直接设色）");
         }
         else if (!string.IsNullOrWhiteSpace(cfg.ForegroundColor))
         {
@@ -675,6 +678,26 @@ public sealed class RemoteCommandExecutor(
         return Ok(command, text);
     }
 
+    /// <summary>
+    /// 通过反射写入 ClassIsland 的设置项。
+    /// <para>**为什么必须这样**：不同版本的 ClassIsland 设置模型并不完全一致——例如
+    /// 「背景材质」「自定义前景色开关」在部分宿主版本里不存在，直接写属性名会让插件
+    /// 在 CI（用发行包作参考程序集）上编译失败（CS1061，已实测踩到）。
+    /// 反射写还有一个好处：老宿主上不会崩，只是如实回报「该版本不支持」。</para>
+    /// </summary>
+    /// <returns>属性存在且可写时为 true；否则 false。</returns>
+    private static bool TrySetSetting(object settings, string propertyName, object value)
+    {
+        var property = settings.GetType().GetProperty(propertyName);
+        if (property is null || !property.CanWrite)
+        {
+            return false;
+        }
+
+        property.SetValue(settings, value);
+        return true;
+    }
+
     /// <summary>解析 <c>#RRGGBB</c> / <c>#AARRGGBB</c> 颜色；留空返回 false（表示不修改）。</summary>
     private static bool TryParseColor(string? text, out Color color)
     {
@@ -691,7 +714,10 @@ public sealed class RemoteCommandExecutor(
     private static string ApplyBackgroundMaterial(SettingsService settings, int value, string label)
     {
         var s = settings.Settings;
-        s.IsMainWindowBackgroundMaterialEnabled = true;
+        if (!TrySetSetting(s, "IsMainWindowBackgroundMaterialEnabled", true))
+        {
+            return $"背景材质={label}（当前 ClassIsland 版本不支持该设置，未生效）";
+        }
 
         var property = s.GetType().GetProperty("MainWindowBackgroundMaterialType");
         if (property is null)
