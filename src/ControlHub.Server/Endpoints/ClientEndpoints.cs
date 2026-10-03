@@ -245,6 +245,7 @@ public static class ClientEndpoints
         HubStore store,
         SyncService sync,
         long? revision,
+        long? pushEpoch,
         string? sections,
         bool? force,
         CancellationToken cancellationToken)
@@ -257,7 +258,7 @@ public static class ClientEndpoints
                 .Where(s => HubProtocol.Sections.All.Contains(s, StringComparer.OrdinalIgnoreCase))
                 .ToList();
 
-        var response = await sync.BuildSyncResponseAsync(device, revision, supported, force ?? false,
+        var response = await sync.BuildSyncResponseAsync(device, revision, pushEpoch, supported, force ?? false,
             cancellationToken);
 
         if (response is not null)

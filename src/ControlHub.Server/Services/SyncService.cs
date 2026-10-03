@@ -66,11 +66,17 @@ public sealed class SyncService(
     /// <param name="force">是否强制下发。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     public async Task<SyncResponse?> BuildSyncResponseAsync(DeviceRow device, long? clientRevision,
-        IReadOnlyCollection<string>? sections, bool force,
+        long? clientPushEpoch, IReadOnlyCollection<string>? sections, bool force,
         CancellationToken cancellationToken = default)
     {
         var revision = await store.GetRevisionAsync(cancellationToken);
-        if (!force && clientRevision.HasValue && clientRevision.Value == revision)
+
+        // 「已是最新」必须同时满足两个条件：版本号一致 **且** 推送世代号也送达过。
+        // 只比版本号是错的：定向推送与分批下发**只推进世代号、不改内容**（revision 不变），
+        // 那样客户端会一直被判定为「无需同步」，推送永远不生效（表现为：管理端显示待同步，
+        // 设备却始终不重新拉取）。旧版插件不发 pushEpoch，此时沿用旧行为以保持兼容。
+        var epochDelivered = !clientPushEpoch.HasValue || clientPushEpoch.Value >= device.PushEpoch;
+        if (!force && clientRevision.HasValue && clientRevision.Value == revision && epochDelivered)
         {
             return null;
         }
@@ -83,6 +89,8 @@ public sealed class SyncService(
             return new SyncResponse
             {
                 Revision = revision,
+                // 空档案也要回填世代号：否则客户端报不上去，会一直卡在「待同步」。
+                PushEpoch = device.PushEpoch,
                 ProfileId = string.Empty,
                 ProfileName = "(未分配配置档案)",
                 Content = new ContentBundleDto(),
