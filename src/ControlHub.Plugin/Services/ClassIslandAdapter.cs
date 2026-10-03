@@ -44,8 +44,15 @@ public sealed class ClassIslandAdapter(IPublicProfileService profileService, ILo
 {
     /// <summary>
     /// 应用一份配置包到当前档案并保存。
+    /// <para><b>必须切到 UI 线程</b>：ClassIsland 的档案对象被课表控件（<c>ScheduleDataGrid</c>）订阅，
+    /// 在后台线程改它会抛「The calling thread cannot access this object because a different thread owns it」，
+    /// 表现为「配置下发看似成功、实际报错」。这里统一在 UI 线程执行，调用方不必关心自己身处哪个线程。</para>
     /// </summary>
-    public ApplyResult Apply(ContentBundleDto content, ApplyOptions options)
+    public ApplyResult Apply(ContentBundleDto content, ApplyOptions options) =>
+        UiThread.Run(() => ApplyCore(content, options));
+
+    /// <summary>实际的应用逻辑（在 UI 线程上运行）。</summary>
+    private ApplyResult ApplyCore(ContentBundleDto content, ApplyOptions options)
     {
         var profile = profileService.Profile ?? new Profile();
         var applied = new List<string>();

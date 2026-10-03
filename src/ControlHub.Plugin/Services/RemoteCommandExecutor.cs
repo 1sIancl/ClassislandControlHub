@@ -47,21 +47,24 @@ public sealed class RemoteCommandExecutor(
         logger.LogInformation("执行远程指令 {Kind}（{Id}）。", command.Kind, command.Id);
         try
         {
+            // 注意：带界面的指令必须经 UiThread 切到 UI 线程——本方法运行在同步循环的后台线程上，
+            // 直接操作外观 / 提醒 / 截图 / 插件启停会抛 Avalonia 的 VerifyAccess 异常。
+            // shell 与电源类刻意**不**切线程：它们是耗时操作，放 UI 线程会把教室机的界面卡住。
             return command.Kind switch
             {
                 RemoteCommandKinds.Shell => await RunShellAsync(command),
-                RemoteCommandKinds.Notify => RunNotify(command),
+                RemoteCommandKinds.Notify => UiThread.Run(() => RunNotify(command)),
                 RemoteCommandKinds.PluginRefresh => await ReportPluginsAsync(command),
-                RemoteCommandKinds.PluginToggle => TogglePlugin(command),
-                RemoteCommandKinds.PluginUninstall => UninstallPlugin(command),
-                RemoteCommandKinds.AppearanceApply => ApplyAppearance(command),
-                RemoteCommandKinds.Restart => Restart(command),
+                RemoteCommandKinds.PluginToggle => UiThread.Run(() => TogglePlugin(command)),
+                RemoteCommandKinds.PluginUninstall => UiThread.Run(() => UninstallPlugin(command)),
+                RemoteCommandKinds.AppearanceApply => UiThread.Run(() => ApplyAppearance(command)),
+                RemoteCommandKinds.Restart => UiThread.Run(() => Restart(command)),
                 RemoteCommandKinds.PowerShutdown => RunPowerCommand(command, "/s", "正在关机。"),
                 RemoteCommandKinds.PowerRestart => RunPowerCommand(command, "/r", "正在重启计算机。"),
                 RemoteCommandKinds.PowerSleep => Sleep(command),
-                RemoteCommandKinds.AutomationList => ReportAutomations(command),
-                RemoteCommandKinds.AutomationTrigger => TriggerAutomation(command),
-                RemoteCommandKinds.DiagnosticScreenshot => await CaptureScreenshotAsync(command),
+                RemoteCommandKinds.AutomationList => UiThread.Run(() => ReportAutomations(command)),
+                RemoteCommandKinds.AutomationTrigger => UiThread.Run(() => TriggerAutomation(command)),
+                RemoteCommandKinds.DiagnosticScreenshot => await UiThread.RunAsync(() => CaptureScreenshotAsync(command)),
                 RemoteCommandKinds.DiagnosticProcesses => Ok(command, DiagnosticsCollector.CollectProcesses()),
                 RemoteCommandKinds.DiagnosticBundle => await CollectDiagnosticBundleAsync(command),
                 _ => Fail(command, $"不支持的指令类型：{command.Kind}"),
