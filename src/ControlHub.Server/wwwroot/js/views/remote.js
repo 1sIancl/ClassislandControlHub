@@ -3,10 +3,10 @@
  * 数据来自 A 端 /admin/devices、/admin/backups 等接口。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=39';
+import { api, fetchBlob } from '../core/api.js?v=40';
 import {
   h, clear, toast, loadingBlock, confirmDialog, field, select, emptyState, formatDateTime, modal,
-} from '../core/ui.js?v=39';
+} from '../core/ui.js?v=40';
 
 export const meta = {
   title: '远程管理',
@@ -469,27 +469,80 @@ function isHubPlugin(plugin) {
 // ────────────────────── 外观下发 ──────────────────────
 
 function renderAppearance(container) {
+  const unchanged = { value: '', label: '不修改' };
+  const numberInput = (placeholder) => h('input', { type: 'number', placeholder });
+  const onOff = [
+    unchanged,
+    { value: 'on', label: '启用' },
+    { value: 'off', label: '关闭' },
+  ];
+
   const targetSelect = select(
     [{ value: '__all__', label: '全部在线设备（统一）' }, ...deviceOptions()],
     '__all__',
   );
   const themeSelect = select([
-    { value: '', label: '不修改' },
+    unchanged,
+    { value: 'system', label: '跟随系统' },
     { value: 'light', label: '浅色' },
     { value: 'dark', label: '深色' },
   ], '');
   const accentInput = h('input', { type: 'text', placeholder: '例如 #1E90FF（留空不修改）' });
+  const secondaryInput = h('input', { type: 'text', placeholder: '例如 #7FFFD4（留空不修改）' });
+  const fontInput = h('input', { type: 'text', placeholder: '例如 微软雅黑（留空不修改）' });
+  const sizeSecondary = numberInput('如 14');
+  const sizeBody = numberInput('如 16');
+  const sizeEmphasized = numberInput('如 18');
+  const sizeLarge = numberInput('如 20');
+  const radiusInput = numberInput('如 8');
+  const opacityInput = numberInput('如 0.6');
+  const scaleInput = numberInput('如 1.0');
+  const materialSelect = select([
+    unchanged,
+    { value: 'acrylic', label: '亚克力 Acrylic' },
+    { value: 'liquidglass', label: 'Liquid Glass' },
+    { value: 'mica', label: 'Mica' },
+    { value: 'off', label: '关闭材质' },
+  ], '');
+  const separatedSelect = select(onOff, '');
+  const foregroundInput = h('input', { type: 'text', placeholder: '例如 #FFFFFF（留空不修改）' });
   const offline = offlineOption();
+
+  /** 只把「填了值的项」放进载荷：留空 = 不改动教室机现有设置。 */
+  const buildAppearance = () => {
+    const appearance = {};
+    if (themeSelect.value) appearance.theme = themeSelect.value;
+    if (accentInput.value.trim()) appearance.accentColor = accentInput.value.trim();
+    if (secondaryInput.value.trim()) appearance.secondaryColor = secondaryInput.value.trim();
+    if (fontInput.value.trim()) appearance.fontFamily = fontInput.value.trim();
+
+    const fontSizes = {};
+    for (const [key, input] of [
+      ['secondary', sizeSecondary],
+      ['body', sizeBody],
+      ['emphasized', sizeEmphasized],
+      ['large', sizeLarge],
+    ]) {
+      const value = Number(input.value);
+      if (input.value.trim() && Number.isFinite(value) && value > 0) fontSizes[key] = value;
+    }
+    if (Object.keys(fontSizes).length > 0) appearance.fontSizes = fontSizes;
+
+    if (radiusInput.value.trim()) appearance.radius = Number(radiusInput.value);
+    if (opacityInput.value.trim()) appearance.opacity = Number(opacityInput.value);
+    if (scaleInput.value.trim()) appearance.scale = Number(scaleInput.value);
+    if (materialSelect.value) appearance.backgroundMaterial = materialSelect.value;
+    if (separatedSelect.value) appearance.separatedIsland = separatedSelect.value === 'on';
+    if (foregroundInput.value.trim()) appearance.foregroundColor = foregroundInput.value.trim();
+    return appearance;
+  };
 
   const applyBtn = h('button.btn.btn-primary', {
     type: 'button',
     onClick: async () => {
-      const appearance = {
-        theme: themeSelect.value || null,
-        accentColor: accentInput.value.trim() || null,
-      };
-      if (!appearance.theme && !appearance.accentColor) {
-        toast('warn', '请至少选择主题或填写强调色');
+      const appearance = buildAppearance();
+      if (Object.keys(appearance).length === 0) {
+        toast('warn', '请至少填写一项', '留空的项表示不修改，全部留空则无事可做。');
         return;
       }
 
@@ -505,7 +558,7 @@ function renderAppearance(container) {
             method: 'POST',
             body: { kind: 'appearance.apply', payload: JSON.stringify(appearance) },
           });
-          toast('ok', '已下发', '外观配置已发送，客户端会立即应用。');
+          toast('ok', '已下发', '外观配置已发送，客户端会立即应用并写入设置（重启保留）。');
         }
       } catch (e) {
         toast('error', '下发失败', e.message);
@@ -516,12 +569,37 @@ function renderAppearance(container) {
   return h('div',
     h('div.notice.notice-info',
       h('span.notice-icon', 'i'),
-      h('div', '统一管理所有教室大屏的 ClassIsland 外观。下发生效后立即应用，无需重启。')),
+      h('div', '统一管理所有教室大屏的 ClassIsland 外观：主题、配色、字体排版与窗口材质。'
+        + '留空的项不会改动教室机现有设置；下发生效后立即应用并写入教室机设置（重启后保留）。')),
     h('div.form-row',
       field('目标设备', targetSelect),
       field('主题', themeSelect),
     ),
-    field('强调色', accentInput, '形如 #1E90FF；填错格式会提示「没有可应用的项」。'),
+    h('div.form-row',
+      field('强调色', accentInput),
+      field('第二色', secondaryInput),
+    ),
+    field('字体', fontInput, '需教室机已安装该字体，否则会回退到默认字体。'),
+    h('div.form-row',
+      field('字号·次级', sizeSecondary),
+      field('字号·正文', sizeBody),
+    ),
+    h('div.form-row',
+      field('字号·强调', sizeEmphasized),
+      field('字号·大号', sizeLarge),
+    ),
+    h('div.form-row',
+      field('圆角', radiusInput, '0 ~ 64 像素'),
+      field('背景不透明度', opacityInput, '0.1 ~ 1'),
+    ),
+    h('div.form-row',
+      field('界面缩放', scaleInput, '0.5 ~ 3'),
+      field('背景材质', materialSelect),
+    ),
+    h('div.form-row',
+      field('分体主界面', separatedSelect),
+      field('前景色', foregroundInput, '需与主题对比度足够'),
+    ),
     offline.el,
     h('div', { style: { marginTop: '12px' } }, applyBtn),
   );

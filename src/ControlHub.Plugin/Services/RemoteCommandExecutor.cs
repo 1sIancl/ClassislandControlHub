@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Avalonia.Media;
 using ClassIsland.Core.Abstractions.Services;
+using ClassIsland.Services;
 using ClassIsland.Shared;
 using ControlHub.Plugin.Models;
 using ControlHub.Protocol;
@@ -449,32 +450,207 @@ public sealed class RemoteCommandExecutor(
             return Fail(command, "外观配置为空。");
         }
 
-        // 0 = 浅色，1 = 深色（见 IThemeService.CurrentRealThemeMode）。
-        int? mode = cfg.Theme?.Trim().ToLowerInvariant() switch
+        // 走 ClassIsland 自己的设置服务，而不是 IThemeService.SetTheme：
+        // ① SetTheme 只改运行时主题、**不写设置**，宿主随后会用 Settings.Theme / ColorSource / PrimaryColor
+        //    覆盖回去（表现为「提示已应用、界面没变化，重启就还原」）；
+        // ② 改 Settings.* 会立即生效并自动落盘，与宿主自己的设置页行为一致。
+        var settings = IAppHost.TryGetService<SettingsService>();
+        if (settings is null)
         {
-            "light" => 0,
-            "dark" => 1,
-            _ => null,
-        };
-
-        Color? primary = null;
-        if (!string.IsNullOrWhiteSpace(cfg.AccentColor) && Color.TryParse(cfg.AccentColor.Trim(), out var parsed))
-        {
-            primary = parsed;
+            return Fail(command, "无法获取 ClassIsland 设置服务（IAppHost 未就绪）。");
         }
 
-        if (mode is null && primary is null)
+        var s = settings.Settings;
+        var applied = new List<string>();
+        var skipped = new List<string>();
+
+        // 主题：ClassIsland 的语义是 0=跟随系统 / 1=浅色 / 2=深色。
+        // （IThemeService.CurrentRealThemeMode 的注释写成「0 浅色 1 深色」，与实现不符，这里按实现为准。）
+        if (!string.IsNullOrWhiteSpace(cfg.Theme))
         {
-            return Fail(command, "外观配置里没有可应用的项（主题或强调色），强调色需为 #RRGGBB 形式。");
+            switch (cfg.Theme.Trim().ToLowerInvariant())
+            {
+                case "system":
+                    s.Theme = 0;
+                    applied.Add("主题=跟随系统");
+                    break;
+                case "light":
+                    s.Theme = 1;
+                    applied.Add("主题=浅色");
+                    break;
+                case "dark":
+                    s.Theme = 2;
+                    applied.Add("主题=深色");
+                    break;
+                default:
+                    skipped.Add($"主题取值无法识别（{cfg.Theme}，可用 light / dark / system）");
+                    break;
+            }
         }
 
-        var themeService = IAppHost.TryGetService<IThemeService>();
-        if (themeService is null)
+        if (TryParseColor(cfg.AccentColor, out var accent))
         {
-            return Fail(command, "无法获取 ClassIsland 主题服务（IAppHost 未就绪）。");
+            // 取色来源必须切到「自定义」：默认来源是「系统色」，不改它的话强调色会被覆盖掉。
+            s.ColorSource = 0;
+            s.PrimaryColor = accent;
+            applied.Add($"强调色={cfg.AccentColor!.Trim()}");
+        }
+        else if (!string.IsNullOrWhiteSpace(cfg.AccentColor))
+        {
+            skipped.Add($"强调色格式不正确（{cfg.AccentColor}，需 #RRGGBB）");
         }
 
-        themeService.SetTheme(mode ?? themeService.CurrentRealThemeMode, primary);
+        if (TryParseColor(cfg.SecondaryColor, out var secondary))
+        {
+            s.ColorSource = 0;
+            s.SecondaryColor = secondary;
+            applied.Add($"第二色={cfg.SecondaryColor!.Trim()}");
+        }
+        else if (!string.IsNullOrWhiteSpace(cfg.SecondaryColor))
+        {
+            skipped.Add($"第二色格式不正确（{cfg.SecondaryColor}，需 #RRGGBB）");
+        }
+
+        if (!string.IsNullOrWhiteSpace(cfg.FontFamily))
+        {
+            s.MainWindowFont = cfg.FontFamily.Trim();
+            applied.Add($"字体={s.MainWindowFont}");
+        }
+
+        var sizeLabels = new List<string>();
+        foreach (var (key, size) in cfg.FontSizes ?? [])
+        {
+            if (size is <= 0 or > 200)
+            {
+                skipped.Add($"字号 {key}={size} 超出范围（1~200）");
+                continue;
+            }
+
+            switch (key.Trim().ToLowerInvariant())
+            {
+                case "secondary":
+                    s.MainWindowSecondaryFontSize = size;
+                    sizeLabels.Add($"次级 {size:0.#}");
+                    break;
+                case "body":
+                    s.MainWindowBodyFontSize = size;
+                    sizeLabels.Add($"正文 {size:0.#}");
+                    break;
+                case "emphasized":
+                    s.MainWindowEmphasizedFontSize = size;
+                    sizeLabels.Add($"强调 {size:0.#}");
+                    break;
+                case "large":
+                    s.MainWindowLargeFontSize = size;
+                    sizeLabels.Add($"大号 {size:0.#}");
+                    break;
+                default:
+                    skipped.Add($"未知字号键（{key}，可用 secondary / body / emphasized / large）");
+                    break;
+            }
+        }
+
+        if (sizeLabels.Count > 0)
+        {
+            applied.Add("字号=" + string.Join("/", sizeLabels));
+        }
+
+        if (cfg.Radius is { } radius)
+        {
+            if (radius is >= 0 and <= 64)
+            {
+                s.RadiusX = radius;
+                s.RadiusY = radius;
+                applied.Add($"圆角={radius:0.#}");
+            }
+            else
+            {
+                skipped.Add($"圆角 {radius} 超出范围（0~64）");
+            }
+        }
+
+        if (cfg.Opacity is { } opacity)
+        {
+            if (opacity is >= 0.1 and <= 1)
+            {
+                s.Opacity = opacity;
+                applied.Add($"背景不透明度={opacity:0.##}");
+            }
+            else
+            {
+                skipped.Add($"背景不透明度 {opacity} 超出范围（0.1~1）");
+            }
+        }
+
+        if (cfg.Scale is { } scale)
+        {
+            if (scale is >= 0.5 and <= 3)
+            {
+                s.Scale = scale;
+                applied.Add($"界面缩放={scale:0.##}");
+            }
+            else
+            {
+                skipped.Add($"界面缩放 {scale} 超出范围（0.5~3）");
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(cfg.BackgroundMaterial))
+        {
+            switch (cfg.BackgroundMaterial.Trim().ToLowerInvariant())
+            {
+                case "off":
+                    s.IsMainWindowBackgroundMaterialEnabled = false;
+                    applied.Add("背景材质=关闭");
+                    break;
+                case "acrylic":
+                    applied.Add(ApplyBackgroundMaterial(settings, 0, "亚克力"));
+                    break;
+                case "liquidglass":
+                    applied.Add(ApplyBackgroundMaterial(settings, 1, "Liquid Glass"));
+                    break;
+                case "mica":
+                    applied.Add(ApplyBackgroundMaterial(settings, 2, "Mica"));
+                    break;
+                default:
+                    skipped.Add($"背景材质取值无法识别（{cfg.BackgroundMaterial}，可用 off / acrylic / liquidglass / mica）");
+                    break;
+            }
+        }
+
+        if (cfg.SeparatedIsland is { } separated)
+        {
+            s.IsIslandSeperated = separated;
+            applied.Add(separated ? "分体主界面=开" : "分体主界面=关");
+        }
+
+        if (TryParseColor(cfg.ForegroundColor, out var foreground))
+        {
+            s.IsCustomForegroundColorEnabled = true;
+            s.CustomForegroundColor = foreground;
+            applied.Add($"前景色={cfg.ForegroundColor!.Trim()}");
+        }
+        else if (!string.IsNullOrWhiteSpace(cfg.ForegroundColor))
+        {
+            skipped.Add($"前景色格式不正确（{cfg.ForegroundColor}，需 #RRGGBB）");
+        }
+
+        if (!string.IsNullOrWhiteSpace(cfg.ComponentProfileJson))
+        {
+            // 如实说明而不是静默忽略：组件布局是另一套配置（ComponentSettings + CurrentComponentConfig），
+            // 目前只保留协议字段，尚未实现下发。
+            skipped.Add("组件布局暂未支持（本次未应用）");
+        }
+
+        if (applied.Count == 0)
+        {
+            return Fail(command, "没有应用任何外观：" + (skipped.Count > 0
+                ? string.Join("；", skipped)
+                : "配置里没有可应用的项。"));
+        }
+
+        // 属性变更已触发宿主自动保存；这里再显式保存一次作为双保险（幂等）。
+        settings.SaveSettings("集控下发外观");
 
         // 留档，便于设置页展示「最近一次下发的外观」。
         try
@@ -490,18 +666,42 @@ public sealed class RemoteCommandExecutor(
             // 留档失败不影响外观本身已经应用。
         }
 
-        var parts = new List<string>();
-        if (mode is not null)
+        var text = "已应用外观：" + string.Join("，", applied) + "。";
+        if (skipped.Count > 0)
         {
-            parts.Add($"主题={cfg.Theme}");
+            text += "　未应用：" + string.Join("；", skipped) + "。";
         }
 
-        if (primary is not null)
+        return Ok(command, text);
+    }
+
+    /// <summary>解析 <c>#RRGGBB</c> / <c>#AARRGGBB</c> 颜色；留空返回 false（表示不修改）。</summary>
+    private static bool TryParseColor(string? text, out Color color)
+    {
+        color = default;
+        return !string.IsNullOrWhiteSpace(text) && Color.TryParse(text.Trim(), out color);
+    }
+
+    /// <summary>
+    /// 启用并设置主界面背景材质。
+    /// <para>材质枚举（Acrylic / LiquidGlass / Mica）在不同版本的 ClassIsland SDK 里所在程序集不同，
+    /// 直接写类型名会编译失败（CS7069），因此按数值写入：0=亚克力、1=Liquid Glass、2=Mica。
+    /// 宿主不支持该设置时**如实写进结果**，而不是假装成功。</para>
+    /// </summary>
+    private static string ApplyBackgroundMaterial(SettingsService settings, int value, string label)
+    {
+        var s = settings.Settings;
+        s.IsMainWindowBackgroundMaterialEnabled = true;
+
+        var property = s.GetType().GetProperty("MainWindowBackgroundMaterialType");
+        if (property is null)
         {
-            parts.Add($"强调色={cfg.AccentColor}");
+            return $"背景材质={label}（当前 ClassIsland 版本不支持该设置，未生效）";
         }
 
-        return Ok(command, "已应用外观：" + string.Join("，", parts) + "。");
+        var type = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
+        property.SetValue(s, Enum.ToObject(type, value));
+        return $"背景材质={label}";
     }
 
     // ────────────────────────────── restart ──────────────────────────────

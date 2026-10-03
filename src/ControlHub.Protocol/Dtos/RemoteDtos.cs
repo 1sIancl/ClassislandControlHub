@@ -220,7 +220,11 @@ public sealed class PluginReportRequest
     public List<PluginInfoDto> Plugins { get; set; } = [];
 }
 
-/// <summary>A 端下发的 ClassIsland 外观配置（组件与字体等）。</summary>
+/// <summary>
+/// A 端下发的 ClassIsland 外观配置。
+/// <para>所有字段都可空：**只有显式给出的项才会被应用**，其余保持教室机现有设置不变。
+/// 与「补丁」语义一致，避免统一分发时把个别教室的特殊配置抹平。</para>
+/// </summary>
 public sealed class AppearanceConfigDto
 {
     /// <summary>主题：<c>light</c> / <c>dark</c> / <c>system</c>，为空表示不修改。</summary>
@@ -229,13 +233,38 @@ public sealed class AppearanceConfigDto
     /// <summary>强调色（十六进制，如 <c>#1E90FF</c>），为空表示不修改。</summary>
     public string? AccentColor { get; set; }
 
+    /// <summary>第二色（十六进制），为空表示不修改。</summary>
+    public string? SecondaryColor { get; set; }
+
     /// <summary>四类字体大小（次级/正文/强调/大号），键为 <c>secondary|body|emphasized|large</c>。</summary>
     public Dictionary<string, double> FontSizes { get; set; } = [];
 
-    /// <summary>字体名称。</summary>
+    /// <summary>字体名称（需教室机已安装该字体），为空表示不修改。</summary>
     public string? FontFamily { get; set; }
 
-    /// <summary>组件配置方案（ClassIsland 组件布局 JSON），为空表示不修改。</summary>
+    /// <summary>主界面圆角（像素，0~64），为空表示不修改。</summary>
+    public double? Radius { get; set; }
+
+    /// <summary>主界面背景不透明度（0.1~1），为空表示不修改。</summary>
+    public double? Opacity { get; set; }
+
+    /// <summary>界面缩放（0.5~3，如 1.25），为空表示不修改。</summary>
+    public double? Scale { get; set; }
+
+    /// <summary>背景材质：<c>off</c> / <c>acrylic</c>（亚克力）/ <c>liquidglass</c> / <c>mica</c>，为空表示不修改。</summary>
+    public string? BackgroundMaterial { get; set; }
+
+    /// <summary>是否启用「分体主界面」（各区块分离显示），为空表示不修改。</summary>
+    public bool? SeparatedIsland { get; set; }
+
+    /// <summary>自定义前景色（十六进制），为空表示不修改。</summary>
+    public string? ForegroundColor { get; set; }
+
+    /// <summary>
+    /// 组件配置方案（ClassIsland 组件布局 JSON）。
+    /// <para><b>当前版本尚未应用</b>：仅保留字段，收到时会如实回报「组件布局暂未支持」，
+    /// 而不是静默忽略。</para>
+    /// </summary>
     public string? ComponentProfileJson { get; set; }
 
     /// <summary>其它自定义键值，按需扩展。</summary>
