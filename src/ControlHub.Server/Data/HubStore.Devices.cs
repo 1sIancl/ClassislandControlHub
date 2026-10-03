@@ -314,12 +314,17 @@ public sealed partial class HubStore
             copy.Transaction = (SqliteTransaction)transaction;
             copy.CommandText = """
                 UPDATE devices SET
+                    name       = CASE WHEN $name = '' THEN name ELSE $name END,
                     group_id   = COALESCE(NULLIF(group_id, ''), $groupId),
                     profile_id = COALESCE(NULLIF(profile_id, ''), $profileId),
                     remark     = CASE WHEN remark = '' THEN $remark ELSE remark END
                  WHERE id = $id;
                 """;
             AddParameters(copy,
+                // 设备名也以预注册的为准：管理员在 CSV 里录的是「教室名」（如 _教学楼A-301），
+                // 而教室端上报的往往是机器名或默认名（如 DESKTOP-XXXX、PC-201）。
+                // 只带分组/档案不带走名称，等于把批量导入最省事的价值砍掉一半（实测踩到）。
+                ("$name", placeholder.Name ?? string.Empty),
                 ("$groupId", TextOrNull(placeholder.GroupId)),
                 ("$profileId", TextOrNull(placeholder.ProfileId)),
                 ("$remark", placeholder.Remark ?? string.Empty),
