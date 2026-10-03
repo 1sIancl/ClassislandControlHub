@@ -31,7 +31,18 @@ public sealed class ClassIslandClockService(ILogger<ClassIslandClockService> log
         if (!CanReachNtp(ntpHost))
         {
             logger.LogWarning(
-                "集控服务器 {Host} 的 NTP 端口（UDP 123）无响应，已保持 ClassIsland 原有时间源不变。", ntpHost);
+                "集控服务器 {Host} 的 NTP 端口（UDP 123）无响应。", ntpHost);
+
+            // 自我修复：如果宿主的时间源**此刻正指向集控**（上一个版本改的、或手工改的），而集控又没有 NTP，
+            // 宿主就会陷入「不停超时重试 → 反复写 Settings.json」的循环；严重时因为 Settings.json 被占用
+            // 抛「严重错误」，把整个宿主带崩。这里把它改回「使用系统时间」，让循环当场停下。
+            if (TryRevertHostTimeSource(ntpHost))
+            {
+                return $"集控服务器没有可用的 NTP 服务（{ntpHost}:123 无响应），"
+                       + "已把 ClassIsland 改回「使用系统时间」以避免持续超时与反复写配置。"
+                       + "如需以集控为时间源：请先确认服务端能绑定 UDP 123（Windows 上该端口常被系统时间服务占用）。";
+            }
+
             return $"集控服务器没有可用的 NTP 服务（{ntpHost}:123 无响应），已保持 ClassIsland 原有时间源不变。"
                    + "如需以集控为时间源：请确认服务端能绑定 UDP 123（Windows 上该端口常被系统时间服务占用，"
                    + "可改用其它端口并在此处显式指定）。";
@@ -59,6 +70,39 @@ public sealed class ClassIslandClockService(ILogger<ClassIslandClockService> log
     {
         var settings = IAppHost.TryGetService<SettingsService>();
         return settings?.Settings.ExactTimeServer ?? string.Empty;
+    }
+
+    /// <summary>
+    /// 若宿主的时间源正指向集控（且我们已确认连不上），就把它改回「使用系统时间」。
+    /// <para>只处理「指向集控」这种情况：指向别的时间源是别人的配置，我们只提示、不擅自改。</para>
+    /// <para>任何异常都被吞掉并记日志——这里是在**救火**，绝不能再把异常抛给宿主。</para>
+    /// </summary>
+    private bool TryRevertHostTimeSource(string ntpHost)
+    {
+        try
+        {
+            var settings = IAppHost.TryGetService<SettingsService>();
+            if (settings is null)
+            {
+                return false;
+            }
+
+            var current = settings.Settings.ExactTimeServer?.Trim() ?? string.Empty;
+            if (!string.Equals(current, ntpHost.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            settings.Settings.IsExactTimeEnabled = false;
+            settings.SaveSettings("集控时间同步不可用，已改回系统时间");
+            logger.LogWarning("已把 ClassIsland 改回「使用系统时间」：集控 {Host} 的 NTP 不可用。", ntpHost);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "回退 ClassIsland 时间源失败（不影响其它功能）。");
+            return false;
+        }
     }
 
     /// <summary>
