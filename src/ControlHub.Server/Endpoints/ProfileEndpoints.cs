@@ -24,6 +24,8 @@ public static class ProfileEndpoints
 
         group.MapGet("/profiles", ListAsync).RequirePermission(PermissionKeys.ProfilesRead);
         group.MapPost("/profiles", CreateAsync).RequirePermission(PermissionKeys.ProfilesWrite);
+        // 档案复制：在既有配置上改出新方案（例如「夏季作息」→「夏季作息（九年级）」）
+        group.MapPost("/profiles/{id}/duplicate", DuplicateAsync).RequirePermission(PermissionKeys.ProfilesWrite);
         group.MapPost("/profiles/sample", CreateSampleAsync).RequirePermission(PermissionKeys.ProfilesWrite);
         group.MapGet("/profiles/{id}", GetAsync).RequirePermission(PermissionKeys.ProfilesRead);
         group.MapPut("/profiles/{id}", UpdateAsync).RequirePermission(PermissionKeys.ProfilesWrite);
@@ -156,6 +158,59 @@ public static class ProfileEndpoints
 
         await store.AddAuditAsync(session.Username, "profile.create", row.Name,
             $"创建配置档案「{row.Name}」，内容版本 1。", http.GetClientIpAddress(), cancellationToken);
+
+        return ApiResult<ProfileSaveResult>.Success(new ProfileSaveResult
+        {
+            Profile = ToDto(row, includeContent: true),
+            Notes = notes,
+            Revision = revision,
+        });
+    }
+
+    /// <summary>
+    /// 复制一个档案（含课表 / 时间表 / 科目 / 自定义设置），用于在既有配置上改出新方案。
+    /// <para>内容**原样搬运**（直接沿用源档案的 JSON 文本，不重新序列化）——
+    /// 重新序列化可能引入字段顺序或默认值差异，让「复制品」与原件对不上。</para>
+    /// <para>复制品总是新建的一版（Revision = 1）且**不继承「默认档案」标记**：
+    /// 复制这个动作不该悄悄改变设备的生效配置。</para>
+    /// </summary>
+    private static async Task<ApiResult<ProfileSaveResult>> DuplicateAsync(
+        string id,
+        ProfileUpsertRequest request,
+        HttpContext http,
+        HubStore store,
+        SyncService sync,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var source = await store.GetProfileAsync(id, cancellationToken)
+                     ?? throw HubException.NotFound("配置档案不存在。");
+
+        var name = string.IsNullOrWhiteSpace(request.Name) ? $"{source.Name}（副本）" : request.Name.Trim();
+        var content = HubJson.DeserializeOrDefault(source.Content, new ContentBundleDto());
+        var notes = ContentNormalizer.Normalize(content);
+
+        var row = new ProfileRow
+        {
+            Id = HubChecksum.NewId(),
+            Name = name,
+            Description = string.IsNullOrWhiteSpace(request.Description)
+                ? source.Description
+                : request.Description.Trim(),
+            Code = await GenerateUniqueCodeAsync(store, cancellationToken),
+            Revision = 1,
+            Content = source.Content,
+            IsDefault = false,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
+
+        await store.CreateProfileAsync(row, cancellationToken);
+        var revision = await sync.BumpRevisionAsync(cancellationToken);
+
+        await store.AddAuditAsync(session.Username, "profile.duplicate", row.Name,
+            $"由「{source.Name}」复制出「{row.Name}」（内容原样搬移，未绑定到任何设备）。",
+            http.GetClientIpAddress(), cancellationToken);
 
         return ApiResult<ProfileSaveResult>.Success(new ProfileSaveResult
         {

@@ -3,11 +3,11 @@
  * 档案是集控下发的最小单元：一个档案 = 一套时间表 + 课表 + 科目 + 自定义设置。
  */
 
-import { api } from '../core/api.js?v=37';
+import { api } from '../core/api.js?v=38';
 import {
   h, clear, formatDateTime, toast, loadingBlock, modal, confirmDialog,
   emptyState, field, select,
-} from '../core/ui.js?v=37';
+} from '../core/ui.js?v=38';
 
 export const meta = {
   title: '配置档案',
@@ -86,6 +86,7 @@ function renderCard(profile) {
       h('button.btn.btn-sm', { type: 'button', onClick: () => pushProfile(profile) }, '立即推送'),
       h('button.btn.btn-sm', { type: 'button', onClick: () => openVersionsDialog(profile) }, '历史版本'),
       h('button.btn.btn-sm', { type: 'button', onClick: () => openOverridesDialog(profile) }, '临时换课'),
+      h('button.btn.btn-sm', { type: 'button', onClick: () => duplicateProfile(profile) }, '复制'),
       profile.isDefault
         ? null
         : h('button.btn.btn-sm', { type: 'button', onClick: () => setDefault(profile) }, '设为默认'),
@@ -655,6 +656,42 @@ function openCreateDialog(withSample) {
 
       window.location.hash = `#/profiles/${result.profile.id}`;
       return true;
+    },
+  });
+}
+
+/**
+ * 复制档案：在既有配置上改出新方案（例如「夏季作息」→「夏季作息（九年级）」）。
+ * <para>复制品是独立的新档案：不继承「默认」标记、不绑定任何设备，因此不会影响教室当前配置。</para>
+ */
+function duplicateProfile(profile) {
+  const nameInput = h('input', { type: 'text', value: `${profile.name}（副本）` });
+
+  modal({
+    title: `复制档案「${profile.name}」`,
+    confirmText: '复制',
+    body: h('div',
+      h('div.notice.notice-info',
+        h('span.notice-icon', 'i'),
+        h('div', '会把课表 / 时间表 / 科目 / 自定义设置整份复制过来，内容与原档案完全一致。'
+          + '复制品不会继承「默认」标记，也不会自动绑定到任何设备——改坏了删掉就好。')),
+      h('div', { style: { marginTop: '10px', display: 'grid', gap: '4px' } },
+        h('span', { style: { fontSize: '12.5px' } }, '新档案名称'),
+        nameInput),
+    ),
+    onConfirm: async () => {
+      try {
+        const result = await api(`/admin/profiles/${profile.id}/duplicate`, {
+          method: 'POST',
+          body: { name: nameInput.value.trim() },
+        });
+        toast('ok', '已复制', `已创建「${result.profile.name}」，可在列表里继续编辑或推送。`);
+        await render(document.getElementById('content'));
+        return true;
+      } catch (err) {
+        toast('error', '复制失败', err.message);
+        return false;
+      }
     },
   });
 }
