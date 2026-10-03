@@ -1173,7 +1173,7 @@ function renderWebhooksCard(container, hooks) {
         h('p.card-desc',
           '设备掉线、配置应用失败、远程指令失败时，自动把消息推到企业微信 / 钉钉 / 飞书群，或你自己的服务。'),
       ),
-      h('b    h('button.btn.btn-primary.btn-sm', {
+      h('button.btn.btn-primary.btn-sm', {
         type: 'button',
         onClick: () => openWebhookDialog(container, null),
         }, '+ 新建 Webhook'),
