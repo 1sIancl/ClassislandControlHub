@@ -96,6 +96,60 @@
 
 `webhooks.secret` 不参与任何查找，按原方案直接加密即可，无此问题。
 
+## 实现清单（已核对真实文件与行号，可直接照做）
+
+### A. 注册码（`enroll_codes`）
+
+| 位置 | 现状 | 改法 |
+|---|---|---|
+| `Data/HubStore.cs` L438 起建表 | `code TEXT PRIMARY KEY, note, max_uses, used_count, expires_at, enabled` | 加列 `code_hash TEXT` + `CREATE UNIQUE INDEX idx_enroll_codes_hash ON enroll_codes(code_hash)`；老库走 `EnsureColumnAsync` 补列 |
+| `Data/HubStore.Admin.cs` L247-255 `ReadEnrollCode` | 直接读 `code` | 读出后 `TryUnprotect` 得到可用明文供展示；解密失败则展示 `(不可用)` 并计数 |
+| `Data/HubStore.Admin.cs` 注册码创建 | 直接写明文 `code` | 写 `code_hash = Hmac(规范化(code))`、`code = Protect(规范化(code))` |
+| `Data/HubStore.Admin.cs` 注册码查找（按 code） | `WHERE code = $code` | 改为 `WHERE code_hash = $hash` |
+| 校验调用方（教室端注册） | 传入用户输入的 code | 先规范化（`Trim().ToUpperInvariant()`）再算 HMAC 查找；**不要**再按明文比对 |
+| `Data/Entities.cs` L137 `EnrollCodeRow` | 只有 `Code` | 加 `CodeHash`；`Code` 语义变为「可用明文（解密后）」 |
+
+### B. Webhook 加签密钥（`webhooks.secret`）
+
+| 位置 | 改法 |
+|---|---|
+| `Data/HubStore.Webhooks.cs` `ReadWebhook` | 读出 `secret` 后 `TryUnprotect`；失败则视为未配置密钥并计数 |
+| 同文件 `CreateWebhookAsync` / `UpdateWebhookAsync` | 写入前 `Protect`（`Protect` 幂等，重复保存不会二次加密） |
+| `Services/WebhookService.cs` 钉钉加签 | 无需改动：它拿到的是 HubStore 已解密的值 |
+
+### C. 迁移（启动时一次，幂等）
+
+```sql
+-- 1) 老行补 code_hash（必须在加密 code 之前，此时 code 仍是明文）
+--    逐行读出 code → 算 HMAC → UPDATE enroll_codes SET code_hash = $hash WHERE code = $code
+-- 2) 加密仍为明文的 code
+UPDATE enroll_codes SET code = $enc WHERE code = $plain;   -- 或按「不含 enc:v1: 前缀」批量处理
+-- 3) 加密仍为明文的 webhook 密钥
+UPDATE webhooks SET secret = $enc WHERE id = $id AND secret <> '' AND secret NOT LIKE 'enc:v1:%';
+```
+
+- 幂等：第 2/3 步只处理不含 `enc:v1:` 前缀的行；重复启动不会二次加密。
+- 第 1 步只对 `code_hash IS NULL OR code_hash = ''` 的行执行。
+- 任一行失败只记日志并计数，**不阻断启动**。
+
+### D. 诊断
+
+- `server/info` 增加 `secretsEncrypted: { enrollCodes: { total, encrypted }, webhooks: { total, encrypted }, keyFile }`。
+- 启动日志一行：`静态敏感数据：注册码 x/y 已加密，Webhook 密钥 m/n 已加密（密钥文件：…，本次新建：true/false）`。
+- `keyFile` 路径必须打出来——现场最需要知道的是「密钥到底放在哪」。
+
+## 端到端验收脚本（一次跑完，含故障态）
+
+1. 启动 → 管理端创建注册码 → **直接读 `hub.db`**：`code` 应为 `enc:v1:…`，`code_hash` 非空。
+2. 用该注册码走 `/client/enroll` → **应注册成功**（证明 HMAC 查找链路通）。
+3. 手工插入一条**明文**老数据（`code='LEGACY01'`, `code_hash` 留空）→ 先用 `LEGACY01` 注册应成功
+   （兼容路径）→ 重启服务 → 再读库：该行已变成密文且 `code_hash` 已补。
+4. 配一个 Webhook（含钉钉加签密钥）→ 读库确认 `secret` 为密文 → 点「测试」确认能正常发送（证明解密后签名正确）。
+5. **故障态**：停服 → 删除 `secrets.key` → 启动 → 期望表现为：
+   - 注册码校验失败（提示注册码无效）、Webhook 报「密钥不可用」；
+   - **服务本身正常启动**，`server/info` 的 `secretsEncrypted` 计数暴露问题；
+   - 不出现崩溃、不出现静默明文回退。
+
 ## 落地顺序（实现时按此执行，每步都可独立验证）
 
 1. `SecretProtector`（加解密 + `enc:v1:` 封装 + 密钥加载/生成），单元测试覆盖：往返、错误密钥、篡改标签、明文兼容。
