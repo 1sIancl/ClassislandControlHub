@@ -2,11 +2,11 @@
  * 系统设置视图：服务器信息、账号安全与部署提示。
  */
 
-import { api, session, hasPermission } from '../core/api.js?v=43';
+import { api, session, hasPermission } from '../core/api.js?v=42';
 import {
   h, clear, formatDateTime, formatDuration, toast, loadingBlock,
   field, modal, copyText, confirmDialog,
-} from '../core/ui.js?v=43';
+} from '../core/ui.js?v=42';
 
 export const meta = {
   title: '系统设置',
@@ -166,7 +166,7 @@ async function replayOnboarding() {
     return;
   }
 
-  const { startTour } = await import('../core/tour.js?v=43');
+  const { startTour } = await import('../core/tour.js?v=42');
   startTour({
     onFinish: async (skipped) => {
       if (!skipped) {
@@ -1151,9 +1151,9 @@ function renderWebhooksCard(container, hooks) {
       : h('span.badge.badge-neutral', '已停用')),
     webhookDeliveryCell(hook),
     h('td.actions',
-      h('button.btn.btn-sm', { type: 'button', onClick: () => guardUi('测试发送', () => testWebhook(hook)) }, '测试'),
-      h('button.btn.btn-sm', { type: 'button', onClick: () => guardUi('打开投递明细', () => openDeliveriesDialog(hook)) }, '投递明细'),
-      h('button.btn.btn-sm', { type: 'button', onClick: () => guardUi('打开编辑窗口', () => openWebhookDialog(container, hook)) }, '编辑'),
+      h('button.btn.btn-sm', { type: 'button', onClick: () => testWebhook(hook) }, '测试'),
+      h('button.btn.btn-sm', { type: 'button', onClick: () => openDeliveriesDialog(hook) }, '投递明细'),
+      h('button.btn.btn-sm', { type: 'button', onClick: () => openWebhookDialog(container, hook) }, '编辑'),
       h('button.btn.btn-sm.btn-danger', {
         type: 'button',
         onClick: async () => {
@@ -1173,10 +1173,10 @@ function renderWebhooksCard(container, hooks) {
         h('p.card-desc',
           '设备掉线、配置应用失败、远程指令失败时，自动把消息推到企业微信 / 钉钉 / 飞书群，或你自己的服务。'),
       ),
-      h('b      h('button.btn.btn-primary.btn-sm', {
+      h('button.btn.btn-primary.btn-sm', {
         type: 'button',
-        onClick: () => guardUi('打开新建窗口', () => openWebhookDialog(container, null)),
-      }, '+ 新建 Webhook'),
+        onClick: () => openWebhookDialog(container, null),
+        }, '+ 新建 Webhook'),
         ),
         // 「怎么用」直接写在界面上：管理员最常卡住的一步是「去哪里拿那个地址」。
         h('div.notice.notice-info', { style: { marginTop: '12px' } },
@@ -1214,22 +1214,6 @@ function renderWebhooksCard(container, hooks) {
         ),
       ),
   );
-}
-
-/**
- * 把界面操作的异常暴露成提示。
- * <para>没有它时，处理函数里任何一处报错，用户看到的就是「**点了没反应**」——
- * 现场只能靠猜（「新建按钮点不开」这类反馈正是这么来的）。有了它，原因会直接弹出来。</para>
- */
-function guardUi(label, action) {
-  try {
-    const result = action();
-    if (result && typeof result.catch === 'function') {
-      result.catch((err) => toast('error', `${label}失败`, err?.message || String(err)));
-    }
-  } catch (err) {
-    toast('error', `${label}失败`, err?.message || String(err));
-  }
 }
 
 async function testWebhook(hook) {
