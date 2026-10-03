@@ -23,6 +23,20 @@ public sealed class ClassIslandClockService(ILogger<ClassIslandClockService> log
     /// <returns>同步状态描述。</returns>
     public string ConfigureNtpSync(string ntpHost)
     {
+        // 先探测再改（重要）：
+        // 集控端的 NTP 端口（UDP 123）经常不可用——Windows 上该端口通常被「Windows 时间」服务占着，
+        // Linux 上非特权用户也绑不上。若此时仍把宿主的时间源指过去，ClassIsland 会不停超时重试
+        // （GuerrillaNtp 报 SocketException 10060），而每次重试前后都要写宿主的 Settings.json——
+        // 写得越勤，越容易撞上「文件被其它进程占用」这类致命错误直接崩掉宿主。
+        if (!CanReachNtp(ntpHost))
+        {
+            logger.LogWarning(
+                "集控服务器 {Host} 的 NTP 端口（UDP 123）无响应，已保持 ClassIsland 原有时间源不变。", ntpHost);
+            return $"集控服务器没有可用的 NTP 服务（{ntpHost}:123 无响应），已保持 ClassIsland 原有时间源不变。"
+                   + "如需以集控为时间源：请确认服务端能绑定 UDP 123（Windows 上该端口常被系统时间服务占用，"
+                   + "可改用其它端口并在此处显式指定）。";
+        }
+
         var settings = IAppHost.TryGetService<SettingsService>()
                        ?? throw new InvalidOperationException("无法获取 ClassIsland 设置服务（IAppHost 未就绪）。");
 
@@ -46,4 +60,36 @@ public sealed class ClassIslandClockService(ILogger<ClassIslandClockService> log
         var settings = IAppHost.TryGetService<SettingsService>();
         return settings?.Settings.ExactTimeServer ?? string.Empty;
     }
+
+    /// <summary>
+    /// 探测指定主机是否真的在提供 NTP 服务（发一个最小的 NTP 客户端请求，等 1.5 秒）。
+    /// <para>用同步 API + 超时即可：它只在同步流程里调用一次，且此处**不需要**异步带来的复杂度；
+    /// 关键是绝不能因为「探测本身」把插件卡住。</para>
+    /// </summary>
+#pragma warning disable CA1849 // 同步套接字调用：这里刻意使用（带超时，且只在同步流程调用一次）
+    private static bool CanReachNtp(string host)
+    {
+        try
+        {
+            using var udp = new System.Net.Sockets.UdpClient();
+            udp.Client.ReceiveTimeout = 1500;
+            udp.Client.SendTimeout = 1500;
+
+            // NTP 客户端请求：48 字节，首字节 0x1B（LI=0, Version=3, Mode=3）。
+            var request = new byte[48];
+            request[0] = 0x1B;
+
+            udp.Send(request, request.Length, host, 123);
+
+            var remote = new System.Net.IPEndPoint(System.Net.IPAddress.Any, 0);
+            var response = udp.Receive(ref remote);
+            return response.Length >= 48;
+        }
+        catch
+        {
+            // 任何异常（超时、DNS 失败、端口被拒）都视为「没有可用的 NTP」——这正是我们要保守处理的情况。
+            return false;
+        }
+    }
+#pragma warning restore CA1849
 }
