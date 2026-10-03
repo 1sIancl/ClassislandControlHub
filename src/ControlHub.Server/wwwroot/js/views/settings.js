@@ -2,11 +2,11 @@
  * 系统设置视图：服务器信息、账号安全与部署提示。
  */
 
-import { api, session, hasPermission } from '../core/api.js?v=41';
+import { api, session, hasPermission } from '../core/api.js?v=42';
 import {
   h, clear, formatDateTime, formatDuration, toast, loadingBlock,
   field, modal, copyText, confirmDialog,
-} from '../core/ui.js?v=41';
+} from '../core/ui.js?v=42';
 
 export const meta = {
   title: '系统设置',
@@ -166,7 +166,7 @@ async function replayOnboarding() {
     return;
   }
 
-  const { startTour } = await import('../core/tour.js?v=41');
+  const { startTour } = await import('../core/tour.js?v=42');
   startTour({
     onFinish: async (skipped) => {
       if (!skipped) {
@@ -1173,12 +1173,30 @@ function renderWebhooksCard(container, hooks) {
         h('p.card-desc',
           '设备掉线、配置应用失败、远程指令失败时，自动把消息推到企业微信 / 钉钉 / 飞书群，或你自己的服务。'),
       ),
-      h('button.btn.btn-primary.btn-sm', {
+      h('b    h('button.btn.btn-primary.btn-sm', {
         type: 'button',
         onClick: () => openWebhookDialog(container, null),
-      }, '+ 新建 Webhook'),
-    ),
-    hooks.length === 0
+        }, '+ 新建 Webhook'),
+        ),
+        // 「怎么用」直接写在界面上：管理员最常卡住的一步是「去哪里拿那个地址」。
+        h('div.notice.notice-info', { style: { marginTop: '12px' } },
+        h('span.notice-icon', 'i'),
+        h('div',
+        h('div', { style: { fontWeight: '600' } }, '三步就能用起来'),
+        h('div', '① 在群里添加「群机器人」并复制它的 Webhook 地址：'),
+        h('div', { style: { marginLeft: '14px', color: 'var(--text-dim)' } },
+          '企业微信：群聊 → 右上角「…」→ 群机器人 → 添加 → 复制 Webhook 地址'),
+        h('div', { style: { marginLeft: '14px', color: 'var(--text-dim)' } },
+          '钉钉：群设置 → 智能群助手 → 添加机器人 → 自定义 → 复制 Webhook 地址（安全设置选「加签」时把密钥一起填上）'),
+        h('div', { style: { marginLeft: '14px', color: 'var(--text-dim)' } },
+          '飞书：群设置 → 群机器人 → 添加机器人 → 自定义机器人 → 复制 Webhook 地址'),
+        h('div', '② 点「+ 新建 Webhook」：填名称、选接收端类型、粘贴地址，勾选要推送的事件（至少一个）。'),
+        h('div', '③ 先点「测试」：成功会显示耗时；失败会直接告诉你原因（含对方返回的错误码）。'
+          + '确认真能收到消息后再打开「启用」。'),
+        h('div', { style: { marginTop: '6px', color: 'var(--text-dim)' } },
+          '真实推送的结果（含被静默/去重跳过）都在「投递明细」里逐条可查，不用去翻服务器日志。'),
+        )),
+        hooks.length === 0
       ? h('div.notice.notice-info', { style: { marginTop: '12px' } },
         h('span.notice-icon', 'i'),
         h('div', '还没有配置。建一个之后，教室里出问题会第一时间出现在群里，不用一直盯着管理界面。'))

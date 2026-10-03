@@ -2,11 +2,11 @@
  * 配置下发视图：查看绑定关系、按范围推送，并跟踪客户端同步进度。
  */
 
-import { api, session } from '../core/api.js?v=41';
+import { api, session } from '../core/api.js?v=42';
 import {
   h, clear, relativeTime, toast, loadingBlock, modal, field, select,
   emptyState, confirmDialog, deviceStateBadge, syncBadge,
-} from '../core/ui.js?v=41';
+} from '../core/ui.js?v=42';
 
 export const meta = {
   title: '配置下发',
