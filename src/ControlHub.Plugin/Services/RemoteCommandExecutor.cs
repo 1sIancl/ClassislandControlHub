@@ -600,8 +600,10 @@ public sealed class RemoteCommandExecutor(
             switch (cfg.BackgroundMaterial.Trim().ToLowerInvariant())
             {
                 case "off":
-                    s.IsMainWindowBackgroundMaterialEnabled = false;
-                    applied.Add("背景材质=关闭");
+                    // 与开启分支同样走反射：该开关在部分宿主版本里不存在（CI 已实测报 CS1061）。
+                    applied.Add(TrySetSetting(s, "IsMainWindowBackgroundMaterialEnabled", false)
+                        ? "背景材质=关闭"
+                        : "背景材质=关闭（当前 ClassIsland 版本不支持该设置，未生效）");
                     break;
                 case "acrylic":
                     applied.Add(ApplyBackgroundMaterial(settings, 0, "亚克力"));
