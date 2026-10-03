@@ -23,6 +23,31 @@ public sealed class ClassIslandClockService(ILogger<ClassIslandClockService> log
     /// <returns>同步状态描述。</returns>
     public string ConfigureNtpSync(string ntpHost)
     {
+        // ★ 该能力已停用（2026-10-03 B 端崩溃事故复盘）★
+        // 它需要写 ClassIsland 的 Settings.json（ExactTimeServer / IsExactTimeEnabled），
+        // 而**宿主自己在打开设置页、保存设置时也写同一个文件**。两个写入方一旦撞上，
+        // 宿主会把「Settings.json 被其它进程占用」当成严重错误直接退出：
+        //   ClassIsland.App 发生严重错误 / IOException: The process cannot access the file 'Settings.json'
+        //   → 表现为「打开设置页就崩」以及每几分钟重启一次。
+        // 收益（大屏时钟以集控服务器为时间源）远小于风险，因此不再由插件改动宿主的时钟配置。
+        if (!_disabledLogged)
+        {
+            _disabledLogged = true;
+            logger.LogWarning(
+                "集控的时间同步能力已停用：它需要修改 ClassIsland 的时钟配置，而宿主保存设置时会写同一个文件，"
+                + "并发写冲突曾导致宿主崩溃。如需统一时间，请在 ClassIsland 设置中手工指定精确时间服务器。");
+        }
+
+        return "集控的时间同步已停用（避免与 ClassIsland 的设置保存争抢同一个配置文件）。"
+             + "如需大屏时钟与服务器一致，请在 ClassIsland 设置里手工把「精确时间服务器」指向可用的 NTP 源。";
+    }
+
+    /// <summary>停用提示只记一次日志，避免后台循环把日志刷满。</summary>
+    private static bool _disabledLogged;
+
+    /// <summary>（已废弃）原实现，保留以说明历史行为，不再调用。</summary>
+    private string ConfigureNtpSyncLegacy(string ntpHost)
+    {
         // 先探测再改（重要）：
         // 集控端的 NTP 端口（UDP 123）经常不可用——Windows 上该端口通常被「Windows 时间」服务占着，
         // Linux 上非特权用户也绑不上。若此时仍把宿主的时间源指过去，ClassIsland 会不停超时重试
