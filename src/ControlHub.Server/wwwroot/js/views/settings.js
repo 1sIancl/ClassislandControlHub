@@ -2,11 +2,11 @@
  * 系统设置视图：服务器信息、账号安全与部署提示。
  */
 
-import { api, session, hasPermission } from '../core/api.js?v=43';
+import { api, session, hasPermission } from '../core/api.js?v=44';
 import {
   h, clear, formatDateTime, formatDuration, toast, loadingBlock,
   field, modal, copyText, confirmDialog, select,
-} from '../core/ui.js?v=43';
+} from '../core/ui.js?v=44';
 
 export const meta = {
   title: '系统设置',

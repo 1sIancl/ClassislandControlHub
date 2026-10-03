@@ -2,8 +2,8 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=43';
-import { h, clear, toast, icon } from './core/ui.js?v=43';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=44';
+import { h, clear, toast, icon } from './core/ui.js?v=44';
 import {
   initTheme, getTheme, applyTheme, THEMES,
   getSidebarCollapsed, setSidebarCollapsed,
@@ -11,7 +11,7 @@ import {
   applyAppearance, getAccent, setAccent, ACCENTS,
   getFont, setFont, FONTS,
   getRadius, setRadius, RADII,
-} from './core/prefs.js?v=43';
+} from './core/prefs.js?v=44';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -57,17 +57,17 @@ const NAV = [
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=43'),
-  devices: () => import('./views/devices.js?v=43'),
+  dashboard: () => import('./views/dashboard.js?v=44'),
+  devices: () => import('./views/devices.js?v=44'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=43'),
-  profiles: () => import('./views/profiles.js?v=43'),
-  profileEditor: () => import('./views/profileEditor.js?v=43'),
-  deploy: () => import('./views/deploy.js?v=43'),
-  remote: () => import('./views/remote.js?v=43'),
-  reminders: () => import('./views/reminders.js?v=43'),
-  audit: () => import('./views/audit.js?v=43'),
-  settings: () => import('./views/settings.js?v=43'),
+  groups: () => import('./views/devices.js?v=44'),
+  profiles: () => import('./views/profiles.js?v=44'),
+  profileEditor: () => import('./views/profileEditor.js?v=44'),
+  deploy: () => import('./views/deploy.js?v=44'),
+  remote: () => import('./views/remote.js?v=44'),
+  reminders: () => import('./views/reminders.js?v=44'),
+  audit: () => import('./views/audit.js?v=44'),
+  settings: () => import('./views/settings.js?v=44'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -345,6 +345,12 @@ async function completeSignIn(result) {
   if (session.me.mustChangePassword) {
     toast('warn', '请修改初始密码', '当前账号仍在使用初始密码，建议立即在「系统设置」中修改。', 8000);
   }
+
+  // 密码到期提醒（#28）：服务端在**登录应答**里直接给出可读提示（临近到期 / 已过期），
+  // 与「初始密码」提示并列，进控制台就能看到；不阻止登录，提醒后由管理员自行安排时间。
+  if (result.passwordWarning) {
+    toast('warn', '登录密码需要更换', result.passwordWarning, 12000);
+  }
 }
 
 async function handleLogin(event) {
@@ -500,7 +506,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=43');
+    const { startTour } = await import('./core/tour.js?v=44');
     startTour({
       onFinish: async (skipped) => {
         try {
