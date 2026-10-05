@@ -515,6 +515,23 @@ public sealed partial class HubStore
             expires_at    TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_device_commands_device ON device_commands(device_id, issued_at DESC);
+
+        -- 设备在线采样（#63）：devices.online 只是**瞬时**状态，历史不留痕——不做采样就没法回答
+        -- 「这台教室上周在线率多少」。每分钟给当时在线的设备 +1 分钟；配合 online_sample_meta
+        -- 里累计的采样轮次，单台设备在线率 = online_minutes / sample_count。
+        -- 之所以要分母而不是拿 1440 分钟硬算：服务不是全天运行的，中午重启过就不该算成「掉线」。
+        CREATE TABLE IF NOT EXISTS device_online_samples (
+            device_id      TEXT NOT NULL,
+            date           TEXT NOT NULL,
+            online_minutes INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (device_id, date)
+        );
+        CREATE INDEX IF NOT EXISTS idx_online_samples_date ON device_online_samples(date);
+
+        CREATE TABLE IF NOT EXISTS online_sample_meta (
+            date         TEXT PRIMARY KEY,
+            sample_count INTEGER NOT NULL DEFAULT 0
+        );
         """;
 
     // ────────────────────────────── 设置项 ──────────────────────────────

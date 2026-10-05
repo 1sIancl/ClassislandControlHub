@@ -2,9 +2,9 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=56';
-import { toastError } from './core/errors.js?v=56';
-import { h, clear, toast, icon } from './core/ui.js?v=56';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=57';
+import { toastError } from './core/errors.js?v=57';
+import { h, clear, toast, icon } from './core/ui.js?v=57';
 import {
   initTheme, getTheme, applyTheme, THEMES,
   getSidebarCollapsed, setSidebarCollapsed,
@@ -13,9 +13,9 @@ import {
   getFont, setFont, FONTS,
   getRadius, setRadius, RADII,
   applyRemotePrefs, applySchedScale,
-} from './core/prefs.js?v=56';
-import { initShortcuts, shortcutHint } from './core/shortcuts.js?v=56';
-import { openSearch } from './core/search.js?v=56';
+} from './core/prefs.js?v=57';
+import { initShortcuts, shortcutHint } from './core/shortcuts.js?v=57';
+import { openSearch } from './core/search.js?v=57';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -54,6 +54,7 @@ const NAV = [
   {
     label: '系统',
     items: [
+      { key: 'reports', label: '报表', icon: 'dashboard', hash: '#/reports', perm: 'audit.read' },
       { key: 'audit', label: '审计日志', icon: 'list', hash: '#/audit', perm: 'audit.read' },
       { key: 'settings', label: '系统设置', icon: 'gear', hash: '#/settings', perm: ['settings.read', 'accounts.read'] },
     ],
@@ -62,17 +63,18 @@ const NAV = [
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=56'),
-  devices: () => import('./views/devices.js?v=56'),
+  dashboard: () => import('./views/dashboard.js?v=57'),
+  devices: () => import('./views/devices.js?v=57'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=56'),
-  profiles: () => import('./views/profiles.js?v=56'),
-  profileEditor: () => import('./views/profileEditor.js?v=56'),
-  deploy: () => import('./views/deploy.js?v=56'),
-  remote: () => import('./views/remote.js?v=56'),
-  reminders: () => import('./views/reminders.js?v=56'),
-  audit: () => import('./views/audit.js?v=56'),
-  settings: () => import('./views/settings.js?v=56'),
+  groups: () => import('./views/devices.js?v=57'),
+  profiles: () => import('./views/profiles.js?v=57'),
+  profileEditor: () => import('./views/profileEditor.js?v=57'),
+  deploy: () => import('./views/deploy.js?v=57'),
+  remote: () => import('./views/remote.js?v=57'),
+  reminders: () => import('./views/reminders.js?v=57'),
+  audit: () => import('./views/audit.js?v=57'),
+  reports: () => import('./views/reports.js?v=57'),
+  settings: () => import('./views/settings.js?v=57'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -85,6 +87,8 @@ const ROUTE_PERMS = {
   remote: 'remote.read',
   reminders: 'reminders.read',
   audit: 'audit.read',
+  // 报表读的就是历史数据，权限与审计一致（#63 / #65 / #67）。
+  reports: 'audit.read',
   settings: ['settings.read', 'accounts.read'],
 };
 
@@ -516,7 +520,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=56');
+    const { startTour } = await import('./core/tour.js?v=57');
     startTour({
       onFinish: async (skipped) => {
         try {

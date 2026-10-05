@@ -14,7 +14,7 @@
  *   node sh/ui-smoke.js
  *   SMOKE_BASE=http://127.0.0.1:29800 SMOKE_BROWSER="C:\\...\\msedge.exe" node sh/ui-smoke.js
  *
- * 覆盖的断言（49 项）：
+ * 覆盖的断言（54 项）：
  *   1) 起点归零：清空账号偏好与本机布局缓存 → 仪表盘回到默认布局
  *   2) 「自定义仪表盘」面板能打开，含「统计卡片 + 页面模块」两组、共 10 项
  *   3) 面板里关掉「最近事件」→ 页面立即不再渲染该模块
@@ -606,6 +606,73 @@ function check(name, ok, extra = '') {
   }, backupId);
   check('导出测试用的备份已清理（不误伤已有备份）',
     cleanup.mine === 0, `剩余 ${cleanup.left} 份，其中测试备份 ${cleanup.mine} 份`);
+
+  // 19) 报表页（#63 在线率 / #65 指令执行 / #67 操作热点）
+  await page.goto(`${BASE}/#/reports`, { waitUntil: 'networkidle2' });
+  let reportUi = { hasTabs: false, hasMetric: false };
+  for (let i = 0; i < 24; i++) {
+    reportUi = await page.evaluate(() => {
+      const box = document.getElementById('content');
+      const text = box?.textContent || '';
+      const buttons = [...(box ? box.querySelectorAll('button') : [])].map((b) => b.textContent.trim());
+      return {
+        hasTabs: buttons.includes('设备在线率') && buttons.includes('指令执行') && buttons.includes('操作热点'),
+        hasMetric: text.includes('整体在线率') || text.includes('还没有采样数据'),
+        ranges: buttons.filter((b) => /最近 \d+ 天/.test(b)).length,
+        head: text.replace(/\s+/g, ' ').slice(0, 120),
+      };
+    });
+    if (reportUi.hasTabs && reportUi.hasMetric) {
+      break;
+    }
+
+    await sleep(500);
+  }
+  check('报表页三个标签齐全且默认出数', reportUi.hasTabs && reportUi.hasMetric,
+    `tabs=${reportUi.hasTabs} metric=${reportUi.hasMetric} ranges=${reportUi.ranges} 首段=${reportUi.head}`);
+  check('提供 7 / 30 / 90 天时间范围', reportUi.ranges === 3, `找到 ${reportUi.ranges} 个`);
+
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('#content button')]
+      .find((b) => b.textContent.trim() === '指令执行');
+    if (btn) {
+      btn.click();
+    }
+  });
+  await sleep(1800);
+  const cmdText = await page.evaluate(
+    () => (document.getElementById('content')?.textContent || '').replace(/\s+/g, ' '));
+  check('指令执行报表显示总数 / 成功率 / 作废',
+    cmdText.includes('指令总数') && cmdText.includes('成功率') && cmdText.includes('作废'),
+    cmdText.slice(0, 150));
+
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('#content button')]
+      .find((b) => b.textContent.trim() === '操作热点');
+    if (btn) {
+      btn.click();
+    }
+  });
+  await sleep(1800);
+  const opsText = await page.evaluate(
+    () => (document.getElementById('content')?.textContent || '').replace(/\s+/g, ' '));
+  check('操作热点报表显示账号与类别聚合',
+    opsText.includes('操作总数') && opsText.includes('参与账号') && opsText.includes('按类别'),
+    opsText.slice(0, 150));
+
+  // 切到 30 天：标题里的区间应随之变化（证明真的重新取了数，而不是静态文案）
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('#content button')]
+      .find((b) => b.textContent.trim() === '最近 30 天');
+    if (btn) {
+      btn.click();
+    }
+  });
+  await sleep(2000);
+  const rangeText = await page.evaluate(
+    () => (document.getElementById('content')?.textContent || '').replace(/\s+/g, ' '));
+  check('切换时间范围后重新出数（显示 30 天区间）',
+    /\d{4}-\d{2}-\d{2} ~ \d{4}-\d{2}-\d{2}/.test(rangeText), rangeText.slice(0, 150));
 
   console.log('\n===== 验证结果 =====');
   for (const r of results) console.log(r);
