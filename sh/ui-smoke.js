@@ -14,7 +14,7 @@
  *   node sh/ui-smoke.js
  *   SMOKE_BASE=http://127.0.0.1:29800 SMOKE_BROWSER="C:\\...\\msedge.exe" node sh/ui-smoke.js
  *
- * 覆盖的断言（59 项）：
+ * 覆盖的断言（63 项）：
  *   1) 起点归零：清空账号偏好与本机布局缓存 → 仪表盘回到默认布局
  *   2) 「自定义仪表盘」面板能打开，含「统计卡片 + 页面模块」两组、共 10 项
  *   3) 面板里关掉「最近事件」→ 页面立即不再渲染该模块
@@ -769,6 +769,99 @@ function check(name, ok, extra = '') {
   }
   check('状态条数字与列表行数完全一致', switchedToList && tabTotal > 0 && mismatches.length === 0,
     (mismatches.join('；') || `全部一致（${tabTotal} 个状态）`));
+
+  // 21) 设备标签（#10）：建标签 → 贴到设备 → 列表里看得到、能按标签筛
+  const tagId = await page.evaluate(async () => {
+    const { api } = await import('/js/core/api.js?v=62');
+    const tag = await api('/admin/tags', {
+      method: 'POST', body: { name: 'E2E-UI 标签', color: '#e5484d' },
+    });
+    const devices = await api('/admin/devices');
+    await api(`/admin/devices/${devices[0].id}/tags`, {
+      method: 'PUT', body: { tagIds: [tag.id] },
+    });
+    return tag.id;
+  });
+
+  await page.goto(`${BASE}/#/devices`, { waitUntil: 'networkidle2' });
+  await sleep(2200);
+
+  // 注意：`goto` 只改 hash，**不会重载页面** —— 上一个断言（逐个点状态条）把筛选
+  // 留在了「已停用」上，这里必须显式点回「全部」，否则列表是空的、什么都断言不到。
+  await page.evaluate(() => {
+    const all = [...document.querySelectorAll('.status-tab')]
+      .find((b) => b.textContent.trim().startsWith('全部'));
+    if (all) {
+      all.click();
+    }
+  });
+  await sleep(1100);
+
+  // 标签列在表格视图里，先切过去。
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('.segmented-item')]
+      .find((b) => b.textContent.includes('列表'));
+    if (btn) {
+      btn.click();
+    }
+  });
+  await sleep(1600);
+
+  const tagUi = await page.evaluate(() => {
+    const host = document.getElementById('deviceBoardHost');
+    const options = [...document.querySelectorAll('.toolbar select option')]
+      .map((o) => o.textContent.trim());
+    return {
+      hostExists: !!host,
+      // 诊断用：告诉我们当前到底是哪种视图（看板没有 table）。
+      view: [...document.querySelectorAll('.segmented-item.active')].map((b) => b.textContent.trim()),
+      tableCount: document.querySelectorAll('table').length,
+      headers: host ? [...host.querySelectorAll('th')].map((th) => th.textContent.trim()) : [],
+      badges: [...document.querySelectorAll('.tag-badge')].map((el) => el.textContent.trim()),
+      hasTagFilter: options.some((t) => t.includes('E2E-UI 标签')),
+    };
+  });
+  check('设备列表有「标签」列且显示徽标',
+    tagUi.headers.includes('标签') && tagUi.badges.includes('E2E-UI 标签'),
+    `host=${tagUi.hostExists} 视图=${JSON.stringify(tagUi.view)} 表格数=${tagUi.tableCount} `
+    + `headers=${JSON.stringify(tagUi.headers)} badges=${JSON.stringify(tagUi.badges)}`);
+  check('工具栏有按标签筛选的选项', tagUi.hasTagFilter === true);
+
+  // 按标签筛：只应剩贴了该标签的那一台。
+  // 用「页面上的标签徽标数」判定，不依赖当前是看板还是列表视图。
+  const filterApplied = await page.evaluate((id) => {
+    const sel = [...document.querySelectorAll('.toolbar select')]
+      .find((s) => [...s.options].some((o) => o.textContent.includes('全部标签')));
+    if (!sel) {
+      return false;
+    }
+
+    sel.value = id;
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  }, tagId);
+  await sleep(1300);
+  const afterFilter = await page.evaluate(() => {
+    const host = document.getElementById('deviceBoardHost');
+    return {
+      badges: host ? host.querySelectorAll('.tag-badge').length : -1,
+      rows: host ? host.querySelectorAll('tbody tr').length : -1,
+    };
+  });
+  check('按标签筛选后只剩贴了该标签的设备',
+    filterApplied && (afterFilter.badges === 1 || afterFilter.rows === 1),
+    `徽标=${afterFilter.badges} 行数=${afterFilter.rows}`);
+
+  // 清理：删标签会连设备关联一起清掉
+  await page.evaluate(async (id) => {
+    const { api } = await import('/js/core/api.js?v=62');
+    await api(`/admin/tags/${id}`, { method: 'DELETE' });
+  }, tagId);
+  const tagClean = await page.evaluate(async () => {
+    const { api } = await import('/js/core/api.js?v=62');
+    return (await api('/admin/tags')).length;
+  });
+  check('测试标签已清理干净', tagClean === 0, `剩余 ${tagClean} 个标签`);
 
   console.log('\n===== 验证结果 =====');
   for (const r of results) console.log(r);

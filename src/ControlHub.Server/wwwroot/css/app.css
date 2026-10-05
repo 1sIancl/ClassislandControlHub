@@ -3367,3 +3367,34 @@ input.pcell-name:focus {
   color: var(--accent);
   transform: translateX(2px);
 }
+/* ── 设备标签（#10）────────────────────────────────────────────────── */
+.tag-badge {
+  border: 1px solid var(--border-strong);
+}
+.tag-picker-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.tag-picker-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--font-sm);
+}
+.tag-picker-item:hover {
+  background: var(--bg-hover);
+}
+.tag-picker-new {
+  display: flex;
+  gap: var(--space-2);
+}
+.tag-picker-new input {
+  flex: 1;
+  min-width: 0;
+}

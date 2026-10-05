@@ -197,7 +197,12 @@ public sealed class SyncService(
         && (DateTimeOffset.UtcNow - device.LastSeenAt.Value).TotalSeconds < _options.OnlineTimeoutSeconds;
 
     /// <summary>把数据库行转换为面向 Web 管理端的摘要对象。</summary>
-    public DeviceSummaryDto ToSummary(DeviceRow device, GroupRow? group, long serverRevision)
+    /// <param name="device">设备行。</param>
+    /// <param name="group">所属分组（可为空）。</param>
+    /// <param name="serverRevision">服务端当前配置版本号。</param>
+    /// <param name="tags">该设备的标签（#10）；为 null 时表示由调用方另行补充。</param>
+    public DeviceSummaryDto ToSummary(DeviceRow device, GroupRow? group, long serverRevision,
+        IReadOnlyList<TagRefDto>? tags = null)
     {
         var online = IsOnline(device);
 
@@ -213,6 +218,7 @@ public sealed class SyncService(
             Name = device.Name,
             GroupId = device.GroupId,
             GroupName = group?.Name,
+            Tags = tags is null ? [] : [.. tags],
             ProfileId = device.ProfileId,
             State = state,
             Online = online,
@@ -292,11 +298,18 @@ public sealed class SyncService(
         var revision = await store.GetRevisionAsync(cancellationToken);
         var groups = (await store.GetGroupsAsync(cancellationToken))
             .ToDictionary(g => g.Id, StringComparer.OrdinalIgnoreCase);
+
+        // 标签一次取全：逐台查会变成 N+1，几百台设备就是几百次往返。
+        var tagMap = await store.GetDeviceTagMapAsync(cancellationToken);
+
         var list = new List<DeviceSummaryDto>();
         foreach (var device in devices)
         {
             var group = device.GroupId is not null && groups.TryGetValue(device.GroupId, out var g) ? g : null;
-            list.Add(ToSummary(device, group, revision));
+            var tags = tagMap.TryGetValue(device.Id, out var deviceTags)
+                ? deviceTags.Select(t => new TagRefDto { Id = t.Id, Name = t.Name, Color = t.Color }).ToList()
+                : [];
+            list.Add(ToSummary(device, group, revision, tags));
         }
 
         return list;
@@ -414,6 +427,30 @@ public sealed class SyncService(
                 break;
             }
 
+            case "tag":
+            {
+                // 标签是「挑一批设备」的快捷方式（如「高考考场」），可以一次选多个标签。
+                var ids = new List<string>();
+                foreach (var tagId in request.TargetIds)
+                {
+                    ids.AddRange((await store.GetDevicesByTagAsync(tagId, cancellationToken))
+                        .Where(d => !d.Revoked)
+                        .Select(d => d.Id));
+                }
+
+                // 一台设备可能同时挂着被选中的多个标签，必须去重后去递增世代号，
+                // 否则同一台设备会被算两次（affected 数字也就不对了）。
+                ids = ids.Distinct(StringComparer.Ordinal).ToList();
+                if (ids.Count == 0)
+                {
+                    throw HubException.Validation("所选标签下没有可推送的设备。");
+                }
+
+                affected = await store.BumpPushEpochAsync(ids, cancellationToken);
+                targetDeviceIds = ids;
+                break;
+            }
+
             default:
                 throw HubException.Validation($"不支持的下发范围：{request.Scope}。");
         }
@@ -478,6 +515,7 @@ public sealed class SyncService(
             "all" => all.Where(d => !d.Revoked).ToList(),
             "group" => await ExpandGroupTargetsAsync(all, request.TargetIds, cancellationToken),
             "device" => all.Where(d => !d.Revoked && request.TargetIds.Contains(d.Id, StringComparer.Ordinal)).ToList(),
+            "tag" => await ExpandTagTargetsAsync(all, request.TargetIds, cancellationToken),
             _ => throw HubException.Validation($"不支持的下发范围：{scope}。"),
         };
 
@@ -555,6 +593,24 @@ public sealed class SyncService(
         }
 
         return all.Where(d => wanted.Contains(d.Id)).ToList();
+    }
+
+    /// <summary>把标签（可多个）展开成目标设备列表。</summary>
+    private async Task<List<DeviceRow>> ExpandTagTargetsAsync(List<DeviceRow> all, List<string> tagIds,
+        CancellationToken cancellationToken)
+    {
+        var wanted = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var tagId in tagIds)
+        {
+            foreach (var device in await store.GetDevicesByTagAsync(tagId, cancellationToken))
+            {
+                wanted.Add(device.Id);
+            }
+        }
+
+        // 用 all 过滤而不是直接用查询结果：一是顺带排掉已停用的，二是保证与其它分支一样，
+        // 拿到的是同一份设备快照（避免中途有人改了设备导致两份数据不一致）。
+        return all.Where(d => !d.Revoked && wanted.Contains(d.Id)).ToList();
     }
 
     /// <summary>

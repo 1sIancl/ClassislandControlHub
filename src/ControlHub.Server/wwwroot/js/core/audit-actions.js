@@ -24,6 +24,7 @@ const PREFIX_LABELS = {
   apikey: 'API 密钥',
   totp: '两步验证',
   audit: '审计日志',
+  tag: '标签',
   admin: '登录',
 };
 
@@ -44,6 +45,8 @@ const VERB_LABELS = {
   import: '导入',
   setdefault: '设为默认',
   duplicate: '复制',
+  // 拼出来是「标签变更」；用「分配」或「设置」都会读出别扭的语序。
+  assign: '变更',
   approve: '批准',
   reject: '拒绝',
   request: '申请',

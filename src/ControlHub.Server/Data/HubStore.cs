@@ -557,6 +557,25 @@ public sealed partial class HubStore
             PRIMARY KEY (push_id, device_id)
         );
         CREATE INDEX IF NOT EXISTS idx_sync_targets_push ON sync_push_targets(push_id);
+
+        -- 设备标签（#10）：与「楼栋 / 楼层」的分组是**正交**的两个维度——
+        -- 分组回答「它在哪」（一台设备只属于一处），标签回答「它是什么」（可以同时是
+        -- 「高考考场」和「待维修」）。所以标签不替代分组，也不能靠分组凑出来。
+        CREATE TABLE IF NOT EXISTS tags (
+            id         TEXT PRIMARY KEY,
+            name       TEXT NOT NULL,
+            color      TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        );
+        -- NOCASE 只对 ASCII 生效（中文本来就没有大小写），够用了：避免 "VIP" 与 "vip" 变成两个标签。
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_tags_name ON tags(name COLLATE NOCASE);
+
+        CREATE TABLE IF NOT EXISTS device_tags (
+            device_id TEXT NOT NULL,
+            tag_id    TEXT NOT NULL,
+            PRIMARY KEY (device_id, tag_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_device_tags_tag ON device_tags(tag_id);
         """;
 
     // ────────────────────────────── 设置项 ──────────────────────────────

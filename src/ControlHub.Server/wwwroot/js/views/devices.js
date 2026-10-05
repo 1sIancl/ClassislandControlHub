@@ -4,16 +4,16 @@
  * 并可切换到列表视图查看完整状态明细。注册码管理一并放在本页。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=61';
-import { toastError, errorBlock } from '../core/errors.js?v=61';
+import { api, fetchBlob } from '../core/api.js?v=62';
+import { toastError, errorBlock } from '../core/errors.js?v=62';
 import {
   h, clear, formatDateTime, relativeTime, toast, loadingBlock, skeletonRows,
   modal, confirmDialog, deviceStateBadge, syncBadge,
   emptyState, field, select, copyText, append, undoBar,
-} from '../core/ui.js?v=61';
-import { getLayout, saveLayout } from '../core/prefs.js?v=61';
-import { auditTimelineSection } from '../core/audit-timeline.js?v=61';
-import { selectionSummary } from '../core/batch-summary.js?v=61';
+} from '../core/ui.js?v=62';
+import { getLayout, saveLayout } from '../core/prefs.js?v=62';
+import { auditTimelineSection } from '../core/audit-timeline.js?v=62';
+import { selectionSummary } from '../core/batch-summary.js?v=62';
 
 export const meta = {
   title: '设备管理',
@@ -27,7 +27,7 @@ const GROUP_COLORS = ['blue', 'cyan', 'green', 'lime', 'amber', 'orange', 'red',
 const NO_BUILDING = '__none__';
 
 let cache = { devices: [], groups: [], profiles: [], codes: [] };
-let filter = { keyword: '', groupId: '', state: '', buildingId: '' };
+let filter = { keyword: '', groupId: '', state: '', buildingId: '', tagId: '' };
 let view = 'groups';
 
 /** 拖拽中的设备 ID（HTML5 DnD 的 dataTransfer 在 dragover 阶段读不到数据，用模块变量兜底）。 */
@@ -49,6 +49,12 @@ const COLUMN_DEFS = [
   {
     key: 'group', label: '楼栋 / 楼层',
     cell: (d) => h('td', groupPathBadge(d)),
+  },
+  {
+    key: 'tags', label: '标签',
+    cell: (d) => h('td', (d.tags || []).length
+      ? h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px' } }, ...d.tags.map(tagBadge))
+      : h('span', { style: { color: 'var(--text-faint)' } }, '—')),
   },
   {
     key: 'state', label: '状态',
@@ -185,6 +191,88 @@ function groupPathBadge(device) {
     h('span.badge.badge-group', { dataset: { color: groupColor(group) } }, group.name));
 }
 
+/**
+ * 标签徽标（#10）。
+ * <para>颜色来自服务端白名单（只收 <c>#rgb</c> / <c>#rrggbb</c>），这里再兜一次底：
+ * 万一有历史数据绕过了校验，也不该把任意字符串拼进 style。</para>
+ */
+function tagBadge(tag) {
+  const color = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(tag.color) ? tag.color : '';
+  return h('span.badge.tag-badge', {
+    title: `标签：${tag.name}`,
+    style: color
+      // 8 位十六进制（后两位是透明度）——比再去算 rgba 简单，现代浏览器都支持。
+      ? { borderColor: color, color, background: `${color}22` }
+      : null,
+  }, tag.name);
+}
+
+/**
+ * 标签勾选器：把选择结果直接写进传入的 Set，由调用方在保存时提交。
+ * <para>刻意不做成「勾一下就发一个请求」：标签是**整体替换**语义，
+ * 分多次提交时中间一旦失败，界面上的勾选和库里的结果就对不上了。</para>
+ */
+function tagPicker(selection) {
+  const box = h('div.tag-picker');
+
+  function paint() {
+    clear(box);
+
+    if (!cache.tags || cache.tags.length === 0) {
+      box.appendChild(h('p.card-desc', { style: { margin: '0 0 6px' } },
+        '还没有标签。在下面新建一个，比如「高考考场」「待维修」。'));
+    } else {
+      box.appendChild(h('div.tag-picker-list', ...cache.tags.map((tag) => {
+        const input = h('input', { type: 'checkbox' });
+        input.checked = selection.has(tag.id);
+        input.addEventListener('change', () => {
+          if (input.checked) {
+            selection.add(tag.id);
+          } else {
+            selection.delete(tag.id);
+          }
+        });
+
+        return h('label.tag-picker-item', input, tagBadge(tag));
+      })));
+    }
+
+    // 就地新建：打标签时最自然的动作就是「没有我要的那个 → 现在建一个」，
+    // 让人为此跑去另一个页面是本末倒置。
+    const nameInput = h('input', {
+      type: 'text', placeholder: '新建标签…', maxlength: '24',
+    });
+    const addButton = h('button.btn.btn-sm', {
+      type: 'button',
+      onClick: async () => {
+        const name = nameInput.value.trim();
+        if (!name) {
+          toast('warn', '请先填标签名');
+          return;
+        }
+
+        try {
+          const tag = await api('/admin/tags', { method: 'POST', body: { name, color: '' } });
+          cache.tags.push(tag);
+          cache.tags.sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+          // 新建出来的标签默认就选上：这一步的意图本来就是「给它贴上这个」。
+          selection.add(tag.id);
+          nameInput.value = '';
+          paint();
+          toast('ok', '已新建标签', `「${tag.name}」已勾选，点「保存」后生效。`);
+        } catch (err) {
+          toastError(err, '新建标签失败');
+        }
+      },
+    }, '新建');
+
+    box.appendChild(h('div.tag-picker-new', nameInput, addButton));
+  }
+
+  paint();
+  return box;
+}
+
 /** 卡片上用的一行状态摘要。 */
 function deviceStateKey(device) {
   if (device.revoked) return 'off';
@@ -226,14 +314,15 @@ export async function render(container, params = {}) {
   clear(container);
   container.appendChild(skeletonRows());
 
-  const [devices, groups, profiles, codes] = await Promise.all([
+  const [devices, groups, profiles, codes, tags] = await Promise.all([
     api('/admin/devices'),
     api('/admin/groups'),
     api('/admin/profiles'),
     api('/admin/enroll-codes'),
+    api('/admin/tags'),
   ]);
 
-  cache = { devices, groups, profiles, codes };
+  cache = { devices, groups, profiles, codes, tags };
 
   clear(container);
   container.appendChild(h('div',
@@ -259,6 +348,16 @@ function renderToolbar() {
       },
     }),
     statusTabs(),
+    // 标签筛选（#10）：标签多起来之后，靠这一项就能落到「高考考场那批」。
+    cache.tags && cache.tags.length > 0
+      ? select([
+        { value: '', label: '全部标签' },
+        ...cache.tags.map((t) => ({ value: t.id, label: `${t.name}（${t.deviceCount}）` })),
+      ], filter.tagId, (v) => {
+        filter.tagId = v;
+        repaintBoard();
+      })
+      : null,
     view === 'list'
       ? select(assignmentOptions(), filter.groupId, (v) => {
         filter.groupId = v;
@@ -338,14 +437,15 @@ function repaintBoard() {
 }
 
 async function refresh(showToast = false) {
-  const [devices, groups, profiles, codes] = await Promise.all([
+  const [devices, groups, profiles, codes, tags] = await Promise.all([
     api('/admin/devices'),
     api('/admin/groups'),
     api('/admin/profiles'),
     api('/admin/enroll-codes'),
+    api('/admin/tags'),
   ]);
 
-  cache = { devices, groups, profiles, codes };
+  cache = { devices, groups, profiles, codes, tags };
   repaintAll();
 
   if (showToast) toast('ok', '已刷新');
@@ -400,11 +500,21 @@ function statusTabs() {
     )))));
 }
 
+/** 设备是否带某个标签（<c>tagId</c> 为空时恒真）。 */
+function matchesTag(device, tagId) {
+  if (!tagId) {
+    return true;
+  }
+
+  return (device.tags || []).some((tag) => tag.id === tagId);
+}
+
 function filteredDevices() {
   const keyword = filter.keyword.toLowerCase();
   return cache.devices.filter((d) => {
     if (view === 'list' && filter.groupId && d.groupId !== filter.groupId) return false;
     if (!matchesState(d, filter.state)) return false;
+    if (!matchesTag(d, filter.tagId)) return false;
 
     if (!keyword) return true;
     return [d.name, d.machineName, d.ipAddress, d.classIslandVersion, d.currentClassPlanName]
@@ -1397,6 +1507,9 @@ function openDeviceDialog(device) {
     device.profileId || '',
   );
 
+  // 标签勾选状态（#10）：勾选结果先攒在集合里，点「保存」时整体提交。
+  const tagSelection = new Set((device.tags || []).map((tag) => tag.id));
+
   // 待执行指令队列（#3）：弹窗关闭时必须停掉它的倒计时。
   const pendingCommands = pendingCommandsSection(device);
   // 操作历史时间线（#42）：谁在什么时候改过这台设备。
@@ -1430,6 +1543,9 @@ function openDeviceDialog(device) {
       field('指定配置档案', profileSelect,
         '优先级：设备指定 → 所属楼层 → 所属楼栋 → 全局默认。'),
       field('备注', remarkInput, '仅管理端可见，用于在列表里快速认出这台设备。'),
+      field('标签', tagPicker(tagSelection),
+        '标签与「楼栋 / 楼层」是两回事：分组说明它在哪，标签说明它是什么（如「高考考场」「待维修」）。'
+        + '一台设备可以有多个标签，也可以用标签批量挑设备。'),
       pendingCommands.el,
       auditTimeline.el,
       h('div.card-actions',
@@ -1467,6 +1583,13 @@ function openDeviceDialog(device) {
           remark: remarkInput.value.trim(),
         },
       });
+      // 标签单独提交（整体替换语义）。放在设备本体保存**之后**：
+      // 万一标签这步失败，名称 / 归属这些改动也已经生效，用户不用白改一遍。
+      await api(`/admin/devices/${device.id}/tags`, {
+        method: 'PUT',
+        body: { tagIds: [...tagSelection] },
+      });
+
       toast('ok', '已保存', `${nameInput.value.trim()} 的配置已更新。`);
       await refresh();
       return true;

@@ -314,6 +314,7 @@ app.MapDeviceEndpoints();
 app.MapDeviceCsvEndpoints();
 app.MapSearchEndpoints();
 app.MapReportEndpoints();
+app.MapTagEndpoints();
 app.MapMetricsEndpoints();
 app.MapApiKeyEndpoints();
 app.MapProfileEndpoints();

@@ -251,6 +251,11 @@ public sealed class DeviceSummaryDto
     /// <summary>分组名称。</summary>
     public string? GroupName { get; set; }
 
+    /// <summary>
+    /// 标签（#10）。随设备列表一起返回，前端不必为每台设备再查一次标签。
+    /// </summary>
+    public List<TagRefDto> Tags { get; set; } = [];
+
     /// <summary>运行状态，取值见 <see cref="DeviceStates"/>。</summary>
     public string State { get; set; } = DeviceStates.Offline;
 

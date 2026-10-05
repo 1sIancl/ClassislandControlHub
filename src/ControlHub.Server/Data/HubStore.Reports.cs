@@ -519,6 +519,7 @@ public sealed partial class HubStore
                 "all" => $"全部设备（{push.TargetCount}）",
                 "group" => $"按分组（{push.TargetCount} 台）",
                 "device" => $"指定设备（{push.TargetCount} 台）",
+                "tag" => $"按标签（{push.TargetCount} 台）",
                 _ => $"{push.Scope}（{push.TargetCount}）",
             };
         }
