@@ -5,14 +5,14 @@
  * 同时同步到账号（见 core/prefs.js），换台电脑登录后布局保持一致。
  */
 
-import { api, session } from '../core/api.js?v=64';
+import { api, session } from '../core/api.js?v=70';
 import {
   h, clear, formatDateTime, formatDuration, relativeTime,
   loadingBlock, modal, append, icon, toast, guard,
-} from '../core/ui.js?v=64';
+} from '../core/ui.js?v=70';
 import {
   getLayout, saveLayout, getLayoutSyncState, onLayoutSyncChange,
-} from '../core/prefs.js?v=64';
+} from '../core/prefs.js?v=70';
 
 export const meta = {
   title: '仪表盘',
@@ -37,6 +37,34 @@ const STAT_DEFS = [
 
 const STAT_KEYS = () => STAT_DEFS.map((d) => d.key);
 
+/**
+ * 快捷操作区：把四个最高频的动作直接摆在总览上。
+ *
+ * <para>解决的是「新用户不知道『发通知』在哪」——过去要先进「远程管理」才找得到，
+ * 而那个名字并不能让人联想到「给教室发条消息」。</para>
+ *
+ * <para>刻意做成**跳转**而不是直接执行：直接执行就得先问「对哪些设备」，
+ * 而「挑设备」是设备页才有的上下文。跳过去（并预置筛选）反而更快，
+ * 至少用户能**先看到**将要操作哪些设备。</para>
+ */
+const QUICK_ACTIONS = [
+  { label: '发送通知', hint: '给选中的教室推送文字或图片', icon: 'bell', to: '#/devices?status=online' },
+  { label: '下发配置', hint: '按楼栋 / 楼层 / 设备推送档案', icon: 'send', to: '#/deploy' },
+  { label: '远程管理', hint: '指令、插件、外观与诊断', icon: 'monitor', to: '#/remote' },
+  { label: '定时提醒', hint: '按日期与周期自动推送到大屏', icon: 'clock', to: '#/reminders' },
+];
+
+function renderQuickActions() {
+  return h('div.quick-actions', ...QUICK_ACTIONS.map((action) => h('a.quick-action', {
+    href: action.to,
+    title: action.hint,
+  },
+  h('span.quick-action-icon', icon(action.icon, 18)),
+  h('span.quick-action-body',
+    h('span.quick-action-label', action.label),
+    h('span.quick-action-hint', action.hint)))));
+}
+
 export async function render(container, params) {
   _container = container;
   _params = params;
@@ -60,6 +88,7 @@ export async function render(container, params) {
         onClick: () => guard('打开自定义仪表盘', () => openCustomize()),
       }, '自定义仪表盘')),
     renderStats(stats),
+    renderQuickActions(),
     ...renderCards({ stats, info, devices }),
   ));
 }

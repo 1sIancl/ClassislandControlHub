@@ -32,28 +32,9 @@
   --topbar-height: 60px;
   --content-pad: 24px;
 
-  /* 间距刻度（8px 网格，4px 是半格）。新写的样式优先用它们，
-     避免继续冒出 3px / 7px / 11px 这类「看着差不多」的魔法数。 */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 24px;
-  --space-6: 32px;
-
-  /* 字号 / 字重刻度 */
-  --font-xs: 12px;
-  --font-sm: 13px;
-  --font-base: 14px;
-  --font-lg: 16px;
-  --font-xl: 20px;
-  --font-2xl: 24px;
-  --weight-normal: 400;
-  --weight-medium: 500;
-  --weight-bold: 600;
-
-  /* 过渡 */
-  --transition: 150ms ease;
+  /* 间距 / 字号 / 字重 / 过渡这些**通用刻度**统一放在 `css/tokens.css`（Foundation 层），
+     本文件只保留与布局直接相关的尺寸（侧边栏宽度、顶栏高度等）。
+     刻度的唯一来源在那里，改一处即可全局生效。 */
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
   --shadow: 0 4px 16px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.12);
@@ -3398,230 +3379,125 @@ input.pcell-name:focus {
   flex: 1;
   min-width: 0;
 }
-/* ══════════════════════ 液态玻璃皮肤（glass morphism）══════════════════════
-   做法说明（重要）：本段是**追加覆盖**，不是重写。
-   app.css 原有 3300+ 行、73 个变量、深浅两套主题；重写它们的风险远大于收益，
-   所以这里只做两件事：
-     ① 补一组玻璃材质变量（原有变量一个都不动、不改名）；
-     ② 用**同名选择器**覆盖关键容器的外观（CSS 规则后者胜出）。
-   想整体回滚，把这一段删掉即可。
 
-   性能取舍：`backdrop-filter` 是 GPU 密集操作，面积越大越吃力。
-   所以只给**大块容器**用（侧边栏 / 顶栏 / 卡片 / 弹窗 / Toast / 表头），
-   **按钮一律不用** —— 几十个按钮各自开一次背景模糊，滚动就会开始掉帧。
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/* ① 材质变量（跟随主题） */
-:root,
-:root[data-theme="dark"] {
-  --glass-bg: rgba(30, 30, 38, 0.55);
-  --glass-bg-strong: rgba(30, 30, 38, 0.80);
-  --glass-border: rgba(255, 255, 255, 0.10);
-  --glass-edge: rgba(255, 255, 255, 0.14);
-  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.10);
-  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.40);
-  --glass-shadow-deep: 0 16px 48px rgba(0, 0, 0, 0.52);
-  --glass-blur: 18px;
-  --glass-blur-strong: 30px;
-  --glass-tint-1: rgba(99, 102, 241, 0.12);
-  --glass-tint-2: rgba(236, 72, 153, 0.08);
-  --glass-tint-3: rgba(14, 165, 233, 0.06);
+/* ── 设置页卡片内的分组小标题（如「品牌个性化」里的「登录页文案 / 外观与材质」）── */
+.card-subhead {
+  margin: 18px 0 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-bold);
+  color: var(--text-dim);
+  letter-spacing: 0.02em;
 }
 
-:root[data-theme="light"] {
-  --glass-bg: rgba(255, 255, 255, 0.55);
-  --glass-bg-strong: rgba(255, 255, 255, 0.80);
-  --glass-border: rgba(255, 255, 255, 0.70);
-  --glass-edge: rgba(15, 23, 42, 0.06);
-  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.90);
-  --glass-shadow: 0 8px 32px rgba(15, 23, 42, 0.10);
-  --glass-shadow-deep: 0 16px 48px rgba(15, 23, 42, 0.16);
-  --glass-tint-1: rgba(99, 102, 241, 0.18);
-  --glass-tint-2: rgba(236, 72, 153, 0.12);
-  --glass-tint-3: rgba(14, 165, 233, 0.09);
+.card-subhead:first-of-type {
+  margin-top: 8px;
+  padding-top: 0;
+  border-top: none;
 }
-
-/* ② 页面底层渐变：玻璃要「有东西可透」才成立，纯色背景上它只是一块灰 */
-body {
-  background:
-    radial-gradient(ellipse 80% 60% at 18% 0%, var(--glass-tint-1), transparent 55%),
-    radial-gradient(ellipse 70% 60% at 82% 100%, var(--glass-tint-2), transparent 55%),
-    radial-gradient(ellipse 60% 50% at 50% 45%, var(--glass-tint-3), transparent 65%),
-    var(--bg-base);
-  background-attachment: fixed;
-  background-repeat: no-repeat;
+/* ── 快捷操作区（总览页）─────────────────────────────────────────────
+   验收标准是「新用户 30 秒内找到发通知」——那就得让它**看得见**，
+   而不是让人在侧边栏里凭名字猜。 */
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
 }
-
-/* ③ 大块容器玻璃化 */
-.sidebar,
-.topbar,
-.card,
-.modal,
-.toast,
-.bulk-bar {
-  background: var(--glass-bg);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
-  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
-  border-color: var(--glass-border);
-  box-shadow: var(--glass-highlight), var(--glass-shadow);
-}
-
-.sidebar,
-.topbar {
-  /* 这两个是常驻元素，用更强的模糊与更实的底，保证上面的文字始终可读。 */
-  background: var(--glass-bg-strong);
-  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(200%);
-  backdrop-filter: blur(var(--glass-blur-strong)) saturate(200%);
-  border: 1px solid var(--glass-border);
-}
-
-/* 表格：表头也做成玻璃，滚动时内容从它下面穿过去 */
-.table thead th,
-table.data thead th {
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
-  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
-  background: var(--glass-bg-strong);
-}
-
-/* ④ 统计卡与快捷入口：可点击的给一点「抬起来」的反馈 */
-.stat,
-.stat-link {
+.quick-action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  transition: transform var(--transition), box-shadow var(--transition);
+  background: var(--bg-panel);
+  color: var(--text);
+  text-decoration: none;
+  transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
 }
-
-.stat-link:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--glass-highlight), var(--glass-shadow-deep);
+.quick-action:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent-line);
+  box-shadow: var(--shadow);
 }
-
-/* ⑤ 鼠标跟随高光（由 core/glass.js 写入 --mx / --my） */
-.glass-hi {
-  position: relative;
+/* 键盘焦点要看得见（同时也是无障碍要求）。 */
+.quick-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.quick-action-icon {
+  display: flex;
+  flex: none;
+  color: var(--accent);
+}
+.quick-action-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.quick-action-label {
+  font-size: var(--font-base);
+  font-weight: var(--weight-medium);
+}
+.quick-action-hint {
+  font-size: var(--font-xs);
+  color: var(--text-faint);
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-
-.glass-hi::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity var(--transition);
-  background: radial-gradient(
-    260px circle at var(--mx, 50%) var(--my, 50%),
-    rgba(255, 255, 255, 0.16),
-    transparent 62%
-  );
+/* ── 右键菜单（core/contextmenu.js 渲染，样式在这里）────────────────── */
+.context-menu {
+  position: fixed;
+  z-index: var(--z-dropdown, 100);
+  min-width: 176px;
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-lg);
 }
-
-:root[data-theme="light"] .glass-hi::after {
-  background: radial-gradient(
-    260px circle at var(--mx, 50%) var(--my, 50%),
-    rgba(255, 255, 255, 0.55),
-    transparent 62%
-  );
-}
-
-.glass-hi:hover::after {
-  opacity: 1;
-}
-
-/* ⑥ 登录页：比管理界面更浓的底 + 品牌区排版 */
-.login-page {
-  background:
-    radial-gradient(ellipse 70% 60% at 20% 15%, var(--glass-tint-1), transparent 58%),
-    radial-gradient(ellipse 60% 55% at 80% 85%, var(--glass-tint-2), transparent 58%),
-    var(--bg-base);
-  background-attachment: fixed;
-}
-
-/* ⑦ 降级：不支持背景模糊时退回不透明底，避免出现「糊成一片、看不清字」 */
-@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  .sidebar,
-  .topbar,
-  .card,
-  .modal,
-  .toast,
-  .bulk-bar,
-  .table thead th,
-  table.data thead th {
-    background: var(--bg-panel);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-}
-
-/* ⑧ 尊重系统设置：减少透明度 / 减少动态效果 */
-@media (prefers-reduced-transparency: reduce) {
-  .sidebar,
-  .topbar,
-  .card,
-  .modal,
-  .toast,
-  .bulk-bar,
-  .table thead th,
-  table.data thead th {
-    background: var(--bg-panel);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .stat-link:hover,
-  .card:hover {
-    transform: none;
-  }
-
-  .glass-hi::after {
-    display: none;
-  }
-}
-/* ⑤-b 高光只挑**内容简单、不会有 sticky 子元素**的容器：
-   给 .card 加 overflow:hidden 会破坏卡片内表格的 sticky 表头，得不偿失。 */
-.glass-hi,
-.stat,
-.stat-link {
-  position: relative;
-  overflow: hidden;
-}
-/* ⑨ 登录卡片与品牌区纳入玻璃材质（原有的浮动光斑底让它更有层次） */
-.login-card {
-  background: var(--glass-bg-strong);
-  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(200%);
-  backdrop-filter: blur(var(--glass-blur-strong)) saturate(200%);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-highlight), var(--glass-shadow-deep);
-  border-radius: var(--radius-lg);
-}
-
-.login-server {
+.context-menu[hidden] { display: none; }
+.context-menu-item {
+  display: block;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
   border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-base);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast);
 }
-
-/* 登录页的表单控件也用玻璃底，与管理界面保持一致的手感 */
-.login-form input,
-.login-form textarea,
-.login-form select {
-  background: var(--glass-bg);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-  border: 1px solid var(--glass-border);
+.context-menu-item:hover { background: var(--bg-hover); }
+/* 危险项用红色，但**不要**整块红底——那看着像「已经执行了」。 */
+.context-menu-item.danger { color: var(--danger); }
+.context-menu-item.danger:hover { background: var(--danger-soft); }
+.context-menu-sep {
+  height: 1px;
+  margin: var(--space-1) var(--space-2);
+  background: var(--border);
 }
-
-.login-form input:focus,
-.login-form textarea:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+/* ── 列表键盘导航的高亮（core/shortcuts.js 打上 .nav-current）──────────
+   用左边框 + 浅底而不是描边：描边会改变元素的**尺寸**（除非用 outline），
+   在紧凑的表格里会让整行轻微抖动。 */
+.nav-current {
+  background: var(--accent-soft) !important;
+  box-shadow: inset 3px 0 0 var(--accent);
 }
-
-@media (prefers-reduced-transparency: reduce) {
-  .login-card,
-  .login-form input,
-  .login-form textarea {
-    background: var(--bg-panel);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
+/* ── TOTP 验证码倒计时（app.js 的 startTotpCountdown 每秒刷新）────── */
+.totp-timer {
+  margin: -6px 0 0;
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
 }
+.totp-timer[hidden] { display: none; }
+/* 最后 5 秒转警告色：这时输入也来得及，但该提醒了。 */
+.totp-timer.warning { color: var(--warn); }
+.totp-timer.warning span { font-weight: var(--weight-bold); }

@@ -4,16 +4,17 @@
  * 并可切换到列表视图查看完整状态明细。注册码管理一并放在本页。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=64';
-import { toastError, errorBlock } from '../core/errors.js?v=64';
+import { api, fetchBlob } from '../core/api.js?v=70';
+import { toastError, errorBlock } from '../core/errors.js?v=70';
 import {
   h, clear, formatDateTime, relativeTime, toast, loadingBlock, skeletonRows,
   modal, confirmDialog, deviceStateBadge, syncBadge,
   emptyState, field, select, copyText, append, undoBar,
-} from '../core/ui.js?v=64';
-import { getLayout, saveLayout } from '../core/prefs.js?v=64';
-import { auditTimelineSection } from '../core/audit-timeline.js?v=64';
-import { selectionSummary } from '../core/batch-summary.js?v=64';
+} from '../core/ui.js?v=70';
+import { showContextMenu } from '../core/contextmenu.js?v=70';
+import { getLayout, saveLayout } from '../core/prefs.js?v=70';
+import { auditTimelineSection } from '../core/audit-timeline.js?v=70';
+import { selectionSummary } from '../core/batch-summary.js?v=70';
 
 export const meta = {
   title: '设备管理',
@@ -703,6 +704,7 @@ function deviceChip(device) {
   );
 
   chip.addEventListener('click', () => openDeviceDialog(device));
+
   chip.addEventListener('dragstart', (e) => {
     draggedDeviceId = device.id;
     e.dataTransfer.effectAllowed = 'move';
@@ -1000,7 +1002,7 @@ function renderTable() {
             repaintAll();
           });
 
-          return h('tr',
+          return h('tr', { dataset: { deviceId: d.id } },
             h('td', box),
             ...visibleColumns().map((c) => c.cell(d)),
             h('td.actions',
@@ -1019,6 +1021,45 @@ function renderTable() {
     ),
   );
 }
+
+/**
+ * 设备行的右键菜单。
+ *
+ * <para>挂在 `document` 上做**事件委托**，而不是给每一行绑 `contextmenu`：设备表格会随
+ * 筛选、排序、切视图整块重画，逐行绑定要么漏掉新出现的行，要么得在每次重画后重新绑一遍。
+ * 挂在 document 上只绑一次，任何带 `data-device-id` 的元素右键都能出菜单
+ * （表格行与看板卡片都遵守这个约定）。</para>
+ *
+ * <para>菜单项刻意**复用底部批量条的那几个处理函数**：「右键关机」和「批量关机」
+ * 的行为必须完全一致（同样的影响摘要、同样的撤销窗口）；两套逻辑迟早做出两种行为。</para>
+ */
+document.addEventListener('contextmenu', (event) => {
+  const row = event.target instanceof Element ? event.target.closest('[data-device-id]') : null;
+  if (!row) {
+    return;
+  }
+
+  const id = row.dataset.deviceId;
+  const device = cache.devices.find((d) => d.id === id);
+  if (!device) {
+    return;
+  }
+
+  event.preventDefault();
+  showContextMenu(event.clientX, event.clientY, [
+    { label: '查看详情', action: () => openDeviceDialog(device) },
+    { label: '发送通知', action: () => bulkNotify([id]) },
+    { label: '查看日志', action: () => openLogsDialog(device) },
+    '-',
+    { label: '重启 ClassIsland', action: () => bulkRestart([id]) },
+    {
+      label: '关机',
+      danger: true,
+      action: () => bulkPower([id], 'power.shutdown', '关机',
+        '计算机会立即关机，未保存的工作会丢失。'),
+    },
+  ]);
+});
 
 /** 批量操作条：仅在列表里勾选了设备时出现。 */
 function selectionBar() {

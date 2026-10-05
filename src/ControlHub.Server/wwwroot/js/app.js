@@ -2,9 +2,9 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=64';
-import { toastError } from './core/errors.js?v=64';
-import { h, clear, toast, icon } from './core/ui.js?v=64';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=70';
+import { toastError } from './core/errors.js?v=70';
+import { h, clear, toast, icon } from './core/ui.js?v=70';
 import {
   initTheme, getTheme, applyTheme, THEMES,
   getSidebarCollapsed, setSidebarCollapsed,
@@ -13,10 +13,10 @@ import {
   getFont, setFont, FONTS,
   getRadius, setRadius, RADII,
   applyRemotePrefs, applySchedScale,
-} from './core/prefs.js?v=64';
-import { initShortcuts, shortcutHint } from './core/shortcuts.js?v=64';
-import { initGlassHighlight } from './core/glass.js?v=64';
-import { openSearch } from './core/search.js?v=64';
+} from './core/prefs.js?v=70';
+import { initShortcuts, shortcutHint } from './core/shortcuts.js?v=70';
+import { initGlassHighlight } from './core/glass.js?v=70';
+import { openSearch } from './core/search.js?v=70';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -30,6 +30,33 @@ setSidebarCollapsed(getSidebarCollapsed());
  * 导航结构。新增页面时只需在此登记。
  * `perm` 为该页面所需的权限键，可用数组表示「任一满足」；不写表示只需登录。
  */
+/**
+ * TOTP 验证码倒计时（30 秒时间片）。
+ *
+ * <para>纯前端按本地时钟估算：从服务端拿到「现在是第几个时间片」有网络延迟，
+ * 所以宁可让用户「以为还剩 10 秒、其实还剩 12 秒」，也不要提前说「已过期」
+ * 让人白输一遍——后者会让人怀疑是自己验证码输错了。</para>
+ */
+function startTotpCountdown() {
+  const box = document.getElementById('totpTimer');
+  const remain = document.getElementById('totpRemain');
+  if (!box || !remain) {
+    return;
+  }
+
+  box.hidden = false;
+  const tick = () => {
+    const left = 30 - (Math.floor(Date.now() / 1000) % 30);
+    remain.textContent = String(left);
+    // 最后 5 秒转成警告色：这时输入也来得及，但该提醒了。
+    box.classList.toggle('warning', left <= 5);
+  };
+
+  tick();
+  clearInterval(startTotpCountdown.timer);
+  startTotpCountdown.timer = setInterval(tick, 1000);
+}
+
 const NAV = [
   {
     label: '日常',
@@ -74,18 +101,18 @@ const ROUTE_ALIASES = {
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=64'),
-  devices: () => import('./views/devices.js?v=64'),
+  dashboard: () => import('./views/dashboard.js?v=70'),
+  devices: () => import('./views/devices.js?v=70'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=64'),
-  profiles: () => import('./views/profiles.js?v=64'),
-  profileEditor: () => import('./views/profileEditor.js?v=64'),
-  deploy: () => import('./views/deploy.js?v=64'),
-  remote: () => import('./views/remote.js?v=64'),
-  reminders: () => import('./views/reminders.js?v=64'),
-  audit: () => import('./views/audit.js?v=64'),
-  reports: () => import('./views/reports.js?v=64'),
-  settings: () => import('./views/settings.js?v=64'),
+  groups: () => import('./views/devices.js?v=70'),
+  profiles: () => import('./views/profiles.js?v=70'),
+  profileEditor: () => import('./views/profileEditor.js?v=70'),
+  deploy: () => import('./views/deploy.js?v=70'),
+  remote: () => import('./views/remote.js?v=70'),
+  reminders: () => import('./views/reminders.js?v=70'),
+  audit: () => import('./views/audit.js?v=70'),
+  reports: () => import('./views/reports.js?v=70'),
+  settings: () => import('./views/settings.js?v=70'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -196,6 +223,80 @@ function applyBranding(info) {
     }
     link.href = branding.favicon;
   }
+
+  // ── 登录页文案 ────────────────────────────────────────────────────
+  const loginTitle = document.getElementById('loginTitle');
+  if (loginTitle) {
+    loginTitle.textContent = branding.loginTitle || siteName;
+  }
+
+  const loginSubtitle = document.getElementById('loginSubtitle');
+  if (loginSubtitle) {
+    loginSubtitle.textContent = branding.loginSubtitle || 'ClassIsland 机房集控平台';
+  }
+
+  // 描述段落：配了才替换；配成空串则整段收起（而不是留一行空白）。
+  const loginDescription = document.getElementById('loginDescription');
+  if (loginDescription && typeof branding.loginDescription === 'string'
+      && branding.loginDescription.trim() !== '') {
+    loginDescription.textContent = branding.loginDescription;
+  }
+
+  // 特性列表整块由配置驱动；没配就保留模板里的默认四条，而不是留一片空白。
+  const features = document.getElementById('loginFeatures');
+  if (features) {
+    const list = (branding.loginFeatures || []).filter(Boolean);
+    if (list.length > 0) {
+      clear(features);
+      for (const item of list) {
+        features.appendChild(h('li', item));
+      }
+    }
+  }
+
+  const footer = document.getElementById('loginFooter');
+  if (footer) {
+    footer.textContent = branding.footerText || '';
+    footer.hidden = !branding.footerText;
+  }
+
+  // ── 主题色：连带派生 hover / 浅底 / 描边，省得让人填四个色值 ──────────
+  if (branding.accentColor) {
+    root.style.setProperty('--accent', branding.accentColor);
+    // color-mix 让「一个主色」就够用：hover 亮一点、浅底与描边用低透明度。
+    root.style.setProperty('--accent-hover', `color-mix(in srgb, ${branding.accentColor} 85%, white)`);
+    root.style.setProperty('--accent-soft', `color-mix(in srgb, ${branding.accentColor} 14%, transparent)`);
+    root.style.setProperty('--accent-line', `color-mix(in srgb, ${branding.accentColor} 50%, transparent)`);
+  } else {
+    for (const key of ['--accent', '--accent-hover', '--accent-soft', '--accent-line']) {
+      root.style.removeProperty(key);
+    }
+  }
+
+  // 记下「主题色是不是自定义的」：几个原本写死蓝紫渐变的元素（主按钮、登录页 Logo 方块）
+  // 只在自定义时改成从 --accent 派生，默认外观保持原样不动。
+  root.dataset.accentCustom = branding.accentColor ? '1' : '0';
+
+  // ── 玻璃强度 / 高光 / 登录页布局：加 data 属性，让 CSS 去响应 ─────────
+  root.dataset.glass = branding.glassLevel || 'standard';
+  root.dataset.shine = branding.enableShine === false ? 'off' : 'on';
+  root.dataset.loginLayout = branding.loginLayout === 'centered' ? 'centered' : 'split';
+
+  // ── 自定义 CSS ───────────────────────────────────────────────────
+  // 外观需求千奇百怪，与其一个个加设置项，不如给一个受控的注入点
+  //（长度上限与「变更进审计」在服务端做）。
+  let customStyle = document.getElementById('customBrandingCss');
+  if (branding.customCss) {
+    if (!customStyle) {
+      customStyle = document.createElement('style');
+      customStyle.id = 'customBrandingCss';
+      document.head.appendChild(customStyle);
+    }
+
+    customStyle.textContent = branding.customCss;
+  } else if (customStyle) {
+    customStyle.remove();
+  }
 }
 
 /** 更新品牌标识方块：有自定义图片用图片，否则默认使用 icon.png。 */
@@ -251,7 +352,9 @@ function switchLoginMode(mode) {
   document.getElementById('applyDone').hidden = true;
   const totpForm = document.getElementById('totpForm');
   if (totpForm) totpForm.hidden = !isTotp;
-
+  if (isTotp) {
+    startTotpCountdown();
+  }
   // 两个注册入口只在登录页展示，且各自受服务端开关控制。
   const toRegister = document.getElementById('switchToRegister');
   const toApply = document.getElementById('switchToApply');
@@ -531,7 +634,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=64');
+    const { startTour } = await import('./core/tour.js?v=70');
     startTour({
       onFinish: async (skipped) => {
         try {

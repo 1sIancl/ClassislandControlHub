@@ -653,12 +653,55 @@ public static class AdminEndpoints
         CancellationToken cancellationToken)
     {
         var session = http.RequireAdminSession();
+
         request.SiteName = (request.SiteName ?? string.Empty).Trim();
         request.LogoText = (request.LogoText ?? string.Empty).Trim();
+        request.LoginTitle = TrimTo(request.LoginTitle, 60);
+        request.LoginSubtitle = TrimTo(request.LoginSubtitle, 120);
+        request.LoginDescription = TrimTo(request.LoginDescription, 300);
+        request.FooterText = TrimTo(request.FooterText, 120);
+
+        // 特性列表：丢掉空行、限条数与长度（它会整排渲染在登录页，太长会撑破版式）。
+        request.LoginFeatures = (request.LoginFeatures ?? [])
+            .Select((x) => (x ?? string.Empty).Trim())
+            .Where((x) => x.Length > 0)
+            .Take(8)
+            .Select((x) => TrimTo(x, 40))
+            .ToList();
+
+        // 主题色只收十六进制：它会被写进 CSS 变量，放任任意字符串就是 CSS 注入。
+        request.AccentColor = AccentColorPattern.IsMatch((request.AccentColor ?? string.Empty).Trim())
+            ? request.AccentColor!.Trim()
+            : string.Empty;
+
+        // 枚举项认不出就回落默认值，而不是报错：为一次下拉选错挡住整次保存不值得。
+        request.GlassLevel = request.GlassLevel is "subtle" or "strong" ? request.GlassLevel : "standard";
+        request.LoginLayout = request.LoginLayout is "centered" ? "centered" : "split";
+        request.LoginBackgroundDim = Math.Clamp(request.LoginBackgroundDim, 0, 90);
+
+        // 自定义 CSS 限长。它能改外观、也能藏掉元素，所以**变更要进审计**。
+        request.CustomCss = TrimTo(request.CustomCss, 20000);
+
         await store.SetSettingAsync("branding", JsonSerializer.Serialize(request), cancellationToken);
-        await store.AddAuditAsync(session.Username, "branding.updated", "branding", "更新站点品牌配置",
+
+        var note = string.IsNullOrEmpty(request.CustomCss)
+            ? "更新站点品牌配置"
+            : $"更新站点品牌配置（含自定义 CSS {request.CustomCss.Length} 字符）";
+        await store.AddAuditAsync(session.Username, "branding.updated", "branding", note,
             http.GetClientIpAddress(), cancellationToken);
+
         return ApiResult<BrandingDto>.Success(request);
+    }
+
+    /// <summary>主题色白名单：只接受 <c>#rgb</c> / <c>#rrggbb</c>。</summary>
+    private static readonly System.Text.RegularExpressions.Regex AccentColorPattern =
+        new("^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$");
+
+    /// <summary>去首尾空白并截断到指定长度。</summary>
+    private static string TrimTo(string? value, int max)
+    {
+        var text = (value ?? string.Empty).Trim();
+        return text.Length <= max ? text : text[..max];
     }
 
     /// <summary>读取手动时间偏移及当前授时状态。</summary>

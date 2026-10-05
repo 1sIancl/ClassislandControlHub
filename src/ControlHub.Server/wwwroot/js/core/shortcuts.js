@@ -9,14 +9,17 @@
  *   - `?` 打开帮助面板：**快捷键必须能被发现**，否则等于没做——侧边栏每个页面也带悬停提示。
  */
 
-import { h, modal, toast } from './ui.js?v=64';
-import { openSearch } from './search.js?v=64';
+import { h, modal, toast } from './ui.js?v=70';
+import { openSearch } from './search.js?v=70';
 
 /** 快捷键清单：帮助面板与侧边栏提示共用这一处，避免两边写得不一致。 */
 const SHORTCUTS = [
   { keys: 'Ctrl + K', desc: '全局搜索：一个关键字同时查设备 / 分组 / 档案 / 账号（#41）' },
   { keys: 'Alt + 1 … 9', desc: '跳到侧边栏第 N 个页面（只算你当前有权限的页面）' },
   { keys: '/', desc: '聚焦本页搜索框（设备管理 / 审计日志）' },
+  { keys: 'J / K', desc: '在当前列表里上下移动（设备卡片、设备表格行）' },
+  { keys: 'X', desc: '勾选 / 取消勾选当前行（配合底部批量操作条）' },
+  { keys: 'Enter', desc: '打开当前行（设备详情 / 编辑）' },
   { keys: '?', desc: '打开这份快捷键帮助（Shift + /）' },
   { keys: 'Esc', desc: '关闭弹窗、取消当前操作' },
   { keys: 'Enter', desc: '在弹出的对话框里确认（跟「确定」按钮等效）' },
@@ -108,8 +111,98 @@ export function initShortcuts() {
       if (!item) return;
       event.preventDefault();
       item.click();
+      return;
+    }
+
+    // 列表导航：J/K 上下移动、X 勾选、Enter 打开。
+    // 刻意**不给列表项加 tabindex**、也不真的 focus：那要改每一处渲染，
+    // 而用「高亮 + 一个模块级下标」就能达到同样的效果，且不会干扰 Tab 顺序。
+    if (!isTyping(event.target) && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      const key = event.key.toLowerCase();
+      if (key === 'j' || key === 'k') {
+        // 当前页没有可导航项时**什么都不做**（更不该吃掉这次按键）。
+        if (moveNavCursor(key === 'j' ? 1 : -1)) {
+          event.preventDefault();
+        }
+
+        return;
+      }
+
+      if (key === 'x') {
+        if (toggleNavCursor()) {
+          event.preventDefault();
+        }
+
+        return;
+      }
+
+      if (event.key === 'Enter' && activateNavCursor()) {
+        event.preventDefault();
+      }
     }
   });
+}
+
+/**
+ * 列表导航选择器：设备看板的教室卡片（`.dchip`，见 devices.js）与设备表格行。
+ * <para>类名写死在这里是个小隐患——改了 devices.js 的类名这里会静默失效。
+ * 但为它引入一层间接（页面注册「我可被导航的元素」）不值得：
+ * 失效时的表现是「按 J 没反应」，不是错数据。</para>
+ */
+const NAV_SELECTOR = '.dchip, table.data tbody tr';
+
+/** 当前高亮项在列表中的下标；-1 表示还没开始导航。 */
+let navCursor = -1;
+
+function navItems() {
+  return [...document.querySelectorAll(NAV_SELECTOR)]
+    // 过滤掉不可见的（分页/筛选后仍在 DOM 里但隐藏的行），
+    // 否则「J」会跳到看不见的地方，看起来像失灵。
+    .filter((el) => el.offsetParent !== null);
+}
+
+/** 移动高亮；返回是否真的移动了（没有可导航项时为 false）。 */
+function moveNavCursor(delta) {
+  const items = navItems();
+  if (items.length === 0) {
+    return false;
+  }
+
+  navCursor = Math.min(Math.max(navCursor + delta, 0), items.length - 1);
+  items.forEach((el, i) => el.classList.toggle('nav-current', i === navCursor));
+  items[navCursor].scrollIntoView({ block: 'nearest' });
+  return true;
+}
+
+/** 勾选 / 取消勾选当前行；返回是否处理了。 */
+function toggleNavCursor() {
+  const item = navItems()[navCursor];
+  if (!item) {
+    return false;
+  }
+
+  // 勾选框优先：表格行里的复选框才是「选中」的真相来源。
+  const box = item.matches('tr') ? item.querySelector('input[type="checkbox"]') : null;
+  if (box) {
+    box.click();
+    return true;
+  }
+
+  item.click();
+  return true;
+}
+
+/** 打开当前行：优先点行内的「编辑」按钮，没有就点这一行本身。 */
+function activateNavCursor() {
+  const item = navItems()[navCursor];
+  if (!item) {
+    return false;
+  }
+
+  const action = [...item.querySelectorAll('button')]
+    .find((b) => /编辑|详情|查看/.test(b.textContent));
+  (action || item).click();
+  return true;
 }
 
 /** 供 renderNav 使用：告诉某个导航项是第几个（从 1 开始）。 */

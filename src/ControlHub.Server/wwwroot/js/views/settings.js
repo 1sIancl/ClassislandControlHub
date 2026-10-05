@@ -2,12 +2,12 @@
  * 系统设置视图：服务器信息、账号安全与部署提示。
  */
 
-import { api, session, hasPermission, fetchBlob } from '../core/api.js?v=64';
-import { toastError } from '../core/errors.js?v=64';
+import { api, session, hasPermission, fetchBlob } from '../core/api.js?v=70';
+import { toastError } from '../core/errors.js?v=70';
 import {
   h, clear, formatDateTime, formatDuration, toast, loadingBlock,
   field, modal, copyText, confirmDialog, select, guard,
-} from '../core/ui.js?v=64';
+} from '../core/ui.js?v=70';
 
 export const meta = {
   title: '系统设置',
@@ -1797,6 +1797,55 @@ function renderBrandingCard(info) {
     bgDimLabel.textContent = `淡化 ${bgDimInput.value}%`;
   });
 
+  // ── 登录页文案：标题 / 副标题 / 描述 / 特性列表 / 页脚 ──
+  const loginTitleInput = h('input', {
+    type: 'text', value: branding.loginTitle || '', placeholder: '留空使用站点名称',
+  });
+  const loginSubtitleInput = h('input', {
+    type: 'text', value: branding.loginSubtitle || '', placeholder: 'ClassIsland 机房集控平台',
+  });
+  const loginDescInput = h('textarea', { rows: '2', placeholder: '留空则隐藏这一整段' });
+  loginDescInput.value = branding.loginDescription || '';
+
+  const featuresInput = h('textarea', {
+    rows: '4',
+    placeholder: '一行一条，最多 8 条。留空则保留默认的四条特性。',
+  });
+  featuresInput.value = (branding.loginFeatures || []).join('\n');
+
+  const footerInput = h('input', {
+    type: 'text', value: branding.footerText || '', placeholder: '例如：智教联盟 · 教务处（留空不显示）',
+  });
+
+  // ── 主题色 / 玻璃 / 布局 / 自定义 CSS ──
+  const accentInput = h('input', { type: 'color', value: branding.accentColor || '#1e90ff' });
+  const accentDefault = h('input', { type: 'checkbox' });
+  accentDefault.checked = !branding.accentColor;
+  accentInput.disabled = accentDefault.checked;
+  accentDefault.addEventListener('change', () => {
+    accentInput.disabled = accentDefault.checked;
+  });
+
+  const glassSelect = select([
+    { value: 'subtle', label: '轻（低配机 / 投影更稳）' },
+    { value: 'standard', label: '标准（推荐）' },
+    { value: 'strong', label: '强（质感更强，更吃性能）' },
+  ], branding.glassLevel || 'standard', () => {});
+
+  const shineCheckbox = h('input', { type: 'checkbox' });
+  shineCheckbox.checked = branding.enableShine !== false;
+
+  const layoutSelect = select([
+    { value: 'split', label: '左右分栏（左品牌 / 右表单）' },
+    { value: 'centered', label: '单列居中（只有一张登录卡）' },
+  ], branding.loginLayout || 'split', () => {});
+
+  const customCssInput = h('textarea', {
+    rows: '6',
+    placeholder: '例如：.hero-desc { font-size: 15px; }\n留空表示不用。改动会记进审计日志。',
+  });
+  customCssInput.value = branding.customCss || '';
+
   const bgFileInput = h('input', { type: 'file', accept: 'image/*', style: { display: 'none' } });
   bgFileInput.addEventListener('change', () => {
     const file = bgFileInput.files && bgFileInput.files[0];
@@ -1837,6 +1886,35 @@ function renderBrandingCard(info) {
           bgDimLabel,
           bgDimInput)),
       '支持图片地址或本地上传（≤300KB，会转成 data URL 随配置保存）；淡化程度越高背景越淡、文字越清晰。'),
+
+    h('div.card-subhead', '登录页文案'),
+    field('登录页大标题', loginTitleInput, '留空使用站点名称。'),
+    h('div.form-row',
+      field('副标题', loginSubtitleInput, '跟在标题旁边的一行短说明。'),
+      field('页脚', footerInput, '例如「智教联盟 · 教务处」；留空则整块不显示。'),
+    ),
+    field('描述段落', loginDescInput, '登录页标题下方那段介绍；留空则隐藏。'),
+    field('特性列表', featuresInput, '一行一条（最多 8 条）。留空则保留默认的四条。'),
+
+    h('div.card-subhead', '外观与材质'),
+    h('div.form-row',
+      field('主题色', h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px' } },
+        accentInput,
+        h('label', { style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px' } },
+          accentDefault, '用默认蓝')),
+      '会同时改变按钮、选中态与图表强调色（hover / 浅底自动派生）。'),
+      field('玻璃强度', glassSelect, '「轻」在低配机与投影上更稳，「强」质感更明显但更吃性能。'),
+    ),
+    h('div.form-row',
+      field('登录页布局', layoutSelect, '分栏适合宽屏展示品牌；居中适合只想要一张干净的登录卡。'),
+      field('鼠标高光', h('label', {
+        style: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' },
+      }, shineCheckbox, '统计卡片跟随鼠标的高光'), '关掉可省一点 GPU，投屏场景建议关。'),
+    ),
+    field('自定义 CSS', customCssInput,
+      '追加到管理界面与登录页（上限 20000 字符）。这是「高度自定义」的兜底口子，'
+      + '外观需求千奇百怪，与其一个个加设置项，不如给一个受控的注入点。改动会记进审计日志。'),
+
     h('div.card-actions',
       h('button.btn.btn-primary.btn-sm', {
         type: 'button',
@@ -1850,6 +1928,22 @@ function renderBrandingCard(info) {
               favicon: faviconInput.value.trim(),
               loginBackground: bgInput.value.trim(),
               loginBackgroundDim: Number(bgDimInput.value) || 0,
+
+              // 登录页文案
+              loginTitle: loginTitleInput.value.trim(),
+              loginSubtitle: loginSubtitleInput.value.trim(),
+              loginDescription: loginDescInput.value.trim(),
+              // 一行一条；空行丢掉。服务端还会再限一次（最多 8 条、每条 40 字）。
+              loginFeatures: featuresInput.value
+                .split('\n').map((x) => x.trim()).filter(Boolean),
+              footerText: footerInput.value.trim(),
+
+              // 外观与材质
+              accentColor: accentDefault.checked ? '' : accentInput.value,
+              glassLevel: glassSelect.value,
+              enableShine: shineCheckbox.checked,
+              loginLayout: layoutSelect.value,
+              customCss: customCssInput.value,
             },
           });
           toast('ok', '已保存', '品牌设置已生效，正在刷新页面…');

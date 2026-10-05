@@ -1,0 +1,331 @@
+/* ==========================================================================
+   液态玻璃（Foundation · Glass）
+   --------------------------------------------------------------------------
+   这一层负责「材质」，不负责「内容」：
+     · 三档玻璃类（.glass / .glass-strong / .glass-subtle），供任何元素显式选用；
+     · 鼠标跟随高光与边缘折射两个可选增强；
+     · 把已有的关键容器（侧边栏 / 顶栏 / 卡片 / 弹窗 / Toast / 表头）覆盖成玻璃；
+     · 登录页的两种布局（左右分栏 / 单列居中）。
+
+   它**必须排在 app.css 之后**加载：容器玻璃化用的是同名选择器覆盖，
+   靠的是「后写的规则胜出」，而不是更高的优先级。
+
+   性能约定（很关键，别为了好看把这几条破掉）：
+     1) `backdrop-filter` 是 GPU 密集操作，**只给大块容器用，按钮一律不用** ——
+        几十个按钮各开一次背景模糊，滚动就会开始掉帧；
+     2) **不嵌套玻璃**（玻璃容器里不再放玻璃子元素），模糊层叠是指数级开销；
+     3) 底层光晕用 `position: fixed` 的伪元素，而不是 `background-attachment: fixed` ——
+        后者每次滚动都要重绘，前者只画一次。
+   ========================================================================== */
+
+/* ── ① 材质类 ───────────────────────────────────────────────────────── */
+
+.glass {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-highlight), var(--glass-shadow);
+  border-radius: var(--radius-lg);
+}
+
+.glass-strong {
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(200%);
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(200%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-highlight), var(--glass-shadow-deep);
+  border-radius: var(--radius-lg);
+}
+
+.glass-subtle {
+  background: var(--glass-bg-subtle);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(10px) saturate(150%);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+}
+
+/* ── ② 鼠标跟随高光（core/glass.js 把指针位置写进 --mx / --my） ──────
+   用伪元素而不是背景色：不参与布局、不挡点击，也不会让内容跟着变亮。 */
+
+.glass-shine {
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-shine::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition);
+  background: radial-gradient(
+    var(--glass-shine-size) circle at var(--mx, 50%) var(--my, 50%),
+    var(--glass-shine),
+    transparent 62%
+  );
+}
+
+.glass-shine:hover::before {
+  opacity: 1;
+}
+
+/* 内容要压在高光之上，否则被盖住会显得发灰。 */
+.glass-shine > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── ③ 边缘折射：1px 的渐变描边，模拟玻璃厚度 ──────────────────────── */
+
+.glass-edge {
+  position: relative;
+}
+
+.glass-edge::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.75),
+    rgba(255, 255, 255, 0.08) 40%,
+    rgba(255, 255, 255, 0.04) 60%,
+    rgba(255, 255, 255, 0.45)
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+:root[data-theme="dark"] .glass-edge::after {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.24),
+    rgba(255, 255, 255, 0.02) 40%,
+    rgba(255, 255, 255, 0.02) 60%,
+    rgba(255, 255, 255, 0.14)
+  );
+}
+
+/* ── ④ 底层光晕 ──────────────────────────────────────────────────────── */
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 80% 60% at 18% 0%, var(--glass-tint-1), transparent 55%),
+    radial-gradient(ellipse 70% 60% at 82% 100%, var(--glass-tint-2), transparent 55%),
+    radial-gradient(ellipse 60% 50% at 50% 45%, var(--glass-tint-3), transparent 65%);
+}
+
+/* ── ⑤ 已有容器的玻璃化（同名覆盖 app.css） ───────────────────────── */
+
+.sidebar,
+.topbar,
+.card,
+.modal,
+.toast,
+.bulk-bar {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border-color: var(--glass-border);
+  box-shadow: var(--glass-highlight), var(--glass-shadow);
+}
+
+.sidebar,
+.topbar {
+  /* 常驻元素用更强的模糊与更实的底，保证上面的文字任何背景上都读得清。 */
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(200%);
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(200%);
+  border: 1px solid var(--glass-border);
+}
+
+.table thead th,
+table.data thead th {
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  background: var(--glass-bg-strong);
+}
+
+/* 可点击的统计卡：抬起 + 更深阴影，明确「它能点」。 */
+.stat,
+.stat-link {
+  border-radius: var(--radius);
+  position: relative;
+  overflow: hidden;
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+
+.stat-link:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--glass-highlight), var(--glass-shadow-deep);
+}
+
+/* ── ⑥ 登录页 ────────────────────────────────────────────────────────── */
+
+/* 登录页的底比管理界面浓：页面元素少，得靠背景撑起玻璃的层次。 */
+.login-page {
+  background:
+    radial-gradient(ellipse 70% 60% at 20% 15%, var(--glass-tint-1), transparent 58%),
+    radial-gradient(ellipse 60% 55% at 80% 85%, var(--glass-tint-2), transparent 58%),
+    var(--bg-base);
+}
+
+.login-card {
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(200%);
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(200%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-highlight), var(--glass-shadow-deep);
+}
+
+.login-form input,
+.login-form textarea,
+.login-form select {
+  background: var(--glass-bg-subtle);
+  border: 1px solid var(--glass-border);
+}
+
+.login-form input:focus,
+.login-form textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* 品牌页脚（由「站点品牌 → 页脚文字」驱动） */
+.hero-footer {
+  margin: var(--space-5) 0 0;
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  letter-spacing: 0.02em;
+}
+
+/* ── ⑦ 登录页布局：centered（单列居中） ─────────────────────────────
+   分栏适合宽屏展示品牌；有些学校只想要一张干净的登录卡，所以给一个开关。 */
+
+:root[data-login-layout="centered"] .login-wrapper {
+  grid-template-columns: minmax(0, 440px);
+  justify-content: center;
+}
+
+:root[data-login-layout="centered"] .login-hero {
+  text-align: center;
+  align-items: center;
+}
+
+/* 居中布局里品牌区只留「Logo + 标题 + 副标题」一行，别占掉半屏。 */
+:root[data-login-layout="centered"] .hero-desc,
+:root[data-login-layout="centered"] .hero-features,
+:root[data-login-layout="centered"] .hero-footer {
+  display: none;
+}
+
+:root[data-login-layout="centered"] .hero-brand {
+  justify-content: center;
+}
+
+/* ── ⑦-b 主题色联动（仅当用户配了自定义主题色时生效） ─────────────
+   主按钮与登录页的 Logo 方块原本写死了蓝紫渐变，配上橙色主题后会显得割裂。
+   这里改成从 --accent 派生，让「一个主题色」真的管到底。
+   用 `[data-accent-custom="1"]` 限定，是为了**默认外观一点不变**
+   —— 没配主题色的站点不该因为这次改动看到按钮换样子。 */
+
+:root[data-accent-custom="1"] .btn-primary,
+:root[data-accent-custom="1"] .login-submit,
+:root[data-accent-custom="1"] .hero-brand .brand-mark.large {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 88%, white),
+    var(--accent)
+  );
+  color: var(--on-accent);
+  box-shadow: 0 10px 22px -12px color-mix(in srgb, var(--accent) 75%, transparent);
+}
+
+:root[data-accent-custom="1"] .hero-brand .brand-mark.large {
+  box-shadow: 0 12px 24px -12px color-mix(in srgb, var(--accent) 80%, transparent);
+}
+
+/* ── ⑧ 关掉高光（低配机 / 投影场景） ─────────────────────────────── */
+
+:root[data-shine="off"] .glass-shine::before {
+  display: none;
+}
+
+/* ── ⑨ 降级与可访问性 ─────────────────────────────────────────────── */
+
+/* 不支持背景模糊的浏览器：退回不透明底。否则半透明叠半透明会「糊成一片看不清字」。 */
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .glass,
+  .glass-strong,
+  .glass-subtle,
+  .sidebar,
+  .topbar,
+  .card,
+  .modal,
+  .toast,
+  .bulk-bar,
+  .login-card,
+  .table thead th,
+  table.data thead th {
+    background: var(--bg-panel);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .glass-shine::before,
+  .glass-edge::after {
+    display: none;
+  }
+}
+
+/* 系统开了「减少透明度」：直接给不透明底，别硬撑玻璃质感。 */
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .glass-strong,
+  .glass-subtle,
+  .sidebar,
+  .topbar,
+  .card,
+  .modal,
+  .toast,
+  .bulk-bar,
+  .login-card,
+  .table thead th,
+  table.data thead th {
+    background: var(--bg-panel);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .glass-shine::before,
+  .glass-edge::after {
+    display: none;
+  }
+}
+
+/* 系统开了「减少动态效果」：去掉所有玻璃相关的动效。 */
+@media (prefers-reduced-motion: reduce) {
+  .stat-link:hover,
+  .card:hover {
+    transform: none;
+  }
+
+  .glass-shine::before {
+    transition: none;
+  }
+}

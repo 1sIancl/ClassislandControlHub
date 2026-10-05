@@ -1,0 +1,111 @@
+/* ==========================================================================
+   设计令牌（Foundation · Token）
+   --------------------------------------------------------------------------
+   这里放两类东西，别混：
+
+     1) **刻度**：间距 / 字号 / 圆角 / 过渡 —— 统一取值，避免到处冒出
+        3px、7px、11px 这种「看着差不多」的魔法数。
+     2) **材质**：玻璃的底、模糊、描边、阴影 —— 由「站点品牌 → 玻璃强度」在运行时
+        通过 `html[data-glass]` 调档（具体规则见 glass.css）。
+
+   ⚠️ 命名约定：本文件**不引入** `--color-primary` 这类第二套色板。
+   项目已有 73 个变量（`--accent` / `--text` / `--bg-panel` …）与深浅两套主题，
+   再引一套只会变成「新旧并存」，比现在更难维护。这里只做**补充**，不改名、不替换。
+   ========================================================================== */
+
+:root {
+  /* ── 间距刻度（8px 网格，4px 为半格） ── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* ── 字号 / 字重刻度 ── */
+  --font-xs: 12px;
+  --font-sm: 13px;
+  --font-base: 14px;
+  --font-lg: 16px;
+  --font-xl: 20px;
+  --font-2xl: 24px;
+  --font-3xl: 32px;
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-bold: 600;
+
+  /* ── 过渡 ── */
+  --transition-fast: 120ms ease;
+  --transition: 180ms ease;
+  --transition-slow: 300ms ease;
+
+  /* ── 层级 ── */
+  --z-sidebar: 10;
+  --z-dropdown: 100;
+  --z-modal: 200;
+  --z-toast: 300;
+
+  /* ── 玻璃：三档强度由 `--glass-alpha` 与两个模糊半径决定 ──
+     默认是「标准档」，`[data-glass]` 只覆盖这三个值（见文件末尾）。 */
+  --glass-blur: 18px;
+  --glass-blur-strong: 30px;
+  --glass-alpha: 0.55;
+  --glass-alpha-strong: 0.80;
+
+  /* 高光（鼠标跟随）：鼠标位置由 core/glass.js 写进 --mx / --my */
+  --glass-shine: rgba(255, 255, 255, 0.16);
+  --glass-shine-size: 260px;
+}
+
+/* ── 材质配色：深色（默认） ── */
+:root,
+:root[data-theme="dark"] {
+  --glass-tint: 255, 255, 255;      /* 玻璃底色用的 RGB 分量（配合 --glass-alpha 算透明度） */
+  --glass-bg: rgba(30, 30, 38, var(--glass-alpha));
+  --glass-bg-strong: rgba(30, 30, 38, var(--glass-alpha-strong));
+  --glass-bg-subtle: rgba(30, 30, 38, 0.35);
+  --glass-border: rgba(255, 255, 255, 0.10);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.40);
+  --glass-shadow-deep: 0 16px 48px rgba(0, 0, 0, 0.52);
+
+  /* 底层光晕：玻璃得**有东西可透**才成立，纯色底上它只是一块灰 */
+  --glass-tint-1: rgba(99, 102, 241, 0.12);
+  --glass-tint-2: rgba(236, 72, 153, 0.08);
+  --glass-tint-3: rgba(14, 165, 233, 0.06);
+}
+
+/* ── 材质配色：浅色 ── */
+:root[data-theme="light"] {
+  --glass-tint: 255, 255, 255;
+  --glass-bg: rgba(255, 255, 255, var(--glass-alpha));
+  --glass-bg-strong: rgba(255, 255, 255, var(--glass-alpha-strong));
+  --glass-bg-subtle: rgba(255, 255, 255, 0.38);
+  --glass-border: rgba(255, 255, 255, 0.70);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.90);
+  --glass-shadow: 0 8px 32px rgba(15, 23, 42, 0.10);
+  --glass-shadow-deep: 0 16px 48px rgba(15, 23, 42, 0.16);
+
+  --glass-tint-1: rgba(99, 102, 241, 0.18);
+  --glass-tint-2: rgba(236, 72, 153, 0.12);
+  --glass-tint-3: rgba(14, 165, 233, 0.09);
+
+  --glass-shine: rgba(255, 255, 255, 0.55);
+}
+
+/* ── 玻璃强度分档：「站点品牌 → 玻璃强度」写 html[data-glass] ──
+   低配机 / 投影场景建议打「轻」，内容优先；追求质感的打「强」。 */
+:root[data-glass="subtle"] {
+  --glass-blur: 10px;
+  --glass-blur-strong: 16px;
+  --glass-alpha: 0.34;
+  --glass-alpha-strong: 0.62;
+}
+
+:root[data-glass="strong"] {
+  --glass-blur: 26px;
+  --glass-blur-strong: 46px;
+  --glass-alpha: 0.62;
+  --glass-alpha-strong: 0.86;
+}

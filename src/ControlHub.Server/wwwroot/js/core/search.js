@@ -9,8 +9,8 @@
  * 顶栏输入框会让人以为只搜当前页。
  */
 
-import { api } from './api.js?v=64';
-import { h, clear, modal, icon } from './ui.js?v=64';
+import { api } from './api.js?v=70';
+import { h, clear, modal, icon } from './ui.js?v=70';
 
 /** 类别标签：与后端 `SearchItemDto.Kind` 对应。 */
 const KIND_LABELS = {

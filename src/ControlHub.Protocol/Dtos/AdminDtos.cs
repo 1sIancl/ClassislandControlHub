@@ -192,6 +192,44 @@ public sealed class BrandingDto
 
     /// <summary>登录页背景的淡化程度（0~90，数值越大越淡），用于保证表单区域的可读性。</summary>
     public int LoginBackgroundDim { get; set; } = 45;
+
+    /// <summary>登录页大标题；留空时用 <see cref="SiteName"/>。</summary>
+    public string LoginTitle { get; set; } = string.Empty;
+
+    /// <summary>登录页副标题（短，跟在标题右侧），留空不显示。</summary>
+    public string LoginSubtitle { get; set; } = string.Empty;
+
+    /// <summary>登录页描述段落（长，介绍这套系统做什么），留空则隐藏整段。</summary>
+    public string LoginDescription { get; set; } = string.Empty;
+
+    /// <summary>登录页左侧特性列表：每行一条，最多 8 条、每条 40 字。</summary>
+    public List<string> LoginFeatures { get; set; } = [];
+
+    /// <summary>登录页页脚文字（如「智教联盟 · 教务处」），留空不显示。</summary>
+    public string FooterText { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 主题色（<c>#rgb</c> / <c>#rrggbb</c>），留空用默认蓝。
+    /// <para>它会覆盖全站的强调色，所以**只接受十六进制**——这个值最终会写进 CSS 变量，
+    /// 放任任意字符串就是 CSS 注入。</para>
+    /// </summary>
+    public string AccentColor { get; set; } = string.Empty;
+
+    /// <summary>玻璃材质强度：<c>subtle</c> / <c>standard</c> / <c>strong</c>。</summary>
+    public string GlassLevel { get; set; } = "standard";
+
+    /// <summary>是否启用卡片的鼠标跟随高光（低配或投影场景可关掉）。</summary>
+    public bool EnableShine { get; set; } = true;
+
+    /// <summary>登录页布局：<c>split</c>（左品牌右表单）/ <c>centered</c>（单列居中卡片）。</summary>
+    public string LoginLayout { get; set; } = "split";
+
+    /// <summary>
+    /// 自定义 CSS，追加到管理界面与登录页（上限 20000 字符）。
+    /// <para>这是「高度自定义」的兜底口子：外观需求千奇百怪，与其一个个加设置项，
+    /// 不如给一个受控的注入点。改动会**记进审计**（谁在什么时候加了什么）。</para>
+    /// </summary>
+    public string CustomCss { get; set; } = string.Empty;
 }
 
 /// <summary>分组层级类型。层级最多两层：楼栋 → 楼层，教室由设备本身表示。</summary>
