@@ -9,13 +9,15 @@
  *   - `?` 打开帮助面板：**快捷键必须能被发现**，否则等于没做——侧边栏每个页面也带悬停提示。
  */
 
-import { h, modal, toast } from './ui.js?v=70';
-import { openSearch } from './search.js?v=70';
+import { h, modal, toast } from './ui.js?v=71';
+import { openSearch } from './search.js?v=71';
 
 /** 快捷键清单：帮助面板与侧边栏提示共用这一处，避免两边写得不一致。 */
 const SHORTCUTS = [
-  { keys: 'Ctrl + K', desc: '全局搜索：一个关键字同时查设备 / 分组 / 档案 / 账号（#41）' },
+  { keys: 'Ctrl + K', desc: '命令与搜索面板：空闲时列出命令，输入后同时搜命令与设备 / 分组 / 档案 / 账号' },
   { keys: 'Alt + 1 … 9', desc: '跳到侧边栏第 N 个页面（只算你当前有权限的页面）' },
+  { keys: 'N', desc: '发送通知（跳到设备管理并预置「在线」筛选）' },
+  { keys: 'P', desc: '下发配置' },
   { keys: '/', desc: '聚焦本页搜索框（设备管理 / 审计日志）' },
   { keys: 'J / K', desc: '在当前列表里上下移动（设备卡片、设备表格行）' },
   { keys: 'X', desc: '勾选 / 取消勾选当前行（配合底部批量操作条）' },
@@ -82,7 +84,14 @@ export function initShortcuts() {
     // （用户在页面搜索框里想换成全局搜索是很自然的动作），所以这一条放在 isTyping 之前。
     if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'k') {
       event.preventDefault();
-      openSearch();
+      // 传当前可见的导航项：面板空闲时要把「页面」也列出来，
+      // 而哪些页面可见取决于这个账号有没有权限——只能由 nav 那边的可见项决定。
+      openSearch(visibleNavItems().map((item) => ({
+        label: item.dataset.label || item.textContent.trim(),
+        hash: item.getAttribute('href') || '#/dashboard',
+        groupLabel: item.closest('.nav-group')?.querySelector('.nav-group-label')?.textContent.trim() || '',
+        keys: item.dataset.shortcut ? [item.dataset.shortcut] : [],
+      })));
       return;
     }
 
@@ -119,6 +128,21 @@ export function initShortcuts() {
     // 而用「高亮 + 一个模块级下标」就能达到同样的效果，且不会干扰 Tab 顺序。
     if (!isTyping(event.target) && !event.ctrlKey && !event.metaKey && !event.altKey) {
       const key = event.key.toLowerCase();
+
+      // N / P：与命令面板（core/search.js 里 ACTION_COMMANDS）里显示的键位**必须一致**。
+      // 面板上写着「发送通知 N」而按 N 没反应，比不写这个提示更糟——用户会以为面板坏了。
+      if (key === 'n') {
+        event.preventDefault();
+        window.location.hash = '#/devices?status=online';
+        return;
+      }
+
+      if (key === 'p') {
+        event.preventDefault();
+        window.location.hash = '#/deploy';
+        return;
+      }
+
       if (key === 'j' || key === 'k') {
         // 当前页没有可导航项时**什么都不做**（更不该吃掉这次按键）。
         if (moveNavCursor(key === 'j' ? 1 : -1)) {

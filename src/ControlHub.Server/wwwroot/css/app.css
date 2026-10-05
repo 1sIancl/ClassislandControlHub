@@ -3501,3 +3501,37 @@ input.pcell-name:focus {
 /* 最后 5 秒转警告色：这时输入也来得及，但该提醒了。 */
 .totp-timer.warning { color: var(--warn); }
 .totp-timer.warning span { font-weight: var(--weight-bold); }
+/* ── 命令面板：分组标题与快捷键提示 ─────────────────────────────────
+   命令面板把「命令」和「搜索结果」混在一条列表里（见 core/search.js），
+   所以需要分组标题来分段，否则两类条目会显得交错、难扫。 */
+.search-group {
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-bold);
+  color: var(--text-faint);
+  letter-spacing: 0.04em;
+}
+/* 第一组不加分隔（上面已经有输入框了，再加一条线显得啰嗦）。 */
+.search-results > .search-group:first-child { padding-top: var(--space-1); }
+.search-keys {
+  display: flex;
+  gap: 4px;
+  flex: none;
+  margin-left: auto;
+  padding-left: var(--space-2);
+}
+.search-keys kbd {
+  min-width: 18px;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  color: var(--text-faint);
+  font-family: inherit;
+  font-size: var(--font-xs);
+  text-align: center;
+}
+.search-item.active .search-keys kbd {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}

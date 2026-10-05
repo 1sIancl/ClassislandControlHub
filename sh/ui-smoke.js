@@ -14,7 +14,7 @@
  *   node sh/ui-smoke.js
  *   SMOKE_BASE=http://127.0.0.1:29800 SMOKE_BROWSER="C:\\...\\msedge.exe" node sh/ui-smoke.js
  *
- * 覆盖的断言（73 项）：
+ * 覆盖的断言（77 项）：
  *   1) 起点归零：清空账号偏好与本机布局缓存 → 仪表盘回到默认布局
  *   2) 「自定义仪表盘」面板能打开，含「统计卡片 + 页面模块」两组、共 10 项
  *   3) 面板里关掉「最近事件」→ 页面立即不再渲染该模块
@@ -1169,6 +1169,49 @@ function check(name, ok, extra = '') {
   check('快捷键帮助里能查到 J/K/X', helpHas === true);
   await page.keyboard.press('Escape');
   await sleep(400);
+
+  // 22) 命令面板（命令 + 搜索合一）与 N/P 快捷键
+  await page.goto(`${BASE}/#/dashboard`, { waitUntil: 'networkidle2' });
+  await sleep(2400);
+  await page.keyboard.down('Control');
+  await page.keyboard.press('k');
+  await page.keyboard.up('Control');
+  await sleep(1200);
+  const cmdIdle = await page.evaluate(() => ({
+    groups: [...document.querySelectorAll('.search-group')].map((e) => e.textContent.trim()),
+    count: document.querySelectorAll('.search-item').length,
+    hasKeys: document.querySelectorAll('.search-keys kbd').length,
+    hint: document.querySelector('.search-hint')?.textContent || '',
+  }));
+  check('命令面板空闲时列出命令与页面两组',
+    cmdIdle.groups.includes('命令') && cmdIdle.groups.includes('页面') && cmdIdle.count > 4,
+    `分组=${JSON.stringify(cmdIdle.groups)} 条目=${cmdIdle.count} 提示=${cmdIdle.hint.slice(0, 30)}`);
+  check('命令面板显示快捷键徽标', cmdIdle.hasKeys >= 2, `徽标数=${cmdIdle.hasKeys}`);
+
+  // 输入关键字时命令与搜索结果混排（命令优先）
+  await page.keyboard.type('通知', { delay: 40 });
+  await sleep(1400);
+  const cmdFiltered = await page.evaluate(() => ({
+    groups: [...document.querySelectorAll('.search-group')].map((e) => e.textContent.trim()),
+    first: document.querySelector('.search-item')?.textContent.replace(/\s+/g, ' ').trim() || '',
+  }));
+  check('输入「通知」时命令排在搜索结果之前',
+    cmdFiltered.groups[0] === '命令' && cmdFiltered.first.includes('发送通知'),
+    `分组=${JSON.stringify(cmdFiltered.groups)} 首项=${cmdFiltered.first.slice(0, 30)}`);
+  await page.keyboard.press('Escape');
+  await sleep(600);
+
+  // 面板上写了「N」就必须真能按 —— 这是本轮特意绑的
+  await page.keyboard.press('n');
+  await sleep(1800);
+  const afterN = await page.evaluate(() => ({
+    hash: location.hash,
+    active: [...document.querySelectorAll('.status-tab.active')]
+      .map((el) => el.textContent.replace(/\d+$/, '').trim()),
+  }));
+  check('按 N 落到设备管理并预置「在线」筛选',
+    afterN.hash.includes('status=online') && afterN.active.includes('在线'),
+    `hash=${afterN.hash} 选中=${JSON.stringify(afterN.active)}`);
 
   console.log('\n===== 验证结果 =====');
   for (const r of results) console.log(r);

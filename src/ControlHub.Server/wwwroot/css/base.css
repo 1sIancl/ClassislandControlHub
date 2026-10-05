@@ -1,0 +1,172 @@
+/* ==========================================================================
+   基础层（Foundation · Base）
+   --------------------------------------------------------------------------
+   只做三件事，且都**不与组件层争夺样式所有权**：
+
+     1) 极小 reset：把浏览器默认值收掉，但**不**做 `* { margin: 0 }` 这类激进重置
+        —— 那会连带打乱 app.css 里 3000 多行依赖默认间距的规则，收益远小于风险。
+     2) 全局交互态：焦点可见、选中文本、滚动条、按钮按下态。
+        这些**不该由每个组件各写一遍**，属于「人人都该有一份」的东西。
+     3) 无障碍降级：`prefers-reduced-motion` 一次性关掉所有动效。
+
+   引入顺序：tokens → **base** → app → glass
+   （base 要在组件之前，因为它提供的是「默认值」；但它不覆盖组件，故顺序不敏感。）
+   ========================================================================== */
+
+/* ── 1. 极小 reset ─────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  /* 锚点跳转时给固定顶栏留出余量，否则标题会被顶栏盖住。 */
+  scroll-padding-top: 84px;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* 中文正文在深色底上默认字重偏细，略微加一点点厚度（仅深色主题）。 */
+  text-rendering: optimizeLegibility;
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+
+svg {
+  /* 图标按钮里的 svg 不该被基线的行高撑出缝隙。 */
+  vertical-align: middle;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* 表单控件的默认字体/内边距在各浏览器不一致，统一抹平。 */
+input,
+textarea,
+select {
+  margin: 0;
+}
+
+textarea {
+  resize: vertical;
+}
+
+/* 表格默认没有间隙，且 `border-collapse` 各家默认值不同。 */
+table {
+  border-spacing: 0;
+}
+
+/* ── 2. 全局交互态 ─────────────────────────────────────────────────── */
+
+/**
+ * 焦点可见：只在「键盘导航」时显示焦点环。
+ *
+ * 为什么用 :focus-visible 而不是 :focus——鼠标点击按钮时也要画一圈高亮的话，
+ * 整个界面会到处闪；但键盘用户没有它就完全找不到自己在哪（这是无障碍硬要求，
+ * 不是可选的美化）。
+ */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm, 4px);
+}
+
+/* 鼠标点击时去掉默认焦点环（:focus-visible 已在上面兜住键盘场景）。 */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+::selection {
+  background: var(--accent-soft, rgba(99, 102, 241, 0.22));
+  color: var(--text);
+}
+
+/* 滚动条：Windows 默认那根又宽又灰，在玻璃界面上尤其突兀。 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong, rgba(120, 120, 140, 0.4)) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong, rgba(120, 120, 140, 0.35));
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint, rgba(140, 140, 160, 0.6));
+  background-clip: content-box;
+}
+
+/**
+ * 按下态：所有可点的东西按下去都要「沉一下」。
+ *
+ * 用 scale(0.98) 而不是变背景色——颜色变化在玻璃材质上很难看清（底下有渐变），
+ * 而轻微的位移/缩放是**任何背景**下都能被感知到的反馈。
+ * 只对明确的交互元素生效，避免影响纯展示的卡片。
+ */
+.btn:active,
+.quick-action:active,
+.status-tab:active,
+.context-menu-item:active,
+.segmented-item:active,
+.nav-item:active {
+  transform: scale(0.975);
+}
+
+.btn-primary:active,
+.stat-link:active {
+  transform: scale(0.985);
+}
+
+/* 尊重系统的「减少动态效果」：前庭敏感的用户不该被位移和缩放晃到。
+   这里一次性关掉全部，替换 glass.css 里逐个组件的 @media 覆盖。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── 3. 降级：浏览器不支持 backdrop-filter 时，玻璃必须变成实色 ────────
+   否则浅色文字会落在半透明的浅色底上，对比度直接不达标。 */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass,
+  .glass-strong,
+  .glass-subtle,
+  .sidebar,
+  .topbar,
+  .card.glass {
+    background: var(--bg-panel) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-color: var(--border) !important;
+  }
+}
