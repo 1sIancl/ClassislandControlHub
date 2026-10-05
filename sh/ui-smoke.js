@@ -1283,6 +1283,38 @@ function check(name, ok, extra = '') {
     afterN.hash.includes('status=online') && afterN.active.includes('在线'),
     `hash=${afterN.hash} 选中=${JSON.stringify(afterN.active)}`);
 
+  // 23) 折叠只管侧边栏：一级分组必须保留（藏掉一级就没有全局方向感了）
+  await page.goto(`${BASE}/#/dashboard`, { waitUntil: 'networkidle2' });
+  await sleep(2400);
+  await page.evaluate(() => document.getElementById('collapseBtn')?.click());
+  await sleep(700);
+  const collapsed = await page.evaluate(() => {
+    const triggers = [...document.querySelectorAll('.nav-trigger')];
+    return {
+      侧栏隐藏: getComputedStyle(document.getElementById('sidebar')).display === 'none',
+      一级总数: triggers.length,
+      一级可见: triggers.filter((t) => t.offsetParent !== null).length,
+      一级文本: triggers.map((t) => t.textContent.trim().slice(0, 6)),
+      一级rect: triggers.slice(0, 2).map((t) => Math.round(t.getBoundingClientRect().width)),
+      顶栏nav状态: getComputedStyle(document.querySelector('.topbar-nav')).display,
+      navCollapse类: document.getElementById('app')?.classList.contains('nav-collapsed'),
+      品牌可见: (() => {
+        const b = document.querySelector('.topbar-brand');
+        return !!b && b.getBoundingClientRect().width > 0;
+      })(),
+    };
+  });
+  check('折叠隐藏侧边栏但一级分组与品牌保留',
+    collapsed.侧栏隐藏 && collapsed.一级可见 >= 4 && collapsed.品牌可见,
+    `侧栏隐藏=${collapsed.侧栏隐藏} 一级总数=${collapsed.一级总数} 可见=${collapsed.一级可见} rect=${JSON.stringify(collapsed.一级rect)} 文本=${JSON.stringify(collapsed.一级文本)} navDisplay=${collapsed.顶栏nav状态} 类=${collapsed.navCollapse类} 品牌=${collapsed.品牌可见}`);
+
+  // 展开恢复
+  await page.evaluate(() => document.getElementById('collapseBtn')?.click());
+  await sleep(700);
+  const expanded = await page.evaluate(
+    () => getComputedStyle(document.getElementById('sidebar')).display !== 'none');
+  check('再次点击展开侧边栏', expanded === true);
+
   console.log('\n===== 验证结果 =====');
   for (const r of results) console.log(r);
   const failed = results.filter((r) => r.startsWith('FAIL')).length;
