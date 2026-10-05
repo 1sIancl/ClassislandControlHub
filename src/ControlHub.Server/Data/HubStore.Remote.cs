@@ -140,6 +140,27 @@ public sealed partial class HubStore
     }
 
     /// <summary>
+    /// 作废某设备已过期的待执行指令，返回作废条数（#3）。
+    /// <para>派发流程里本来会清理（见 <see cref="DispatchPendingCommandsAsync"/>），但那一步只在**设备来取指令时**发生——
+    /// 一台停用了一学期的教室永远不会触发，队列里就会一直堆着早已无意义的指令。管理端查队列前顺手清一次，
+    /// 既让界面干净，也避免管理员误以为「还有一堆命令在等着执行」。</para>
+    /// </summary>
+    public async Task<int> ExpirePendingCommandsAsync(string deviceId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE device_commands SET status = 'expired', finished_at = $now
+             WHERE device_id = $id AND status = 'pending' AND dispatched_at IS NULL
+                   AND expires_at IS NOT NULL AND expires_at <= $now;
+            """;
+        command.Parameters.AddWithValue("$id", deviceId);
+        command.Parameters.AddWithValue("$now", Ts(DateTimeOffset.UtcNow));
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// 查询某设备「待执行指令队列」：尚未被取走的 pending 指令，按生效时间与下发时间排序。
     /// <para>与指令历史的区别：历史按时间倒序取最近若干条，而队列只关心还没执行的，不受历史条数上限影响。</para>
     /// </summary>

@@ -2,10 +2,11 @@
  * 审计日志视图：记录管理员操作与设备同步事件，便于排查与追溯。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=44';
+import { api, fetchBlob } from '../core/api.js?v=56';
+import { toastError } from '../core/errors.js?v=56';
 import {
   h, clear, formatDateTime, toast, loadingBlock, emptyState,
-} from '../core/ui.js?v=44';
+} from '../core/ui.js?v=56';
 
 export const meta = {
   title: '审计日志',
@@ -59,7 +60,7 @@ async function exportAudit() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     toast('ok', '已导出', '来源 IP 已脱敏，筛选条件与当前页面一致。');
   } catch (err) {
-    toast('error', '导出失败', err.message);
+    toastError(err, '导出失败');
   }
 }
 

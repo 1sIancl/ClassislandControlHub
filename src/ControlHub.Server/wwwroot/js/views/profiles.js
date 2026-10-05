@@ -3,11 +3,13 @@
  * 档案是集控下发的最小单元：一个档案 = 一套时间表 + 课表 + 科目 + 自定义设置。
  */
 
-import { api } from '../core/api.js?v=44';
+import { api } from '../core/api.js?v=56';
+import { toastError, errorBlock } from '../core/errors.js?v=56';
+import { openAuditTimeline } from '../core/audit-timeline.js?v=56';
 import {
   h, clear, formatDateTime, toast, loadingBlock, modal, confirmDialog,
   emptyState, field, select,
-} from '../core/ui.js?v=44';
+} from '../core/ui.js?v=56';
 
 export const meta = {
   title: '配置档案',
@@ -29,6 +31,11 @@ export async function render(container) {
           h('p.card-desc', '一个档案包含时间表、课表、科目与自定义设置。设备按「单独指定 → 分组默认 → 全局默认」的顺序取用档案。'),
         ),
         h('div.card-actions',
+          h('button.btn.btn-sm', {
+            type: 'button',
+            title: '检查课表引用、时间重叠与「同一老师被排到两个班」',
+            onClick: openConflictsDialog,
+          }, '冲突检测'),
           h('button.btn.btn-sm', { type: 'button', onClick: () => openAiImportDialog(profiles) }, 'AI 导入课表'),
           h('button.btn.btn-sm', { type: 'button', onClick: () => openImportCsesDialog(profiles) }, '从 CSES 导入'),
           h('button.btn.btn-sm', { type: 'button', onClick: () => openCreateDialog(false) }, '新建空白档案'),
@@ -85,6 +92,11 @@ function renderCard(profile) {
       }, '编辑内容'),
       h('button.btn.btn-sm', { type: 'button', onClick: () => pushProfile(profile) }, '立即推送'),
       h('button.btn.btn-sm', { type: 'button', onClick: () => openVersionsDialog(profile) }, '历史版本'),
+      h('button.btn.btn-sm', {
+        type: 'button',
+        title: '谁在什么时候改过这个档案',
+        onClick: () => openAuditTimeline(profile.name, profile.name),
+      }, '操作历史'),
       h('button.btn.btn-sm', { type: 'button', onClick: () => openOverridesDialog(profile) }, '临时换课'),
       h('button.btn.btn-sm', { type: 'button', onClick: () => duplicateProfile(profile) }, '复制'),
       profile.isDefault
@@ -121,7 +133,7 @@ async function openOverridesDialog(profile) {
   try {
     detail = await api(`/admin/profiles/${profile.id}`);
   } catch (err) {
-    toast('error', '读取档案失败', err.message);
+    toastError(err, '读取档案失败');
     return;
   }
 
@@ -256,7 +268,7 @@ async function openOverridesDialog(profile) {
             body),
         });
       } catch (err) {
-        toast('error', '预览失败', err.message);
+        toastError(err, '预览失败');
       }
     },
   }, '预览当天课表');
@@ -281,7 +293,7 @@ async function openOverridesDialog(profile) {
         toast('ok', '换课已生效', '教室会在下一次同步时拿到调整后的课表。');
         await load();
       } catch (err) {
-        toast('error', '创建失败', err.message);
+        toastError(err, '创建失败');
       }
     },
   }, '添加换课');
@@ -391,6 +403,90 @@ function openVersionsDialog(profile) {
   });
 
   load();
+}
+
+/**
+ * 「冲突检测」（#44）：扫一遍全部档案，把「上课那天才会发现」的问题提前摆出来。
+ *
+ * 分两档：**必须处理**（引用坏了 / 时间重叠 / 同一时间多套课表 —— 必然显示不对）与
+ * **待确认**（同一教师同一时间出现在两个档案 —— 可能只是同名老师，也可能就是合班上课）。
+ */
+async function openConflictsDialog() {
+  const box = h('div', h('p.card-desc', '正在扫描全部档案…'));
+
+  const dialog = modal({
+    title: '课表冲突检测',
+    width: 'xwide',
+    hideFooter: true,
+    body: box,
+  });
+
+  try {
+    const report = await api('/admin/profiles/conflicts');
+    clear(box);
+    box.appendChild(renderConflictReport(report, dialog));
+  } catch (err) {
+    clear(box);
+    box.appendChild(errorBlock(err, { title: '冲突检测失败' }));
+  }
+}
+
+/** 渲染冲突报告。 */
+function renderConflictReport(report, dialog) {
+  const items = report.conflicts || [];
+  const blocking = items.filter((c) => c.blocking);
+  const warnings = items.filter((c) => !c.blocking);
+
+  const head = h('div',
+    h('p.card-desc', { style: { margin: '0 0 10px' } },
+      `检查了 ${report.profileCount} 个档案、${report.classPlanCount} 个启用的课表。`),
+    items.length === 0
+      ? h('div.notice.notice-info',
+        h('span.notice-icon', 'i'),
+        h('div', '没有发现问题。已检查：课表对科目 / 时间表的引用、节次是否超出时间表、'
+          + '时间表内的时间重叠、同一时间是否有多套课表同时生效、跨档案的教师时间冲突。'))
+      : null,
+    blocking.length > 0
+      ? h('div.notice.notice-danger',
+        h('span.notice-icon', '!'),
+        h('div', `${blocking.length} 项必须处理：这些会让教室里的课表显示不正确。`))
+      : null,
+    warnings.length > 0
+      ? h('div.notice.notice-warn',
+        h('span.notice-icon', '!'),
+        h('div', `${warnings.length} 项需要确认：不一定错，但建议看一眼。`))
+      : null,
+    report.truncated
+      ? h('p.card-desc', { style: { marginTop: '8px' } }, '问题过多，这里只显示前 200 条。')
+      : null,
+  );
+
+  if (items.length === 0) {
+    return head;
+  }
+
+  const rows = items.map((c) => h('div.config-item', { style: { alignItems: 'flex-start' } },
+    h('span.badge' + (c.blocking ? '.badge-danger' : ''), c.blocking ? '必须处理' : '待确认'),
+    h('div', { style: { display: 'flex', flexDirection: 'column', gap: '3px', minWidth: 0 } },
+      h('span', { style: { fontSize: '13px', wordBreak: 'break-word' } }, c.message),
+      c.profileName
+        ? h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } }, `档案：${c.profileName}`)
+        : null,
+    ),
+    c.profileId
+      ? h('button.btn.btn-sm', {
+        type: 'button',
+        style: { flex: 'none' },
+        onClick: () => {
+          // 跳过去处理：编辑器是最能说明问题的地方（能看到那一节到底排了什么）。
+          dialog.close();
+          window.location.hash = `#/profiles/${c.profileId}`;
+        },
+      }, '去处理')
+      : null,
+  ));
+
+  return h('div', head, h('div.config-panel', { style: { marginTop: '10px' } }, ...rows));
 }
 
 /** 「从 CSES 导入」对话框：选择目标档案 + 选择/粘贴 CSES 文件内容。 */
@@ -689,7 +785,7 @@ function duplicateProfile(profile) {
         await render(document.getElementById('content'));
         return true;
       } catch (err) {
-        toast('error', '复制失败', err.message);
+        toastError(err, '复制失败');
         return false;
       }
     },

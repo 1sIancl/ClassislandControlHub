@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text.Json;
+using ControlHub.Protocol.Dtos;
 using ControlHub.Server.Options;
 using Microsoft.Extensions.Options;
 
@@ -22,6 +23,12 @@ public sealed class BackupEntry
 
     /// <summary>备注。</summary>
     public string Note { get; set; } = string.Empty;
+
+    /// <summary>备份内含的文件数（#59）。</summary>
+    public int FileCount { get; set; }
+
+    /// <summary>是否包含加密密钥 <c>secrets.key</c>（#59）。</summary>
+    public bool IncludesSecretsKey { get; set; }
 }
 
 /// <summary>
@@ -37,54 +44,110 @@ public sealed class BackupService(
 
     private string Root => Path.Combine(_options.ResolveDataDirectory(AppContext.BaseDirectory), "Backups");
 
-    /// <summary>创建一个备份（把数据目录中的关键文件复制到备份目录）。</summary>
-    public BackupEntry CreateBackup(string type = "manual", string note = "")
+    /// <summary>
+    /// 创建一个备份（把数据目录中的文件按选项复制到备份目录，并记录实际内容）。
+    /// </summary>
+    /// <param name="type">备份类型：manual / auto / update。</param>
+    /// <param name="note">备注。</param>
+    /// <param name="options">
+    /// 可选内容（#59）。省略时按默认：**数据库 + 配置文件，不含加密密钥与本机令牌**——
+    /// 密钥本身就是凭据，把它一起放进备份，等于谁拿到备份谁就拿到了注册码 / Webhook 密钥。
+    /// 换机器恢复时才需要显式勾上。
+    /// </param>
+    public BackupEntry CreateBackup(string type = "manual", string note = "", BackupOptionsDto? options = null)
     {
-        var stamp = DateTimeOffset.Now.ToString("yyyyMMdd_HHmmss");
+        var opts = options ?? new BackupOptionsDto();
+
+        // 精确到毫秒，并做一次存在性检查兜底：**同一秒内连点两次「新建备份」不能落到同一个目录**——
+        // 那样后一次会覆盖前一次，甚至把两份内容混在一个目录里（复制是覆盖写、不删旧文件），
+        // 恢复出来的东西就说不清是什么了。本轮实测正是靠这个才发现了旧写法的问题。
+        var stamp = DateTimeOffset.Now.ToString("yyyyMMdd_HHmmss_fff");
         var prefix = type switch
         {
             "auto" => "Auto_Backup",
             "update" => "Update_Backup",
             _ => "Backup",
         };
+
         var id = $"{prefix}_{stamp}";
+        if (Directory.Exists(Path.Combine(Root, id)))
+        {
+            id = $"{prefix}_{stamp}_{Guid.NewGuid().ToString("N")[..4]}";
+        }
+
         var dir = Path.Combine(Root, id);
         Directory.CreateDirectory(dir);
 
         var dataDir = _options.ResolveDataDirectory(AppContext.BaseDirectory);
         var copied = new List<string>();
 
-        // 关键文件 / 目录
-        var files = Directory.Exists(dataDir)
-            ? Directory.GetFiles(dataDir, "*", SearchOption.TopDirectoryOnly)
-            : [];
-        foreach (var f in files)
+        // ① 数据库：没有它这份备份没有意义，不接受关闭。
+        foreach (var f in Directory.Exists(dataDir)
+                     ? Directory.GetFiles(dataDir, "controlhub.db*", SearchOption.TopDirectoryOnly)
+                     : [])
         {
             var name = Path.GetFileName(f);
-            if (name.StartsWith("controlhub.db", StringComparison.OrdinalIgnoreCase)
-                || name.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            File.Copy(f, Path.Combine(dir, name), overwrite: true);
+            copied.Add(name);
+        }
+
+        // ② 配置文件（默认包含）。
+        if (opts.IncludeConfigFiles && Directory.Exists(dataDir))
+        {
+            foreach (var f in Directory.GetFiles(dataDir, "*.json", SearchOption.TopDirectoryOnly))
             {
+                var name = Path.GetFileName(f);
                 File.Copy(f, Path.Combine(dir, name), overwrite: true);
                 copied.Add(name);
             }
         }
 
-        // 备份元数据
+        // ③ 加密密钥（默认不含；勾上就是「这份备份能直接接管全部凭据」，界面必须警示）。
+        var includesSecretsKey = false;
+        var keyPath = Path.Combine(dataDir, "secrets.key");
+        if (opts.IncludeSecretsKey && File.Exists(keyPath))
+        {
+            File.Copy(keyPath, Path.Combine(dir, "secrets.key"), overwrite: true);
+            copied.Add("secrets.key");
+            includesSecretsKey = true;
+        }
+
+        // ④ 本机免登录令牌（默认不含：它只对「本机回环 + 该令牌」有效，换机器带着也没用，还多一份凭据在外面）。
+        var tokenPath = Path.Combine(dataDir, "local-shell.token");
+        if (opts.IncludeLocalShellToken && File.Exists(tokenPath))
+        {
+            File.Copy(tokenPath, Path.Combine(dir, "local-shell.token"), overwrite: true);
+            copied.Add("local-shell.token");
+        }
+
+        // 备份元数据：把「这份备份里到底有什么」记下来，界面据此提示能不能直接拿去换机器。
         var meta = new BackupEntry
         {
             Id = id,
             Type = type,
             CreatedAt = DateTimeOffset.UtcNow,
             Note = note,
+            FileCount = copied.Count,
+            IncludesSecretsKey = includesSecretsKey,
         };
         File.WriteAllText(Path.Combine(dir, "backup.json"), JsonSerializer.Serialize(meta));
 
         var size = Directory.GetFiles(dir).Sum(f => new FileInfo(f).Length);
 
-        logger.LogInformation("已创建备份 {Id}（{Count} 个文件，{Size} 字节）。", id, copied.Count, size);
+        logger.LogInformation("已创建备份 {Id}（{Count} 个文件，{Size} 字节，含密钥 {Key}）。",
+            id, copied.Count, size, includesSecretsKey);
 
         PruneAutoBackups();
-        return new BackupEntry { Id = id, Type = type, CreatedAt = meta.CreatedAt, SizeBytes = size, Note = note };
+        return new BackupEntry
+        {
+            Id = id,
+            Type = type,
+            CreatedAt = meta.CreatedAt,
+            SizeBytes = size,
+            Note = note,
+            FileCount = copied.Count,
+            IncludesSecretsKey = includesSecretsKey,
+        };
     }
 
     /// <summary>列出全部备份（按时间倒序）。</summary>
@@ -182,12 +245,27 @@ public sealed class BackupService(
             return false;
         }
 
-        // 恢复前先为当前数据做一次保护性备份
-        CreateBackup("update", $"恢复 {id} 前的自动备份");
+        // 恢复前先为当前数据做一次保护性备份。
+        // **必须包含密钥**：否则这次恢复一旦把 secrets.key 换掉，旧密钥就再也回不来，
+        // 「回滚」也就失去了意义（数据还在，但全解不开）。
+        CreateBackup("update", $"恢复 {id} 前的自动备份", new BackupOptionsDto
+        {
+            IncludeSecretsKey = true,
+            IncludeLocalShellToken = true,
+        });
 
         foreach (var f in source)
         {
             File.Copy(f, Path.Combine(dataDir, Path.GetFileName(f)), overwrite: true);
+        }
+
+        // 备份里带了密钥就一并恢复（#59）：否则恢复出来的库解不开注册码 / Webhook 密钥，
+        // 现场表现就是「恢复之后注册码全部不可用」。
+        var keyFile = Path.Combine(dir, "secrets.key");
+        if (File.Exists(keyFile))
+        {
+            File.Copy(keyFile, Path.Combine(dataDir, "secrets.key"), overwrite: true);
+            logger.LogInformation("备份 {Id} 包含加密密钥，已一并恢复。", id);
         }
 
         logger.LogInformation("已从备份 {Id} 恢复数据库，需重启服务生效。", id);

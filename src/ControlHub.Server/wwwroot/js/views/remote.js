@@ -3,10 +3,11 @@
  * 数据来自 A 端 /admin/devices、/admin/backups 等接口。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=44';
+import { api, fetchBlob } from '../core/api.js?v=56';
+import { toastError } from '../core/errors.js?v=56';
 import {
   h, clear, toast, loadingBlock, confirmDialog, field, select, emptyState, formatDateTime, modal,
-} from '../core/ui.js?v=44';
+} from '../core/ui.js?v=56';
 
 export const meta = {
   title: '远程管理',
@@ -172,7 +173,7 @@ function createQueueView(deviceSelect) {
                   await api(`/admin/devices/commands/${c.id}`, { method: 'DELETE' });
                   toast('ok', '已取消指令');
                 } catch (err) {
-                  toast('error', '取消失败', err.message);
+                  toastError(err, '取消失败');
                 }
                 await refresh();
               },
@@ -271,7 +272,7 @@ function renderCommand(container) {
           await queue.refresh();
         }
       } catch (e) {
-        toast('error', '下发失败', e.message);
+        toastError(e, '下发失败');
       }
     },
   }, '执行');
@@ -368,7 +369,7 @@ function renderPlugins(container) {
       setTimeout(() => refreshList().catch(() => {}), 800);
       setTimeout(() => load().catch(() => {}), 5000);
     } catch (e) {
-      toast('error', '下发失败', e.message);
+      toastError(e, '下发失败');
     }
   };
 
@@ -561,7 +562,7 @@ function renderAppearance(container) {
           toast('ok', '已下发', '外观配置已发送，客户端会立即应用并写入设置（重启保留）。');
         }
       } catch (e) {
-        toast('error', '下发失败', e.message);
+        toastError(e, '下发失败');
       }
     },
   }, '统一下发外观');
@@ -766,7 +767,7 @@ function renderNotify(container) {
           toast('ok', '已发送', `提醒已下发${speakChk.checked ? '，并会语音播报' : ''}。`);
         }
       } catch (e) {
-        toast('error', '发送失败', e.message);
+        toastError(e, '发送失败');
       }
     },
   }, '发送提醒');
@@ -840,7 +841,7 @@ function renderAutomation(container) {
         pollHistory(deviceSelect.value, historyBox, 3);
         setTimeout(() => harvestSignals().catch(() => {}), 3000);
       } catch (e) {
-        toast('error', '请求失败', e.message);
+        toastError(e, '请求失败');
       }
     },
   }, '拉取可用信号');
@@ -865,7 +866,7 @@ function renderAutomation(container) {
         await loadCommandHistory(deviceSelect.value, historyBox);
         pollHistory(deviceSelect.value, historyBox, 3);
       } catch (e) {
-        toast('error', '触发失败', e.message);
+        toastError(e, '触发失败');
       }
     },
   }, '触发自动化');
@@ -974,7 +975,7 @@ function renderDiagnostic(container) {
         pollScreenshots(deviceId, gallery, 4);
       }
     } catch (e) {
-      toast('error', '下发失败', e.message);
+      toastError(e, '下发失败');
     }
   };
 

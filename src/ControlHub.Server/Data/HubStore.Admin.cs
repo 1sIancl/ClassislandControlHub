@@ -1,4 +1,6 @@
+using System.Text.Json;
 using ControlHub.Protocol;
+using ControlHub.Protocol.Dtos;
 using Microsoft.Data.Sqlite;
 
 namespace ControlHub.Server.Data;
@@ -482,4 +484,37 @@ public sealed partial class HubStore
 
         return items;
     }
+
+    // ────────────────────────────── 界面偏好（#40） ──────────────────────────────
+
+    /// <summary>界面偏好的设置项键：按用户隔离（与新手引导 `onboarding_done.{userId}` 同一套路）。</summary>
+    private static string UiPreferencesKey(string userId) => $"ui_prefs.{userId}";
+
+    /// <summary>
+    /// 读取某个账号的界面偏好（#40）。从未保存过、或存的内容坏掉时返回空偏好——
+    /// 布局偏好坏了不该拖着整个管理端打不开（界面会退回默认布局）。
+    /// </summary>
+    public async Task<UiPreferencesDto> GetUiPreferencesAsync(string userId,
+        CancellationToken cancellationToken = default)
+    {
+        var raw = await GetSettingAsync(UiPreferencesKey(userId), null, cancellationToken);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return new UiPreferencesDto();
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<UiPreferencesDto>(raw) ?? new UiPreferencesDto();
+        }
+        catch (JsonException)
+        {
+            return new UiPreferencesDto();
+        }
+    }
+
+    /// <summary>保存某个账号的界面偏好（覆盖式）。白名单与上限校验由端点负责，这里只落库。</summary>
+    public async Task SetUiPreferencesAsync(string userId, UiPreferencesDto preferences,
+        CancellationToken cancellationToken = default) =>
+        await SetSettingAsync(UiPreferencesKey(userId), JsonSerializer.Serialize(preferences), cancellationToken);
 }

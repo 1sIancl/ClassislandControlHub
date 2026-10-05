@@ -5,7 +5,9 @@ using ControlHub.Server.Http;
 using ControlHub.Server.Options;
 using ControlHub.Server.Services;
 using Microsoft.Extensions.Options;
+using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace ControlHub.Server.Endpoints;
 
@@ -40,6 +42,9 @@ public static class AdminEndpoints
         authed.MapGet("/me", MeAsync).RequirePermission(PermissionKeys.Authenticated);
         authed.MapPost("/password", ChangePasswordAsync).RequirePermission(PermissionKeys.Authenticated);
         authed.MapPost("/onboarding", CompleteOnboardingAsync).RequirePermission(PermissionKeys.Authenticated);
+        // 界面偏好是「每个人自己的设置」，任何已登录账号都能读写自己那份（#40）。
+        authed.MapGet("/ui-preferences", GetUiPreferencesAsync).RequirePermission(PermissionKeys.Authenticated);
+        authed.MapPut("/ui-preferences", SetUiPreferencesAsync).RequirePermission(PermissionKeys.Authenticated);
 
         // 两步验证（TOTP）：绑定 / 启用 / 关闭，都是「对自己的账号」操作，只需已登录
         authed.MapPost("/totp/setup", TotpSetupAsync).RequirePermission(PermissionKeys.Authenticated);
@@ -275,7 +280,103 @@ public static class AdminEndpoints
             mustChangePassword = user?.MustChangePassword ?? false,
             totpEnabled = user?.TotpEnabled ?? false,
             onboardingDone = await store.GetSettingAsync(OnboardingKey(session.UserId), "0", cancellationToken) == "1",
+            // 界面偏好随 /me 一起返回（#40）：省一次请求，也保证进主界面时布局已经就绪、不会先闪一下默认布局。
+            uiPreferences = await store.GetUiPreferencesAsync(session.UserId, cancellationToken),
         });
+    }
+
+    // ────────────────────────────── 界面偏好（#40） ──────────────────────────────
+
+    /// <summary>
+    /// 允许云端同步的区域白名单。**必须与前端 `prefs.js` 里用到的 scope 保持一致**。
+    /// <para>前后端同包发布，白名单外的键只可能是拼写错误或改坏的前端——直接拒绝（fail-closed），
+    /// 而不是「存进去了但界面永远不生效」，那种问题最难查。</para>
+    /// </summary>
+    private static readonly HashSet<string> UiPreferenceScopes = new(StringComparer.Ordinal)
+    {
+        "dashboard.stats",
+        "dashboard.cards",
+        "columns.devices",
+    };
+
+    /// <summary>单个区域最多允许的条目数（防止用超长 JSON 撑库）。</summary>
+    private const int MaxUiPreferenceItems = 40;
+
+    /// <summary>偏好序列化后的整体大小上限（字节）。</summary>
+    private const int MaxUiPreferencesBytes = 16 * 1024;
+
+    /// <summary>条目键的合法形式（与前端模块 / 列的 key 约定一致）。</summary>
+    private static readonly Regex UiItemKeyPattern = new("^[A-Za-z0-9_.-]{1,40}$", RegexOptions.Compiled);
+
+    /// <summary>读取当前账号的界面偏好。</summary>
+    private static async Task<ApiResult<UiPreferencesDto>> GetUiPreferencesAsync(
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var preferences = await store.GetUiPreferencesAsync(session.UserId, cancellationToken);
+        return ApiResult<UiPreferencesDto>.Success(preferences);
+    }
+
+    /// <summary>保存当前账号的界面偏好（覆盖式）。</summary>
+    private static async Task<ApiResult<UiPreferencesDto>> SetUiPreferencesAsync(
+        UiPreferencesDto request,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        ValidateUiPreferences(request);
+        await store.SetUiPreferencesAsync(session.UserId, request, cancellationToken);
+        return ApiResult<UiPreferencesDto>.Success(request);
+    }
+
+    /// <summary>校验界面偏好：区域白名单、条目数、键格式与重复、整体大小。违规**直接拒绝**，不静默裁剪。</summary>
+    private static void ValidateUiPreferences(UiPreferencesDto preferences)
+    {
+        // 空布局是合法操作：表示「清掉自定义，回到默认」。
+        if (preferences.Layouts.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var (scope, items) in preferences.Layouts)
+        {
+            if (!UiPreferenceScopes.Contains(scope))
+            {
+                throw new HubException(HubErrorCodes.ValidationFailed, $"不支持的偏好区域「{scope}」。", 400);
+            }
+
+            if (items is null || items.Count > MaxUiPreferenceItems)
+            {
+                throw new HubException(HubErrorCodes.ValidationFailed,
+                    $"「{scope}」的条目数超出上限（最多 {MaxUiPreferenceItems} 项）。", 400);
+            }
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var item in items)
+            {
+                // JSON 里可能出现 null 元素，统一用局部变量取值，避免解引用空引用。
+                var key = item?.Key ?? string.Empty;
+                if (!UiItemKeyPattern.IsMatch(key))
+                {
+                    throw new HubException(HubErrorCodes.ValidationFailed,
+                        $"「{scope}」中存在不合法的条目键。", 400);
+                }
+
+                if (!seen.Add(key))
+                {
+                    throw new HubException(HubErrorCodes.ValidationFailed,
+                        $"「{scope}」中条目「{key}」重复。", 400);
+                }
+            }
+        }
+
+        if (Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(preferences)) > MaxUiPreferencesBytes)
+        {
+            throw new HubException(HubErrorCodes.ValidationFailed, "偏好数据过大，已拒绝保存。", 400);
+        }
     }
 
     /// <summary>修改当前账号密码。</summary>
@@ -359,7 +460,8 @@ public static class AdminEndpoints
         string? action = null,
         string? ip = null,
         string? from = null,
-        string? to = null)
+        string? to = null,
+        string? target = null)
     {
         http.RequireAdminSession();
 
@@ -371,6 +473,8 @@ public static class AdminEndpoints
             Ip = ip,
             From = ParseAuditTime(from),
             To = ParseAuditTime(to, endOfDay: true),
+            // 对象级时间线（#42）：按 target 精确取「以这个对象为目标」的操作。
+            Target = target,
         };
 
         var (items, total) = await store.QueryAuditLogsAsync(filter, page ?? 1, pageSize ?? 50, cancellationToken);
@@ -395,6 +499,7 @@ public static class AdminEndpoints
         string? ip = null,
         string? from = null,
         string? to = null,
+        string? target = null,
         bool mask = true)
     {
         var session = http.RequireAdminSession();
@@ -406,6 +511,7 @@ public static class AdminEndpoints
             Ip = ip,
             From = ParseAuditTime(from),
             To = ParseAuditTime(to, endOfDay: true),
+            Target = target,
         };
 
         var rows = await store.ExportAuditLogsAsync(filter, 20_000, cancellationToken);
@@ -447,6 +553,7 @@ public static class AdminEndpoints
         if (!string.IsNullOrWhiteSpace(filter.Search)) parts.Add($"关键词={filter.Search}");
         if (!string.IsNullOrWhiteSpace(filter.Actor)) parts.Add($"操作者={filter.Actor}");
         if (!string.IsNullOrWhiteSpace(filter.ActionPrefix)) parts.Add($"动作前缀={filter.ActionPrefix}");
+        if (!string.IsNullOrWhiteSpace(filter.Target)) parts.Add($"对象={filter.Target}");
         if (!string.IsNullOrWhiteSpace(filter.Ip)) parts.Add($"来源={filter.Ip}");
         if (filter.From.HasValue) parts.Add($"从 {filter.From.Value.ToLocalTime():yyyy-MM-dd HH:mm}");
         if (filter.To.HasValue) parts.Add($"到 {filter.To.Value.ToLocalTime():yyyy-MM-dd HH:mm}");

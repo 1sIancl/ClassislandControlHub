@@ -10,6 +10,15 @@ using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Options;
 
+// 备份解密（#60）必须在启动 Web 服务之前处理：这一步的典型场景是**灾难恢复 / 换机器**，
+// 那时服务端往往跑不起来（库损坏、环境没配好），而备份必须能解出来。
+// 注意用 Environment.Exit 而不是 return：top-level 里 `return 值` 会被推断成「入口返回 int」，
+// 编译器随后会要求所有代码路径都返回值。
+if (BackupTools.TryRunCommandLine(args, out var cliExitCode))
+{
+    Environment.Exit(cliExitCode);
+}
+
 // 以可执行文件所在目录作为内容根，这样无论从哪个工作目录启动，
 // appsettings.json 与 wwwroot 都能被正确定位（便于做成开机自启的服务）。
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
@@ -301,6 +310,7 @@ app.MapClientEndpoints();
 app.MapAdminEndpoints();
 app.MapDeviceEndpoints();
 app.MapDeviceCsvEndpoints();
+app.MapSearchEndpoints();
 app.MapMetricsEndpoints();
 app.MapApiKeyEndpoints();
 app.MapProfileEndpoints();

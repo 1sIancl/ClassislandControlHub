@@ -7,7 +7,13 @@
  *   - 布局（侧边栏折叠、密度）        全局外壳（app-shell / content）。
  *   - 模块（仪表盘卡片显隐与顺序）     仅「仪表盘」页。
  *   - 字段（表格列显隐）              仅对应表格页（devices / profiles 等）。
+ *
+ * 「布局类」偏好还会**同步到账号**（#40，`/admin/ui-preferences`）：换台电脑登录同一账号，
+ * 模块顺序与显隐仍然一致。主题 / 密度 / 字体这类设备相关的仍只存本机——办公室电脑与教室大屏
+ * 对它们的要求往往不同，同步过去反而是打扰。
  */
+
+import { api, session } from './api.js?v=56';
 
 const PREFIX = 'controlhub.ui.';
 
@@ -98,6 +104,50 @@ export function setDensity(value) {
 //
 // 约定数据结构：数组，元素为 `{ key, enabled, label }` 或纯字符串 key。
 // 顺序即展示顺序。
+//
+// 同步（#40）：布局类偏好除本机 localStorage 外还写一份到账号。
+// 同步失败**不静默**：未上传成功的区域记进 `layoutSyncPending`，下次启动保留本地版本并重试，
+// 配置面板里也会显示同步状态——否则会出现「我明明改过，过两天自己变回去了」这种无从查起的问题。
+
+/** 允许同步到账号的区域（必须与后端白名单 `UiPreferenceScopes` 一一对应）。 */
+const SYNC_SCOPES = ['dashboard.stats', 'dashboard.cards', 'columns.devices'];
+
+const SYNC_PENDING_KEY = 'layoutSyncPending';
+
+/** 最近一次同步结果，供配置面板显示（idle / syncing / ok / error）。 */
+let lastSync = { state: 'idle', message: '' };
+
+export function getLayoutSyncState() {
+  return { ...lastSync };
+}
+
+/** 同步状态变化的订阅者（同一时刻只有当前打开的配置面板会订阅）。 */
+let syncListener = null;
+
+export function onLayoutSyncChange(handler) {
+  syncListener = handler;
+}
+
+function notifySync(next) {
+  lastSync = next;
+  try {
+    syncListener?.();
+  } catch {
+    /* 面板已关闭等场景：忽略 */
+  }
+}
+
+function pendingScopes() {
+  const list = store.get(SYNC_PENDING_KEY, []);
+  return Array.isArray(list) ? list : [];
+}
+
+function setPending(scope, pending) {
+  const set = new Set(pendingScopes());
+  if (pending) set.add(scope);
+  else set.delete(scope);
+  store.set(SYNC_PENDING_KEY, [...set]);
+}
 
 export function getLayout(scope, defaults) {
   const saved = store.get(`layout.${scope}`, null);
@@ -121,6 +171,87 @@ export function getLayout(scope, defaults) {
 
 export function saveLayout(scope, items) {
   store.set(`layout.${scope}`, items);
+  if (SYNC_SCOPES.includes(scope)) {
+    setPending(scope, true);
+    void pushLayouts();
+  }
+}
+
+/** 收集本机已保存过的布局，组装成 `/admin/ui-preferences` 的请求体（未保存过的区域不上传，免得把默认值写成自定义）。 */
+function collectLayouts() {
+  const layouts = {};
+  for (const scope of SYNC_SCOPES) {
+    const saved = store.get(`layout.${scope}`, null);
+    if (Array.isArray(saved) && saved.length > 0) {
+      layouts[scope] = saved
+        .filter((i) => i && typeof i.key === 'string')
+        .map((i) => ({ key: i.key, enabled: i.enabled !== false }));
+    }
+  }
+  return layouts;
+}
+
+let pushing = false;
+
+/** 把本机布局推到账号。失败时保留 pending 标记（下次启动重试）并如实记录状态。 */
+async function pushLayouts() {
+  // 未登录（登录页 / 免登录外壳首屏）时不发请求：本机照常生效，登录后再同步。
+  if (pushing || !session.me) return;
+  pushing = true;
+  notifySync({ state: 'syncing', message: '正在同步到账号…' });
+  try {
+    await api('/admin/ui-preferences', { method: 'PUT', body: { layouts: collectLayouts() } });
+    store.set(SYNC_PENDING_KEY, []);
+    notifySync({ state: 'ok', message: '已同步到账号' });
+  } catch (err) {
+    notifySync({ state: 'error', message: `未能同步到账号（已保存在本机，下次登录会重试）：${err.message || '请求失败'}` });
+  } finally {
+    pushing = false;
+  }
+}
+
+/**
+ * 应用账号里的布局偏好（登录后、进主界面前调用，见 app.js `showApp`）。
+ * 有未同步改动的区域**保留本机版本**并顺带重试上传，避免被云端旧值悄悄覆盖。
+ */
+export function applyRemotePrefs(preferences) {
+  const layouts = preferences?.layouts;
+  if (layouts && typeof layouts === 'object') {
+    const pending = new Set(pendingScopes());
+    for (const [scope, items] of Object.entries(layouts)) {
+      if (!SYNC_SCOPES.includes(scope) || !Array.isArray(items) || items.length === 0) continue;
+      if (pending.has(scope)) continue;
+      store.set(`layout.${scope}`, items);
+    }
+  }
+  if (pendingScopes().length > 0) {
+    void pushLayouts();
+  } else if (lastSync.state === 'idle') {
+    notifySync({ state: 'ok', message: '已从账号载入布局偏好' });
+  }
+}
+
+// ────────────────────────── 课表视图缩放（#54） ──────────────────────────
+//
+// 只存本机、不同步账号：同一账号在办公室笔记本与教室大屏上想要的格子密度往往不同，
+// 不像仪表盘布局那样需要跨设备一致（也就没必要进服务端的偏好白名单）。
+
+export const SCHED_SCALES = [
+  { key: 'comfort', label: '宽松', hint: '格子大、看得清（默认）' },
+  { key: 'compact', label: '紧凑', hint: '一屏能看更多节次' },
+];
+
+export function getSchedScale() {
+  return store.get('schedScale', 'comfort');
+}
+
+export function applySchedScale() {
+  document.body.classList.toggle('sched-compact', getSchedScale() === 'compact');
+}
+
+export function setSchedScale(value) {
+  store.set('schedScale', value === 'compact' ? 'compact' : 'comfort');
+  applySchedScale();
 }
 
 // ────────────────────────── 外观（强调色 / 字体 / 圆角） ──────────────────────────

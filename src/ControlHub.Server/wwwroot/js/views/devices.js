@@ -4,13 +4,16 @@
  * 并可切换到列表视图查看完整状态明细。注册码管理一并放在本页。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=44';
+import { api, fetchBlob } from '../core/api.js?v=56';
+import { toastError, errorBlock } from '../core/errors.js?v=56';
 import {
   h, clear, formatDateTime, relativeTime, toast, loadingBlock,
   modal, confirmDialog, deviceStateBadge, syncBadge,
   emptyState, field, select, copyText, append, undoBar,
-} from '../core/ui.js?v=44';
-import { getLayout, saveLayout } from '../core/prefs.js?v=44';
+} from '../core/ui.js?v=56';
+import { getLayout, saveLayout } from '../core/prefs.js?v=56';
+import { auditTimelineSection } from '../core/audit-timeline.js?v=56';
+import { selectionSummary } from '../core/batch-summary.js?v=56';
 
 export const meta = {
   title: '设备管理',
@@ -208,6 +211,12 @@ export async function render(container, params = {}) {
     filter.groupId = params.group || '';
   }
 
+  // 全局搜索（#41）跳过来时带着关键字：预填搜索框，落地直接看到那一台，
+  // 而不是把人丢进几百台的列表里再自己找一遍。
+  if (params.kw !== undefined) {
+    filter.keyword = params.kw || '';
+  }
+
   clear(container);
   container.appendChild(loadingBlock());
 
@@ -234,6 +243,8 @@ function renderToolbar() {
   return h('div.toolbar',
     h('input', {
       type: 'text',
+      // class 供键盘快捷键「/」定位搜索框（见 core/shortcuts.js）
+      class: 'toolbar-search',
       placeholder: '搜索教室名 / 机器名 / IP…',
       value: filter.keyword,
       onInput: (e) => {
@@ -603,7 +614,7 @@ async function moveDevice(deviceId, groupId) {
     toast('ok', '已调整归属', `${device.name} → ${target ? groupPathLabel(target) : '未分组'}`);
     repaintBoard();
   } catch (err) {
-    toast('error', '调整归属失败', err.message);
+    toastError(err, '调整归属失败');
   }
 }
 
@@ -625,7 +636,7 @@ async function pushGroup(group) {
     });
     toast('ok', '下发已发出', `影响 ${result.affected} 台设备。`);
   } catch (err) {
-    toast('error', '下发失败', err.message);
+    toastError(err, '下发失败');
   }
 }
 
@@ -741,7 +752,7 @@ function openGroupDialog(group, options = {}) {
           toast('ok', body.parentId ? '楼层已创建' : '楼栋已创建');
         }
       } catch (err) {
-        toast('error', '保存失败', err.message);
+        toastError(err, '保存失败');
         return false;
       }
 
@@ -862,7 +873,8 @@ function selectionBar() {
         const targets = active();
         if (targets.length === 0) { toast('warn', '所选设备均已被停用'); return; }
         if (!await confirmDialog('批量下发配置',
-          `将通知所选 ${targets.length} 台设备立即重新拉取配置。确定继续吗？`, '下发')) {
+          `将通知 ${targets.length} 台设备立即重新拉取配置。\n`
+          + `${selectionSummary(cache.devices, ids)}\n\n确定继续吗？`, '下发')) {
           return;
         }
 
@@ -925,7 +937,7 @@ async function exportDevices() {
       `devices-${new Date().toISOString().slice(0, 10)}.csv`,
       '文件里的内网 IP 已脱敏；需要完整地址请用接口加 mask=false。');
   } catch (err) {
-    toast('error', '导出失败', err.message);
+    toastError(err, '导出失败');
   }
 }
 
@@ -1023,6 +1035,12 @@ function bulkNotify(ids) {
   modal({
     title: `向 ${ids.length} 台设备发送通知`,
     body: h('div',
+      // 通知是「讲时效」的：离线设备不排队——等它上线再收到这条通知，内容往往已经没意义了（#52）。
+      h('div.notice.notice-info',
+        h('span.notice-icon', 'i'),
+        h('div', selectionSummary(cache.devices, [...selection], {
+          offlineNote: '不会收到（通知不排队：等它上线，这条内容通常已经过时）',
+        }))),
       field('标题', titleInput, '可留空，只发正文。支持变量：{教室名} {机器名} {分组} {IP} {时间} {日期}'),
       field('内容', msgInput, '同样支持上面那组变量，按各教室自动替换——例如「请 {教室名} 于 {时间} 关闭投影」。'),
       h('label.checkbox-field', speakChk,
@@ -1056,7 +1074,8 @@ function bulkNotify(ids) {
 async function bulkRestart(ids) {
   if (ids.length === 0) { toast('warn', '所选设备均已被停用'); return; }
   if (!await confirmDialog('重启 ClassIsland',
-    `将重启所选 ${ids.length} 台设备上的 ClassIsland 进程（大屏会短暂黑屏后自动恢复）。确定继续吗？`, '重启')) {
+    `将重启 ${ids.length} 台设备上的 ClassIsland 进程（大屏会短暂黑屏后自动恢复）。\n`
+    + `${selectionSummary(cache.devices, [...selection])}\n\n确定继续吗？`, '重启')) {
     return;
   }
 
@@ -1069,7 +1088,9 @@ async function bulkRestart(ids) {
 async function bulkPower(ids, kind, label, warning) {
   if (ids.length === 0) { toast('warn', '所选设备均已被停用'); return; }
   if (!await confirmDialog(`批量${label}`,
-    `将对所选 ${ids.length} 台设备执行「${label}」。\n${warning}\n\n该操作不可撤销，确定继续吗？`,
+    `将对 ${ids.length} 台设备执行「${label}」。\n`
+    + `${selectionSummary(cache.devices, [...selection])}\n`
+    + `${warning}\n\n该操作不可撤销，确定继续吗？`,
     label, true)) {
     return;
   }
@@ -1151,6 +1172,158 @@ function openColumnCustomize() {
   });
 }
 
+/** 指令类型 → 中文名。未列出的类型直接显示原文，不猜。 */
+const COMMAND_KIND_LABELS = {
+  shell: '执行命令',
+  notify: '提醒通知',
+  'appearance.apply': '下发外观',
+  'plugin.refresh': '刷新插件列表',
+  'automation.list': '查询自动化信号',
+  'automation.trigger': '触发自动化',
+  screenshot: '屏幕截图',
+  restart: '重启 ClassIsland',
+  shutdown: '关机',
+  'power.off': '关机',
+  'power.reboot': '重启设备',
+};
+
+function commandKindLabel(kind) {
+  if (!kind) return '（未知指令）';
+  return COMMAND_KIND_LABELS[kind] ? `${COMMAND_KIND_LABELS[kind]}（${kind}）` : kind;
+}
+
+/** 把秒数写成紧凑文本：3 天 2 小时 / 5 分 30 秒。 */
+function shortDuration(seconds) {
+  const s = Math.max(0, Math.floor(seconds));
+  const days = Math.floor(s / 86400);
+  const hours = Math.floor((s % 86400) / 3600);
+  const minutes = Math.floor((s % 3600) / 60);
+  if (days > 0) return `${days} 天 ${hours} 小时`;
+  if (hours > 0) return `${hours} 小时 ${minutes} 分`;
+  if (minutes > 0) return `${minutes} 分 ${s % 60} 秒`;
+  return `${s} 秒`;
+}
+
+/**
+ * 倒计时文本。
+ * @param {string} iso 目标时刻。
+ * @param {'expires'|'from'} kind `expires` = 距离作废还剩多久；`from` = 距离生效还有多久。
+ */
+function countdownText(iso, kind) {
+  const diff = new Date(iso).getTime() - Date.now();
+  const text = shortDuration(Math.abs(diff) / 1000);
+  if (kind === 'expires') {
+    return diff <= 0 ? '已到期' : `还剩 ${text}`;
+  }
+  return diff <= 0 ? '已到时间' : `${text}后生效`;
+}
+
+/**
+ * 「待执行指令」区块（#3）：看过期时间、看排队位置，必要时取消。
+ *
+ * 解决的问题：指令发出去之后，管理端只能看到「已下发」，分不清它是**排在队里等设备上线**、
+ * 还是**已经派发给设备但设备没回**。队列 + 剩余有效期摆出来，管理员才知道该等、该重发，还是该取消。
+ *
+ * @returns {{el: HTMLElement, stop: Function}} 弹窗关闭时**必须**调 `stop()`，否则倒计时会一直跑。
+ */
+function pendingCommandsSection(device) {
+  const box = h('div');
+  let timer = null;
+
+  /** 每秒只改倒计时文本，不重新请求接口（省流量、也不闪）。 */
+  function tick() {
+    for (const cell of box.querySelectorAll('[data-countdown]')) {
+      cell.textContent = countdownText(cell.dataset.countdown, cell.dataset.countdownKind);
+    }
+  }
+
+  function renderQueue(rows, reload) {
+    const title = h('div.config-section-title', '待执行指令');
+
+    if (rows.length === 0) {
+      return h('div',
+        title,
+        h('p.card-desc', { style: { margin: '0 0 4px' } }, device.online
+          ? '队列是空的：已下发的指令都已经派发给这台设备。'
+          : '队列是空的。这台设备当前离线，新下发的指令会先排队，等它上线后自动派发。'),
+      );
+    }
+
+    return h('div',
+      title,
+      h('p.card-desc', { style: { margin: '0 0 8px' } },
+        `有 ${rows.length} 条指令还没派发`
+        + `${device.online ? '' : '（设备当前离线，上线后会自动派发）'}。`
+        + '过期未派发的会自动作废，也可以在这里手动取消。'),
+      h('div.config-panel', ...rows.map((row) => {
+        const pendingNotBefore = row.notBefore && new Date(row.notBefore).getTime() > Date.now();
+        return h('div.config-item',
+          h('div', { style: { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 } },
+            h('span', { style: { fontWeight: '600', fontSize: '13px' } }, commandKindLabel(row.kind)),
+            h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } },
+              `${row.issuedBy || '—'} 于 ${formatDateTime(row.issuedAt)} 下发`),
+          ),
+          h('span', {
+            style: {
+              marginLeft: 'auto', flex: 'none', display: 'flex', alignItems: 'center', gap: '10px',
+            },
+          },
+            pendingNotBefore
+              ? h('span.dchip-tag', {
+                dataset: { countdown: row.notBefore, countdownKind: 'from' },
+              }, countdownText(row.notBefore, 'from'))
+              : null,
+            row.expiresAt
+              ? h('span', {
+                style: { color: 'var(--text-faint)', fontSize: '12px', fontVariantNumeric: 'tabular-nums' },
+                dataset: { countdown: row.expiresAt, countdownKind: 'expires' },
+              }, countdownText(row.expiresAt, 'expires'))
+              : h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } }, '长期有效'),
+            h('button.btn.btn-sm.btn-danger', {
+              type: 'button',
+              title: '取消这条指令（设备尚未取走）',
+              onClick: async () => {
+                if (!await confirmDialog('取消指令',
+                  `取消这条「${commandKindLabel(row.kind)}」？设备还没取走，取消后不会执行。`,
+                  '取消指令', true)) {
+                  return;
+                }
+
+                try {
+                  await api(`/admin/devices/commands/${row.id}`, { method: 'DELETE' });
+                  toast('ok', '已取消');
+                  await reload();
+                } catch (err) {
+                  toastError(err, '取消失败');
+                }
+              },
+            }, '取消'),
+          ),
+        );
+      })),
+    );
+  }
+
+  async function load() {
+    clear(box);
+    box.appendChild(h('p.card-desc', '正在读取待执行指令…'));
+    try {
+      const rows = await api(`/admin/devices/${device.id}/commands/queue`);
+      clear(box);
+      box.appendChild(renderQueue(rows, load));
+      tick();
+    } catch (err) {
+      clear(box);
+      box.appendChild(errorBlock(err, { title: '读取待执行指令失败', onRetry: load }));
+    }
+  }
+
+  load();
+  timer = setInterval(tick, 1000);
+
+  return { el: box, stop: () => clearInterval(timer) };
+}
+
 /** 设备详情：改名称/归属/档案，并可直接查看日志、停用或删除。 */
 function openDeviceDialog(device) {
   const nameInput = h('input', { type: 'text', value: device.name });
@@ -1169,6 +1342,11 @@ function openDeviceDialog(device) {
     ],
     device.profileId || '',
   );
+
+  // 待执行指令队列（#3）：弹窗关闭时必须停掉它的倒计时。
+  const pendingCommands = pendingCommandsSection(device);
+  // 操作历史时间线（#42）：谁在什么时候改过这台设备。
+  const auditTimeline = auditTimelineSection(device.name);
 
   modal({
     title: `教室 · ${device.name}`,
@@ -1198,6 +1376,8 @@ function openDeviceDialog(device) {
       field('指定配置档案', profileSelect,
         '优先级：设备指定 → 所属楼层 → 所属楼栋 → 全局默认。'),
       field('备注', remarkInput, '仅管理端可见，用于在列表里快速认出这台设备。'),
+      pendingCommands.el,
+      auditTimeline.el,
       h('div.card-actions',
         h('button.btn.btn-sm', { type: 'button', onClick: () => openLogsDialog(device) }, '查看日志'),
         h('button.btn.btn-sm', {
@@ -1222,6 +1402,7 @@ function openDeviceDialog(device) {
       ),
     ),
     confirmText: '保存',
+    onClose: () => pendingCommands.stop(),
     onConfirm: async () => {
       await api(`/admin/devices/${device.id}`, {
         method: 'PUT',

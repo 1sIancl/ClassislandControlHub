@@ -2,8 +2,9 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=44';
-import { h, clear, toast, icon } from './core/ui.js?v=44';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=56';
+import { toastError } from './core/errors.js?v=56';
+import { h, clear, toast, icon } from './core/ui.js?v=56';
 import {
   initTheme, getTheme, applyTheme, THEMES,
   getSidebarCollapsed, setSidebarCollapsed,
@@ -11,12 +12,16 @@ import {
   applyAppearance, getAccent, setAccent, ACCENTS,
   getFont, setFont, FONTS,
   getRadius, setRadius, RADII,
-} from './core/prefs.js?v=44';
+  applyRemotePrefs, applySchedScale,
+} from './core/prefs.js?v=56';
+import { initShortcuts, shortcutHint } from './core/shortcuts.js?v=56';
+import { openSearch } from './core/search.js?v=56';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
 applyAppearance();
 applyDensity();
+applySchedScale();
 setSidebarCollapsed(getSidebarCollapsed());
 
 
@@ -57,17 +62,17 @@ const NAV = [
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=44'),
-  devices: () => import('./views/devices.js?v=44'),
+  dashboard: () => import('./views/dashboard.js?v=56'),
+  devices: () => import('./views/devices.js?v=56'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=44'),
-  profiles: () => import('./views/profiles.js?v=44'),
-  profileEditor: () => import('./views/profileEditor.js?v=44'),
-  deploy: () => import('./views/deploy.js?v=44'),
-  remote: () => import('./views/remote.js?v=44'),
-  reminders: () => import('./views/reminders.js?v=44'),
-  audit: () => import('./views/audit.js?v=44'),
-  settings: () => import('./views/settings.js?v=44'),
+  groups: () => import('./views/devices.js?v=56'),
+  profiles: () => import('./views/profiles.js?v=56'),
+  profileEditor: () => import('./views/profileEditor.js?v=56'),
+  deploy: () => import('./views/deploy.js?v=56'),
+  remote: () => import('./views/remote.js?v=56'),
+  reminders: () => import('./views/reminders.js?v=56'),
+  audit: () => import('./views/audit.js?v=56'),
+  settings: () => import('./views/settings.js?v=56'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -491,6 +496,11 @@ async function showApp() {
   document.getElementById('app').hidden = false;
 
   const me = session.me || {};
+
+  // 先把账号里的布局偏好铺到本机（#40）：必须在下面路由渲染之前，
+  // 否则会先闪一下默认布局再跳成自定义布局。未登录 / 无偏好时此调用是空操作。
+  applyRemotePrefs(me.uiPreferences);
+
   document.getElementById('userName').textContent = me.displayName || me.username || '管理员';
   document.getElementById('userAvatar').textContent = (me.displayName || me.username || 'A').slice(0, 1).toUpperCase();
 
@@ -506,7 +516,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=44');
+    const { startTour } = await import('./core/tour.js?v=56');
     startTour({
       onFinish: async (skipped) => {
         try {
@@ -525,6 +535,9 @@ function renderNav() {
   const nav = document.getElementById('navList');
   clear(nav);
 
+  // 快捷键序号：只给「有权限、真的出现在导航里」的页面编号，与 Alt + 数字一一对应（#46）。
+  let shortcutIndex = 0;
+
   for (const group of NAV) {
     // 没有权限的页面直接不出现；整组都没权限时连分组标题也省掉。
     const items = group.items.filter((item) => can(item.perm));
@@ -532,10 +545,13 @@ function renderNav() {
 
     nav.appendChild(h('div.nav-group-label', group.label));
     for (const item of items) {
+      shortcutIndex++;
+      const hint = shortcutIndex <= 9 ? shortcutHint(shortcutIndex) : '';
       const iconEl = h('span.nav-icon');
       iconEl.appendChild(icon(item.icon, 17));
       const button = h('button.nav-item', {
         type: 'button',
+        title: hint ? `${item.label}（${hint}）` : item.label,
         dataset: { key: item.key },
         onClick: () => {
           window.location.hash = item.hash;
@@ -552,6 +568,10 @@ function renderNav() {
 function bindShellEvents() {
   if (bindShellEvents.bound) return;
   bindShellEvents.bound = true;
+
+  // 键盘快捷键：Ctrl + K 全局搜索、Alt + 数字跳页、/ 聚焦搜索、? 打开帮助（#46 / #50 / #41）
+  initShortcuts();
+  document.getElementById('searchBtn').addEventListener('click', () => openSearch());
 
   document.getElementById('refreshBtn').addEventListener('click', () => route());
 
@@ -730,7 +750,7 @@ async function route() {
         h('div', h('strong', '页面加载失败'), h('div', err.message || String(err))),
       ),
     ));
-    toast('error', '加载失败', err.message || String(err));
+    toastError(err, '加载失败');
   }
 }
 

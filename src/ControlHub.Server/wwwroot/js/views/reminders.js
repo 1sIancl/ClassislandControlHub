@@ -3,11 +3,11 @@
  * 提醒按账号隔离：这里只会看到、也只能改到自己创建的提醒；到点由服务端调度器推送到教室大屏。
  */
 
-import { api } from '../core/api.js?v=44';
+import { api } from '../core/api.js?v=56';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, select,
   emptyState, formatDateTime, relativeTime,
-} from '../core/ui.js?v=44';
+} from '../core/ui.js?v=56';
 
 export const meta = {
   title: '定时提醒',
@@ -234,7 +234,7 @@ async function runNow(container, reminder) {
     toast('ok', '已推送', `推送到 ${result.affected} 台在线设备${result.skipped ? `，跳过离线 ${result.skipped} 台` : ''}。`);
     await reload(container);
   } catch (err) {
-    toast('error', '推送失败', err.message);
+    toastError(err, '推送失败');
   }
 }
 
@@ -245,7 +245,7 @@ async function toggleEnabled(container, reminder) {
     toast('ok', reminder.enabled ? '已停用' : '已启用');
     await reload(container);
   } catch (err) {
-    toast('error', '操作失败', err.message);
+    toastError(err, '操作失败');
   }
 }
 
@@ -453,7 +453,7 @@ function openEditor(container, reminder) {
           toast('ok', '提醒已创建', body.enabled ? '到点会自动推送到教室大屏。' : '当前为停用状态。');
         }
       } catch (err) {
-        toast('error', '保存失败', err.message);
+        toastError(err, '保存失败');
         return false;
       }
 

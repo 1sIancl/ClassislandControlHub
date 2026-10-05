@@ -1,5 +1,8 @@
 /** 轻量 DOM 构建与通用交互组件，无框架依赖。 */
 
+// 只引「错误码 → 怎么办」的纯映射（#51）：本文件是最底层模块，不能反过来依赖 errors.js。
+import { formatErrorText, hasErrorHint } from './error-hints.js?v=56';
+
 /**
  * 创建元素。
  * @param {string} tag 标签名，支持 `div.card` / `span#id.cls` 简写。
@@ -33,7 +36,7 @@ export function h(tag, attrs = {}, ...children) {
     } else if (key === 'html') {
       el.innerHTML = value;
     } else if (key.startsWith('on') && typeof value === 'function') {
-      el.addEventListener(key.slice(2).toLowerCase(), value);
+      el.addEventListener(key.slice(2).toLowerCase(), guardHandler(value));
     } else if (key === 'value' && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) {
       el.value = value;
     } else if (value === true) {
@@ -49,11 +52,66 @@ export function h(tag, attrs = {}, ...children) {
 
 /** 递归追加子节点。 */
 export function append(parent, children) {
-  for (const child of children.flat(Infinity)) {
+  // 容错：调用方可能漏写数组括号、直接传单个节点 / 字符串（历史上这么踩过两次——
+  // 仪表盘「自定义」与设备表「自定义列」两个面板因此「点了没反应」，错误只留在控制台里）。
+  // 数组路径的行为完全不变。
+  const list = (Array.isArray(children) ? children : [children]).flat(Infinity);
+  for (const child of list) {
     if (child === null || child === undefined || child === false) continue;
     parent.appendChild(child instanceof Node ? child : document.createTextNode(String(child)));
   }
   return parent;
+}
+
+// ── 事件处理器兜底 ──────────────────────────────────────────────────────
+
+/**
+ * 把错误报给用户（而不是只留在控制台）。
+ * <para>「点了没反应」是本项目踩过两次的坑（漏 import、`append()` 收到单个节点），
+ * 现场只能靠猜；统一弹一次原因，截图即可定位。</para>
+ */
+function reportHandlerError(err) {
+  // 这里是所有「没被单独接住」的操作的实际出口，光转述服务端原文不够用（#51）：
+  // 按错误码补一句「怎么办」，带建议的多停留一会儿。
+  toast('error', '操作失败', formatErrorText(err), hasErrorHint(err) ? 8000 : 4200);
+}
+
+/**
+ * 给事件处理器套一层兜底：同步抛错与异步 rejection 都会弹出原因。
+ * <para>`h()` 会丢弃处理器的返回值，所以 `onClick: async () => { await api(...) }` 一旦失败
+ * 就是未处理的 Promise rejection——界面毫无反应。这里统一接住。</para>
+ */
+function guardHandler(handler) {
+  return (event) => {
+    try {
+      const result = handler(event);
+      if (result && typeof result.catch === 'function') {
+        result.catch(reportHandlerError);
+      }
+      return result;
+    } catch (err) {
+      reportHandlerError(err);
+      return undefined;
+    }
+  };
+}
+
+/**
+ * 手动兜底（需要自定义提示文案时用），例如：
+ * <code>onClick: () => guard('打开自定义仪表盘', () => openCustomize())</code>。
+ * <para>没有它也能被 `h()` 的安全网接住，只是提示文案会退化成通用的「操作失败」。</para>
+ */
+export function guard(label, action) {
+  try {
+    const result = action();
+    if (result && typeof result.catch === 'function') {
+      result.catch((err) => toast('error', `${label}失败`, formatErrorText(err), hasErrorHint(err) ? 8000 : 4200));
+    }
+    return result;
+  } catch (err) {
+    toast('error', `${label}失败`, formatErrorText(err), hasErrorHint(err) ? 8000 : 4200);
+    return undefined;
+  }
 }
 
 /** 生成文档片段。 */
@@ -161,7 +219,10 @@ export function toast(type, title, body = '', timeout = 3600) {
 /**
  * 打开弹窗。
  * @param {{title:string, body:Node|Node[], width?:'wide'|'xwide', confirmText?:string,
- *          cancelText?:string, danger?:boolean, onConfirm?:Function, hideFooter?:boolean}} options
+ *          cancelText?:string, danger?:boolean, onConfirm?:Function, hideFooter?:boolean,
+ *          onClose?:Function}} options
+ *   <para><c>onClose</c> 在**任何**关闭路径（确定 / 取消 / ✕ / 点遮罩 / Esc）后都会调用一次，
+ *   供调用方做清理（清定时器、复位「已打开」标记等）——只包装返回的 <c>close</c> 是盖不全的。</para>
  * @returns {{close:Function, el:HTMLElement, bodyEl:HTMLElement}}
  */
 export function modal(options) {
@@ -173,6 +234,11 @@ export function modal(options) {
     host.hidden = true;
     clear(host);
     document.removeEventListener('keydown', onKey);
+    try {
+      options.onClose?.();
+    } catch {
+      // 关闭回调里的异常不该影响「窗口已经关掉」这个事实。
+    }
   };
 
   const onKey = (e) => {
@@ -195,7 +261,8 @@ export function modal(options) {
       const result = await options.onConfirm();
       if (result !== false) close();
     } catch (err) {
-      toast('error', '操作失败', err.message || String(err));
+      // 所有弹窗的「确定」都走这里（保存 / 确认类操作），同样带上「怎么办」（#51）。
+      toast('error', '操作失败', formatErrorText(err), hasErrorHint(err) ? 8000 : 4200);
     } finally {
       confirmBtn.disabled = false;
       confirmBtn.textContent = original;

@@ -234,3 +234,24 @@ public sealed class RegisterRequestReject
     /// <summary>拒绝理由（会记录在申请上，便于以后追溯）。</summary>
     public string? Reason { get; set; }
 }
+
+/// <summary>
+/// 界面偏好（#40）：跨设备保持一致的那部分自定义设置。
+/// <para>只收「布局类」偏好（模块顺序与显隐、表格列）。主题 / 密度 / 字体这类**设备相关**的仍留在浏览器本地：
+/// 同一账号在办公室电脑和教室大屏上的要求往往不同，同步过去反而是打扰。</para>
+/// </summary>
+public sealed class UiPreferencesDto
+{
+    /// <summary>区域（scope）→ 布局项数组；数组顺序即展示顺序。</summary>
+    public Dictionary<string, List<UiLayoutItemDto>> Layouts { get; set; } = [];
+}
+
+/// <summary>布局中的一项（模块 / 列）。</summary>
+public sealed class UiLayoutItemDto
+{
+    /// <summary>模块 / 列的唯一键，与前端 `prefs.js` 中该 scope 的 key 对应。</summary>
+    public string Key { get; set; } = string.Empty;
+
+    /// <summary>是否显示。</summary>
+    public bool Enabled { get; set; } = true;
+}

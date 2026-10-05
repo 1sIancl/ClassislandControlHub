@@ -1,14 +1,18 @@
 /**
  * 仪表盘视图：总体概览、服务器信息与最近事件。
- * 统计模块支持自定义（显隐与顺序，持久化于本地偏好 `controlhub.ui.layout.dashboard.stats`）。
+ *
+ * 「统计卡片」与「页面模块」都支持自定义显隐与顺序（#40）：本机存 localStorage，
+ * 同时同步到账号（见 core/prefs.js），换台电脑登录后布局保持一致。
  */
 
-import { api, session } from '../core/api.js?v=44';
+import { api, session } from '../core/api.js?v=56';
 import {
   h, clear, formatDateTime, formatDuration, relativeTime,
-  loadingBlock, modal, append, icon,
-} from '../core/ui.js?v=44';
-import { getLayout, saveLayout } from '../core/prefs.js?v=44';
+  loadingBlock, modal, append, icon, toast, guard,
+} from '../core/ui.js?v=56';
+import {
+  getLayout, saveLayout, getLayoutSyncState, onLayoutSyncChange,
+} from '../core/prefs.js?v=56';
 
 export const meta = {
   title: '仪表盘',
@@ -49,16 +53,17 @@ export async function render(container, params) {
 
   clear(container);
   container.appendChild(h('div',
+    h('div', { style: { display: 'flex', justifyContent: 'flex-end', marginBottom: '10px' } },
+      h('button.btn.btn-sm', {
+        type: 'button',
+        onClick: () => guard('打开自定义仪表盘', () => openCustomize()),
+      }, '自定义仪表盘')),
     renderStats(stats),
-    h('div.grid-2',
-      renderServerCard(info, stats),
-      renderEventCard(stats),
-    ),
-    renderOnboarding(stats, devices),
-    renderDevicePreview(devices),
+    ...renderCards({ stats, info, devices }),
   ));
 }
 
+/** 统计卡片：显隐与顺序由 `dashboard.stats` 布局决定；全部关掉时整块不占位。 */
 function renderStats(stats) {
   const layout = getLayout('dashboard.stats', STAT_KEYS());
   const defs = layout
@@ -66,16 +71,43 @@ function renderStats(stats) {
     .map((l) => STAT_DEFS.find((d) => d.key === l.key))
     .filter(Boolean);
 
-  const customizeBtn = h('button.btn.btn-sm', { onClick: openStatCustomize }, '自定义统计模块');
+  if (defs.length === 0) return null;
+  return h('div.stat-grid', ...defs.map((d) => d.build(stats)));
+}
 
-  if (defs.length === 0) {
-    return h('div', { style: { marginBottom: '18px', textAlign: 'right' } }, customizeBtn);
+// 页面模块定义（#40）：与统计卡片一样可显隐 / 排序。build 在无内容时返回 null（此时自然不占位）。
+const CARD_DEFS = [
+  { key: 'server', label: '服务器信息', build: (ctx) => renderServerCard(ctx.info, ctx.stats) },
+  { key: 'events', label: '最近事件', build: (ctx) => renderEventCard(ctx.stats) },
+  { key: 'onboarding', label: '快速开始', build: (ctx) => renderOnboarding(ctx.stats, ctx.devices) },
+  { key: 'devices', label: '设备状态速览', build: (ctx) => renderDevicePreview(ctx.devices) },
+];
+
+const CARD_KEYS = () => CARD_DEFS.map((d) => d.key);
+
+/** 「服务器信息」与「最近事件」是半宽卡片：相邻且都启用时并排两列，否则各占一行。 */
+const PAIR_KEYS = new Set(['server', 'events']);
+
+function renderCards(ctx) {
+  const layout = getLayout('dashboard.cards', CARD_KEYS());
+  const defs = layout
+    .filter((l) => l.enabled !== false)
+    .map((l) => CARD_DEFS.find((d) => d.key === l.key))
+    .filter(Boolean);
+
+  const nodes = [];
+  for (let i = 0; i < defs.length; i++) {
+    const def = defs[i];
+    const next = defs[i + 1];
+    if (next && PAIR_KEYS.has(def.key) && PAIR_KEYS.has(next.key)) {
+      nodes.push(h('div.grid-2', def.build(ctx), next.build(ctx)));
+      i++;
+      continue;
+    }
+    const node = def.build(ctx);
+    if (node) nodes.push(node);
   }
-
-  return h('div', { style: { marginBottom: '18px' } },
-    h('div', { style: { display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' } }, customizeBtn),
-    h('div.stat-grid', ...defs.map((d) => d.build(stats))),
-  );
+  return nodes;
 }
 
 function stat(label, value, hint, tone, iconKey) {
@@ -88,43 +120,66 @@ function stat(label, value, hint, tone, iconKey) {
   );
 }
 
-/** 「自定义统计模块」面板：勾选显隐 + 上移/下移排序。 */
-function openStatCustomize() {
+/**
+ * 「自定义仪表盘」面板：两组（统计卡片 / 页面模块）各自勾选显隐与上移 / 下移。
+ * 面板底部显示布局偏好的同步状态——同步失败会明确写「只保存在本机」，不让改动悄悄消失。
+ */
+function openCustomize() {
   const container = h('div');
 
-  function moveItem(key, delta) {
-    const layout = getLayout('dashboard.stats', STAT_KEYS());
+  function moveItem(scope, keys, key, delta) {
+    const layout = getLayout(scope, keys);
     const idx = layout.findIndex((l) => l.key === key);
     const target = idx + delta;
-    if (target < 0 || target >= layout.length) return;
+    if (idx < 0 || target < 0 || target >= layout.length) return;
     [layout[idx], layout[target]] = [layout[target], layout[idx]];
-    saveLayout('dashboard.stats', layout);
+    saveLayout(scope, layout);
     rerender();
   }
 
-  function toggleItem(key, enabled) {
-    const layout = getLayout('dashboard.stats', STAT_KEYS());
+  function toggleItem(scope, keys, key, enabled) {
+    const layout = getLayout(scope, keys);
     const item = layout.find((l) => l.key === key);
     if (item) item.enabled = enabled;
-    saveLayout('dashboard.stats', layout);
+    saveLayout(scope, layout);
     rerender();
+  }
+
+  function buildSection(scope, defs, title, hint) {
+    const keys = defs.map((d) => d.key);
+    const layout = getLayout(scope, keys);
+    return h('div.config-section',
+      h('div.config-section-title', title),
+      h('p.card-desc', { style: { margin: '0 0 8px' } }, hint),
+      h('div.config-panel', ...layout.map((item, idx) => {
+        const def = defs.find((d) => d.key === item.key);
+        return h('div.config-item' + (item.enabled === false ? '.disabled' : ''),
+          // 只显示序号，不做拖拽：原先放了个 ⠿ 把手却拖不动，属于「看起来能操作其实不能」。
+          h('span.item-order', String(idx + 1)),
+          h('span.item-label', def ? def.label : item.key),
+          h('button.move-btn', { type: 'button', disabled: idx === 0, onClick: () => moveItem(scope, keys, item.key, -1) }, '↑'),
+          h('button.move-btn', { type: 'button', disabled: idx === layout.length - 1, onClick: () => moveItem(scope, keys, item.key, 1) }, '↓'),
+          h('input', { type: 'checkbox', checked: item.enabled !== false, onChange: (e) => toggleItem(scope, keys, item.key, e.target.checked) }),
+        );
+      })),
+    );
+  }
+
+  function syncNotice() {
+    const state = getLayoutSyncState();
+    const failed = state.state === 'error';
+    return h('div.notice' + (failed ? '.notice-warn' : '.notice-info'), { style: { marginTop: '14px' } },
+      h('span.notice-icon', failed ? '!' : 'i'),
+      h('div', state.message || '布局偏好会同步到你的账号：换台电脑登录后仍然生效。'),
+    );
   }
 
   function buildPanel() {
-    const layout = getLayout('dashboard.stats', STAT_KEYS());
-    const panel = h('div.config-panel');
-    layout.forEach((item, idx) => {
-      const def = STAT_DEFS.find((d) => d.key === item.key);
-      const label = def ? def.label : item.key;
-      panel.appendChild(h('div.config-item' + (item.enabled === false ? '.disabled' : ''),
-        h('span.drag-handle', '⠿'),
-        h('span.item-label', label),
-        h('button.move-btn', { type: 'button', disabled: idx === 0, onClick: () => moveItem(item.key, -1) }, '↑'),
-        h('button.move-btn', { type: 'button', disabled: idx === layout.length - 1, onClick: () => moveItem(item.key, 1) }, '↓'),
-        h('input', { type: 'checkbox', checked: item.enabled !== false, onChange: (e) => toggleItem(item.key, e.target.checked) }),
-      ));
-    });
-    return panel;
+    return h('div',
+      buildSection('dashboard.stats', STAT_DEFS, '统计卡片', '页面上方那排数字，关掉不关心的指标即可。'),
+      buildSection('dashboard.cards', CARD_DEFS, '页面模块', '整块卡片；「服务器信息」与「最近事件」相邻时会并排显示。'),
+      syncNotice(),
+    );
   }
 
   function rerender() {
@@ -132,10 +187,15 @@ function openStatCustomize() {
     append(container, buildPanel());
   }
 
+  // 同步是异步的：推送完成后刷新一次，免得面板里一直停在「正在同步…」。
+  onLayoutSyncChange(() => {
+    if (document.body.contains(container)) rerender();
+  });
+
   rerender();
 
   modal({
-    title: '自定义统计模块',
+    title: '自定义仪表盘',
     body: container,
     confirmText: '完成',
     onConfirm: () => {

@@ -25,3 +25,6 @@ Thumbs.db
 
 # 日志
 *.log
+
+# 交接文档：只在本地维护，不进仓库（内容与记忆里的 project_handoff_and_rules.md 一致）
+docs/handoff-next-session.md

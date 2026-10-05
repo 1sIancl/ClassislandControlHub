@@ -139,15 +139,24 @@ export function fetchServerInfo() {
  * @param {string} path 以 `/` 开头的接口路径（不含 /api/v1 前缀）。
  * @returns {Promise<Blob>} 二进制内容。
  */
-export async function fetchBlob(path) {
+export async function fetchBlob(path, options = {}) {
+  const { method = 'GET', body } = options;
   const headers = {};
   if (session.token) {
     headers['Authorization'] = `Bearer ${session.token}`;
   }
 
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+  }
+
   let response;
   try {
-    response = await fetch(API_PREFIX + path, { headers });
+    response = await fetch(API_PREFIX + path, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
   } catch {
     throw new ApiError('NETWORK', '无法连接到服务器，请检查网络或服务是否已启动。', 0);
   }
@@ -158,7 +167,19 @@ export async function fetchBlob(path) {
   }
 
   if (!response.ok) {
-    throw new ApiError('BAD_RESPONSE', `读取失败（HTTP ${response.status}）。`, response.status);
+    // 失败时服务端返回的是 JSON 而不是文件（例如「口令至少 6 位」）：
+    // 把里面的可读原因取出来，否则用户只会看到一句「读取失败（HTTP 400）」。
+    let message = `读取失败（HTTP ${response.status}）。`;
+    try {
+      const payload = await response.json();
+      if (payload?.error?.message) {
+        message = payload.error.message;
+      }
+    } catch {
+      // 不是 JSON 就用默认文案。
+    }
+
+    throw new ApiError('BAD_RESPONSE', message, response.status);
   }
 
   return response.blob();

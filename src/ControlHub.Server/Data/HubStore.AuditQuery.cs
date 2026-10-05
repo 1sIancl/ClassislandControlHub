@@ -14,6 +14,14 @@ public sealed class AuditFilter
     /// <summary>动作前缀，例如 <c>device.</c>、<c>admin.login</c>，用于按类别看。</summary>
     public string? ActionPrefix { get; set; }
 
+    /// <summary>
+    /// 操作对象名称（**精确匹配** <c>target</c>）：用于「某个对象的历史时间线」（#42）。
+    /// <para>与 <see cref="Search"/> 的区别：search 是「提到过这个名字的日志」（包括详情里顺带提到的），
+    /// 时间线要的是「以这个对象为目标的操作」，所以要精确匹配，否则噪声大到没法看。</para>
+    /// <para>注意 target 存的是**当时的名称**：对象改过名的话，改名前的那段历史查不到。</para>
+    /// </summary>
+    public string? Target { get; set; }
+
     /// <summary>来源 IP（精确匹配）。</summary>
     public string? Ip { get; set; }
 
@@ -130,6 +138,12 @@ public sealed partial class HubStore
             // 前缀匹配：既能按 device. 看整类，也能按 device.command 看具体动作。
             clauses.Add("action LIKE $actionPrefix");
             args.Add(("$actionPrefix", filter.ActionPrefix.Trim() + "%"));
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Target))
+        {
+            clauses.Add("target = $target");
+            args.Add(("$target", filter.Target.Trim()));
         }
 
         if (!string.IsNullOrWhiteSpace(filter.Ip))

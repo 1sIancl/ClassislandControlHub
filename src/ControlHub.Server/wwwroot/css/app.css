@@ -1673,6 +1673,46 @@ input[type="checkbox"] {
   color: var(--text-faint);
 }
 
+/* ── 编辑器工具栏：标签页 + 右侧视图缩放（#54） ── */
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.scale-switch {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+/* ── 课表视图缩放（#54）：紧凑模式缩小格子，一屏能看更多节次 ── */
+body.sched-compact .period-grid {
+  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  gap: 6px;
+}
+body.sched-compact .pcell {
+  gap: 5px;
+  padding: 7px 9px;
+}
+body.sched-compact .sched-grid {
+  grid-template-columns: 76px repeat(7, minmax(70px, 1fr));
+  gap: 4px;
+  min-width: 620px;
+}
+body.sched-compact .sched-head {
+  padding: 6px 4px;
+}
+body.sched-compact .sched-period {
+  padding: 6px 9px;
+}
+body.sched-compact .sched-cell {
+  min-height: 46px;
+  padding: 5px 6px;
+  font-size: 12px;
+}
+
 /* ── 时间表：时间点单元格网格 ── */
 .period-grid {
   display: grid;
@@ -2562,6 +2602,14 @@ input.pcell-name:focus {
 }
 
 /* 配置面板（模块 / 列，统一样式） */
+.config-section + .config-section {
+  margin-top: 18px;
+}
+.config-section-title {
+  font-weight: 600;
+  font-size: 13.5px;
+  margin-bottom: 6px;
+}
 .config-panel {
   display: flex;
   flex-direction: column;
@@ -2583,14 +2631,14 @@ input.pcell-name:focus {
 .config-panel .config-item:hover {
   border-color: var(--accent-line);
 }
-.config-panel .config-item.dragging {
-  opacity: 0.5;
-}
-.config-panel .config-item .drag-handle {
-  color: var(--text-faint);
-  cursor: grab;
+/* 序号：面板只提供 ↑↓ 排序、不做拖拽，所以显示位置数字而不是拖拽把手。 */
+.config-panel .config-item .item-order {
   flex: none;
-  padding: 0 2px;
+  min-width: 18px;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 .config-panel .config-item .item-label {
   flex: 1;
@@ -2601,6 +2649,112 @@ input.pcell-name:focus {
 .config-panel .config-item input[type="checkbox"] {
   width: 15px;
   height: 15px;
+}
+
+/* 快捷键帮助面板里的按键（kbd） */
+.config-panel .shortcut-key {
+  flex: none;
+  min-width: 92px;
+  text-align: center;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--bg-panel);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* ── 全局搜索面板（#41） ── */
+.kbd-hint {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.search-panel .search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+}
+.search-panel .search-box-icon {
+  display: flex;
+  flex: none;
+  color: var(--text-faint);
+}
+.search-panel .search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+  color: var(--text);
+  font-size: 15px;
+}
+.search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 46vh;
+  margin-top: 10px;
+  overflow-y: auto;
+}
+.search-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.search-item:hover,
+.search-item.active {
+  background: var(--bg-hover);
+}
+.search-kind {
+  flex: none;
+  min-width: 34px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  text-align: center;
+}
+.search-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.search-title {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.search-sub {
+  color: var(--text-faint);
+  font-size: 12px;
+  word-break: break-all;
+}
+.search-hint {
+  margin: 10px 2px 0;
+  color: var(--text-faint);
+  font-size: 12.5px;
 }
 
 /* 配置面板内的上下移动按钮 */
@@ -2620,12 +2774,6 @@ input.pcell-name:focus {
 .config-panel .move-btn:disabled {
   opacity: 0.3;
   cursor: not-allowed;
-}
-
-/* 拖拽排序占位 */
-.config-panel .drag-over {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 /* ────────────────────────── 新手引导 ────────────────────────── */

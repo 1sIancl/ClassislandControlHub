@@ -23,6 +23,9 @@ public static class ProfileEndpoints
             .AddEndpointFilter<AdminPermissionFilter>();
 
         group.MapGet("/profiles", ListAsync).RequirePermission(PermissionKeys.ProfilesRead);
+        // 冲突检测（#44）：扫描全部档案，提前发现「引用坏了 / 时间重叠 / 同一老师被排到两个班」。
+        // 路径段是字面量，路由优先级高于 /profiles/{id}，不会被当成档案 ID。
+        group.MapGet("/profiles/conflicts", DetectConflictsAsync).RequirePermission(PermissionKeys.ProfilesRead);
         group.MapPost("/profiles", CreateAsync).RequirePermission(PermissionKeys.ProfilesWrite);
         // 档案复制：在既有配置上改出新方案（例如「夏季作息」→「夏季作息（九年级）」）
         group.MapPost("/profiles/{id}/duplicate", DuplicateAsync).RequirePermission(PermissionKeys.ProfilesWrite);
@@ -165,6 +168,17 @@ public static class ProfileEndpoints
             Notes = notes,
             Revision = revision,
         });
+    }
+
+    /// <summary>扫描全部档案的冲突（#44）。</summary>
+    private static async Task<ApiResult<ProfileConflictReportDto>> DetectConflictsAsync(
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        http.RequireAdminSession();
+        var report = await store.DetectProfileConflictsAsync(cancellationToken);
+        return ApiResult<ProfileConflictReportDto>.Success(report);
     }
 
     /// <summary>

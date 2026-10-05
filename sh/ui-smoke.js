@@ -1,0 +1,620 @@
+/**
+ * 管理端界面冒烟测试（#40 起用）。
+ *
+ * 为什么需要它：语法检查（node --check）与构建都发现不了「按钮点了没反应」这类问题——
+ * 历史上「自定义仪表盘」与设备表「列设置」两个面板就因为 `append()` 收到单个节点抛错而一直打不开，
+ * 错误只留在浏览器控制台，界面表现就是沉默。这个脚本用真实浏览器点一遍并断言结果。
+ *
+ * 前置：
+ *   1) 本地 A 端已启动（默认 http://127.0.0.1:29800），账号 admin / admin123；
+ *   2) Node 18+ 且装过 puppeteer-core（在仓库根执行一次 `npm install puppeteer-core`）；
+ *   3) 系统里有 Edge（默认路径见下，可用环境变量覆盖）。
+ *
+ * 用法：
+ *   node sh/ui-smoke.js
+ *   SMOKE_BASE=http://127.0.0.1:29800 SMOKE_BROWSER="C:\\...\\msedge.exe" node sh/ui-smoke.js
+ *
+ * 覆盖的断言（49 项）：
+ *   1) 起点归零：清空账号偏好与本机布局缓存 → 仪表盘回到默认布局
+ *   2) 「自定义仪表盘」面板能打开，含「统计卡片 + 页面模块」两组、共 10 项
+ *   3) 面板里关掉「最近事件」→ 页面立即不再渲染该模块
+ *   4) 偏好写进账号（/admin/me 的 uiPreferences）
+ *   5) 清空 localStorage 重新登录 → 布局仍从账号恢复（模拟换浏览器）
+ *   6) 设备表切「列表视图」→「列设置」面板能打开 → 取消一列后表格该列消失
+ *   7) 键盘快捷键 Alt + 3 跳到第 3 个导航页（#46）
+ *   8) `?` 打开快捷键帮助、Esc 关闭（#50）
+ *   9) `/` 聚焦设备页搜索框（#46）
+ *  10) 课表编辑器切「紧凑」→ body.sched-compact 生效且偏好存本机（#54）
+ *  11) Ctrl + K 打开全局搜索面板（#41）
+ *  12) 搜索「高一」返回结果
+ *  13) Enter 跳转到设备页并预填搜索框
+ *  14) 顶栏「搜索」按钮同样能打开面板
+ *  15) Esc 关闭搜索面板
+ *  16) 每个错误码都有「怎么办」文案（#51）
+ *  17) 公共兜底出口的提示同时含「服务端原文 + 怎么办」
+ *
+ * 注意：脚本会改动演示账号的界面偏好（跑完停在「最近事件 / 最近心跳」隐藏的状态），
+ *       可在「自定义仪表盘 / 列设置」里勾回来。
+ */
+const puppeteer = require('puppeteer-core');
+
+const EDGE = process.env.SMOKE_BROWSER
+  || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+const BASE = process.env.SMOKE_BASE || 'http://127.0.0.1:29800';
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const results = [];
+function check(name, ok, extra = '') {
+  results.push(`${ok ? 'PASS' : 'FAIL'}  ${name}${extra ? '  (' + extra + ')' : ''}`);
+}
+
+(async () => {
+  const browser = await puppeteer.launch({
+    executablePath: EDGE,
+    headless: 'new',
+    args: ['--disable-gpu', '--hide-scrollbars'],
+  });
+  const page = await browser.newPage();
+  await page.setViewport({ width: 1600, height: 1000 });
+  page.on('pageerror', (e) => console.log('PAGE_EXCEPTION:', e.message));
+  page.on('console', (m) => { if (m.type() === 'error') console.log('PAGE_ERROR:', m.text()); });
+
+  await page.goto(`${BASE}/`, { waitUntil: 'networkidle2' });
+  await page.waitForSelector('#loginUsername', { timeout: 20000 });
+  await page.type('#loginUsername', 'admin');
+  await page.type('#loginPassword', 'admin123');
+  await page.click('#loginSubmit');
+  await page.waitForFunction(() => document.getElementById('app')?.hidden === false, { timeout: 30000 });
+  await sleep(2500);
+  console.log('LOGGED_IN');
+
+  // 0) 起点归零：清空账号偏好 + 清掉本地布局缓存
+  //    （浏览器 profile 可能被复用，只清云端会让上次的本地布局变成「起点」）
+  const cleared = await page.evaluate(async () => {
+    const token = localStorage.getItem('controlhub.admin.token');
+    const r = await fetch('/api/v1/admin/ui-preferences', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ layouts: {} }),
+    });
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith('controlhub.ui.layout')) localStorage.removeItem(key);
+    }
+    localStorage.removeItem('controlhub.ui.layoutSyncPending');
+    return (await r.json()).ok;
+  });
+  check('清空账号偏好与本地布局缓存（起点为默认布局）', cleared === true);
+  await page.reload({ waitUntil: 'networkidle2' });
+  await sleep(2500);
+
+  // 1) 默认布局下「最近事件」应该在页面上
+  const before = await page.evaluate(() => document.body.innerText.includes('最近事件'));
+  check('默认布局包含「最近事件」模块', before === true);
+
+  // 2) 点「自定义仪表盘」→ 面板应打开
+  const opened = await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '自定义仪表盘');
+    if (!btn) return 'no-button';
+    btn.click();
+    return document.getElementById('modalHost').children.length > 0 ? 'opened' : 'not-opened';
+  });
+  check('「自定义仪表盘」面板能打开（append 容错生效）', opened === 'opened', opened);
+
+  // 3) 面板里应有两组（统计卡片 / 页面模块）
+  const groups = await page.evaluate(() => ({
+    sections: [...document.querySelectorAll('.config-section-title')].map((e) => e.textContent.trim()),
+    items: document.querySelectorAll('.config-item').length,
+  }));
+  check('面板含「统计卡片 + 页面模块」两组', groups.sections.length === 2, groups.sections.join(' / '));
+  check('面板条目数 = 6 统计 + 4 模块', groups.items === 10, 'items=' + groups.items);
+
+  // 4) 取消勾选「最近事件」→ 页面不再渲染
+  const toggled = await page.evaluate(() => {
+    const item = [...document.querySelectorAll('.config-item')].find((el) => el.textContent.includes('最近事件'));
+    if (!item) return 'no-item';
+    const cb = item.querySelector('input[type=checkbox]');
+    if (!cb) return 'no-checkbox';
+    cb.click();
+    return 'toggled';
+  });
+  check('取消勾选「最近事件」', toggled === 'toggled', toggled);
+
+  // 5) 点「完成」关闭面板并重渲染
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('#modalHost button')].find((b) => b.textContent.trim() === '完成');
+    if (btn) btn.click();
+  });
+  await sleep(2500);
+  const afterHide = await page.evaluate(() => document.body.innerText.includes('最近事件'));
+  check('页面上「最近事件」已隐藏', afterHide === false);
+
+  // 6) 偏好已写入账号
+  const prefs = await page.evaluate(async () => {
+    const token = localStorage.getItem('controlhub.admin.token');
+    const r = await fetch('/api/v1/admin/me', { headers: { Authorization: 'Bearer ' + token } });
+    return (await r.json()).data.uiPreferences;
+  });
+  const cards = prefs?.layouts?.['dashboard.cards'] || [];
+  const eventsItem = cards.find((i) => i.key === 'events');
+  check('偏好已同步到账号（events.enabled=false）', eventsItem?.enabled === false,
+    JSON.stringify(cards.map((i) => i.key + ':' + i.enabled)));
+
+  // 7) 清空本地缓存 → 模拟换浏览器 / 换设备：布局应从账号恢复
+  await page.evaluate(() => localStorage.clear());
+  await page.goto(`${BASE}/`, { waitUntil: 'networkidle2' });
+  await page.waitForSelector('#loginUsername', { timeout: 20000 });
+  await page.type('#loginUsername', 'admin');
+  await page.type('#loginPassword', 'admin123');
+  await page.click('#loginSubmit');
+  await page.waitForFunction(() => document.getElementById('app')?.hidden === false, { timeout: 30000 });
+  await sleep(2500);
+  const restored = await page.evaluate(() => document.body.innerText.includes('最近事件'));
+  check('清空本地缓存后重新登录：布局仍从账号恢复（「最近事件」保持隐藏）', restored === false);
+
+  // 8) 设备表「列设置」面板同样能打开（同一个 append 缺陷的另一个受害处）
+  //    注意：「列设置」按钮只在列表视图下出现，先切视图。
+  await page.goto(`${BASE}/#/devices`, { waitUntil: 'networkidle2' });
+  await sleep(3000);
+  const switched = await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '列表视图');
+    if (!btn) return false;
+    btn.click();
+    return true;
+  });
+  check('切到设备列表视图', switched === true);
+  await sleep(1800);
+  const colPanel = await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '列设置');
+    if (!btn) return 'no-button';
+    btn.click();
+    return document.getElementById('modalHost').children.length > 0 ? 'opened' : 'not-opened';
+  });
+  check('设备表「列设置」面板能打开（append 容错）', colPanel === 'opened', colPanel);
+
+  // 9) 列设置里勾掉一列 → 表格不再显示该列
+  const colToggled = await page.evaluate(() => {
+    const item = [...document.querySelectorAll('.config-item')].find((el) => el.textContent.trim().startsWith('最近心跳'));
+    if (!item) return 'no-item:' + [...document.querySelectorAll('.config-item')].map((e) => e.textContent.trim()).join(',');
+    item.querySelector('input[type=checkbox]').click();
+    return 'toggled';
+  });
+  check('取消勾选表格列「最近心跳」', colToggled === 'toggled', colToggled);
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('#modalHost button')].find((b) => b.textContent.trim() === '完成');
+    if (btn) btn.click();
+  });
+  await sleep(2000);
+  const colHidden = await page.evaluate(() => !document.body.innerText.includes('最近心跳'));
+  check('表格里「最近心跳」列已消失', colHidden === true);
+
+  // 10) 键盘快捷键：Alt + 3 → 跳到第 3 个导航页（#46）
+  await page.evaluate(() => document.activeElement && document.activeElement.blur());
+  await page.keyboard.down('Alt');
+  await page.keyboard.press('3');
+  await page.keyboard.up('Alt');
+  await sleep(1600);
+  const navThird = await page.evaluate(() => document.querySelectorAll('.nav-item')[2]?.dataset.key);
+  const hashAfterAlt = await page.evaluate(() => location.hash);
+  check('Alt + 3 跳到第 3 个导航页', hashAfterAlt === `#/${navThird}`, `${hashAfterAlt}（期望 #/${navThird}）`);
+
+  // 11) ? 打开快捷键帮助（#50）
+  await page.keyboard.press('?');
+  await sleep(900);
+  const helpOpen = await page.evaluate(() => {
+    const host = document.getElementById('modalHost');
+    return !!host && host.hidden === false && host.textContent.includes('键盘快捷键');
+  });
+  check('? 打开快捷键帮助面板', helpOpen === true);
+
+  // 12) Esc 关闭帮助
+  await page.keyboard.press('Escape');
+  await sleep(700);
+  const helpClosed = await page.evaluate(() => document.getElementById('modalHost')?.hidden === true);
+  check('Esc 关闭帮助面板', helpClosed === true);
+
+  // 13) / 聚焦设备页搜索框
+  await page.goto(`${BASE}/#/devices`, { waitUntil: 'networkidle2' });
+  await sleep(2600);
+  await page.keyboard.press('/');
+  await sleep(700);
+  const focused = await page.evaluate(() => {
+    const el = document.activeElement;
+    if (!el) return 'none';
+    return el.classList.contains('toolbar-search') ? 'search' : el.tagName + '.' + el.className;
+  });
+  check('/ 聚焦设备页搜索框', focused === 'search', focused);
+
+  // 14) 课表视图缩放（#54）：编辑器里切「紧凑」
+  await page.goto(`${BASE}/#/profiles`, { waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => document.body.innerText.includes('示例档案'), { timeout: 20000 });
+  await sleep(1200);
+  await page.evaluate(() => {
+    const nodes = [...document.querySelectorAll('div, tr, li')];
+    const card = nodes.reverse().find((n) => n.textContent.includes('示例档案') && n.querySelector('button'));
+    const btn = card && [...card.querySelectorAll('button')].find((b) => b.textContent.trim() === '编辑内容');
+    if (btn) btn.click();
+  });
+  await sleep(4500);
+  const scaleClicked = await page.evaluate(() => {
+    const btn = document.querySelector('.scale-switch .segmented-item[data-scale="compact"]');
+    if (!btn) return 'no-switch';
+    btn.click();
+    return 'clicked';
+  });
+  check('编辑器工具栏有「紧凑 / 宽松」切换', scaleClicked === 'clicked', scaleClicked);
+  await sleep(700);
+  const scaleState = await page.evaluate(() => ({
+    compact: document.body.classList.contains('sched-compact'),
+    saved: localStorage.getItem('controlhub.ui.schedScale'),
+    active: [...document.querySelectorAll('.scale-switch .segmented-item')]
+      .filter((b) => b.classList.contains('active')).map((b) => b.dataset.scale).join(','),
+  }));
+  check('切「紧凑」后 body.sched-compact 生效且偏好存本机',
+    scaleState.compact === true && String(scaleState.saved).includes('compact'),
+    JSON.stringify(scaleState));
+
+  // 11) 全局搜索（#41）：Ctrl + K 打开 → 搜到设备 → Enter 跳转并预填搜索框
+  await page.goto(`${BASE}/#/dashboard`, { waitUntil: 'networkidle2' });
+  await sleep(2200);
+  await page.evaluate(() => document.activeElement && document.activeElement.blur());
+  await page.keyboard.down('Control');
+  await page.keyboard.press('k');
+  await page.keyboard.up('Control');
+  await sleep(900);
+  const searchOpen = await page.evaluate(() => {
+    const host = document.getElementById('modalHost');
+    return !!host && host.hidden === false && !!document.querySelector('.search-input');
+  });
+  check('Ctrl + K 打开全局搜索面板', searchOpen === true);
+
+  await page.type('.search-input', '高一');
+  await sleep(1300);
+  const searchHits = await page.evaluate(() => ({
+    count: document.querySelectorAll('.search-item').length,
+    first: document.querySelector('.search-item .search-title')?.textContent || '',
+  }));
+  check('搜索「高一」返回结果', searchHits.count > 0,
+    `count=${searchHits.count} first=${searchHits.first}`);
+
+  await page.keyboard.press('Enter');
+  await sleep(2500);
+  const afterJump = await page.evaluate(() => ({
+    hash: location.hash,
+    keyword: document.querySelector('.toolbar-search')?.value || '',
+  }));
+  check('Enter 跳转到设备页并预填搜索框',
+    afterJump.hash.startsWith('#/devices') && afterJump.keyword.length > 0,
+    JSON.stringify(afterJump));
+
+  await page.click('#searchBtn');
+  await sleep(800);
+  const viaButton = await page.evaluate(() => !!document.querySelector('.search-input'));
+  check('顶栏「搜索」按钮同样能打开面板', viaButton === true);
+  await page.keyboard.press('Escape');
+  await sleep(500);
+  const closed = await page.evaluate(() => document.getElementById('modalHost')?.hidden === true);
+  check('Esc 关闭搜索面板', closed === true);
+
+  // 12) 错误提示可操作化（#51）：每个错误码都有「怎么办」，且公共兜底出口真的会带上它
+  const hintCoverage = await page.evaluate(async () => {
+    const { describeError } = await import('/js/core/error-hints.js?v=48');
+    const codes = [
+      'AUTH_REQUIRED', 'AUTH_INVALID', 'DEVICE_UNKNOWN', 'DEVICE_REVOKED',
+      'ENROLL_CODE_INVALID', 'ENROLL_CODE_EXPIRED', 'PERMISSION_DENIED', 'VALIDATION_FAILED',
+      'NOT_FOUND', 'CONFLICT', 'RATE_LIMITED', 'IP_NOT_ALLOWED',
+      'ACCOUNT_LOCKED', 'PROTOCOL_UNSUPPORTED', 'INTERNAL', 'NETWORK', 'BAD_RESPONSE',
+    ];
+    const missing = codes.filter((c) => !describeError({ code: c, message: 'x' }).hint);
+    return { total: codes.length, missing };
+  });
+  check('每个错误码都有「怎么办」文案', hintCoverage.missing.length === 0,
+    `${hintCoverage.total} 个码，缺失：${hintCoverage.missing.join(',') || '无'}`);
+
+  // 走 ui.js 的公共兜底（guard）：这是大量操作的实际出口，失败时除了服务端原文还必须带建议
+  await page.evaluate(async () => {
+    const { api } = await import('/js/core/api.js?v=48');
+    const { guard } = await import('/js/core/ui.js?v=48');
+    guard('删除测试', () => api('/admin/profiles/not-exist-id', { method: 'DELETE' }));
+  });
+  await sleep(1300);
+  const toastText = await page.evaluate(() => [...document.querySelectorAll('#toastHost .toast')]
+    .map((el) => el.textContent).join(' | '));
+  check('公共兜底出口的提示同时含「服务端原文 + 怎么办」',
+    toastText.includes('目标不存在') && toastText.includes('刷新页面'),
+    toastText.slice(0, 200));
+
+  // 13) 待执行指令队列（#3）：设备详情能看到排队指令、倒计时，以及清空后的空状态文案
+  const queued = await page.evaluate(async () => {
+    const { api } = await import('/js/core/api.js?v=49');
+    const devices = await api('/admin/devices');
+    const dev = devices[0];
+
+    // 清场：取消遗留的排队指令，保证断言从确定状态开始。
+    const old = await api(`/admin/devices/${dev.id}/commands/queue`);
+    for (const row of old) {
+      await api(`/admin/devices/commands/${row.id}`, { method: 'DELETE' });
+    }
+
+    const cmd = await api(`/admin/devices/${dev.id}/command`, {
+      method: 'POST',
+      body: { kind: 'shell', payload: '{}', delaySeconds: 120 },
+    });
+    return { commandId: cmd.id, deviceName: dev.name };
+  });
+  check('准备好一条排队指令（delaySeconds=120）', !!queued.commandId, queued.deviceName);
+
+  /** 在设备列表里按名称找到那一行，点它的第一个操作按钮（「编辑」即打开详情）。 */
+  const openDeviceRow = async (name) => {
+    await page.evaluate((deviceName) => {
+      const row = [...document.querySelectorAll('table tbody tr')]
+        .find((tr) => tr.textContent.includes(deviceName));
+      row?.querySelector('.actions button')?.click();
+    }, name);
+    await sleep(1300);
+  };
+
+  await openDeviceRow(queued.deviceName);
+  const queueUi = await page.evaluate(() => {
+    const modal = document.getElementById('modalHost');
+    const text = modal?.textContent || '';
+    return {
+      hasSection: text.includes('待执行指令'),
+      items: modal ? modal.querySelectorAll('.config-panel .config-item').length : 0,
+      countdown: /后生效|还剩/.test(text),
+      cancel: [...(modal ? modal.querySelectorAll('button') : [])]
+        .some((b) => b.textContent.trim() === '取消'),
+    };
+  });
+  check('设备详情出现「待执行指令」区块', queueUi.hasSection === true);
+  check('队列显示排队指令 + 倒计时 + 取消按钮',
+    queueUi.items >= 1 && queueUi.countdown && queueUi.cancel,
+    `items=${queueUi.items} countdown=${queueUi.countdown} cancel=${queueUi.cancel}`);
+
+  // 取消这条 → 重开详情应显示空队列文案
+  await page.keyboard.press('Escape');
+  await sleep(500);
+  await page.evaluate(async (id) => {
+    const { api } = await import('/js/core/api.js?v=49');
+    await api(`/admin/devices/commands/${id}`, { method: 'DELETE' });
+  }, queued.commandId);
+  await openDeviceRow(queued.deviceName);
+  const emptyUi = await page.evaluate(() => document.getElementById('modalHost')?.textContent || '');
+  check('队列清空后显示「队列是空的」', emptyUi.includes('队列是空的'), emptyUi.slice(0, 110));
+  await page.keyboard.press('Escape');
+  await sleep(400);
+
+  // 14) 操作历史时间线（#42）：设备详情能看到「谁在什么时候改了什么」
+  await openDeviceRow(queued.deviceName);
+  const timeline = await page.evaluate(() => {
+    const text = document.getElementById('modalHost')?.textContent || '';
+    return { text, hasSection: text.includes('操作历史') };
+  });
+  check('设备详情出现「操作历史」区块', timeline.hasSection === true);
+  check('时间线用中文动作标签（含刚下发的指令记录）',
+    timeline.text.includes('设备 · 下发指令'),
+    timeline.text.replace(/\s+/g, ' ').slice(0, 150));
+  await page.keyboard.press('Escape');
+  await sleep(400);
+
+  // 15) 课表冲突检测（#44）：档案页能打开检测面板，并说明「检查了什么」
+  await page.goto(`${BASE}/#/profiles`, { waitUntil: 'networkidle2' });
+  await sleep(2200);
+  const conflictOpened = await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')]
+      .find((b) => b.textContent.trim() === '冲突检测');
+    if (!btn) return false;
+    btn.click();
+    return true;
+  });
+  check('档案页有「冲突检测」按钮', conflictOpened === true);
+  await sleep(1600);
+  const conflictUi = await page.evaluate(() => {
+    const text = document.getElementById('modalHost')?.textContent || '';
+    return {
+      text,
+      hasSummary: /检查了 \d+ 个档案、\d+ 个启用的课表/.test(text),
+      clean: text.includes('没有发现问题'),
+    };
+  });
+  check('检测面板给出检查摘要（说明检查了什么）', conflictUi.hasSummary === true,
+    conflictUi.text.replace(/\s+/g, ' ').slice(0, 140));
+  check('无冲突时明确显示「没有发现问题」', conflictUi.clean === true);
+  await page.keyboard.press('Escape');
+  await sleep(400);
+
+  // 16) 批量操作确认摘要（#52）：把「谁会执行、谁收不到」写进确认框
+  const summaryLogic = await page.evaluate(async () => {
+    const { selectionSummary, summarizeSelection } = await import('/js/core/batch-summary.js?v=53');
+    const devices = [
+      { id: 'a', online: true, revoked: false },
+      { id: 'b', online: false, revoked: false },
+      { id: 'c', online: true, revoked: true },   // 已停用
+    ];
+    return {
+      stats: summarizeSelection(devices, ['a', 'b', 'c']),
+      all: selectionSummary(devices, ['a', 'b', 'c']),
+      missing: selectionSummary(devices, ['a', 'ghost']),
+    };
+  });
+  check('摘要口径正确（在线 / 离线 / 已停用分别计数）',
+    summaryLogic.stats.online === 1 && summaryLogic.stats.offline === 1
+      && summaryLogic.stats.revoked === 1 && summaryLogic.stats.missing === 0,
+    JSON.stringify(summaryLogic.stats));
+  check('摘要文本说清「谁会执行、谁收不到」',
+    summaryLogic.all.includes('共 3 台') && summaryLogic.all.includes('在线 1 台会立即执行')
+      && summaryLogic.all.includes('离线 1 台') && summaryLogic.all.includes('已停用 1 台会被跳过'),
+    summaryLogic.all);
+  check('选中项已不在列表时也能对上账',
+    summaryLogic.missing.includes('1 台已不在列表中'), summaryLogic.missing);
+
+  // 真实勾选 → 打开「批量下发配置」确认框 → 应带上同一份摘要
+  await page.goto(`${BASE}/#/devices`, { waitUntil: 'networkidle2' });
+  await sleep(2200);
+  await page.evaluate(() => {
+    const boxes = [...document.querySelectorAll('table tbody input[type="checkbox"]')].slice(0, 3);
+    for (const box of boxes) {
+      if (!box.checked) box.click();
+    }
+  });
+  await sleep(1000);
+  const bulkClicked = await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('.bulk-bar button')]
+      .find((b) => b.textContent.trim() === '批量下发配置');
+    if (!btn) return false;
+    btn.click();
+    return true;
+  });
+  await sleep(900);
+  const confirmText = await page.evaluate(
+    () => document.getElementById('modalHost')?.textContent || '');
+  check('批量下发确认框带上影响摘要',
+    bulkClicked && /共 \d+ 台/.test(confirmText) && /(在线|离线) \d+ 台/.test(confirmText),
+    confirmText.replace(/\s+/g, ' ').slice(0, 160));
+  await page.keyboard.press('Escape');
+  await sleep(500);
+
+  // 17) 备份与数据库维护（#59 / #62）：设置页能看到数据库占用与可回收空间，备份弹窗含内容选项
+  await page.goto(`${BASE}/#/settings`, { waitUntil: 'networkidle2' });
+  await sleep(3000);
+  const backupUi = await page.evaluate(async () => {
+    const { hasPermission } = await import('/js/core/api.js?v=56');
+    const text = document.querySelector('#content')?.textContent || '';
+    return {
+      hasCard: text.includes('备份与数据库'),
+      size: text.includes('占用空间'),
+      integrity: text.includes('完整性检查'),
+      reclaim: text.includes('可回收空间'),
+      createBtn: [...document.querySelectorAll('button')]
+        .some((b) => b.textContent.trim() === '+ 新建备份'),
+      canRead: hasPermission('backup.read'),
+      canWrite: hasPermission('backup.write'),
+      head: text.replace(/\s+/g, ' ').slice(0, 200),
+    };
+  });
+  check('设置页出现「备份与数据库」卡', backupUi.hasCard === true,
+    `canRead=${backupUi.canRead} canWrite=${backupUi.canWrite} 首段=${backupUi.head}`);
+  check('显示数据库占用 / 完整性 / 可回收空间',
+    backupUi.size && backupUi.integrity && backupUi.reclaim, JSON.stringify(backupUi));
+  check('有「+ 新建备份」入口', backupUi.createBtn === true);
+
+  const dialogOpened = await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')]
+      .find((b) => b.textContent.trim() === '+ 新建备份');
+    if (!btn) return false;
+    btn.click();
+    return true;
+  });
+  await sleep(800);
+  const dialogText = await page.evaluate(
+    () => document.getElementById('modalHost')?.textContent || '');
+  check('新建备份弹窗列出可选内容（数据库 / 配置文件 / 加密密钥）',
+    dialogOpened && dialogText.includes('数据库') && dialogText.includes('配置文件')
+      && dialogText.includes('加密密钥'), dialogText.replace(/\s+/g, ' ').slice(0, 180));
+
+  // 含密钥的警告必须「默认隐藏、勾选后才出现」——只断言文本包含是不够的：
+  // hidden 的元素同样在 DOM 里、textContent 一样含这段文字（本轮就差点把这条弱断言当成通过）。
+  const warnState = await page.evaluate(() => {
+    const read = () => {
+      const notice = document.querySelector('#modalHost .notice-warn');
+      return notice ? notice.hidden : null;
+    };
+    const before = read();
+    const boxes = [...document.querySelectorAll('#modalHost input[type="checkbox"]')];
+    if (boxes[1]) boxes[1].click();   // 0 = 配置文件，1 = 加密密钥
+    return { before, after: read() };
+  });
+  check('含密钥警告默认隐藏、勾选后才出现',
+    warnState.before === true && warnState.after === false,
+    `before.hidden=${warnState.before} after.hidden=${warnState.after}`);
+  await page.keyboard.press('Escape');
+  await sleep(500);
+
+  // 通用检查：界面文案里不该出现 Markdown 星号——前端不渲染 Markdown，
+  // 写在字符串里就是原样显示（本项目已在 API 密钥与备份文案上各踩过一次）。
+  const starLeak = await page.evaluate(
+    () => (document.body.textContent || '').match(/\*\*[^*\n]{1,40}\*\*/g) || []);
+  check('界面文案没有泄漏 Markdown 星号', starLeak.length === 0,
+    starLeak.slice(0, 5).join(' | '));
+
+  // 18) 加密导出（#60）：入口存在，弹窗要求两次口令并说明「服务端不保存口令」
+  const backupId = await page.evaluate(async () => {
+    const { api } = await import('/js/core/api.js?v=56');
+    const entry = await api('/admin/backups', { method: 'POST', body: { note: 'E2E UI 加密导出' } });
+    return entry.id;
+  });
+  check('已创建用于导出测试的备份', !!backupId, backupId);
+
+  // 必须 reload：`goto` 到与当前**相同的 hash** 不会真正重新加载页面，状态会残留。
+  // 另外设置页的 render() 会并发拉十几个接口（含要访问 GitHub 的更新检查），渲染可能被拖住，
+  // 所以这里轮询等按钮出现，最多 20 秒。
+  await page.reload({ waitUntil: 'networkidle2' });
+  await sleep(1500);
+  let exportUi = { found: false, buttons: [] };
+  for (let i = 0; i < 40; i++) {
+    exportUi = await page.evaluate(() => {
+      const buttons = [...document.querySelectorAll('button')].map((b) => b.textContent.trim());
+      const btn = [...document.querySelectorAll('button')]
+        .find((b) => b.textContent.trim() === '加密导出');
+      if (!btn) {
+        const content = document.getElementById('content');
+        return {
+          found: false,
+          buttons: buttons.slice(0, 12),
+          hash: window.location.hash,
+          appHidden: document.getElementById('app')?.hidden,
+          loginHidden: document.getElementById('loginView')?.hidden,
+          contentLen: (content?.textContent || '').length,
+          contentHead: (content?.textContent || '').replace(/\s+/g, ' ').slice(0, 160),
+        };
+      }
+
+      btn.click();
+      return { found: true };
+    });
+    if (exportUi.found) break;
+    await sleep(500);
+  }
+  check('备份行有「加密导出」入口', exportUi.found === true,
+    exportUi.found ? ''
+      : `hash=${exportUi.hash} appHidden=${exportUi.appHidden} loginHidden=${exportUi.loginHidden} `
+        + `contentLen=${exportUi.contentLen} 首段=${exportUi.contentHead} 按钮=${(exportUi.buttons || []).join('/')}`);
+
+  await sleep(900);
+  const exportDialog = await page.evaluate(() => {
+    const host = document.getElementById('modalHost');
+    const text = host?.textContent || '';
+    return {
+      // 两次口令输入（口令 + 确认），避免输错一个字符就永久解不开
+      passwords: host ? host.querySelectorAll('input[type="password"]').length : 0,
+      noSave: text.includes('服务端不保存口令'),
+      decryptHint: text.includes('--decrypt-backup'),
+    };
+  });
+  check('导出弹窗要求两次口令 + 说明「口令不可找回」+ 给出解密命令',
+    exportDialog.passwords === 2 && exportDialog.noSave && exportDialog.decryptHint,
+    `passwords=${exportDialog.passwords} noSave=${exportDialog.noSave} hint=${exportDialog.decryptHint}`);
+  await page.keyboard.press('Escape');
+  await sleep(500);
+
+  // 只断言「我建的那份没了」，不断言「总数为 0」——现场可能有别的备份（自动备份、别人手动建的），
+  // 拿环境状态当断言基准是测试里的常见坏习惯。
+  const cleanup = await page.evaluate(async (id) => {
+    const { api } = await import('/js/core/api.js?v=56');
+    await api(`/admin/backups/${id}`, { method: 'DELETE' });
+    const list = await api('/admin/backups');
+    return { left: list.length, mine: list.filter((e) => e.id === id).length };
+  }, backupId);
+  check('导出测试用的备份已清理（不误伤已有备份）',
+    cleanup.mine === 0, `剩余 ${cleanup.left} 份，其中测试备份 ${cleanup.mine} 份`);
+
+  console.log('\n===== 验证结果 =====');
+  for (const r of results) console.log(r);
+  const failed = results.filter((r) => r.startsWith('FAIL')).length;
+  console.log(`\n合计 ${results.length} 项，失败 ${failed} 项`);
+
+  await browser.close();
+  process.exit(failed === 0 ? 0 : 1);
+})().catch((err) => {
+  console.error('FAILED:', err && err.message ? err.message : err);
+  process.exit(1);
+});

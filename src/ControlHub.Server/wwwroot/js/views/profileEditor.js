@@ -3,11 +3,13 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=44';
+import { api } from '../core/api.js?v=56';
+import { toastError } from '../core/errors.js?v=56';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, icon,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=44';
+} from '../core/ui.js?v=56';
+import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=56';
 
 export const meta = {
   title: '编辑配置档案',
@@ -109,16 +111,35 @@ function paint(container) {
   container.appendChild(h('div',
     renderHeader(),
     h('div.card',
-      h('div.tabs', ...TABS.map((tab) => h('button', {
-        class: `tab${state.activeTab === tab.key ? ' active' : ''}`,
-        type: 'button',
-        onClick: () => {
-          state.activeTab = tab.key;
-          paint(container);
-        },
-      }, tab.label,
-        h('span.tab-count', String(countOf(tab.key))),
-      ))),
+      h('div.editor-toolbar',
+        h('div.tabs', ...TABS.map((tab) => h('button', {
+          class: `tab${state.activeTab === tab.key ? ' active' : ''}`,
+          type: 'button',
+          onClick: () => {
+            state.activeTab = tab.key;
+            paint(container);
+          },
+        }, tab.label,
+          h('span.tab-count', String(countOf(tab.key))),
+        ))),
+        // 课表视图缩放（#54）：只切换 body 上的类名让 CSS 生效，**不重建 DOM**——
+        // 编辑器里可能正有未保存的输入，重建会打断它。
+        h('div.scale-switch', ...SCHED_SCALES.map((s) => h(
+          'button.segmented-item' + (getSchedScale() === s.key ? '.active' : ''),
+          {
+            type: 'button',
+            title: s.hint,
+            dataset: { scale: s.key },
+            onClick: () => {
+              setSchedScale(s.key);
+              for (const btn of document.querySelectorAll('.scale-switch .segmented-item')) {
+                btn.classList.toggle('active', btn.dataset.scale === s.key);
+              }
+            },
+          },
+          s.label,
+        ))),
+      ),
       h('div#tabBody', renderTab()),
     ),
   ));
@@ -236,7 +257,7 @@ async function save() {
 
     paint(document.getElementById('content'));
   } catch (err) {
-    toast('error', '保存失败', err.message);
+    toastError(err, '保存失败');
   }
 }
 

@@ -8,7 +8,7 @@
   <title>ClassislandControlHub 集控系统</title>
   <link rel="icon" href="icon.png" />
   <link rel="apple-touch-icon" href="icon.png" />
-  <link rel="stylesheet" href="css/app.css?v=44" />
+  <link rel="stylesheet" href="css/app.css?v=56" />
 </head>
 
 <body>
@@ -45,6 +45,11 @@
           </div>
         </div>
         <div class="topbar-right">
+          <button class="btn btn-ghost" id="searchBtn" title="全局搜索：设备 / 分组 / 档案 / 账号（Ctrl + K）">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M11 4.2a6.8 6.8 0 1 1 0 13.6a6.8 6.8 0 0 1 0-13.6M20.2 20.2l-4.6-4.6" /></svg>
+            搜索
+            <span class="kbd-hint">Ctrl K</span>
+          </button>
           <span class="revision-chip" id="revisionChip" title="当前全局配置版本号">版本 —</span>
           <div class="user-menu">
             <button class="btn btn-icon btn-ghost" id="themeBtn" title="切换主题" aria-label="切换主题"></button>
@@ -252,7 +257,7 @@
   <!-- 新手引导浮层 -->
   <div id="tourHost" class="tour-host" hidden></div>
 
-  <script type="module" src="js/app.js?v=44"></script>
+  <script type="module" src="js/app.js?v=56"></script>
 </body>
 
 </html>

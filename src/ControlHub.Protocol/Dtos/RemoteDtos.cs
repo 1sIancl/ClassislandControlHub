@@ -353,4 +353,13 @@ public sealed class BackupEntryDto
 
     /// <summary>备注。</summary>
     public string Note { get; set; } = string.Empty;
+
+    /// <summary>备份内含的文件数（#59；老备份没有这项，为 0）。</summary>
+    public int FileCount { get; set; }
+
+    /// <summary>
+    /// 是否包含加密密钥（#59）。界面据此提示「这份备份不含密钥，换机器恢复时注册码会失效」，
+    /// 或反过来警告「含密钥，别外发」。
+    /// </summary>
+    public bool IncludesSecretsKey { get; set; }
 }

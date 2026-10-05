@@ -269,7 +269,7 @@ public static class RemoteEndpoints
         return (online, candidates.Count - online.Count);
     }
 
-    /// <summary>查询某设备的待执行指令队列（尚未被设备取走的指令）。</summary>
+    /// <summary>查询某设备【待执行指令队列】（尚未被设备取走）。</summary>
     private static async Task<ApiResult<List<DeviceCommandDto>>> GetCommandQueueAsync(
         string id,
         HttpContext http,
@@ -278,6 +278,11 @@ public static class RemoteEndpoints
     {
         http.RequireAdminSession();
         var device = await store.GetDeviceAsync(id, cancellationToken);
+
+        // 先清掉已过期的（#3）：否则离线设备队列里的过期指令会一直算作「在等待」，
+        // 管理员看到的队列长度会越来越失真。
+        await store.ExpirePendingCommandsAsync(id, cancellationToken);
+
         var rows = await store.GetPendingCommandsAsync(id, 100, cancellationToken);
         return ApiResult<List<DeviceCommandDto>>.Success(
             rows.Select(r => ToDto(r, device?.Name)).ToList());
