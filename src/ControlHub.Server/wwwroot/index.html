@@ -11,11 +11,11 @@
   <!-- 样式分三层加载：令牌（tokens）→ 基础样式（app）→ 玻璃皮肤（glass）。
        glass.css **必须排在最后**：它靠同名选择器覆盖 app.css 里的容器外观，
        用的是「后写的规则胜出」，而不是更高的优先级。 -->
-  <link rel="stylesheet" href="css/tokens.css?v=75" />
-  <link rel="stylesheet" href="css/base.css?v=75" />
-  <link rel="stylesheet" href="css/app.css?v=75" />
-  <link rel="stylesheet" href="css/topbar.css?v=75" />
-  <link rel="stylesheet" href="css/glass.css?v=75" />
+  <link rel="stylesheet" href="css/tokens.css?v=77" />
+  <link rel="stylesheet" href="css/base.css?v=77" />
+  <link rel="stylesheet" href="css/app.css?v=77" />
+  <link rel="stylesheet" href="css/topbar.css?v=77" />
+  <link rel="stylesheet" href="css/glass.css?v=77" />
 </head>
 
 <body>
@@ -35,28 +35,18 @@
         <!-- 分组导航：由 app.js 的 renderNav 渲染成「分组触发器 + 下拉」 -->
         <nav class="topbar-nav" id="navList"></nav>
 
-        <!-- 折叠 / 抽屉按钮放在导航**之前**：它是导航的开关，必须挨着导航，
-             放在页面标题旁边会让人误以为它管的是页面。 -->
+        <!-- 折叠 / 抽屉按钮放在导航**之前**：它是导航的开关，必须挨着导航 -->
         <button class="btn btn-icon btn-ghost topbar-toggle" id="collapseBtn" title="折叠 / 展开导航" aria-label="折叠导航">
           <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3.5 7h17M3.5 12h17M3.5 17h17" /></svg>
         </button>
 
-        <div class="topbar-titles">
-          <h1 id="pageTitle">仪表盘</h1>
-          <p id="pageSubtitle" class="page-subtitle"></p>
-        </div>
-
-        <div class="conn-state topbar-conn" id="connState">
-          <span class="dot"></span><span class="conn-text">连接中…</span>
-        </div>
-
-        <div class="sidebar-version topbar-ver" id="sidebarVersion">—</div>
+        <!-- 搜索：顶栏正中（见 topbar.css 的 .topbar-search），任何页面都能一键到达 -->
+        <button class="btn btn-ghost topbar-search" id="searchBtn" title="命令与搜索（Ctrl + K）">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M11 4.2a6.8 6.8 0 1 1 0 13.6a6.8 6.8 0 0 1 0-13.6M20.2 20.2l-4.6-4.6" /></svg>
+          搜索
+          <span class="kbd-hint">Ctrl K</span>
+        </button>
         <div class="topbar-right">
-          <button class="btn btn-ghost" id="searchBtn" title="全局搜索：设备 / 分组 / 档案 / 账号（Ctrl + K）">
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M11 4.2a6.8 6.8 0 1 1 0 13.6a6.8 6.8 0 0 1 0-13.6M20.2 20.2l-4.6-4.6" /></svg>
-            搜索
-            <span class="kbd-hint">Ctrl K</span>
-          </button>
           <span class="revision-chip" id="revisionChip" title="当前全局配置版本号">版本 —</span>
           <div class="user-menu">
             <button class="btn btn-icon btn-ghost" id="themeBtn" title="切换主题" aria-label="切换主题"></button>
@@ -77,10 +67,22 @@
       </header>
 
       <!-- 两级导航：顶栏是**一级**（分组），侧边栏是**二级**（当前分组下的页面）。
-           侧边栏只放二级导航；品牌、连接状态、版本已迁到顶栏。 -->
+           页面标题在侧边栏顶部（它描述的就是这里的上下文）；连接状态与版本在底部。 -->
       <div class="shell-body">
         <aside class="sidebar" id="sidebar">
+          <div class="side-page">
+            <h1 id="pageTitle">仪表盘</h1>
+            <p id="pageSubtitle" class="page-subtitle"></p>
+          </div>
+
           <nav class="side-nav" id="sideNavList"></nav>
+
+          <div class="sidebar-footer">
+            <div class="conn-state" id="connState">
+              <span class="dot"></span><span class="conn-text">连接中…</span>
+            </div>
+            <div class="sidebar-version" id="sidebarVersion">—</div>
+          </div>
         </aside>
 
         <main class="content" id="content"></main>
@@ -285,7 +287,7 @@
   <!-- 新手引导浮层 -->
   <div id="tourHost" class="tour-host" hidden></div>
 
-  <script type="module" src="js/app.js?v=75"></script>
+  <script type="module" src="js/app.js?v=77"></script>
 </body>
 
 </html>

@@ -9,8 +9,8 @@
  *   - `?` 打开帮助面板：**快捷键必须能被发现**，否则等于没做——侧边栏每个页面也带悬停提示。
  */
 
-import { h, modal, toast } from './ui.js?v=75';
-import { openSearch } from './search.js?v=75';
+import { h, modal, toast } from './ui.js?v=77';
+import { openSearch } from './search.js?v=77';
 
 /**
  * 由 app.js 注入的「当前账号可见的页面清单」。
@@ -126,10 +126,13 @@ export function initShortcuts() {
     }
 
     if (event.altKey && !event.ctrlKey && !event.metaKey && /^[1-9]$/.test(event.key)) {
-      const item = visibleNavItems()[Number(event.key) - 1];
-      if (!item) return;
+      // 用注入的页面清单而不是 visibleNavItems()：
+      // 两级导航后 .nav-item 同时存在于顶栏下拉与侧边栏，按 DOM 查会拿两份、序号错位；
+      // 侧边栏又只显示当前分组（例如只有 3 项），Alt+4..9 会凭空失效。
+      const page = listPages()[Number(event.key) - 1];
+      if (!page) return;
       event.preventDefault();
-      item.click();
+      window.location.hash = page.hash;
       return;
     }
 

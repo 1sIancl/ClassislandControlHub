@@ -14,6 +14,13 @@
   min-height: 100vh;
 }
 
+/* ⚠️ 上面那条 !important 会把 [hidden] 的 display:none 一起覆盖，
+   登录时整个应用外壳（含顶栏）就会盖在登录页上——这是实测抓到的真 bug。
+   所以必须显式把 hidden 的优先级抬回来。 */
+.app-shell[hidden] {
+  display: none !important;
+}
+
 /* 侧边栏改为**二级导航**（当前分组下的页面），不再是一级模块导航。
    具体样式见本文件末尾的「两级导航布局」一节。 */
 
@@ -224,7 +231,20 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ── 顶栏右侧 ─────────────────────────────────────────────────────── */
+/* ── 顶栏搜索：正中 ─────────────────────────────────────────────────
+   用绝对定位居中而不是 flex 平分：分组数量因权限而异，flex 平分时
+   搜索框会跟着左右漂。固定居中让「想搜索时手可以闭着眼去同一个位置」。 */
+.topbar-search {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  flex: none;
+}
+
+/* 分组导航过长时给搜索让位：左右各留出搜索框的宽度，宁可导航省略也不互相压。 */
+.topbar-nav {
+  max-width: calc(100% - 360px);
+}
 
 .topbar-right {
   display: flex;
@@ -233,35 +253,16 @@
   flex: none;
 }
 
-.topbar-titles {
-  min-width: 0;
-}
-
-.topbar-titles h1 {
-  font-size: var(--font-lg);
-  line-height: 1.2;
-}
-
-.topbar-conn {
-  flex: none;
-  padding: 0 var(--space-2);
-}
-
-.topbar-ver {
-  flex: none;
-  padding: 0 var(--space-2);
-  font-variant-numeric: tabular-nums;
-}
-
-@media (max-width: 1240px) {
-  .topbar-conn {
-    display: none;
+/* 窄屏：居中搜索退回右侧流式排列（顶栏放不下三段了） */
+@media (max-width: 1100px) {
+  .topbar-search {
+    position: static;
+    transform: none;
+    margin-left: auto;
   }
-}
 
-@media (max-width: 1080px) {
-  .topbar-ver {
-    display: none;
+  .topbar-nav {
+    max-width: none;
   }
 }
 
@@ -424,19 +425,40 @@
 }
 
 .sidebar {
-  display: block !important;
+  display: flex !important;
+  flex-direction: column;
   position: sticky;
   top: 58px;
   flex: none;
-  width: var(--sidebar-width, 236px);
+  width: 208px;
   height: calc(100vh - 58px);
   overflow-y: auto;
   border-right: 1px solid var(--border);
 }
 
-/* 二级侧边栏窄一些：它只有「当前分组下的页面」，不需要一级那么宽 */
-.sidebar {
-  width: 200px;
+/* ── 侧边栏：当前页标题（顶部）+ 二级导航（中）+ 状态（底部）────────── */
+
+.side-page {
+  padding: var(--space-4) var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+
+.side-page h1 {
+  font-size: var(--font-lg);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-page .page-subtitle {
+  margin: 2px 0 0;
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .side-nav {
@@ -444,6 +466,28 @@
   flex-direction: column;
   gap: 2px;
   padding: var(--space-3) var(--space-2);
+  flex: 1;
+}
+
+/* 连接状态与版本沉底：它们是「环境信息」，不该跟页面项抢视觉位置。 */
+.sidebar-footer {
+  margin-top: auto;
+  padding: var(--space-3);
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.sidebar-footer .conn-state,
+.sidebar-footer .sidebar-version {
+  padding: 0;
+}
+
+.sidebar-footer .sidebar-version {
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
 }
 
 .side-nav-title {

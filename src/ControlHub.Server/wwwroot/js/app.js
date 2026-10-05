@@ -2,9 +2,9 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=75';
-import { toastError } from './core/errors.js?v=75';
-import { h, clear, toast, icon } from './core/ui.js?v=75';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=77';
+import { toastError } from './core/errors.js?v=77';
+import { h, clear, toast, icon } from './core/ui.js?v=77';
 import {
   initTheme, getTheme, applyTheme, THEMES,
   getSidebarCollapsed, setSidebarCollapsed,
@@ -13,11 +13,11 @@ import {
   getFont, setFont, FONTS,
   getRadius, setRadius, RADII,
   applyRemotePrefs, applySchedScale,
-} from './core/prefs.js?v=75';
-import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=75';
-import { initGlassHighlight } from './core/glass.js?v=75';
-import { initTopbar } from './topbar.js?v=75';
-import { openSearch } from './core/search.js?v=75';
+} from './core/prefs.js?v=77';
+import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=77';
+import { initGlassHighlight } from './core/glass.js?v=77';
+import { initTopbar } from './topbar.js?v=77';
+import { openSearch } from './core/search.js?v=77';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -102,18 +102,18 @@ const ROUTE_ALIASES = {
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=75'),
-  devices: () => import('./views/devices.js?v=75'),
+  dashboard: () => import('./views/dashboard.js?v=77'),
+  devices: () => import('./views/devices.js?v=77'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=75'),
-  profiles: () => import('./views/profiles.js?v=75'),
-  profileEditor: () => import('./views/profileEditor.js?v=75'),
-  deploy: () => import('./views/deploy.js?v=75'),
-  remote: () => import('./views/remote.js?v=75'),
-  reminders: () => import('./views/reminders.js?v=75'),
-  audit: () => import('./views/audit.js?v=75'),
-  reports: () => import('./views/reports.js?v=75'),
-  settings: () => import('./views/settings.js?v=75'),
+  groups: () => import('./views/devices.js?v=77'),
+  profiles: () => import('./views/profiles.js?v=77'),
+  profileEditor: () => import('./views/profileEditor.js?v=77'),
+  deploy: () => import('./views/deploy.js?v=77'),
+  remote: () => import('./views/remote.js?v=77'),
+  reminders: () => import('./views/reminders.js?v=77'),
+  audit: () => import('./views/audit.js?v=77'),
+  reports: () => import('./views/reports.js?v=77'),
+  settings: () => import('./views/settings.js?v=77'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -635,7 +635,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=75');
+    const { startTour } = await import('./core/tour.js?v=77');
     startTour({
       onFinish: async (skipped) => {
         try {
@@ -786,9 +786,23 @@ function syncSideNavActive() {
  * 过滤规则只应该有一处（renderNav / can()），两处各写一份迟早会不一致。</para>
  */
 function navPagesForPalette() {
+  // 全局序号与 renderNav 的 shortcutIndex 同一套编法：跨分组连续 1..9。
+  // 顶栏下拉和侧边栏**都**渲染 .nav-item，按 DOM 查会拿两份、序号错位——
+  // 所以 Alt+N 与命令面板都必须走这份清单，而不是 visibleNavItems()。
+  let index = 0;
   return NAV.flatMap((group) => group.items
     .filter((item) => can(item.perm))
-    .map((item) => ({ key: item.key, label: item.label, hash: item.hash, groupLabel: group.label })));
+    .map((item) => {
+      index++;
+      return {
+        key: item.key,
+        label: item.label,
+        hash: item.hash,
+        groupLabel: group.label,
+        keys: index <= 9 ? [`Alt ${index}`] : [],
+        index,
+      };
+    }));
 }
 
 /** 收起所有分组下拉（点外部、Esc、选中页面后都会用到）。 */
