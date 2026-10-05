@@ -2,9 +2,9 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=59';
-import { toastError } from './core/errors.js?v=59';
-import { h, clear, toast, icon } from './core/ui.js?v=59';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=61';
+import { toastError } from './core/errors.js?v=61';
+import { h, clear, toast, icon } from './core/ui.js?v=61';
 import {
   initTheme, getTheme, applyTheme, THEMES,
   getSidebarCollapsed, setSidebarCollapsed,
@@ -13,9 +13,9 @@ import {
   getFont, setFont, FONTS,
   getRadius, setRadius, RADII,
   applyRemotePrefs, applySchedScale,
-} from './core/prefs.js?v=59';
-import { initShortcuts, shortcutHint } from './core/shortcuts.js?v=59';
-import { openSearch } from './core/search.js?v=59';
+} from './core/prefs.js?v=61';
+import { initShortcuts, shortcutHint } from './core/shortcuts.js?v=61';
+import { openSearch } from './core/search.js?v=61';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -73,18 +73,18 @@ const ROUTE_ALIASES = {
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=59'),
-  devices: () => import('./views/devices.js?v=59'),
+  dashboard: () => import('./views/dashboard.js?v=61'),
+  devices: () => import('./views/devices.js?v=61'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=59'),
-  profiles: () => import('./views/profiles.js?v=59'),
-  profileEditor: () => import('./views/profileEditor.js?v=59'),
-  deploy: () => import('./views/deploy.js?v=59'),
-  remote: () => import('./views/remote.js?v=59'),
-  reminders: () => import('./views/reminders.js?v=59'),
-  audit: () => import('./views/audit.js?v=59'),
-  reports: () => import('./views/reports.js?v=59'),
-  settings: () => import('./views/settings.js?v=59'),
+  groups: () => import('./views/devices.js?v=61'),
+  profiles: () => import('./views/profiles.js?v=61'),
+  profileEditor: () => import('./views/profileEditor.js?v=61'),
+  deploy: () => import('./views/deploy.js?v=61'),
+  remote: () => import('./views/remote.js?v=61'),
+  reminders: () => import('./views/reminders.js?v=61'),
+  audit: () => import('./views/audit.js?v=61'),
+  reports: () => import('./views/reports.js?v=61'),
+  settings: () => import('./views/settings.js?v=61'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -530,7 +530,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=59');
+    const { startTour } = await import('./core/tour.js?v=61');
     startTour({
       onFinish: async (skipped) => {
         try {

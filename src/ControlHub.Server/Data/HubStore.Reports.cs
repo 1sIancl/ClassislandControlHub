@@ -365,6 +365,205 @@ public sealed partial class HubStore
         return report;
     }
 
+    // ────────────────────────────── #64 配置同步 ──────────────────────────────
+
+    /// <summary>
+    /// 记录一次配置下发：写批次 + 目标设备快照（含**下发当时**给每台设备设定的推送世代号）。
+    /// <para>快照必须在这里落：世代号在下发后马上就被递增了，事后再查拿到的是「下一批」的值，
+    /// 于是永远算不出这一批到底有没有被跟上。世代号直接从 <c>devices</c> 现取即可——
+    /// 它在 <c>BumpPushEpoch*</c> 之后正好是本批要求的那个值。</para>
+    /// </summary>
+    public async Task RecordSyncPushAsync(SyncPushRecord push, IReadOnlyList<string> targetDeviceIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (targetDeviceIds.Count == 0)
+        {
+            return;
+        }
+
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await using (var insert = connection.CreateCommand())
+        {
+            insert.Transaction = (SqliteTransaction)transaction;
+            insert.CommandText = """
+                INSERT INTO sync_pushes
+                       (id, revision, scope, target_count, created_at, created_by, message, force)
+                VALUES ($id, $revision, $scope, $count, $at, $by, $message, $force);
+                """;
+            insert.Parameters.AddWithValue("$id", push.Id);
+            insert.Parameters.AddWithValue("$revision", push.Revision);
+            insert.Parameters.AddWithValue("$scope", push.Scope);
+            insert.Parameters.AddWithValue("$count", targetDeviceIds.Count);
+            insert.Parameters.AddWithValue("$at", Ts(push.CreatedAt));
+            insert.Parameters.AddWithValue("$by", push.CreatedBy);
+            insert.Parameters.AddWithValue("$message", push.Message);
+            insert.Parameters.AddWithValue("$force", push.Force ? 1 : 0);
+            await insert.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var targets = connection.CreateCommand())
+        {
+            targets.Transaction = (SqliteTransaction)transaction;
+
+            // 参数化 IN：目标可能上百台，拼字面量既有注入风险也不好读。
+            // 顺带一个好处：已删除的设备不会出现在快照里（IN 匹配不到），本来也不该统计。
+            var names = new string[targetDeviceIds.Count];
+            for (var i = 0; i < targetDeviceIds.Count; i++)
+            {
+                names[i] = $"$d{i}";
+                targets.Parameters.AddWithValue($"$d{i}", targetDeviceIds[i]);
+            }
+
+            targets.CommandText = $"""
+                INSERT INTO sync_push_targets (push_id, device_id, push_epoch)
+                SELECT $id, id, push_epoch FROM devices WHERE id IN ({string.Join(", ", names)});
+                """;
+            targets.Parameters.AddWithValue("$id", push.Id);
+            await targets.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    /// <summary>配置同步成功率报表：每批下发最终的覆盖情况。</summary>
+    /// <param name="days">回溯天数。</param>
+    /// <param name="onlineTimeout">在线判定窗口（与仪表盘 / 在线率共用同一口径）。</param>
+    /// <param name="limit">最多返回多少批（新的在前）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    public async Task<SyncReportDto> GetSyncReportAsync(int days, TimeSpan onlineTimeout, int limit = 40,
+        CancellationToken cancellationToken = default)
+    {
+        var range = BuildRange(days);
+        var aliveSince = Ts(DateTimeOffset.UtcNow - onlineTimeout);
+        var report = new SyncReportDto { Range = range };
+
+        await using var connection = await OpenAsync(cancellationToken);
+
+        report.Daily = await ReadBucketsAsync(connection, """
+            SELECT substr(datetime(created_at, 'localtime'), 1, 10) AS d, COUNT(1), 0
+              FROM sync_pushes
+             WHERE substr(datetime(created_at, 'localtime'), 1, 10) BETWEEN $from AND $to
+             GROUP BY d ORDER BY d;
+            """, range, cancellationToken);
+
+        // 一次拿到所有批次的覆盖情况。
+        // 「跟上」= applied_push_epoch >= 本批给它的世代号（不是看 revision —— 定向推送不改 revision）。
+        // 分母排除「下发后被停用 / 已删除」的设备：它们收不到是意料之中，不该算失败。
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = """
+                SELECT p.id, p.revision, p.scope, p.target_count, p.created_at, p.created_by,
+                       p.message, p.force,
+                       COUNT(t.device_id),
+                       SUM(CASE WHEN d.id IS NULL OR d.revoked = 1 THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN d.revoked = 0 AND d.applied_push_epoch >= t.push_epoch
+                                THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN d.revoked = 0 AND d.applied_push_epoch < t.push_epoch
+                                     AND d.last_seen_at IS NOT NULL AND d.last_seen_at >= $aliveSince
+                                THEN 1 ELSE 0 END),
+                       SUM(CASE WHEN d.revoked = 0 AND d.applied_push_epoch < t.push_epoch
+                                     AND (d.last_seen_at IS NULL OR d.last_seen_at < $aliveSince)
+                                THEN 1 ELSE 0 END),
+                       AVG(CASE WHEN d.revoked = 0 AND d.applied_push_epoch >= t.push_epoch
+                                THEN (julianday(d.last_sync_at) - julianday(p.created_at)) * 86400 END)
+                  FROM sync_pushes p
+                  LEFT JOIN sync_push_targets t ON t.push_id = p.id
+                  LEFT JOIN devices d ON d.id = t.device_id
+                 WHERE substr(datetime(p.created_at, 'localtime'), 1, 10) BETWEEN $from AND $to
+                 GROUP BY p.id
+                 ORDER BY p.created_at DESC
+                 LIMIT $limit;
+                """;
+            cmd.Parameters.AddWithValue("$from", range.From);
+            cmd.Parameters.AddWithValue("$to", range.To);
+            cmd.Parameters.AddWithValue("$aliveSince", aliveSince);
+            cmd.Parameters.AddWithValue("$limit", limit);
+
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var synced = reader.GetInt32(10);
+                var waiting = reader.GetInt32(11);
+                var offline = reader.GetInt32(12);
+                var denominator = synced + waiting + offline;
+
+                report.Pushes.Add(new SyncPushReportDto
+                {
+                    Id = reader.GetString(0),
+                    Revision = reader.GetInt64(1),
+                    Scope = reader.GetString(2),
+                    ScopeLabel = string.Empty, // 下面按批次数补
+                    CreatedAt = GetTimestampOrNow(reader, "created_at"),
+                    CreatedBy = reader.GetString(5),
+                    Message = reader.GetString(6),
+                    Force = reader.GetInt32(7) != 0,
+                    TargetCount = reader.GetInt32(8),
+                    Synced = synced,
+                    Waiting = waiting,
+                    Offline = offline,
+                    Excluded = reader.GetInt32(9),
+                    Countable = denominator,
+                    SuccessRate = denominator > 0 ? (double)synced / denominator : 0,
+                    AverageSeconds = reader.IsDBNull(13) ? null : reader.GetDouble(13),
+                });
+            }
+        }
+
+        // 范围说明：把 scope 与目标数拼成一句人话（「全部设备（14）」）。
+        foreach (var push in report.Pushes)
+        {
+            push.ScopeLabel = push.Scope switch
+            {
+                "all" => $"全部设备（{push.TargetCount}）",
+                "group" => $"按分组（{push.TargetCount} 台）",
+                "device" => $"指定设备（{push.TargetCount} 台）",
+                _ => $"{push.Scope}（{push.TargetCount}）",
+            };
+        }
+
+        report.PushCount = report.Pushes.Count;
+        report.TotalTargets = report.Pushes.Sum(p => p.Synced + p.Waiting + p.Offline);
+        report.TotalSynced = report.Pushes.Sum(p => p.Synced);
+        report.OverallRate = report.TotalTargets > 0
+            ? (double)report.TotalSynced / report.TotalTargets
+            : 0;
+        report.FullySyncedPushes = report.Pushes.Count(p => p.Waiting + p.Offline == 0);
+
+        // 反复没跟上的设备：出问题时最该先看这几台。
+        await using (var stuck = connection.CreateCommand())
+        {
+            stuck.CommandText = """
+                SELECT t.device_id, COALESCE(d.name, '（已删除）'), COUNT(1) AS missed
+                  FROM sync_push_targets t
+                  JOIN sync_pushes p ON p.id = t.push_id
+                  LEFT JOIN devices d ON d.id = t.device_id
+                 WHERE substr(datetime(p.created_at, 'localtime'), 1, 10) BETWEEN $from AND $to
+                       AND d.revoked = 0 AND d.applied_push_epoch < t.push_epoch
+                 GROUP BY t.device_id
+                 ORDER BY missed DESC
+                 LIMIT 15;
+                """;
+            stuck.Parameters.AddWithValue("$from", range.From);
+            stuck.Parameters.AddWithValue("$to", range.To);
+
+            await using var reader = await stuck.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var missed = reader.GetInt32(2);
+                report.StuckDevices.Add(new ReportBucketDto
+                {
+                    Key = reader.GetString(0),
+                    Label = reader.GetString(1),
+                    Count = missed,
+                });
+            }
+        }
+
+        return report;
+    }
+
     // ────────────────────────────── 小工具 ──────────────────────────────
 
     /// <summary>
@@ -415,3 +614,20 @@ public sealed partial class HubStore
         return value2 is null or DBNull ? 0 : Convert.ToInt32(value2);
     }
 }
+
+/// <summary>一次配置下发的元信息（用于落库，见 <see cref="HubStore.RecordSyncPushAsync"/>）。</summary>
+/// <param name="Id">批次 ID。</param>
+/// <param name="Revision">下发时的全局配置版本号。</param>
+/// <param name="Scope">下发范围（all / group / device）。</param>
+/// <param name="CreatedAt">下发时间。</param>
+/// <param name="CreatedBy">发起人。</param>
+/// <param name="Message">随下发的提示消息。</param>
+/// <param name="Force">是否强制覆盖本地内容。</param>
+public sealed record SyncPushRecord(
+    string Id,
+    long Revision,
+    string Scope,
+    DateTimeOffset CreatedAt,
+    string CreatedBy,
+    string Message,
+    bool Force);

@@ -1,7 +1,7 @@
 /** 轻量 DOM 构建与通用交互组件，无框架依赖。 */
 
 // 只引「错误码 → 怎么办」的纯映射（#51）：本文件是最底层模块，不能反过来依赖 errors.js。
-import { formatErrorText, hasErrorHint } from './error-hints.js?v=59';
+import { formatErrorText, hasErrorHint } from './error-hints.js?v=61';
 
 /**
  * 创建元素。

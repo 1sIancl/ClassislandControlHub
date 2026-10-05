@@ -598,7 +598,8 @@ public static class DeviceEndpoints
     {
         var session = http.RequireAdminSession();
 
-        var (affected, revision) = await sync.PushAsync(request, cancellationToken);
+        // 带上发起人：报表要显示「谁在什么时候把哪一批发了出去」（#64）。
+        var (affected, revision) = await sync.PushAsync(request, session.Username, cancellationToken);
 
         await store.AddAuditAsync(session.Username, "config.push", request.Scope,
             $"推送范围 {request.Scope}，影响 {affected} 台设备，当前版本 {revision}。",

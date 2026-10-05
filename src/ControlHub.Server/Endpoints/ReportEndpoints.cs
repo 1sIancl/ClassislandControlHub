@@ -2,6 +2,8 @@ using ControlHub.Protocol;
 using ControlHub.Protocol.Dtos;
 using ControlHub.Server.Data;
 using ControlHub.Server.Http;
+using ControlHub.Server.Options;
+using Microsoft.Extensions.Options;
 
 namespace ControlHub.Server.Endpoints;
 
@@ -31,6 +33,19 @@ public static class ReportEndpoints
         group.MapGet("/reports/commands", CommandReportAsync).RequirePermission(PermissionKeys.AuditRead);
         group.MapGet("/reports/operations", OperationReportAsync).RequirePermission(PermissionKeys.AuditRead);
         group.MapGet("/reports/online", OnlineReportAsync).RequirePermission(PermissionKeys.AuditRead);
+        group.MapGet("/reports/sync", SyncReportAsync).RequirePermission(PermissionKeys.AuditRead);
+    }
+
+    private static async Task<ApiResult<SyncReportDto>> SyncReportAsync(
+        int? days, HttpContext http, HubStore store, IOptions<ServerOptions> options,
+        CancellationToken cancellationToken)
+    {
+        http.RequireAdminSession();
+
+        // 在线判定沿用同一口径（与仪表盘、在线率报表一致），否则「离线」在三处的含义会不一样。
+        var timeout = TimeSpan.FromSeconds(Math.Max(10, options.Value.OnlineTimeoutSeconds));
+        return ApiResult<SyncReportDto>.Success(
+            await store.GetSyncReportAsync(ClampDays(days), timeout, 40, cancellationToken));
     }
 
     private static async Task<ApiResult<CommandReportDto>> CommandReportAsync(

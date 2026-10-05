@@ -532,6 +532,31 @@ public sealed partial class HubStore
             date         TEXT PRIMARY KEY,
             sample_count INTEGER NOT NULL DEFAULT 0
         );
+
+        -- 配置下发批次（#64）：报表要回答「这一批最后有多少台跟上了」。
+        -- 必须单独记批次：<c>push_epoch</c> 是**每台设备各自的计数器**，事后无法还原
+        -- 「当时这一批发给了谁、要求它们到哪个世代号」，只靠 devices 表算不出来。
+        CREATE TABLE IF NOT EXISTS sync_pushes (
+            id           TEXT PRIMARY KEY,
+            revision     INTEGER NOT NULL DEFAULT 0,
+            scope        TEXT NOT NULL DEFAULT '',
+            target_count INTEGER NOT NULL DEFAULT 0,
+            created_at   TEXT NOT NULL,
+            created_by   TEXT NOT NULL DEFAULT '',
+            message      TEXT NOT NULL DEFAULT '',
+            force        INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_sync_pushes_created ON sync_pushes(created_at DESC);
+
+        -- 批次的目标设备快照。push_epoch 是**下发当时**给该设备设定的世代号：
+        -- 设备只要把 applied_push_epoch 追到这个值，就算跟上了这一批。
+        CREATE TABLE IF NOT EXISTS sync_push_targets (
+            push_id    TEXT NOT NULL,
+            device_id  TEXT NOT NULL,
+            push_epoch INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (push_id, device_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_sync_targets_push ON sync_push_targets(push_id);
         """;
 
     // ────────────────────────────── 设置项 ──────────────────────────────

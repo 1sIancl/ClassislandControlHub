@@ -326,10 +326,11 @@ public sealed class SyncService(
     /// </para>
     /// </summary>
     /// <param name="request">推送请求。</param>
+    /// <param name="issuedBy">发起人（写进下发记录供报表展示；取不到时传空）。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>受影响设备数与当前全局配置版本号。</returns>
     public async Task<(int Affected, long Revision)> PushAsync(PushRequest request,
-        CancellationToken cancellationToken = default)
+        string? issuedBy = null, CancellationToken cancellationToken = default)
     {
         var scope = (request.Scope ?? "all").Trim().ToLowerInvariant();
 
@@ -337,15 +338,22 @@ public sealed class SyncService(
         // 默认关闭（PushBatchSize = 0），走下面的一次性路径。
         if (_options.PushBatchSize > 0)
         {
-            return await PushInBatchesAsync(scope, request, cancellationToken);
+            return await PushInBatchesAsync(scope, request, issuedBy, cancellationToken);
         }
 
         int affected;
+        // 这一批发给了谁 —— 报表要靠它算「还有多少台没跟上」，所以三个分支都要填。
+        List<string> targetDeviceIds;
 
         switch (scope)
         {
             case "all":
                 affected = await store.BumpPushEpochAllAsync(cancellationToken);
+                // 「全部」这条路径只递增世代号、自己不解析设备列表，这里补一次查询。
+                targetDeviceIds = (await store.GetDevicesAsync(cancellationToken))
+                    .Where(d => !d.Revoked)
+                    .Select(d => d.Id)
+                    .ToList();
                 break;
 
             case "group":
@@ -380,6 +388,7 @@ public sealed class SyncService(
                 }
 
                 affected = await store.BumpPushEpochAsync(ids, cancellationToken);
+                targetDeviceIds = ids;
                 break;
             }
 
@@ -401,6 +410,7 @@ public sealed class SyncService(
                 }
 
                 affected = await store.BumpPushEpochAsync(devices.Select(d => d.Id), cancellationToken);
+                targetDeviceIds = devices.Select(d => d.Id).ToList();
                 break;
             }
 
@@ -418,10 +428,37 @@ public sealed class SyncService(
 
         var revision = await store.GetRevisionAsync(cancellationToken);
 
+        // 留痕（#64）：所有下发入口都汇聚到这里，记在这儿才不会漏。
+        await RecordSyncPushSafeAsync(scope, revision, issuedBy, request, targetDeviceIds, cancellationToken);
+
         // 定向推送不改变全局版本号，因此这里只唤醒等待者重新判定自身条件。
         notifier.Publish(scope == "all" ? revision : null);
 
         return (affected, revision);
+    }
+
+    /// <summary>
+    /// 记录下发批次，失败只忽略不抛出（#64）。
+    /// <para>报表是**观测**：写不进去最多是少一行统计，绝不该让「下发」这个真正的动作失败。</para>
+    /// </summary>
+    private async Task RecordSyncPushSafeAsync(string scope, long revision, string? issuedBy,
+        PushRequest request, IReadOnlyList<string> targetDeviceIds, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await store.RecordSyncPushAsync(new SyncPushRecord(
+                Guid.NewGuid().ToString("n"),
+                revision,
+                scope,
+                DateTimeOffset.UtcNow,
+                issuedBy ?? string.Empty,
+                request.Message?.Trim() ?? string.Empty,
+                request.Force), targetDeviceIds, cancellationToken);
+        }
+        catch (Exception)
+        {
+            // 有意吞掉：统计缺失比「下发失败」轻得多。
+        }
     }
 
     /// <summary>
@@ -430,7 +467,7 @@ public sealed class SyncService(
     /// 但不会在同一秒一起涌上来。</para>
     /// </summary>
     private async Task<(int Affected, long Revision)> PushInBatchesAsync(string scope, PushRequest request,
-        CancellationToken cancellationToken)
+        string? issuedBy, CancellationToken cancellationToken)
     {
         var batchSize = Math.Max(1, _options.PushBatchSize);
         var delaySeconds = Math.Max(1, _options.PushBatchDelaySeconds);
@@ -478,7 +515,14 @@ public sealed class SyncService(
             }
         }
 
-        return (affected, await store.GetRevisionAsync(cancellationToken));
+        var revision = await store.GetRevisionAsync(cancellationToken);
+
+        // 分批只是「错峰」，对管理员来说仍是一次下发动作，所以报表里记成**一批**。
+        // 快照在这里落：循环已经把每台设备的 push_epoch 推到本批要求的世代号了。
+        await RecordSyncPushSafeAsync(scope, revision, issuedBy, request,
+            targets.Select(d => d.Id).ToList(), cancellationToken);
+
+        return (affected, revision);
     }
 
     /// <summary>把分组（含下级楼层）展开成目标设备列表。</summary>

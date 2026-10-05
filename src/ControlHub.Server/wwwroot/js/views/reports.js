@@ -11,10 +11,10 @@
  *   - 条形图用 div 宽度实现，不引图表库：形态简单，几百 KB 的依赖不值当。
  */
 
-import { api } from '../core/api.js?v=59';
-import { h, clear, loadingBlock } from '../core/ui.js?v=59';
-import { errorBlock } from '../core/errors.js?v=59';
-import { auditActionLabel } from '../core/audit-actions.js?v=59';
+import { api } from '../core/api.js?v=61';
+import { h, clear, formatDateTime, loadingBlock } from '../core/ui.js?v=61';
+import { errorBlock } from '../core/errors.js?v=61';
+import { auditActionLabel } from '../core/audit-actions.js?v=61';
 
 export const meta = {
   title: '报表',
@@ -114,6 +114,12 @@ const TABS = [
     label: '指令执行',
     load: (days) => api('/admin/reports/commands', { query: { days } }),
     render: renderCommands,
+  },
+  {
+    key: 'sync',
+    label: '配置同步',
+    load: (days) => api('/admin/reports/sync', { query: { days } }),
+    render: renderSync,
   },
   {
     key: 'operations',
@@ -267,6 +273,89 @@ function renderCommands(data) {
       empty: '没有失败记录。',
     })),
   );
+}
+
+// ────────────────────────────── #64 配置同步 ──────────────────────────────
+
+function renderSync(data) {
+  if (!data.pushCount) {
+    return h('div',
+      h('div.notice.notice-info', { style: { marginTop: '12px' } },
+        h('span.notice-icon', 'i'),
+        h('div', '这个范围内还没有配置下发记录。下发一次配置后，这里会显示'
+          + '「这一批发给了多少台、有多少台真的跟上了、平均用了多久」。')),
+    );
+  }
+
+  return h('div',
+    h('div', { style: { display: 'flex', gap: '10px', flexWrap: 'wrap', margin: '12px 0 4px' } },
+      metric('下发批次', data.pushCount, `${data.range.from} ~ ${data.range.to}`),
+      // 可统计数为 0（目标全被停用/删除）时显示「—」：写成 0% 会被读成「全部失败」，与事实相反。
+      metric('整体覆盖率', data.totalTargets > 0 ? asPercent(data.overallRate) : '—',
+        `${data.totalSynced} / ${data.totalTargets} 台次`),
+      metric('完全到位', data.fullySyncedPushes, `共 ${data.pushCount} 批`)),
+    section('按日下发次数', barList(data.daily, {
+      value: (row) => row.count,
+      format: (row) => `${row.count} 次`,
+    })),
+    section('反复没跟上的教室', barList(data.stuckDevices, {
+      value: (row) => row.count,
+      format: (row) => `有 ${row.count} 批没跟上`,
+      color: () => 'var(--danger)',
+      empty: '没有反复落后的教室 —— 配置都下发到位了。',
+    })),
+    section('批次明细（新的在前）',
+      h('div', { style: { marginTop: '2px' } }, ...data.pushes.map(renderPushRow))),
+  );
+}
+
+/**
+ * 单批下发的覆盖情况。
+ * <para>用「已跟上 / 等待 / 离线」三段进度条而不是一个百分比：百分比看不出**为什么**没到 100%，
+ * 而「还有 2 台离线、3 台在线但没拉取」才决定了下一步该做什么。</para>
+ */
+function renderPushRow(push) {
+  const unsettled = push.waiting + push.offline;
+  const total = Math.max(1, push.synced + unsettled);
+  const width = (value) => `${(value / total) * 100}%`;
+
+  return h('div', {
+    style: {
+      display: 'flex', flexDirection: 'column', gap: '5px',
+      padding: '9px 0', borderTop: '1px solid var(--border)',
+    },
+  },
+  h('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '12.5px' } },
+    h('span', {
+      style: { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+    }, `${formatDateTime(push.createdAt)} · ${push.scopeLabel}`),
+    h('span', {
+      style: {
+        flex: 'none',
+        color: unsettled === 0 ? 'var(--ok)' : 'var(--warn)',
+        fontVariantNumeric: 'tabular-nums',
+      },
+    }, (push.countable > 0
+      // 可统计数为 0 说明这一批的目标全被停用/删掉了：显示「—」而不是 0/0，更不做成 0%。
+      ? `${push.synced}/${push.countable}`
+      : '—（目标已全部停用）')
+      + (push.averageSeconds ? ` · 平均 ${Math.round(push.averageSeconds)} 秒` : ''))),
+  h('div', {
+    style: {
+      display: 'flex', height: '6px', borderRadius: '3px',
+      overflow: 'hidden', background: 'var(--bg-hover)',
+    },
+  },
+  push.synced ? h('div', { style: { width: width(push.synced), background: 'var(--ok)' } }) : null,
+  push.waiting ? h('div', { style: { width: width(push.waiting), background: 'var(--warn)' } }) : null,
+  push.offline ? h('div', { style: { width: width(push.offline), background: 'var(--text-faint)' } }) : null),
+  h('div', { style: { color: 'var(--text-faint)', fontSize: '11.5px' } },
+    [
+      `${push.createdBy || '（未知发起人）'} 发起`,
+      `配置版本 #${push.revision}`,
+      push.excluded ? `${push.excluded} 台已停用 / 已删除（不计入覆盖率）` : '',
+      push.message ? `附言：${push.message}` : '',
+    ].filter(Boolean).join(' · ')));
 }
 
 // ────────────────────────────── #67 操作热点 ──────────────────────────────

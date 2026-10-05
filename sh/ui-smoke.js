@@ -14,7 +14,7 @@
  *   node sh/ui-smoke.js
  *   SMOKE_BASE=http://127.0.0.1:29800 SMOKE_BROWSER="C:\\...\\msedge.exe" node sh/ui-smoke.js
  *
- * 覆盖的断言（58 项）：
+ * 覆盖的断言（59 项）：
  *   1) 起点归零：清空账号偏好与本机布局缓存 → 仪表盘回到默认布局
  *   2) 「自定义仪表盘」面板能打开，含「统计卡片 + 页面模块」两组、共 10 项
  *   3) 面板里关掉「最近事件」→ 页面立即不再渲染该模块
@@ -616,7 +616,8 @@ function check(name, ok, extra = '') {
       const text = box?.textContent || '';
       const buttons = [...(box ? box.querySelectorAll('button') : [])].map((b) => b.textContent.trim());
       return {
-        hasTabs: buttons.includes('设备在线率') && buttons.includes('指令执行') && buttons.includes('操作热点'),
+        hasTabs: buttons.includes('设备在线率') && buttons.includes('指令执行')
+          && buttons.includes('配置同步') && buttons.includes('操作热点'),
         hasMetric: text.includes('整体在线率') || text.includes('还没有采样数据'),
         ranges: buttons.filter((b) => /最近 \d+ 天/.test(b)).length,
         head: text.replace(/\s+/g, ' ').slice(0, 120),
@@ -659,6 +660,20 @@ function check(name, ok, extra = '') {
   check('操作热点报表显示账号与类别聚合',
     opsText.includes('操作总数') && opsText.includes('参与账号') && opsText.includes('按类别'),
     opsText.slice(0, 150));
+
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('#content button')]
+      .find((b) => b.textContent.trim() === '配置同步');
+    if (btn) {
+      btn.click();
+    }
+  });
+  await sleep(1800);
+  const syncText = await page.evaluate(
+    () => (document.getElementById('content')?.textContent || '').replace(/\s+/g, ' '));
+  check('配置同步报表显示批次 / 覆盖率 / 完全到位（#64）',
+    syncText.includes('下发批次') && syncText.includes('整体覆盖率') && syncText.includes('完全到位'),
+    syncText.slice(0, 150));
 
   // 切到 30 天：标题里的区间应随之变化（证明真的重新取了数，而不是静态文案）
   await page.evaluate(() => {

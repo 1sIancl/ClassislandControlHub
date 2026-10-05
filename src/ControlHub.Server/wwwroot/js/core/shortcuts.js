@@ -9,8 +9,8 @@
  *   - `?` 打开帮助面板：**快捷键必须能被发现**，否则等于没做——侧边栏每个页面也带悬停提示。
  */
 
-import { h, modal, toast } from './ui.js?v=59';
-import { openSearch } from './search.js?v=59';
+import { h, modal, toast } from './ui.js?v=61';
+import { openSearch } from './search.js?v=61';
 
 /** 快捷键清单：帮助面板与侧边栏提示共用这一处，避免两边写得不一致。 */
 const SHORTCUTS = [
