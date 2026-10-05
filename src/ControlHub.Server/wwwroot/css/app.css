@@ -3398,3 +3398,230 @@ input.pcell-name:focus {
   flex: 1;
   min-width: 0;
 }
+/* ══════════════════════ 液态玻璃皮肤（glass morphism）══════════════════════
+   做法说明（重要）：本段是**追加覆盖**，不是重写。
+   app.css 原有 3300+ 行、73 个变量、深浅两套主题；重写它们的风险远大于收益，
+   所以这里只做两件事：
+     ① 补一组玻璃材质变量（原有变量一个都不动、不改名）；
+     ② 用**同名选择器**覆盖关键容器的外观（CSS 规则后者胜出）。
+   想整体回滚，把这一段删掉即可。
+
+   性能取舍：`backdrop-filter` 是 GPU 密集操作，面积越大越吃力。
+   所以只给**大块容器**用（侧边栏 / 顶栏 / 卡片 / 弹窗 / Toast / 表头），
+   **按钮一律不用** —— 几十个按钮各自开一次背景模糊，滚动就会开始掉帧。
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ① 材质变量（跟随主题） */
+:root,
+:root[data-theme="dark"] {
+  --glass-bg: rgba(30, 30, 38, 0.55);
+  --glass-bg-strong: rgba(30, 30, 38, 0.80);
+  --glass-border: rgba(255, 255, 255, 0.10);
+  --glass-edge: rgba(255, 255, 255, 0.14);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.40);
+  --glass-shadow-deep: 0 16px 48px rgba(0, 0, 0, 0.52);
+  --glass-blur: 18px;
+  --glass-blur-strong: 30px;
+  --glass-tint-1: rgba(99, 102, 241, 0.12);
+  --glass-tint-2: rgba(236, 72, 153, 0.08);
+  --glass-tint-3: rgba(14, 165, 233, 0.06);
+}
+
+:root[data-theme="light"] {
+  --glass-bg: rgba(255, 255, 255, 0.55);
+  --glass-bg-strong: rgba(255, 255, 255, 0.80);
+  --glass-border: rgba(255, 255, 255, 0.70);
+  --glass-edge: rgba(15, 23, 42, 0.06);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.90);
+  --glass-shadow: 0 8px 32px rgba(15, 23, 42, 0.10);
+  --glass-shadow-deep: 0 16px 48px rgba(15, 23, 42, 0.16);
+  --glass-tint-1: rgba(99, 102, 241, 0.18);
+  --glass-tint-2: rgba(236, 72, 153, 0.12);
+  --glass-tint-3: rgba(14, 165, 233, 0.09);
+}
+
+/* ② 页面底层渐变：玻璃要「有东西可透」才成立，纯色背景上它只是一块灰 */
+body {
+  background:
+    radial-gradient(ellipse 80% 60% at 18% 0%, var(--glass-tint-1), transparent 55%),
+    radial-gradient(ellipse 70% 60% at 82% 100%, var(--glass-tint-2), transparent 55%),
+    radial-gradient(ellipse 60% 50% at 50% 45%, var(--glass-tint-3), transparent 65%),
+    var(--bg-base);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
+
+/* ③ 大块容器玻璃化 */
+.sidebar,
+.topbar,
+.card,
+.modal,
+.toast,
+.bulk-bar {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border-color: var(--glass-border);
+  box-shadow: var(--glass-highlight), var(--glass-shadow);
+}
+
+.sidebar,
+.topbar {
+  /* 这两个是常驻元素，用更强的模糊与更实的底，保证上面的文字始终可读。 */
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(200%);
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(200%);
+  border: 1px solid var(--glass-border);
+}
+
+/* 表格：表头也做成玻璃，滚动时内容从它下面穿过去 */
+.table thead th,
+table.data thead th {
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  background: var(--glass-bg-strong);
+}
+
+/* ④ 统计卡与快捷入口：可点击的给一点「抬起来」的反馈 */
+.stat,
+.stat-link {
+  border-radius: var(--radius);
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+
+.stat-link:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--glass-highlight), var(--glass-shadow-deep);
+}
+
+/* ⑤ 鼠标跟随高光（由 core/glass.js 写入 --mx / --my） */
+.glass-hi {
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-hi::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition);
+  background: radial-gradient(
+    260px circle at var(--mx, 50%) var(--my, 50%),
+    rgba(255, 255, 255, 0.16),
+    transparent 62%
+  );
+}
+
+:root[data-theme="light"] .glass-hi::after {
+  background: radial-gradient(
+    260px circle at var(--mx, 50%) var(--my, 50%),
+    rgba(255, 255, 255, 0.55),
+    transparent 62%
+  );
+}
+
+.glass-hi:hover::after {
+  opacity: 1;
+}
+
+/* ⑥ 登录页：比管理界面更浓的底 + 品牌区排版 */
+.login-page {
+  background:
+    radial-gradient(ellipse 70% 60% at 20% 15%, var(--glass-tint-1), transparent 58%),
+    radial-gradient(ellipse 60% 55% at 80% 85%, var(--glass-tint-2), transparent 58%),
+    var(--bg-base);
+  background-attachment: fixed;
+}
+
+/* ⑦ 降级：不支持背景模糊时退回不透明底，避免出现「糊成一片、看不清字」 */
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .sidebar,
+  .topbar,
+  .card,
+  .modal,
+  .toast,
+  .bulk-bar,
+  .table thead th,
+  table.data thead th {
+    background: var(--bg-panel);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+/* ⑧ 尊重系统设置：减少透明度 / 减少动态效果 */
+@media (prefers-reduced-transparency: reduce) {
+  .sidebar,
+  .topbar,
+  .card,
+  .modal,
+  .toast,
+  .bulk-bar,
+  .table thead th,
+  table.data thead th {
+    background: var(--bg-panel);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stat-link:hover,
+  .card:hover {
+    transform: none;
+  }
+
+  .glass-hi::after {
+    display: none;
+  }
+}
+/* ⑤-b 高光只挑**内容简单、不会有 sticky 子元素**的容器：
+   给 .card 加 overflow:hidden 会破坏卡片内表格的 sticky 表头，得不偿失。 */
+.glass-hi,
+.stat,
+.stat-link {
+  position: relative;
+  overflow: hidden;
+}
+/* ⑨ 登录卡片与品牌区纳入玻璃材质（原有的浮动光斑底让它更有层次） */
+.login-card {
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(200%);
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(200%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-highlight), var(--glass-shadow-deep);
+  border-radius: var(--radius-lg);
+}
+
+.login-server {
+  border-radius: var(--radius-sm);
+}
+
+/* 登录页的表单控件也用玻璃底，与管理界面保持一致的手感 */
+.login-form input,
+.login-form textarea,
+.login-form select {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--glass-border);
+}
+
+.login-form input:focus,
+.login-form textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .login-card,
+  .login-form input,
+  .login-form textarea {
+    background: var(--bg-panel);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}

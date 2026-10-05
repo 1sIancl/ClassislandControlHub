@@ -864,13 +864,12 @@ function check(name, ok, extra = '') {
   check('测试标签已清理干净', tagClean === 0, `剩余 ${tagClean} 个标签`);
 
   // 22) 课表批量操作（#9）：替换科目 / 存为模板。
-  // 自备一套最小课表数据并**记下原内容**，跑完还原，避免污染现有档案。
+  // 自备一套最小课表数据（id 统一带 e2e- 前缀，便于**幂等清理**），跑完按前缀剔除。
   const sched = await page.evaluate(async () => {
     const { api } = await import('/js/core/api.js?v=63');
     const profiles = await api('/admin/profiles');
     const target = profiles[0];
     const detail = await api(`/admin/profiles/${target.id}`);
-    const backup = JSON.stringify(detail.content || {});
     const name = detail.name;
     const description = detail.description || '';
 
@@ -903,7 +902,7 @@ function check(name, ok, extra = '') {
     await api(`/admin/profiles/${target.id}`, {
       method: 'PUT', body: { name, description, content },
     });
-    return { profileId: target.id, backup, name, description };
+    return { profileId: target.id, name, description };
   });
 
   await page.goto(`${BASE}/#/profiles/${sched.profileId}`, { waitUntil: 'networkidle2' });
@@ -1027,7 +1026,10 @@ function check(name, ok, extra = '') {
   });
   check('课表可存为模板', templateNames.includes('E2E-UI 模板'), `模板=[${templateNames.join(', ')}]`);
 
-  // 还原档案内容 + 清掉测试模板
+  // 清理：**按前缀剔除探针数据**，而不是「恢复备份」。
+  // 恢复备份看着更稳妥，其实更脆：上一次运行如果失败在半途，它留下的「备份」
+  // 本身就已经含探针数据，恢复备份等于把脏数据固化下来（本轮真踩过）。
+  // 按 e2e- 前缀剔除是幂等的：跑多少次、从什么状态开始，结果都一样。
   await page.keyboard.press('Escape');
   await sleep(700);
   await page.evaluate(async (data) => {
@@ -1036,9 +1038,22 @@ function check(name, ok, extra = '') {
       await api(`/admin/timetable-templates/${t.id}`, { method: 'DELETE' });
     }
 
+    const detail = await api(`/admin/profiles/${data.profileId}`);
+    const content = detail.content || {};
+    const clean = (list) => (list || []).filter((x) => !String(x.id).startsWith('e2e-'));
+
     await api(`/admin/profiles/${data.profileId}`, {
       method: 'PUT',
-      body: { name: data.name, description: data.description, content: JSON.parse(data.backup) },
+      body: {
+        name: data.name,
+        description: data.description,
+        content: {
+          ...content,
+          timeLayouts: clean(content.timeLayouts),
+          subjects: clean(content.subjects),
+          classPlans: clean(content.classPlans),
+        },
+      },
     });
   }, sched);
   const schedRestored = await page.evaluate(async (id) => {
