@@ -1,0 +1,510 @@
+/* ==========================================================================
+   顶部导航（侧边栏已下线，改为顶栏 + 分组下拉）
+   --------------------------------------------------------------------------
+   引入顺序：tokens → base → app → topbar → glass
+   （topbar 要在 app 之后：它靠同名选择器覆盖 app.css 里的 .app-shell / .topbar /
+   .nav-item 等布局，属于「后写胜出」而不是提高优先级。）
+   ========================================================================== */
+
+/* ── 外壳：从「左栏 + 内容」两列改为「顶栏 + 全宽内容」单列 ────────────── */
+
+.app-shell {
+  display: block !important;
+  grid-template-columns: none !important;
+  min-height: 100vh;
+}
+
+/* 侧边栏改为**二级导航**（当前分组下的页面），不再是一级模块导航。
+   具体样式见本文件末尾的「两级导航布局」一节。 */
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 100vh;
+}
+
+/* ── 顶栏本体：浮动玻璃条 ──────────────────────────────────────────── */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sidebar);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: auto;
+  min-height: 58px;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border) !important;
+}
+
+.topbar-left {
+  display: none;
+}
+
+/* 品牌区 */
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  padding-right: var(--space-3);
+  border-right: 1px solid var(--border);
+}
+
+.topbar-brand .brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.topbar-brand .brand-text strong {
+  font-size: var(--font-base);
+  font-weight: var(--weight-bold);
+}
+
+.topbar-brand .brand-text span {
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+}
+
+/* 窄屏只留标记，不留文字（文字在别处已经出现过一次了）。 */
+@media (max-width: 1100px) {
+  .topbar-brand .brand-text {
+    display: none;
+  }
+
+  .topbar-brand {
+    padding-right: var(--space-2);
+  }
+}
+
+/* ── 分组导航：触发器 + 下拉 ───────────────────────────────────────── */
+
+.topbar-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 1;
+  min-width: 0;
+  overflow: visible;
+}
+
+.nav-group {
+  position: relative;
+  flex: none;
+}
+
+.nav-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--font-base);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.nav-trigger:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* 当前页所在的分组：主色 + 底部指示条（与侧边栏时代的左侧指示条同一套语义）。 */
+.nav-group.active > .nav-trigger {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.nav-group.active > .nav-trigger::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  transform: translateX(-50%);
+}
+
+/* 下拉里的 chevron 旋转 */
+.nav-chevron {
+  display: flex;
+  opacity: 0.6;
+  transition: transform var(--transition);
+}
+
+.nav-group.open .nav-chevron {
+  transform: rotate(180deg);
+}
+
+/* 下拉面板 */
+.nav-dropdown {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  z-index: var(--z-dropdown);
+  min-width: 190px;
+  padding: var(--space-2);
+  border: 1px solid var(--glass-border, var(--border));
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-lg);
+
+  /* 收起态：不可见 + 不可点。用 visibility 而不是 display:none，
+     否则无法做 opacity 过渡；pointer-events:none 保证收起时点不中。 */
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity var(--transition), transform var(--transition), visibility var(--transition);
+}
+
+.nav-group.open .nav-dropdown {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+/* 下拉里的页面项：复用 .nav-item 的类名，这样快捷键、权限过滤、
+   搜索面板取标签全都继续按同一套逻辑工作，不必维护两份。 */
+.nav-dropdown .nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-base);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.nav-dropdown .nav-item:hover {
+  background: var(--bg-hover);
+}
+
+.nav-dropdown .nav-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: var(--weight-medium);
+}
+
+.nav-dropdown .nav-item .nav-icon {
+  display: flex;
+  flex: none;
+  opacity: 0.75;
+}
+
+.nav-dropdown .nav-item.active .nav-icon {
+  opacity: 1;
+}
+
+/* Alt+N 的序号提示，挪到右侧 */
+.nav-dropdown .nav-item .nav-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.nav-hint {
+  flex: none;
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 顶栏右侧 ─────────────────────────────────────────────────────── */
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+
+.topbar-titles {
+  min-width: 0;
+}
+
+.topbar-titles h1 {
+  font-size: var(--font-lg);
+  line-height: 1.2;
+}
+
+.topbar-conn {
+  flex: none;
+  padding: 0 var(--space-2);
+}
+
+.topbar-ver {
+  flex: none;
+  padding: 0 var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1240px) {
+  .topbar-conn {
+    display: none;
+  }
+}
+
+@media (max-width: 1080px) {
+  .topbar-ver {
+    display: none;
+  }
+}
+
+/* ── 移动端：导航折叠成抽屉 ─────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  /* 顶栏放不下分组导航了：只留品牌与「菜单」按钮，导航进抽屉。 */
+  .topbar-nav {
+    display: none;
+  }
+
+  .topbar-titles {
+    display: none;
+  }
+}
+
+/* 抽屉本体由 topbar.js 创建（内容与桌面端导航同源，避免两处维护）。 */
+.nav-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  overflow-y: auto;
+  padding: var(--space-5);
+  background: var(--bg);
+  animation: nav-drawer-in var(--transition-slow);
+}
+
+@keyframes nav-drawer-in {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.nav-drawer-group {
+  margin-bottom: var(--space-5);
+}
+
+.nav-drawer-title {
+  padding: 0 var(--space-3);
+  margin-bottom: var(--space-2);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-bold);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.nav-drawer .nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-lg);
+  text-align: left;
+  cursor: pointer;
+}
+
+.nav-drawer .nav-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: var(--weight-medium);
+}
+
+/* ── 内容区：全宽 ──────────────────────────────────────────────────── */
+
+.content {
+  padding: var(--content-pad) !important;
+  max-width: 1600px;
+}
+
+/* ── 登录页：顶栏品牌条 + 居中卡片 ───────────────────────────────────── */
+
+.login-topbar {
+  position: fixed;
+  top: var(--space-4);
+  left: var(--space-4);
+  right: var(--space-4);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--glass-border, var(--border));
+  border-radius: var(--radius-lg);
+  background: var(--bg-panel);
+  backdrop-filter: blur(var(--glass-blur, 18px)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur, 18px)) saturate(180%);
+  box-shadow: var(--shadow);
+}
+
+.login-topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.login-topbar-brand strong {
+  font-size: var(--font-base);
+  font-weight: var(--weight-bold);
+}
+
+.login-topbar .version {
+  flex: none;
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 导航折叠态（顶栏形态下的「折叠」）───────────────────────────────
+   折叠的含义从「侧边栏变窄」变成了「隐藏分组导航区」，只留品牌与右侧操作。
+   沿用 prefs 里的 sidebar-collapsed 键，老用户升级后 remembered 状态直接生效。 */
+.app-shell.nav-collapsed .topbar-nav {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-drawer { animation: none; }
+}
+/* ── 顶栏杂项布局修正 ───────────────────────────────────────────────
+   ① 折叠/抽屉按钮紧挨导航左侧，作为导航的开关；
+   ② 页面标题靠右对齐并允许收缩（`min-width: 0` + 省略号）——
+      顶栏里品牌、导航、标题三者抢宽度，标题不收缩就会把导航挤变形。 */
+.topbar-toggle {
+  flex: none;
+  order: -1;
+  margin-right: calc(-1 * var(--space-2));
+}
+
+.topbar-titles {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  padding-left: var(--space-3);
+}
+
+.topbar-titles h1,
+.topbar-titles .page-subtitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .topbar-titles { display: none; }
+}
+/* ══ 两级导航布局（顶栏一级 · 侧边栏二级）══════════════════════════════
+   顶栏横跨全宽做一级分组；顶栏下方左侧是二级侧边栏，右侧是内容。
+   侧边栏比原先窄（二级不需要 236px），腾出的宽度还给内容。 */
+.shell-body {
+  display: flex;
+  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
+}
+
+.sidebar {
+  display: block !important;
+  position: sticky;
+  top: 58px;
+  flex: none;
+  width: var(--sidebar-width, 236px);
+  height: calc(100vh - 58px);
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+}
+
+/* 二级侧边栏窄一些：它只有「当前分组下的页面」，不需要一级那么宽 */
+.sidebar {
+  width: 200px;
+}
+
+.side-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3) var(--space-2);
+}
+
+.side-nav-title {
+  padding: var(--space-1) var(--space-3) var(--space-2);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-bold);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* 二级项：复用 .nav-item 的类名（与顶栏下拉同源），但样式是侧边栏版 */
+.side-nav .nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--font-base);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.side-nav .nav-item:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.side-nav .nav-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: var(--weight-medium);
+}
+
+/* 只有一个页面的分组不需要二级导航：侧栏里孤零零一项反而像坏了。
+   由 app.js 在只有一项时给 .sidebar 加 .is-single 隐藏它。 */
+.shell-body > .sidebar.is-single {
+  display: none !important;
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 折叠态：隐藏二级侧边栏（一级顶栏始终保留） */
+.app-shell.nav-collapsed .sidebar {
+  display: none !important;
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    display: none !important;
+  }
+
+  .shell-body {
+    display: block;
+  }
+}

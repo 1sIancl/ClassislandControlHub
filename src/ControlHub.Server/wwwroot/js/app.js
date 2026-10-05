@@ -2,9 +2,9 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=71';
-import { toastError } from './core/errors.js?v=71';
-import { h, clear, toast, icon } from './core/ui.js?v=71';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=75';
+import { toastError } from './core/errors.js?v=75';
+import { h, clear, toast, icon } from './core/ui.js?v=75';
 import {
   initTheme, getTheme, applyTheme, THEMES,
   getSidebarCollapsed, setSidebarCollapsed,
@@ -13,10 +13,11 @@ import {
   getFont, setFont, FONTS,
   getRadius, setRadius, RADII,
   applyRemotePrefs, applySchedScale,
-} from './core/prefs.js?v=71';
-import { initShortcuts, shortcutHint } from './core/shortcuts.js?v=71';
-import { initGlassHighlight } from './core/glass.js?v=71';
-import { openSearch } from './core/search.js?v=71';
+} from './core/prefs.js?v=75';
+import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=75';
+import { initGlassHighlight } from './core/glass.js?v=75';
+import { initTopbar } from './topbar.js?v=75';
+import { openSearch } from './core/search.js?v=75';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -101,18 +102,18 @@ const ROUTE_ALIASES = {
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=71'),
-  devices: () => import('./views/devices.js?v=71'),
+  dashboard: () => import('./views/dashboard.js?v=75'),
+  devices: () => import('./views/devices.js?v=75'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=71'),
-  profiles: () => import('./views/profiles.js?v=71'),
-  profileEditor: () => import('./views/profileEditor.js?v=71'),
-  deploy: () => import('./views/deploy.js?v=71'),
-  remote: () => import('./views/remote.js?v=71'),
-  reminders: () => import('./views/reminders.js?v=71'),
-  audit: () => import('./views/audit.js?v=71'),
-  reports: () => import('./views/reports.js?v=71'),
-  settings: () => import('./views/settings.js?v=71'),
+  groups: () => import('./views/devices.js?v=75'),
+  profiles: () => import('./views/profiles.js?v=75'),
+  profileEditor: () => import('./views/profileEditor.js?v=75'),
+  deploy: () => import('./views/deploy.js?v=75'),
+  remote: () => import('./views/remote.js?v=75'),
+  reminders: () => import('./views/reminders.js?v=75'),
+  audit: () => import('./views/audit.js?v=75'),
+  reports: () => import('./views/reports.js?v=75'),
+  settings: () => import('./views/settings.js?v=75'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -634,7 +635,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=71');
+    const { startTour } = await import('./core/tour.js?v=75');
     startTour({
       onFinish: async (skipped) => {
         try {
@@ -649,6 +650,17 @@ async function showApp() {
   }
 }
 
+/**
+ * 渲染顶栏导航：每个分组是一个「触发器 + 下拉」。
+ *
+ * <para>下拉里的页面项**继续用 `.nav-item` 类名**——这不是偷懒，而是刻意的：
+ * `visibleNavItems()`（Alt+N 跳页）、命令面板取页面清单、玻璃高光的事件委托
+ * 全都按这个类名工作。换成 `.nav-page-item` 就要同步改三处，
+ * 而三处各改一次正是「后来者漏改」这种 bug 的标准来源。</para>
+ *
+ * <para>分组标题不再单独占一行（`nav-group-label`），而是变成触发器按钮的文本：
+ * 顶栏横向空间宝贵，一行放不下四组标题 + 全部页面。</para>
+ */
 function renderNav() {
   const nav = document.getElementById('navList');
   clear(nav);
@@ -657,49 +669,191 @@ function renderNav() {
   let shortcutIndex = 0;
 
   for (const group of NAV) {
-    // 没有权限的页面直接不出现；整组都没权限时连分组标题也省掉。
+    // 没有权限的页面直接不出现；整组都没权限时连这个分组都不出现。
     const items = group.items.filter((item) => can(item.perm));
     if (items.length === 0) continue;
 
-    nav.appendChild(h('div.nav-group-label', group.label));
+    const dropdown = h('div.nav-dropdown');
     for (const item of items) {
       shortcutIndex++;
       const hint = shortcutIndex <= 9 ? shortcutHint(shortcutIndex) : '';
       const iconEl = h('span.nav-icon');
-      iconEl.appendChild(icon(item.icon, 17));
-      const button = h('button.nav-item', {
+      iconEl.appendChild(icon(item.icon, 16));
+      dropdown.appendChild(h('button.nav-item', {
         type: 'button',
         title: hint ? `${item.label}（${hint}）` : item.label,
-        dataset: { key: item.key },
+        dataset: { key: item.key, group: group.label, hash: item.hash },
         onClick: () => {
+          // 点完就收起下拉：否则它会盖在刚打开的页面上。
+          closeNavDropdowns();
           window.location.hash = item.hash;
         },
       },
         iconEl,
         h('span.nav-label', item.label),
-      );
-      nav.appendChild(button);
+        hint ? h('span.nav-hint', hint) : null,
+      ));
     }
+
+    // chevron 直接内联画，不走 icon()：ui.js 的图标表里没有下箭头，
+    // 为一个 12px 的三角去扩图标表不划算（而且它只需要这一个形状）。
+    const chevron = h('span.nav-chevron', {
+      html: '<svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5L6 8l3.5-3.5" /></svg>',
+    });
+
+    const trigger = h('button.nav-trigger', {
+      type: 'button',
+      'aria-haspopup': 'true',
+      // 整组的页面用同一个 title：鼠标停住不动也能看到这组下有什么。
+      title: items.map((i) => i.label).join(' · '),
+      onClick: (event) => {
+        event.stopPropagation();
+        toggleNavDropdown(trigger.closest('.nav-group'));
+      },
+    }, group.label, chevron);
+
+    nav.appendChild(h('div.nav-group', { dataset: { group: group.label } }, trigger, dropdown));
   }
+
+  syncActiveNavGroup();
+  renderSideNav();
+}
+
+/**
+ * 渲染**二级**侧边栏：当前一级分组下的页面。
+ *
+ * <para>为什么二级只列「当前分组」而不是全部页面：侧边栏的价值是
+ * 「在这个场景里还能去哪」，而不是把顶栏再抄一遍。全列出来等于两个导航做同一件事，
+ * 用户还得判断该看哪个。</para>
+ *
+ * <para>分组里**只有一个页面时隐藏侧边栏**：这时候它只会显示孤零零一项，
+ * 看着像加载失败。隐藏掉，内容区就全宽。</para>
+ *
+ * <para>页面模块可以通过导出 `renderSidebar(container)` 接管这里的内容
+ * （比如设备页想放楼栋/楼层筛选树），没导出就用默认的页面列表。</para>
+ */
+function renderSideNav() {
+  const host = document.getElementById('sideNavList');
+  const sidebar = document.getElementById('sidebar');
+  if (!host || !sidebar) return;
+
+  clear(host);
+
+  // 注意用 runtime.currentKey 而不是「顶栏当前展开的分组」：通过旧链接别名
+  // 或命令面板直接跳页时，展开的组和当前页可能不是一个。
+  const group = NAV.find((g) => g.items.some((i) => i.key === runtime.currentKey));
+  const list = (group?.items || []).filter((item) => can(item.perm));
+
+  if (list.length <= 1) {
+    sidebar.classList.add('is-single');
+    return;
+  }
+
+  sidebar.classList.remove('is-single');
+  host.appendChild(h('div.side-nav-title', group.label));
+
+  for (const item of list) {
+    const iconEl = h('span.nav-icon');
+    iconEl.appendChild(icon(item.icon, 16));
+    host.appendChild(h('button.nav-item', {
+      type: 'button',
+      title: item.label,
+      dataset: { key: item.key, group: group.label, hash: item.hash },
+      onClick: () => {
+        window.location.hash = item.hash;
+      },
+    },
+      iconEl,
+      h('span.nav-label', item.label),
+    ));
+  }
+
+  syncSideNavActive();
+}
+
+/** ── 以下是二级导航（侧边栏）相关 ───────────────────────────────── */
+
+/** 二级侧边栏的高亮跟当前页走。 */
+function syncSideNavActive() {
+  document.querySelectorAll('#sideNavList .nav-item').forEach((el) => {
+    el.classList.toggle('active', el.dataset.key === runtime.currentKey);
+  });
+}
+
+/**
+ * 供命令面板使用的页面清单（已按权限过滤）。
+ * <para>命令面板空闲时要列出「所有有权限的页面」，不能自己再过滤一遍 ——
+ * 过滤规则只应该有一处（renderNav / can()），两处各写一份迟早会不一致。</para>
+ */
+function navPagesForPalette() {
+  return NAV.flatMap((group) => group.items
+    .filter((item) => can(item.perm))
+    .map((item) => ({ key: item.key, label: item.label, hash: item.hash, groupLabel: group.label })));
+}
+
+/** 收起所有分组下拉（点外部、Esc、选中页面后都会用到）。 */
+function closeNavDropdowns() {
+  document.querySelectorAll('.nav-group.open').forEach((el) => el.classList.remove('open'));
+}
+
+/** 切换某个分组的下拉：自己开着就收，开着别的就换成自己（同时只开一个）。 */
+function toggleNavDropdown(group) {
+  if (!group) return;
+  const isOpen = group.classList.contains('open');
+  closeNavDropdowns();
+  if (!isOpen) {
+    group.classList.add('open');
+  }
+}
+
+/**
+ * 给「当前页所在的分组」打上 active。
+ *
+ * <para>单独抽出来，是因为它有两个调用时机：首屏渲染完（renderNav 末尾）
+ * 和每次路由切换后。后者漏掉的话，切换页面时顶栏的高亮会一直停在初始分组上——
+ * 这是导航改造最容易出的 bug，因为它「第一次打开时是对的」。</para>
+ */
+function syncActiveNavGroup() {
+  // 用 runtime.currentKey 而不是从 DOM 反查：它是路由的唯一真相来源，
+  // 页面还没渲染完时 DOM 上可能还没有对应的 .nav-item。
+  const current = runtime.currentKey;
+  if (!current) return;
+
+  const groupLabel = NAV.find((g) => g.items.some((i) => i.key === current))?.label;
+  document.querySelectorAll('.nav-group').forEach((el) => {
+    el.classList.toggle('active', !!groupLabel && el.dataset.group === groupLabel);
+  });
 }
 
 function bindShellEvents() {
   if (bindShellEvents.bound) return;
   bindShellEvents.bound = true;
 
-  // 键盘快捷键：Ctrl + K 全局搜索、Alt + 数字跳页、/ 聚焦搜索、? 打开帮助（#46 / #50 / #41）
+  // 键盘快捷键：Ctrl + K 命令面板、Alt + 数字跳页、/ 聚焦搜索、? 打开帮助（#46 / #50 / #41）
   initShortcuts();
+  // 把「可见页面清单」交给快捷键模块，供 Ctrl+K 的命令面板列页面用。
+  setPageLister(navPagesForPalette);
 
   // 液态玻璃的鼠标跟随高光（事件委托，见 core/glass.js）。
   initGlassHighlight();
-  document.getElementById('searchBtn').addEventListener('click', () => openSearch());
+  document.getElementById('searchBtn').addEventListener('click', () => openSearch(navPagesForPalette()));
 
   document.getElementById('refreshBtn').addEventListener('click', () => route());
 
-  // 侧边栏折叠 / 展开
-  document.getElementById('collapseBtn').addEventListener('click', () => {
-    setSidebarCollapsed(!getSidebarCollapsed());
+  // 导航折叠 / 展开 + 移动端抽屉（顶栏导航，见 core 的 topbar.js）。
+  // 「折叠」在顶栏形态下的含义是**隐藏分组导航区**，只留品牌与右侧操作——
+  // 沿用 prefs 里的 sidebar-collapsed 键，这样老用户升级后 remembered 状态直接生效。
+  initTopbar({
+    isCollapsed: getSidebarCollapsed,
+    setCollapsed: (next) => {
+      setSidebarCollapsed(next);
+      document.getElementById('app')?.classList.toggle('nav-collapsed', next);
+    },
   });
+  // 恢复上次的折叠状态（initTopbar 只管事件，不负责初始状态）。
+  if (getSidebarCollapsed()) {
+    document.getElementById('app')?.classList.add('nav-collapsed');
+  }
 
   // 主题 + 密度（外观）下拉
   const themeBtn = document.getElementById('themeBtn');
@@ -832,6 +986,12 @@ async function route() {
   for (const button of document.querySelectorAll('.nav-item')) {
     button.classList.toggle('active', button.dataset.key === key);
   }
+
+  // 分组高亮跟着一起换（顶栏改造后新增）：上面那句只管下拉里的页面项，
+  // 而「当前在哪个组」要看触发器上的主色与指示条。
+  syncActiveNavGroup();
+  // 二级侧边栏跟着当前页重新渲染：跨分组跳页时它要换成另一组的页面。
+  renderSideNav();
 
   const content = document.getElementById('content');
 

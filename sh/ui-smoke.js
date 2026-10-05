@@ -693,10 +693,80 @@ function check(name, ok, extra = '') {
   await page.goto(`${BASE}/#/dashboard`, { waitUntil: 'networkidle2' });
   await sleep(2200);
 
+  // 侧边栏已改为顶栏分组下拉（见 css/topbar.css 与 js/topbar.js）
   const navGroups = await page.evaluate(
-    () => [...document.querySelectorAll('.nav-group-label')].map((el) => el.textContent.trim()));
-  check('侧边栏按场景分为四组', ['日常', '教学配置', '设备', '系统'].every((g) => navGroups.includes(g)),
+    () => [...document.querySelectorAll('.nav-group')].map((el) => el.dataset.group));
+  check('顶栏导航按场景分为四组', ['日常', '教学配置', '设备', '系统'].every((g) => navGroups.includes(g)),
     `分组=${JSON.stringify(navGroups)}`);
+
+  // 注意：**不做**「侧边栏已下线」这类断言。侧边栏现在是**二级导航**，
+  // 与顶栏并存（两级结构），断言它不存在等于把架构钉死在错误方向上了。
+
+  // 下拉展开：点第一个分组触发器，菜单应可见且含该组页面
+  await page.evaluate(() => document.querySelector('.nav-trigger')?.click());
+  await sleep(600);
+  const dropdown = await page.evaluate(() => {
+    const menu = document.querySelector('.nav-group.open .nav-dropdown');
+    return {
+      open: document.querySelectorAll('.nav-group.open').length,
+      visible: menu ? getComputedStyle(menu).visibility === 'visible' : false,
+      items: menu ? [...menu.querySelectorAll('.nav-item')].map((n) => n.textContent.trim()) : [],
+    };
+  });
+  check('分组下拉可展开且列出该组页面',
+    dropdown.open === 1 && dropdown.visible && dropdown.items.length > 0,
+    `展开数=${dropdown.open} 可见=${dropdown.visible} 项=${JSON.stringify(dropdown.items)}`);
+
+  // 点外部应收起。必须用**真实鼠标点击**：代码里监听的是 pointerdown，
+  // 而 element.click() 只派发 click 事件，不会触发 pointerdown——
+  // 那样测出来的是「断言自己写错了」，不是产品行为。
+  await page.mouse.click(700, 400);
+  await sleep(500);
+  const afterOutside = await page.evaluate(() => document.querySelectorAll('.nav-group.open').length);
+  check('点击空白处收起下拉', afterOutside === 0, `仍展开=${afterOutside}`);
+
+  // 二级侧边栏：显示**当前一级分组**下的页面，而不是把顶栏再抄一遍
+  await page.goto(`${BASE}/#/dashboard`, { waitUntil: 'networkidle2' });
+  await sleep(2200);
+  const sideNav = await page.evaluate(() => ({
+    visible: (() => {
+      const s = document.getElementById('sidebar');
+      return !!s && getComputedStyle(s).display !== 'none' && !s.classList.contains('is-single');
+    })(),
+    title: document.querySelector('.side-nav-title')?.textContent.trim() || '(无)',
+    items: [...document.querySelectorAll('#sideNavList .nav-item')].map((n) => n.textContent.trim()),
+    active: document.querySelector('#sideNavList .nav-item.active')?.textContent.trim() || '(无)',
+  }));
+  check('二级侧边栏显示当前分组的页面且高亮当前页',
+    sideNav.visible && sideNav.title === '日常' && sideNav.items.length > 1
+      && sideNav.active.includes('仪表盘'),
+    `标题=${sideNav.title} 项=${JSON.stringify(sideNav.items)} 高亮=${sideNav.active}`);
+
+  // 跨分组跳页时，二级侧边栏要跟着换（否则会停在上一组的页面上——
+  // 这是两级导航最容易出的 bug，因为「首屏是对的」）
+  await page.evaluate(() => { window.location.hash = '#/audit'; });
+  await sleep(2200);
+  const sideNav2 = await page.evaluate(() => ({
+    title: document.querySelector('.side-nav-title')?.textContent.trim() || '(无)',
+    items: [...document.querySelectorAll('#sideNavList .nav-item')].map((n) => n.textContent.trim()),
+    active: document.querySelector('#sideNavList .nav-item.active')?.textContent.trim() || '(无)',
+  }));
+  check('跳到系统组后二级侧边栏同步换组',
+    sideNav2.title === '系统' && sideNav2.active.includes('审计日志'),
+    `标题=${sideNav2.title} 项=${JSON.stringify(sideNav2.items)} 高亮=${sideNav2.active}`);
+
+  // 当前页所在分组要有高亮。
+  // 先回到总览：上面用真实鼠标点了空白处，万一落在某个统计卡上就会跳走，
+  // 那这条断言测的就不是「分组高亮」而是「刚才跳到哪了」。
+  await page.goto(`${BASE}/#/dashboard`, { waitUntil: 'networkidle2' });
+  await sleep(2200);
+  const groupActive = await page.evaluate(() => ({
+    active: document.querySelector('.nav-group.active')?.dataset.group || '(无)',
+    hasIndicator: !!document.querySelector('.nav-group.active > .nav-trigger'),
+    page: document.getElementById('pageTitle')?.textContent || '',
+  }));
+  check('当前页所在分组高亮', groupActive.active === '日常' && groupActive.hasIndicator,
+    `高亮组=${groupActive.active} 当前页=${groupActive.page}`);
 
   // 改导航不该让旧链接变 404
   await page.goto(`${BASE}/#/groups`, { waitUntil: 'networkidle2' });

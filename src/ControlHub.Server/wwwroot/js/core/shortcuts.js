@@ -9,8 +9,21 @@
  *   - `?` 打开帮助面板：**快捷键必须能被发现**，否则等于没做——侧边栏每个页面也带悬停提示。
  */
 
-import { h, modal, toast } from './ui.js?v=71';
-import { openSearch } from './search.js?v=71';
+import { h, modal, toast } from './ui.js?v=75';
+import { openSearch } from './search.js?v=75';
+
+/**
+ * 由 app.js 注入的「当前账号可见的页面清单」。
+ * <para>刻意用注入而不是让 shortcuts.js 自己 import app.js：那样会形成循环依赖
+ * （app → shortcuts → app），在 ES module 下这类环往往表现为「某个模块拿到 undefined」，
+ * 排查起来很费时间。</para>
+ */
+let listPages = () => [];
+
+/** app.js 在启动时调用一次，传入页面清单。 */
+export function setPageLister(fn) {
+  listPages = typeof fn === 'function' ? fn : () => [];
+}
 
 /** 快捷键清单：帮助面板与侧边栏提示共用这一处，避免两边写得不一致。 */
 const SHORTCUTS = [
@@ -84,14 +97,11 @@ export function initShortcuts() {
     // （用户在页面搜索框里想换成全局搜索是很自然的动作），所以这一条放在 isTyping 之前。
     if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'k') {
       event.preventDefault();
-      // 传当前可见的导航项：面板空闲时要把「页面」也列出来，
-      // 而哪些页面可见取决于这个账号有没有权限——只能由 nav 那边的可见项决定。
-      openSearch(visibleNavItems().map((item) => ({
-        label: item.dataset.label || item.textContent.trim(),
-        hash: item.getAttribute('href') || '#/dashboard',
-        groupLabel: item.closest('.nav-group')?.querySelector('.nav-group-label')?.textContent.trim() || '',
-        keys: item.dataset.shortcut ? [item.dataset.shortcut] : [],
-      })));
+      // 页面清单由 app.js 传入（它才有 NAV 与权限判断）。
+      // 这里不能自己从 DOM 反查：顶栏导航的页面项收在**下拉里**，
+      // 收起时 offsetParent 为 null，会被 visibleNavItems() 过滤掉——
+      // 结果就是「有时列得出页面，有时列不出」。
+      openSearch(listPages());
       return;
     }
 
