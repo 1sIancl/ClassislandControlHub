@@ -3,13 +3,13 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=62';
-import { toastError } from '../core/errors.js?v=62';
+import { api } from '../core/api.js?v=63';
+import { toastError } from '../core/errors.js?v=63';
 import {
-  h, clear, toast, loadingBlock, modal, confirmDialog, field, icon,
+  h, clear, toast, loadingBlock, modal, confirmDialog, field, icon, select,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=62';
-import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=62';
+} from '../core/ui.js?v=63';
+import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=63';
 
 export const meta = {
   title: '编辑配置档案',
@@ -610,6 +610,11 @@ function renderClassPlans() {
       layoutBar,
       h('div.spacer'),
       h('span.toolbar-hint', '点格子选中后点科目，或把科目拖进格子；拖动已排课程可调课；双击格子清空'),
+      h('button.btn.btn-sm', {
+        type: 'button',
+        title: '按节复制 / 批量清空 / 替换科目 / 课表模板',
+        onClick: () => openBulkOps(layout, periods.length),
+      }, '批量操作'),
     ),
     renderPalette(periods.length),
     h('div.grid-scroll',
@@ -625,6 +630,312 @@ function renderClassPlans() {
       ),
     ),
   );
+}
+
+// ── 课表批量操作（#9）─────────────────────────────────────────────────
+
+/**
+ * 批量操作弹窗：在「天 × 节次」的矩形区域上做复制 / 清空 / 替换科目，以及课表模板的存取。
+ *
+ * 为什么用表单而不是鼠标框选：框选只能表达「连续的一块」，而实际需求常是
+ * 「周一~周三的第 1~4 节 → 周四周五的第 5~8 节」这种跨区搬移；
+ * 表单能精确表达，也更容易在执行前核对一遍。
+ */
+function openBulkOps(layout, periodCount) {
+  const dayOptions = GRID_DAYS.map((d, i) => ({ value: String(i), label: d.label }));
+  const periodOptions = Array.from({ length: periodCount }, (_, i) => ({
+    value: String(i), label: `第 ${i + 1} 节`,
+  }));
+  const subjectOptions = [
+    { value: '', label: '（请选择科目）' },
+    ...state.content.subjects.map((s) => ({ value: s.id, label: s.name || '（未命名科目）' })),
+  ];
+
+  const cfg = {
+    action: 'copy',
+    mode: 'replace',
+    srcDayFrom: '0', srcDayTo: '4', srcPeriodFrom: '0', srcPeriodTo: String(periodCount - 1),
+    dstDayFrom: '0', dstDayTo: '4', dstPeriodFrom: '0', dstPeriodTo: String(periodCount - 1),
+    replaceFrom: '', replaceTo: '',
+    templateId: '',
+  };
+  const body = h('div');
+  const runtime = { templates: [], templateName: '' };
+
+  /** 把「起 / 止」两个下标配置展开成连续下标数组。 */
+  const expand = (fromKey, toKey) => {
+    const lo = Math.min(Number(cfg[fromKey]), Number(cfg[toKey]));
+    const hi = Math.max(Number(cfg[fromKey]), Number(cfg[toKey]));
+    return Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
+  };
+
+  /** 「起 / 止」两栏并排。 */
+  const pair = (options, fromKey, toKey) => h('div.form-row',
+    select(options, cfg[fromKey], (v) => { cfg[fromKey] = v; }),
+    select(options, cfg[toKey], (v) => { cfg[toKey] = v; }));
+
+  // ── 动作实现 ──
+
+  function applyCopy() {
+    const srcDays = expand('srcDayFrom', 'srcDayTo');
+    const srcPeriods = expand('srcPeriodFrom', 'srcPeriodTo');
+    const dstDays = expand('dstDayFrom', 'dstDayTo');
+    const dstPeriods = expand('dstPeriodFrom', 'dstPeriodTo');
+
+    // **先把源整块读出来再写**：源与目标重叠很常见（如第 1~4 节 → 第 3~6 节），
+    // 边读边写会让后半段读到已被覆盖的值。
+    const block = srcPeriods.map((p) => srcDays.map((d) => readSlot(layout, GRID_DAYS[d].value, p)));
+
+    let written = 0;
+    let skipped = 0;
+    dstPeriods.forEach((period, row) => {
+      const srcRow = block[row % block.length];
+      dstDays.forEach((dayIndex, col) => {
+        const value = srcRow[col % srcRow.length];
+        const day = GRID_DAYS[dayIndex].value;
+        if (cfg.mode === 'merge' && readSlot(layout, day, period)) {
+          skipped++;
+          return;
+        }
+
+        writeSlot(layout, day, period, value);
+        written++;
+      });
+    });
+
+    return { written, skipped };
+  }
+
+  function applyClear() {
+    const days = expand('srcDayFrom', 'srcDayTo');
+    const periods = expand('srcPeriodFrom', 'srcPeriodTo');
+    let cleared = 0;
+    for (const period of periods) {
+      for (const dayIndex of days) {
+        const day = GRID_DAYS[dayIndex].value;
+        if (readSlot(layout, day, period)) {
+          writeSlot(layout, day, period, null);
+          cleared++;
+        }
+      }
+    }
+
+    return { cleared };
+  }
+
+  function applyReplace() {
+    if (!cfg.replaceFrom || !cfg.replaceTo || cfg.replaceFrom === cfg.replaceTo) {
+      return { invalid: true };
+    }
+
+    let count = 0;
+    for (const day of GRID_DAYS) {
+      for (let i = 0; i < periodCount; i++) {
+        const current = readSlot(layout, day.value, i);
+        if (current && current.subjectId === cfg.replaceFrom) {
+          writeSlot(layout, day.value, i, { subjectId: cfg.replaceTo, isEnabled: current.isEnabled });
+          count++;
+        }
+      }
+    }
+
+    return { count };
+  }
+
+  /** 把当前课表收成「天 → 科目名」网格（存模板用）。 */
+  function collectGrid() {
+    const grid = {};
+    for (const day of GRID_DAYS) {
+      const row = [];
+      for (let i = 0; i < periodCount; i++) {
+        const current = readSlot(layout, day.value, i);
+        const subject = current
+          ? state.content.subjects.find((s) => s.id === current.subjectId)
+          : null;
+        row.push(subject ? subject.name : null);
+      }
+
+      grid[String(day.value)] = row;
+    }
+
+    return grid;
+  }
+
+  /**
+   * 套用模板：**只填空格、不清空已有内容**。
+   * 套用的语义是「参考别人排好的」，把目标已有的课直接抹掉风险太大；
+   * 想完全按模板来，先「批量清空」再套用即可。
+   */
+  function applyTemplate(template) {
+    let applied = 0;
+    const missing = [];
+    for (const day of GRID_DAYS) {
+      const row = template.grid?.[String(day.value)];
+      if (!Array.isArray(row)) {
+        continue;
+      }
+
+      row.forEach((name, index) => {
+        if (index >= periodCount || !name || readSlot(layout, day.value, index)) {
+          return; // 超出目标节数、空格、或已有内容 —— 都不动
+        }
+
+        const subject = state.content.subjects.find((s) => s.name === name);
+        if (subject) {
+          writeSlot(layout, day.value, index, { subjectId: subject.id, isEnabled: true });
+          applied++;
+        } else if (!missing.includes(name)) {
+          // 记下来告诉用户：模板里的科目这套档案里没有，套用后那几格会是空的。
+          missing.push(name);
+        }
+      });
+    }
+
+    return { applied, missing };
+  }
+
+  // ── 渲染 ──
+
+  function paint() {
+    clear(body);
+
+    body.appendChild(h('div.card-actions', { style: { gap: '6px', marginBottom: '12px' } },
+      ...[['copy', '按节复制'], ['clear', '批量清空'], ['replace', '替换科目'], ['template', '课表模板']]
+        .map(([key, label]) => h('button', {
+          type: 'button',
+          class: `btn btn-sm${cfg.action === key ? ' btn-primary' : ''}`,
+          onClick: () => { cfg.action = key; paint(); },
+        }, label))));
+
+    if (cfg.action === 'copy') {
+      body.appendChild(field('源 · 天', pair(dayOptions, 'srcDayFrom', 'srcDayTo')));
+      body.appendChild(field('源 · 节次', pair(periodOptions, 'srcPeriodFrom', 'srcPeriodTo')));
+      body.appendChild(field('目标 · 天', pair(dayOptions, 'dstDayFrom', 'dstDayTo')));
+      body.appendChild(field('目标 · 节次', pair(periodOptions, 'dstPeriodFrom', 'dstPeriodTo')));
+      body.appendChild(field('方式', select([
+        { value: 'replace', label: '覆盖目标（源里的空格也会照搬）' },
+        { value: 'merge', label: '只填空格（目标已有课的不动）' },
+      ], cfg.mode, (v) => { cfg.mode = v; }),
+      '源与目标重叠也没问题：会先把源整块读出来再写。'));
+    } else if (cfg.action === 'clear') {
+      body.appendChild(field('范围 · 天', pair(dayOptions, 'srcDayFrom', 'srcDayTo')));
+      body.appendChild(field('范围 · 节次', pair(periodOptions, 'srcPeriodFrom', 'srcPeriodTo')));
+      body.appendChild(h('p.card-desc', { style: { margin: 0 } },
+        '把这一块里所有已排的课清掉（只影响本档案内存中的内容，点「保存并下发」才生效）。'));
+    } else if (cfg.action === 'replace') {
+      body.appendChild(field('把', select(subjectOptions, cfg.replaceFrom,
+        (v) => { cfg.replaceFrom = v; })));
+      body.appendChild(field('换成', select(subjectOptions, cfg.replaceTo,
+        (v) => { cfg.replaceTo = v; }),
+      '全周范围内所有这个科目都会被换掉，包括禁用的节点。'));
+    } else {
+      // 模板：存 / 套用
+      const nameInput = h('input', {
+        type: 'text', placeholder: '模板名，例如「夏季作息课表」', maxlength: '32',
+      });
+      body.appendChild(field('存为模板',
+        h('div.form-row', nameInput, h('button.btn.btn-sm', {
+          type: 'button',
+          onClick: async () => {
+            try {
+              const created = await api('/admin/timetable-templates', {
+                method: 'POST',
+                body: {
+                  name: nameInput.value.trim(),
+                  grid: collectGrid(),
+                  periodCount,
+                },
+              });
+              toast('ok', '已存为模板', `「${created.name}」之后可以在别的档案里套用。`);
+              nameInput.value = '';
+              await loadTemplates();
+              paint();
+            } catch (err) {
+              toastError(err, '存为模板失败');
+            }
+          },
+        }, '保存')),
+      '模板按**科目名称**记录（不是 ID），因此可以套用到别的档案；'
+      + '那边没有同名科目时会跳过并提示。'));
+
+      if (runtime.templates.length === 0) {
+        body.appendChild(h('p.card-desc', { style: { margin: 0 } }, '还没有任何课表模板。'));
+      } else {
+        body.appendChild(field('套用模板', select([
+          { value: '', label: '（请选择模板）' },
+          ...runtime.templates.map((t) => ({ value: t.id, label: `${t.name}（${t.periodCount} 节）` })),
+        ], cfg.templateId, (v) => { cfg.templateId = v; }),
+        '**只填空格，不覆盖已有课程**；想完全照搬，先「批量清空」再套用。'));
+      }
+    }
+  }
+
+  async function loadTemplates() {
+    try {
+      runtime.templates = await api('/admin/timetable-templates');
+    } catch {
+      runtime.templates = [];
+    }
+  }
+
+  paint();
+
+  modal({
+    title: '课表批量操作',
+    width: 'wide',
+    body,
+    confirmText: '执行',
+    onConfirm: async () => {
+      const code = () => {
+        markDirty();
+        repaintTab();
+      };
+
+      if (cfg.action === 'copy') {
+        const result = applyCopy();
+        code();
+        toast('ok', '已复制', `写入 ${result.written} 格`
+          + `${result.skipped ? `，跳过 ${result.skipped} 格（已有课）` : ''}。`
+          + '记得点右上角「保存并下发」才会生效。');
+        return true;
+      }
+
+      if (cfg.action === 'clear') {
+        const result = applyClear();
+        code();
+        toast('ok', '已清空', `清掉 ${result.cleared} 格。记得点右上角「保存并下发」才会生效。`);
+        return true;
+      }
+
+      if (cfg.action === 'replace') {
+        const result = applyReplace();
+        if (result.invalid) {
+          toast('warn', '请选择两个不同的科目');
+          return false;
+        }
+
+        code();
+        toast('ok', '已替换', `换了 ${result.count} 格。记得点右上角「保存并下发」才会生效。`);
+        return true;
+      }
+
+      // 模板：执行 = 套用选中的那个
+      const template = runtime.templates.find((t) => t.id === cfg.templateId);
+      if (!template) {
+        toast('warn', '请先选择一个模板');
+        return false;
+      }
+
+      const result = applyTemplate(template);
+      code();
+      toast('ok', '已套用模板', `填入 ${result.applied} 格`
+        + `${result.missing.length ? `；模板里的「${result.missing.join('、')}」在这套档案里没有同名科目，已跳过` : ''}。`
+        + '记得点右上角「保存并下发」才会生效。');
+      return true;
+    },
+  });
+
+  loadTemplates().then(paint);
 }
 
 /** 取「某一天」的课表；不存在返回 null（空天保持空，不自动创建）。 */

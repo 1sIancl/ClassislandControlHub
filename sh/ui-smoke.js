@@ -14,7 +14,7 @@
  *   node sh/ui-smoke.js
  *   SMOKE_BASE=http://127.0.0.1:29800 SMOKE_BROWSER="C:\\...\\msedge.exe" node sh/ui-smoke.js
  *
- * 覆盖的断言（63 项）：
+ * 覆盖的断言（68 项）：
  *   1) 起点归零：清空账号偏好与本机布局缓存 → 仪表盘回到默认布局
  *   2) 「自定义仪表盘」面板能打开，含「统计卡片 + 页面模块」两组、共 10 项
  *   3) 面板里关掉「最近事件」→ 页面立即不再渲染该模块
@@ -862,6 +862,197 @@ function check(name, ok, extra = '') {
     return (await api('/admin/tags')).length;
   });
   check('测试标签已清理干净', tagClean === 0, `剩余 ${tagClean} 个标签`);
+
+  // 22) 课表批量操作（#9）：替换科目 / 存为模板。
+  // 自备一套最小课表数据并**记下原内容**，跑完还原，避免污染现有档案。
+  const sched = await page.evaluate(async () => {
+    const { api } = await import('/js/core/api.js?v=63');
+    const profiles = await api('/admin/profiles');
+    const target = profiles[0];
+    const detail = await api(`/admin/profiles/${target.id}`);
+    const backup = JSON.stringify(detail.content || {});
+    const name = detail.name;
+    const description = detail.description || '';
+
+    const content = {
+      timeLayouts: [{
+        id: 'e2e-tl',
+        name: 'E2E 时间表',
+        items: [
+          { startTime: '08:00:00', endTime: '08:45:00', kind: 'class' },
+          { startTime: '08:55:00', endTime: '09:40:00', kind: 'class' },
+          { startTime: '10:00:00', endTime: '10:45:00', kind: 'class' },
+        ],
+      }],
+      subjects: [
+        { id: 'e2e-sub-a', name: 'E2E语文', initial: '语' },
+        { id: 'e2e-sub-b', name: 'E2E数学', initial: '数' },
+      ],
+      classPlans: [{
+        id: 'e2e-plan-1',
+        name: '周一课表',
+        timeLayoutId: 'e2e-tl',
+        isEnabled: true,
+        daysOfWeek: [1],
+        weekInterval: 0,
+        weekOffset: 0,
+        slots: [{ index: 0, subjectId: 'e2e-sub-a', isEnabled: true }],
+      }],
+    };
+
+    await api(`/admin/profiles/${target.id}`, {
+      method: 'PUT', body: { name, description, content },
+    });
+    return { profileId: target.id, backup, name, description };
+  });
+
+  await page.goto(`${BASE}/#/profiles/${sched.profileId}`, { waitUntil: 'networkidle2' });
+  await sleep(2600);
+
+  // 切到「课表」标签。注意 tab 的文本是「课表N」（label + 计数），不能用全等匹配。
+  const tabPicked = await page.evaluate(() => {
+    const tab = [...document.querySelectorAll('.tabs .tab')]
+      .find((b) => b.textContent.trim().startsWith('课表'));
+    if (!tab) {
+      return false;
+    }
+
+    tab.click();
+    return true;
+  });
+  await sleep(1800);
+
+  const gridBefore = await page.evaluate(() => {
+    const grid = document.querySelector('.sched-grid');
+    return {
+      tabFound: !!document.querySelector('#tabBody'),
+      hasGrid: !!grid,
+      text: (grid ? grid.textContent : '').replace(/\s+/g, ' ').trim().slice(0, 100),
+    };
+  });
+  check('课表页渲染出网格且已有排课',
+    tabPicked && gridBefore.hasGrid && gridBefore.text.includes('语'),
+    `tabPicked=${tabPicked} ${JSON.stringify(gridBefore)}`);
+
+  // 打开「批量操作」→ 应当有四个动作
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')]
+      .find((b) => b.textContent.trim() === '批量操作');
+    if (btn) {
+      btn.click();
+    }
+  });
+  await sleep(1300);
+  const bulkDialog = await page.evaluate(() => {
+    const host = document.getElementById('modalHost');
+    const text = (host ? host.textContent : '').replace(/\s+/g, ' ');
+    return {
+      open: !!host && host.hidden === false,
+      actions: ['按节复制', '批量清空', '替换科目', '课表模板'].every((t) => text.includes(t)),
+      text: text.slice(0, 110),
+    };
+  });
+  check('「批量操作」弹窗可打开且四个动作齐全', bulkDialog.open && bulkDialog.actions,
+    bulkDialog.text);
+
+  // 替换科目：E2E语文 → E2E数学
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('#modalHost button')]
+      .find((b) => b.textContent.trim() === '替换科目');
+    if (btn) {
+      btn.click();
+    }
+  });
+  await sleep(900);
+  const picked = await page.evaluate(() => {
+    const selects = [...document.querySelectorAll('#modalHost select')];
+    if (selects.length < 2) {
+      return false;
+    }
+
+    selects[0].value = 'e2e-sub-a';
+    selects[0].dispatchEvent(new Event('change', { bubbles: true }));
+    selects[1].value = 'e2e-sub-b';
+    selects[1].dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  });
+  await sleep(700);
+  const executed = await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('#modalHost button')]
+      .find((b) => b.textContent.trim() === '执行');
+    if (!btn) {
+      return false;
+    }
+
+    btn.click();
+    return true;
+  });
+  await sleep(1600);
+  const gridAfter = await page.evaluate(
+    () => (document.querySelector('.sched-grid')?.textContent || '').replace(/\s+/g, ' '));
+  check('替换科目后网格随之变化（语 → 数）',
+    picked && executed && gridAfter.includes('数') && !gridAfter.includes('语'),
+    gridAfter.slice(0, 110));
+
+  // 存为模板
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')]
+      .find((b) => b.textContent.trim() === '批量操作');
+    if (btn) {
+      btn.click();
+    }
+  });
+  await sleep(1300);
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('#modalHost button')]
+      .find((b) => b.textContent.trim() === '课表模板');
+    if (btn) {
+      btn.click();
+    }
+  });
+  await sleep(1100);
+  await page.evaluate(() => {
+    const input = document.querySelector('#modalHost input[type="text"]');
+    const btn = [...document.querySelectorAll('#modalHost button')]
+      .find((b) => b.textContent.trim() === '保存');
+    if (input && btn) {
+      input.value = 'E2E-UI 模板';
+      btn.click();
+    }
+  });
+  await sleep(1900);
+  const templateNames = await page.evaluate(async () => {
+    const { api } = await import('/js/core/api.js?v=63');
+    return (await api('/admin/timetable-templates')).map((t) => t.name);
+  });
+  check('课表可存为模板', templateNames.includes('E2E-UI 模板'), `模板=[${templateNames.join(', ')}]`);
+
+  // 还原档案内容 + 清掉测试模板
+  await page.keyboard.press('Escape');
+  await sleep(700);
+  await page.evaluate(async (data) => {
+    const { api } = await import('/js/core/api.js?v=63');
+    for (const t of await api('/admin/timetable-templates')) {
+      await api(`/admin/timetable-templates/${t.id}`, { method: 'DELETE' });
+    }
+
+    await api(`/admin/profiles/${data.profileId}`, {
+      method: 'PUT',
+      body: { name: data.name, description: data.description, content: JSON.parse(data.backup) },
+    });
+  }, sched);
+  const schedRestored = await page.evaluate(async (id) => {
+    const { api } = await import('/js/core/api.js?v=63');
+    const detail = await api(`/admin/profiles/${id}`);
+    // 直接查内容里还有没有 e2e 痕迹 —— 只数「有几个时间表」是查不出没还原的。
+    return {
+      hasProbeData: JSON.stringify(detail.content || {}).includes('e2e'),
+      templates: (await api('/admin/timetable-templates')).length,
+    };
+  }, sched.profileId);
+  check('测试数据已还原（档案内容与模板都清干净）',
+    !schedRestored.hasProbeData && schedRestored.templates === 0,
+    JSON.stringify(schedRestored));
 
   console.log('\n===== 验证结果 =====');
   for (const r of results) console.log(r);

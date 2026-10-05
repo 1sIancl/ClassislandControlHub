@@ -25,6 +25,7 @@ const PREFIX_LABELS = {
   totp: '两步验证',
   audit: '审计日志',
   tag: '标签',
+  template: '课表模板',
   admin: '登录',
 };
 

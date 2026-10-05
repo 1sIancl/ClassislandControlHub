@@ -576,6 +576,19 @@ public sealed partial class HubStore
             PRIMARY KEY (device_id, tag_id)
         );
         CREATE INDEX IF NOT EXISTS idx_device_tags_tag ON device_tags(tag_id);
+
+        -- 课表模板（#9）：把一套排好的课表存起来，之后可套用到别的档案。
+        -- 网格里存的是**科目名称**而不是科目 ID：科目 ID 是档案内的 GUID，跨档案一定对不上，
+        -- 那样模板就只能在本档案里自娱自乐了。按名字匹配，套用时找不到的科目会被跳过并计数。
+        CREATE TABLE IF NOT EXISTS timetable_templates (
+            id         TEXT PRIMARY KEY,
+            name       TEXT NOT NULL,
+            grid_json  TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            created_by TEXT NOT NULL DEFAULT ''
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_timetable_templates_name
+            ON timetable_templates(name COLLATE NOCASE);
         """;
 
     // ────────────────────────────── 设置项 ──────────────────────────────
