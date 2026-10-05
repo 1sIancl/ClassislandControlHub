@@ -2,9 +2,9 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=57';
-import { toastError } from './core/errors.js?v=57';
-import { h, clear, toast, icon } from './core/ui.js?v=57';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=59';
+import { toastError } from './core/errors.js?v=59';
+import { h, clear, toast, icon } from './core/ui.js?v=59';
 import {
   initTheme, getTheme, applyTheme, THEMES,
   getSidebarCollapsed, setSidebarCollapsed,
@@ -13,9 +13,9 @@ import {
   getFont, setFont, FONTS,
   getRadius, setRadius, RADII,
   applyRemotePrefs, applySchedScale,
-} from './core/prefs.js?v=57';
-import { initShortcuts, shortcutHint } from './core/shortcuts.js?v=57';
-import { openSearch } from './core/search.js?v=57';
+} from './core/prefs.js?v=59';
+import { initShortcuts, shortcutHint } from './core/shortcuts.js?v=59';
+import { openSearch } from './core/search.js?v=59';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -31,50 +31,60 @@ setSidebarCollapsed(getSidebarCollapsed());
  */
 const NAV = [
   {
-    label: '概览',
+    label: '日常',
     items: [
       { key: 'dashboard', label: '仪表盘', icon: 'dashboard', hash: '#/dashboard' },
-    ],
-  },
-  {
-    label: '配置管理',
-    items: [
-      { key: 'profiles', label: '配置档案', icon: 'profiles', hash: '#/profiles', perm: 'profiles.read' },
-      { key: 'devices', label: '设备管理', icon: 'monitor', hash: '#/devices', perm: 'devices.read' },
-    ],
-  },
-  {
-    label: '下发管理',
-    items: [
       { key: 'deploy', label: '配置下发', icon: 'send', hash: '#/deploy', perm: 'deploy.write' },
       { key: 'remote', label: '远程管理', icon: 'send', hash: '#/remote', perm: 'remote.read' },
+    ],
+  },
+  {
+    label: '教学配置',
+    items: [
+      { key: 'profiles', label: '配置档案', icon: 'profiles', hash: '#/profiles', perm: 'profiles.read' },
       { key: 'reminders', label: '定时提醒', icon: 'bell', hash: '#/reminders', perm: 'reminders.read' },
+    ],
+  },
+  {
+    label: '设备',
+    items: [
+      { key: 'devices', label: '设备管理', icon: 'monitor', hash: '#/devices', perm: 'devices.read' },
     ],
   },
   {
     label: '系统',
     items: [
-      { key: 'reports', label: '报表', icon: 'dashboard', hash: '#/reports', perm: 'audit.read' },
+      { key: 'reports', label: '报表', icon: 'clock', hash: '#/reports', perm: 'audit.read' },
       { key: 'audit', label: '审计日志', icon: 'list', hash: '#/audit', perm: 'audit.read' },
       { key: 'settings', label: '系统设置', icon: 'gear', hash: '#/settings', perm: ['settings.read', 'accounts.read'] },
     ],
   },
 ];
 
+/**
+ * 旧链接重定向：改过导航之后，别人收藏的旧地址不能变成 404。
+ * <para>只做**同一目标**的别名，不做「功能搬迁」——搬迁该由用户重新养成习惯，
+ * 而不是让一个地址长期指向另一个语义不同的页面。</para>
+ */
+const ROUTE_ALIASES = {
+  // 「分组管理」早就并入了设备管理。
+  groups: 'devices',
+};
+
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=57'),
-  devices: () => import('./views/devices.js?v=57'),
+  dashboard: () => import('./views/dashboard.js?v=59'),
+  devices: () => import('./views/devices.js?v=59'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=57'),
-  profiles: () => import('./views/profiles.js?v=57'),
-  profileEditor: () => import('./views/profileEditor.js?v=57'),
-  deploy: () => import('./views/deploy.js?v=57'),
-  remote: () => import('./views/remote.js?v=57'),
-  reminders: () => import('./views/reminders.js?v=57'),
-  audit: () => import('./views/audit.js?v=57'),
-  reports: () => import('./views/reports.js?v=57'),
-  settings: () => import('./views/settings.js?v=57'),
+  groups: () => import('./views/devices.js?v=59'),
+  profiles: () => import('./views/profiles.js?v=59'),
+  profileEditor: () => import('./views/profileEditor.js?v=59'),
+  deploy: () => import('./views/deploy.js?v=59'),
+  remote: () => import('./views/remote.js?v=59'),
+  reminders: () => import('./views/reminders.js?v=59'),
+  audit: () => import('./views/audit.js?v=59'),
+  reports: () => import('./views/reports.js?v=59'),
+  settings: () => import('./views/settings.js?v=59'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -520,7 +530,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=57');
+    const { startTour } = await import('./core/tour.js?v=59');
     startTour({
       onFinish: async (skipped) => {
         try {
@@ -702,8 +712,9 @@ function parseHash() {
     return { key: 'profileEditor', module: ROUTES.profileEditor, params: { ...params, id: segments[1] } };
   }
 
-  // 「分组管理」已并入设备管理。
-  const key = segments[0] === 'groups' ? 'devices' : (segments[0] || 'dashboard');
+  // 旧地址经别名表兜底（如「分组管理」已并入设备管理）。
+  const navKey = segments[0] || 'dashboard';
+  const key = ROUTE_ALIASES[navKey] || navKey;
   return { key, module: ROUTES[key] || ROUTES.dashboard, params };
 }
 

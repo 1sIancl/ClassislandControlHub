@@ -11,10 +11,10 @@
  *   - 条形图用 div 宽度实现，不引图表库：形态简单，几百 KB 的依赖不值当。
  */
 
-import { api } from '../core/api.js?v=57';
-import { h, clear, loadingBlock } from '../core/ui.js?v=57';
-import { errorBlock } from '../core/errors.js?v=57';
-import { auditActionLabel } from '../core/audit-actions.js?v=57';
+import { api } from '../core/api.js?v=59';
+import { h, clear, loadingBlock } from '../core/ui.js?v=59';
+import { errorBlock } from '../core/errors.js?v=59';
+import { auditActionLabel } from '../core/audit-actions.js?v=59';
 
 export const meta = {
   title: '报表',

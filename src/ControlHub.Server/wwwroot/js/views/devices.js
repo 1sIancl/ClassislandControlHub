@@ -4,16 +4,16 @@
  * 并可切换到列表视图查看完整状态明细。注册码管理一并放在本页。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=57';
-import { toastError, errorBlock } from '../core/errors.js?v=57';
+import { api, fetchBlob } from '../core/api.js?v=59';
+import { toastError, errorBlock } from '../core/errors.js?v=59';
 import {
-  h, clear, formatDateTime, relativeTime, toast, loadingBlock,
+  h, clear, formatDateTime, relativeTime, toast, loadingBlock, skeletonRows,
   modal, confirmDialog, deviceStateBadge, syncBadge,
   emptyState, field, select, copyText, append, undoBar,
-} from '../core/ui.js?v=57';
-import { getLayout, saveLayout } from '../core/prefs.js?v=57';
-import { auditTimelineSection } from '../core/audit-timeline.js?v=57';
-import { selectionSummary } from '../core/batch-summary.js?v=57';
+} from '../core/ui.js?v=59';
+import { getLayout, saveLayout } from '../core/prefs.js?v=59';
+import { auditTimelineSection } from '../core/audit-timeline.js?v=59';
+import { selectionSummary } from '../core/batch-summary.js?v=59';
 
 export const meta = {
   title: '设备管理',
@@ -217,8 +217,14 @@ export async function render(container, params = {}) {
     filter.keyword = params.kw || '';
   }
 
+  // 仪表盘「待同步 3」这类卡片点过来时带着状态：落地就只看那一类。
+  // 这样用户从「看到一个数字」到「看到那些设备」中间不用再自己筛一次。
+  if (params.status !== undefined) {
+    filter.state = params.status || '';
+  }
+
   clear(container);
-  container.appendChild(loadingBlock());
+  container.appendChild(skeletonRows());
 
   const [devices, groups, profiles, codes] = await Promise.all([
     api('/admin/devices'),
@@ -252,17 +258,7 @@ function renderToolbar() {
         repaintBoard();
       },
     }),
-    select([
-      { value: '', label: '全部状态' },
-      { value: 'online', label: '在线' },
-      { value: 'offline', label: '离线' },
-      { value: 'pending', label: '待同步' },
-      { value: 'error', label: '异常' },
-      { value: 'revoked', label: '已停用' },
-    ], filter.state, (v) => {
-      filter.state = v;
-      repaintBoard();
-    }),
+    statusTabs(),
     view === 'list'
       ? select(assignmentOptions(), filter.groupId, (v) => {
         filter.groupId = v;
@@ -355,18 +351,60 @@ async function refresh(showToast = false) {
   if (showToast) toast('ok', '已刷新');
 }
 
+/**
+ * 单台设备是否命中某个状态筛选。
+ * <para>抽出来是为了让「状态计数条上的数字」与「点下去之后的列表条数」共用**同一套判定**——
+ * 两处各写一份迟早会对不上，而「数字和列表不一致」是最招人怀疑的那种 bug。</para>
+ */
+function matchesState(device, state) {
+  switch (state) {
+    case 'online': return !!device.online;
+    case 'offline': return !device.online && !device.revoked;
+    case 'pending': return !device.upToDate && !device.revoked;
+    case 'error': return device.state === 'error';
+    case 'revoked': return !!device.revoked;
+    default: return true;
+  }
+}
+
+/** 状态计数条可选的状态（顺序即展示顺序：常见问题靠前）。 */
+const STATE_TABS = [
+  { value: '', label: '全部' },
+  { value: 'online', label: '在线' },
+  { value: 'pending', label: '待同步' },
+  { value: 'error', label: '异常' },
+  { value: 'offline', label: '离线' },
+  { value: 'revoked', label: '已停用' },
+];
+
+/**
+ * 状态计数条：**点数字即筛选**。
+ * <para>比原来的下拉多一个信息——「有多少台」。管理员真正想知道的是「离线 3 台」而不是
+ * 「有一个叫离线的选项」，把数字摆在按钮上，一眼就知道该点哪个。</para>
+ */
+function statusTabs() {
+  return h('div.status-tabs',
+    ...STATE_TABS.map((tab) => h('button', {
+      type: 'button',
+      class: `status-tab${filter.state === tab.value ? ' active' : ''}`,
+      title: tab.value ? `只看「${tab.label}」的设备` : '显示全部设备',
+      onClick: () => {
+        filter.state = tab.value;
+        // 选中态画在工具栏上，所以要整页重画而不只是看板。
+        repaintAll();
+      },
+    },
+    tab.label,
+    h('span.status-tab-count', String(
+      cache.devices.filter((d) => matchesState(d, tab.value)).length,
+    )))));
+}
+
 function filteredDevices() {
   const keyword = filter.keyword.toLowerCase();
   return cache.devices.filter((d) => {
     if (view === 'list' && filter.groupId && d.groupId !== filter.groupId) return false;
-
-    if (filter.state) {
-      if (filter.state === 'online' && !d.online) return false;
-      if (filter.state === 'offline' && (d.online || d.revoked)) return false;
-      if (filter.state === 'pending' && (d.upToDate || d.revoked)) return false;
-      if (filter.state === 'error' && d.state !== 'error') return false;
-      if (filter.state === 'revoked' && !d.revoked) return false;
-    }
+    if (!matchesState(d, filter.state)) return false;
 
     if (!keyword) return true;
     return [d.name, d.machineName, d.ipAddress, d.classIslandVersion, d.currentClassPlanName]
@@ -790,15 +828,31 @@ function renderTable() {
   const devices = filteredDevices();
 
   if (cache.devices.length === 0) {
+    // 首次使用的空状态：只说「没有设备」没用，要告诉人**接下来做什么**，
+    // 否则他会以为这页坏了（下方「注册码」区块就是入口）。
     return h('div.card',
       emptyState('monitor', '还没有设备接入',
-        '生成一个注册码，然后在教室电脑的 ClassIsland 中安装集控插件并填写该注册码。'),
+        '三步接入第一台教室电脑（下方「注册码」区块可随时生成）。', null, [
+          '生成一个注册码并复制',
+          '在教室电脑的 ClassIsland 里安装集控插件，填入该注册码',
+          '设备会自动出现在本页，再拖到对应的楼层即可',
+        ]),
     );
   }
 
   if (devices.length === 0) {
+    // 筛选结果为空时给一个出口：否则用户只能自己回想「我刚才是按什么筛的」。
     return h('div.card',
-      emptyState('search', '没有匹配的设备', '尝试调整搜索关键词或筛选条件。'),
+      emptyState('search', '没有匹配的设备', '试试放宽条件或换个关键词。',
+        h('button.btn.btn-sm', {
+          type: 'button',
+          onClick: () => {
+            filter.keyword = '';
+            filter.state = '';
+            filter.groupId = '';
+            repaintAll();
+          },
+        }, '清空筛选')),
     );
   }
 

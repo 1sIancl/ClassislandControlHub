@@ -1,7 +1,7 @@
 /** 轻量 DOM 构建与通用交互组件，无框架依赖。 */
 
 // 只引「错误码 → 怎么办」的纯映射（#51）：本文件是最底层模块，不能反过来依赖 errors.js。
-import { formatErrorText, hasErrorHint } from './error-hints.js?v=57';
+import { formatErrorText, hasErrorHint } from './error-hints.js?v=59';
 
 /**
  * 创建元素。
@@ -504,14 +504,35 @@ export function icon(name, size = 18) {
   return svg;
 }
 
-/** 空状态块。 */
-export function emptyState(name, title, description, action) {
+/**
+ * 空状态块。
+ * @param {string} name 图标名。
+ * @param {string} title 标题。
+ * @param {string} [description] 一句话说明。
+ * @param {Node} [action] 行动按钮（如「生成注册码」）。
+ * @param {string[]} [steps] 分步引导：**说清「接下来做什么」比只说「这里没有」有用得多**。
+ */
+export function emptyState(name, title, description, action, steps = null) {
   return h('div.empty',
     h('div.empty-icon', icon(name, 26)),
     h('h3', title),
     description ? h('p', description) : null,
+    steps && steps.length
+      ? h('ol.empty-steps', ...steps.map((step) => h('li', step)))
+      : null,
     action || null,
   );
+}
+
+/**
+ * 骨架屏占位（列表加载时用，替代转圈）。
+ * <para>与「转圈」的区别：骨架屏能预告「马上会出现几行、多大的内容」，
+ * 数据到达时页面不跳动，观感更稳。行数取常见首屏行数，避免加载完成后高度突变。</para>
+ * @param {number} [rows] 行数。
+ */
+export function skeletonRows(rows = 6) {
+  return h('div.skeleton-rows',
+    ...Array.from({ length: rows }, () => h('div.skeleton.skeleton-row')));
 }
 
 /** 加载占位。 */

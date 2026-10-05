@@ -2,12 +2,12 @@
  * 系统设置视图：服务器信息、账号安全与部署提示。
  */
 
-import { api, session, hasPermission, fetchBlob } from '../core/api.js?v=57';
-import { toastError } from '../core/errors.js?v=57';
+import { api, session, hasPermission, fetchBlob } from '../core/api.js?v=59';
+import { toastError } from '../core/errors.js?v=59';
 import {
   h, clear, formatDateTime, formatDuration, toast, loadingBlock,
   field, modal, copyText, confirmDialog, select, guard,
-} from '../core/ui.js?v=57';
+} from '../core/ui.js?v=59';
 
 export const meta = {
   title: '系统设置',

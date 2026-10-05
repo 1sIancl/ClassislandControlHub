@@ -14,7 +14,7 @@
  *   node sh/ui-smoke.js
  *   SMOKE_BASE=http://127.0.0.1:29800 SMOKE_BROWSER="C:\\...\\msedge.exe" node sh/ui-smoke.js
  *
- * 覆盖的断言（54 项）：
+ * 覆盖的断言（58 项）：
  *   1) 起点归零：清空账号偏好与本机布局缓存 → 仪表盘回到默认布局
  *   2) 「自定义仪表盘」面板能打开，含「统计卡片 + 页面模块」两组、共 10 项
  *   3) 面板里关掉「最近事件」→ 页面立即不再渲染该模块
@@ -673,6 +673,87 @@ function check(name, ok, extra = '') {
     () => (document.getElementById('content')?.textContent || '').replace(/\s+/g, ' '));
   check('切换时间范围后重新出数（显示 30 天区间）',
     /\d{4}-\d{2}-\d{2} ~ \d{4}-\d{2}-\d{2}/.test(rangeText), rangeText.slice(0, 150));
+
+  // 20) 导航重组 + 统计卡可点 + 状态计数条（界面改造）
+  await page.goto(`${BASE}/#/dashboard`, { waitUntil: 'networkidle2' });
+  await sleep(2200);
+
+  const navGroups = await page.evaluate(
+    () => [...document.querySelectorAll('.nav-group-label')].map((el) => el.textContent.trim()));
+  check('侧边栏按场景分为四组', ['日常', '教学配置', '设备', '系统'].every((g) => navGroups.includes(g)),
+    `分组=${JSON.stringify(navGroups)}`);
+
+  // 改导航不该让旧链接变 404
+  await page.goto(`${BASE}/#/groups`, { waitUntil: 'networkidle2' });
+  await sleep(1700);
+  const aliasOk = await page.evaluate(() => !!document.querySelector('.status-tab'));
+  check('旧链接 #/groups 仍落到设备页', aliasOk === true);
+
+  // 统计卡可点：从「看到一个数字」到「看到那些设备」，中间不该再让人自己筛一次
+  await page.goto(`${BASE}/#/dashboard`, { waitUntil: 'networkidle2' });
+  await sleep(2200);
+  const cardClicked = await page.evaluate(() => {
+    const card = [...document.querySelectorAll('.stat-link')]
+      .find((el) => el.textContent.includes('待同步'));
+    if (!card) {
+      return { found: false };
+    }
+
+    card.click();
+    return { found: true };
+  });
+  await sleep(2400);
+  const landed = await page.evaluate(() => ({
+    hash: location.hash,
+    active: [...document.querySelectorAll('.status-tab.active')]
+      .map((el) => el.textContent.replace(/\d+$/, '').trim()),
+  }));
+  check('点「待同步」统计卡 → 设备页并已筛选',
+    cardClicked.found && landed.hash.includes('status=pending') && landed.active.includes('待同步'),
+    `card=${cardClicked.found} hash=${landed.hash} active=${JSON.stringify(landed.active)}`);
+
+  // 状态条上的数字 vs 点下去之后的列表行数：**必须一致**（两处共用同一套判定才做得到）
+  const switchedToList = await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('.segmented-item')]
+      .find((b) => b.textContent.includes('列表'));
+    if (btn) {
+      btn.click();
+      return true;
+    }
+
+    return false;
+  });
+  await sleep(1700);
+
+  const tabTotal = await page.evaluate(() => document.querySelectorAll('.status-tab').length);
+  const mismatches = [];
+  for (let i = 0; i < tabTotal; i++) {
+    const info = await page.evaluate((idx) => {
+      const tab = document.querySelectorAll('.status-tab')[idx];
+      if (!tab) {
+        return null;
+      }
+
+      const count = Number(tab.querySelector('.status-tab-count')?.textContent || '0');
+      const label = tab.textContent.slice(0, -String(count).length).trim();
+      tab.click();
+      return { label, count };
+    }, i);
+    if (!info) {
+      continue;
+    }
+
+    await sleep(650);
+    // 必须限定在设备看板容器里：本页还有「注册码」表格（同样是 table.data），
+    // 不限定就会把它那几行算进来，看起来像「计数与列表不一致」。
+    const rows = await page.evaluate(
+      () => document.querySelectorAll('#deviceBoardHost table.data tbody tr').length);
+    if (info.count !== rows) {
+      mismatches.push(`${info.label}: 标签=${info.count} 列表=${rows}`);
+    }
+  }
+  check('状态条数字与列表行数完全一致', switchedToList && tabTotal > 0 && mismatches.length === 0,
+    (mismatches.join('；') || `全部一致（${tabTotal} 个状态）`));
 
   console.log('\n===== 验证结果 =====');
   for (const r of results) console.log(r);

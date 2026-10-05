@@ -5,14 +5,14 @@
  * 同时同步到账号（见 core/prefs.js），换台电脑登录后布局保持一致。
  */
 
-import { api, session } from '../core/api.js?v=57';
+import { api, session } from '../core/api.js?v=59';
 import {
   h, clear, formatDateTime, formatDuration, relativeTime,
   loadingBlock, modal, append, icon, toast, guard,
-} from '../core/ui.js?v=57';
+} from '../core/ui.js?v=59';
 import {
   getLayout, saveLayout, getLayoutSyncState, onLayoutSyncChange,
-} from '../core/prefs.js?v=57';
+} from '../core/prefs.js?v=59';
 
 export const meta = {
   title: '仪表盘',
@@ -26,12 +26,13 @@ let _params = null;
 
 // 统计模块定义：key 用于持久化，label 用于配置面板，build 生成卡片。
 const STAT_DEFS = [
-  { key: 'total', label: '设备总数', build: (s) => stat('设备总数', s.deviceCount, `分 ${s.groupCount} 个组`, '', 'monitor') },
-  { key: 'online', label: '在线设备', build: (s) => stat('在线设备', s.onlineDeviceCount, `在线率 ${Math.round((s.onlineRate || 0) * 100)}%`, 'ok', 'checkCircle') },
-  { key: 'pending', label: '待同步', build: (s) => stat('待同步', s.pendingDeviceCount, s.pendingDeviceCount > 0 ? '等待客户端拉取' : '全部已同步', s.pendingDeviceCount > 0 ? 'warn' : 'ok', 'clock') },
-  { key: 'error', label: '同步异常', build: (s) => stat('同步异常', s.errorDeviceCount, s.errorDeviceCount > 0 ? '需查看设备日志' : '无异常', s.errorDeviceCount > 0 ? 'danger' : 'ok', 'alert') },
-  { key: 'profiles', label: '配置档案', build: (s) => stat('配置档案', s.profileCount, `当前版本 ${s.revision}`, 'info', 'profiles') },
-  { key: 'recent', label: '近 24h 新增', build: (s) => stat('近 24h 新增', s.recentEnrollCount, '新注册设备', '', 'plusCircle') },
+  { key: 'total', label: '设备总数', build: (s) => stat('设备总数', s.deviceCount, `分 ${s.groupCount} 个组`, '', 'monitor', '#/devices') },
+  { key: 'online', label: '在线设备', build: (s) => stat('在线设备', s.onlineDeviceCount, `在线率 ${Math.round((s.onlineRate || 0) * 100)}%`, 'ok', 'checkCircle', '#/devices?status=online') },
+  { key: 'pending', label: '待同步', build: (s) => stat('待同步', s.pendingDeviceCount, s.pendingDeviceCount > 0 ? '等待客户端拉取' : '全部已同步', s.pendingDeviceCount > 0 ? 'warn' : 'ok', 'clock', '#/devices?status=pending') },
+  { key: 'error', label: '同步异常', build: (s) => stat('同步异常', s.errorDeviceCount, s.errorDeviceCount > 0 ? '需查看设备日志' : '无异常', s.errorDeviceCount > 0 ? 'danger' : 'ok', 'alert', '#/devices?status=error') },
+  { key: 'profiles', label: '配置档案', build: (s) => stat('配置档案', s.profileCount, `当前版本 ${s.revision}`, 'info', 'profiles', '#/profiles') },
+  // 「近 24h 新增」没有对应的筛选视图，就不做成可点的——点了跳不到具体东西的入口，比不给更让人困惑。
+  { key: 'recent', label: '近 24h 新增', build: (s) => stat('近 24h 新增', s.recentEnrollCount, '新注册设备', '', 'plusCircle', null) },
 ];
 
 const STAT_KEYS = () => STAT_DEFS.map((d) => d.key);
@@ -110,14 +111,48 @@ function renderCards(ctx) {
   return nodes;
 }
 
-function stat(label, value, hint, tone, iconKey) {
+/**
+ * 统计卡片。
+ * @param {string} label 标题。
+ * @param {number|string} value 数值。
+ * @param {string} hint 副标题。
+ * @param {string} [tone] 语义色（ok / warn / danger / info）。
+ * @param {string} [iconKey] 图标名。
+ * @param {string} [to] 点击后跳转的 hash（可带筛选，如 `#/devices?status=pending`）。
+ *   <para>「数字可点」才是这张卡片的价值：看到「待同步 3」，下一个动作就是去看那 3 台。
+ *   不该让人记住功能在哪个菜单、再自己去筛一遍——那样数字就只是装饰。</para>
+ */
+function stat(label, value, hint, tone, iconKey, to = null) {
   const iconEl = h('span.stat-icon');
   iconEl.appendChild(icon(iconKey, 17));
-  return h(`div.stat${tone ? '.' + tone : ''}`,
+
+  const body = [
     h('div.stat-label', iconEl, h('span.stat-label-text', label)),
     h('div.stat-value', String(value ?? 0)),
     h('div.stat-hint', hint),
-  );
+  ];
+
+  if (!to) {
+    return h(`div.stat${tone ? '.' + tone : ''}`, ...body);
+  }
+
+  const go = () => {
+    window.location.hash = to;
+  };
+
+  return h(`div.stat.stat-link${tone ? '.' + tone : ''}`, {
+    role: 'link',
+    tabindex: '0',
+    title: `${label} · 点击查看明细`,
+    onClick: go,
+    onKeydown: (event) => {
+      // 键盘用户同样要能用（无障碍方向）：Enter / 空格等同于点击。
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        go();
+      }
+    },
+  }, ...body, h('span.stat-go', '›'));
 }
 
 /**
