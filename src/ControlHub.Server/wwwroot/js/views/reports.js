@@ -11,10 +11,10 @@
  *   - 条形图用 div 宽度实现，不引图表库：形态简单，几百 KB 的依赖不值当。
  */
 
-import { api } from '../core/api.js?v=79';
-import { h, clear, formatDateTime, loadingBlock } from '../core/ui.js?v=79';
-import { errorBlock } from '../core/errors.js?v=79';
-import { auditActionLabel } from '../core/audit-actions.js?v=79';
+import { api } from '../core/api.js?v=80';
+import { h, clear, formatDateTime, loadingBlock } from '../core/ui.js?v=80';
+import { errorBlock } from '../core/errors.js?v=80';
+import { auditActionLabel } from '../core/audit-actions.js?v=80';
 
 export const meta = {
   title: '报表',
@@ -127,7 +127,81 @@ const TABS = [
     load: (days) => api('/admin/reports/operations', { query: { days } }),
     render: renderOperations,
   },
+  {
+    key: 'notifications',
+    label: '通知到达',
+    load: (days) => api('/admin/reports/notifications', { query: { days } }),
+    render: renderNotifications,
+  },
 ];
+
+/**
+ * 通知到达率（#7 回执的聚合）。
+ *
+ * <para>与「指令执行」报表的区别，正是这一块存在的理由：指令报的是
+ * 「插件收下并调用了展示」，而这里报的是**教室端确认开始显示**。
+ * 前者永远接近 100%，后者才可能暴露「发了没人看到」。</para>
+ *
+ * <para>没回报的设备**固定列出来**而不是只给个百分比：管理员的下一个动作是
+ * 「去查是哪几台没到」，只给数字等于让他自己去翻设备列表。</para>
+ */
+function renderNotifications(data) {
+  if (!data.totalNotifications) {
+    return h('div',
+      h('div.notice.notice-info', { style: { marginTop: '12px' } },
+        h('span.notice-icon', 'i'),
+        h('div', '这个范围内还没有通知记录。发一条通知后，这里会显示'
+          + '「教室端有多少台真的把通知显示出来了」。')),
+    );
+  }
+
+  return h('div',
+    h('div', { style: { display: 'flex', gap: '10px', flexWrap: 'wrap', margin: '12px 0 4px' } },
+      metric('通知条数', data.totalNotifications, `${data.range.from} ~ ${data.range.to}`),
+      // 目标数为 0 时显示「—」：写成 0% 会被读成「全部没到」，与事实相反。
+      metric('整体到达率', data.totalTargets > 0 ? asPercent(data.overallRate) : '—',
+        `${data.totalShown} / ${data.totalTargets} 台次`),
+      metric('覆盖设备', data.totalTargets, '按下发目标累加')),
+    section('按日到达', barList(data.daily, {
+      value: (row) => row.count,
+      format: (row) => `${row.extra} / ${row.count} 台次 · ${asPercent(row.rate)}`,
+      color: (row) => (row.rate >= 0.99 ? 'var(--ok)' : (row.rate >= 0.8 ? 'var(--warn)' : 'var(--danger)')),
+      empty: '范围内没有通知。',
+    })),
+    section('逐条通知（新的在前）',
+      h('div', { style: { marginTop: '2px' } }, ...data.notifications.map(renderNotificationRow))),
+  );
+}
+
+/**
+ * 单条通知的到达情况。
+ * <para>把「没到的设备名」直接列出来：这是本报表唯一能直接促成行动的信息。</para>
+ */
+function renderNotificationRow(item) {
+  const rate = item.arrivalRate;
+  const tone = rate >= 0.99 ? 'var(--ok)' : (rate >= 0.8 ? 'var(--warn)' : 'var(--danger)');
+
+  return h('div', {
+    style: {
+      display: 'flex', flexDirection: 'column', gap: '5px',
+      padding: '9px 0', borderTop: '1px solid var(--border)',
+    },
+  },
+  h('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '12.5px' } },
+    h('span', {
+      style: { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+    }, `${formatDateTime(item.issuedAt)} · ${item.title || '（无标题）'}`),
+    h('span', {
+      style: { flex: 'none', color: tone, fontVariantNumeric: 'tabular-nums' },
+    }, `${item.shownCount} / ${item.targetCount} · ${asPercent(rate)}`)),
+  item.pendingDevices.length > 0
+    ? h('span', {
+      style: { color: 'var(--warn)', fontSize: '11.5px' },
+      title: item.pendingDevices.join('、'),
+    }, `未回报：${item.pendingDevices.slice(0, 6).join('、')}`
+      + (item.pendingDevices.length > 6 ? ` 等 ${item.pendingDevices.length} 台` : ''))
+    : null);
+}
 
 // ────────────────────────────── 通用小组件 ──────────────────────────────
 

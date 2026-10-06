@@ -17,8 +17,15 @@ public sealed class HubNotificationProvider : NotificationProviderBase
         HubNotificationProviderHolder.Current = this;
     }
 
-    /// <summary>展示一条集控提醒。</summary>
-    public void Show(string title, string message, bool speak, TimeSpan? duration)
+    /// <summary>
+    /// 展示一条集控提醒。
+    /// </summary>
+    /// <returns>
+    /// 提交给 ClassIsland 的通知请求。调用方（远程指令执行器）拿它挂
+    /// <see cref="NotificationRequest.Completed"/>——通知真正结束（超时或被关掉）
+    /// 时才能回报「展示结束」，#7 的展示生命周期靠这个事件。
+    /// </returns>
+    public NotificationRequest Show(string title, string message, bool speak, TimeSpan? duration)
     {
         var text = string.IsNullOrWhiteSpace(title) ? message : $"{title}\n{message}";
         var mask = NotificationContent.CreateTwoIconsMask(text);
@@ -36,5 +43,6 @@ public sealed class HubNotificationProvider : NotificationProviderBase
         }
 
         ShowNotification(request);
+        return request;
     }
 }

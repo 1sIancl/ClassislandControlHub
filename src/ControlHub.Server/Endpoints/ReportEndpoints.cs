@@ -34,6 +34,32 @@ public static class ReportEndpoints
         group.MapGet("/reports/operations", OperationReportAsync).RequirePermission(PermissionKeys.AuditRead);
         group.MapGet("/reports/online", OnlineReportAsync).RequirePermission(PermissionKeys.AuditRead);
         group.MapGet("/reports/sync", SyncReportAsync).RequirePermission(PermissionKeys.AuditRead);
+        // 通知到达率（#7 回执数据的聚合，#66 的底座）
+        group.MapGet("/reports/notifications", NotificationArrivalAsync).RequirePermission(PermissionKeys.AuditRead);
+        // 单条通知的回执明细：管理员点开「这条通知」看谁到了、谁没到
+        group.MapGet("/notifications/{commandId}/receipt", NotificationReceiptAsync)
+            .RequirePermission(PermissionKeys.RemoteRead);
+    }
+
+    private static async Task<ApiResult<NotificationArrivalReportDto>> NotificationArrivalAsync(
+        int? days, HttpContext http, HubStore store, CancellationToken cancellationToken)
+    {
+        http.RequireAdminSession();
+        return ApiResult<NotificationArrivalReportDto>.Success(
+            await store.GetNotificationArrivalReportAsync(ClampDays(days), 50, cancellationToken));
+    }
+
+    private static async Task<ApiResult<NotificationReceiptSummaryDto>> NotificationReceiptAsync(
+        string commandId, HttpContext http, HubStore store, CancellationToken cancellationToken)
+    {
+        http.RequireAdminSession();
+        var summary = await store.GetNotificationReceiptAsync(commandId, cancellationToken);
+        if (summary is null)
+        {
+            throw HubException.NotFound("通知不存在。");
+        }
+
+        return ApiResult<NotificationReceiptSummaryDto>.Success(summary);
     }
 
     private static async Task<ApiResult<SyncReportDto>> SyncReportAsync(

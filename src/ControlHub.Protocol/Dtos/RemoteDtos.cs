@@ -141,6 +141,83 @@ public sealed class CommandReportRequest
     public DateTimeOffset FinishedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+/// <summary>
+/// B 端上报的通知回执（#7）。
+/// <para>与 <see cref="CommandReportRequest"/> 分开上报：指令回报发生在**执行的那一刻**，
+/// 而回执发生在**展示之后**（甚至展示结束之后）。合成一条会让「指令成功」与
+/// 「教室真的看到」共用一个字段，而这两件事恰恰不能混淆。</para>
+/// </summary>
+public sealed class NotificationReceiptRequest
+{
+    /// <summary>对应通知的指令 ID。</summary>
+    public string CommandId { get; set; } = string.Empty;
+
+    /// <summary>阶段：<c>shown</c>（已展示）/ <c>closed</c>（展示结束）。</summary>
+    public string Stage { get; set; } = string.Empty;
+
+    /// <summary>发生时间（UTC）。</summary>
+    public DateTimeOffset At { get; set; } = DateTimeOffset.UtcNow;
+}
+
+// ── #7 通知回执：查询侧 ────────────────────────────────────────────────
+
+/// <summary>一条通知的回执汇总（管理员视角：我发的这条，教室到底看到没有）。</summary>
+public sealed class NotificationReceiptSummaryDto
+{
+    /// <summary>通知的指令 ID。</summary>
+    public string CommandId { get; set; } = string.Empty;
+
+    /// <summary>标题（用于列表显示）。</summary>
+    public string Title { get; set; } = string.Empty;
+
+    /// <summary>下发时间。</summary>
+    public DateTimeOffset IssuedAt { get; set; }
+
+    /// <summary>下发给多少台设备。</summary>
+    public int TargetCount { get; set; }
+
+    /// <summary>其中已展示的台数。</summary>
+    public int ShownCount { get; set; }
+
+    /// <summary>展示结束的台数。</summary>
+    public int ClosedCount { get; set; }
+
+    /// <summary>
+    /// 到达率 = 已展示 / 目标设备数。
+    /// <para>分母是**下发目标**而不是「指令成功的设备」：指令成功只说明插件收下了，
+    /// 用它当分母会把「收下了但没显示出来」算成到达。</para>
+    /// </summary>
+    public double ArrivalRate { get; set; }
+
+    /// <summary>还没回报展示的设备名（用于直接指出「是哪几台没到」）。</summary>
+    public List<string> PendingDevices { get; set; } = [];
+}
+
+/// <summary>通知到达率总览（#66 的底座）。</summary>
+public sealed class NotificationArrivalReportDto
+{
+    /// <summary>统计范围。</summary>
+    public ReportRangeDto Range { get; set; } = new();
+
+    /// <summary>范围内的通知条数。</summary>
+    public int TotalNotifications { get; set; }
+
+    /// <summary>累计下发的设备次数（按通知 × 目标累加）。</summary>
+    public int TotalTargets { get; set; }
+
+    /// <summary>累计已展示次数。</summary>
+    public int TotalShown { get; set; }
+
+    /// <summary>整体到达率。</summary>
+    public double OverallRate { get; set; }
+
+    /// <summary>按日到达率。</summary>
+    public List<ReportBucketDto> Daily { get; set; } = [];
+
+    /// <summary>逐条通知明细（新的在前）。</summary>
+    public List<NotificationReceiptSummaryDto> Notifications { get; set; } = [];
+}
+
 /// <summary>B 端上传的诊断工件（截图等二进制内容，Base64 编码）。</summary>
 public sealed class DiagnosticUploadRequest
 {

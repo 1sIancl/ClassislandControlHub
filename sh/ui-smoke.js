@@ -327,7 +327,10 @@ function check(name, ok, extra = '') {
   const queued = await page.evaluate(async () => {
     const { api } = await import('/js/core/api.js?v=49');
     const devices = await api('/admin/devices');
-    const dev = devices[0];
+    // 刻意**不用 devices[0]**：列表首位会随新建/停用的设备变化，
+    // 别处（例如端到端脚本）造一台测试设备就会把这条断言带偏——
+    // 而停用设备本来就不该有待执行指令区块。选一台确定在用的设备。
+    const dev = devices.find((d) => !d.revoked) || devices[0];
 
     // 清场：取消遗留的排队指令，保证断言从确定状态开始。
     const old = await api(`/admin/devices/${dev.id}/commands/queue`);
@@ -632,6 +635,26 @@ function check(name, ok, extra = '') {
   check('报表页三个标签齐全且默认出数', reportUi.hasTabs && reportUi.hasMetric,
     `tabs=${reportUi.hasTabs} metric=${reportUi.hasMetric} ranges=${reportUi.ranges} 首段=${reportUi.head}`);
   check('提供 7 / 30 / 90 天时间范围', reportUi.ranges === 3, `找到 ${reportUi.ranges} 个`);
+
+  // 通知到达（#7 回执的聚合）：必须有这个标签，且切过去能出数
+  const hasNotifyTab = await page.evaluate(() => [...document.querySelectorAll('#content button')]
+    .some((b) => b.textContent.trim() === '通知到达'));
+  check('报表页有「通知到达」标签', hasNotifyTab === true);
+  if (hasNotifyTab) {
+    await page.evaluate(() => {
+      const btn = [...document.querySelectorAll('#content button')]
+        .find((b) => b.textContent.trim() === '通知到达');
+      if (btn) {
+        btn.click();
+      }
+    });
+    await sleep(2000);
+    const notifyText = await page.evaluate(
+      () => (document.getElementById('content')?.textContent || '').replace(/\s+/g, ' '));
+    check('通知到达报表能出数或给出空态引导',
+      notifyText.includes('到达率') || notifyText.includes('还没有通知记录'),
+      notifyText.slice(0, 140));
+  }
 
   await page.evaluate(() => {
     const btn = [...document.querySelectorAll('#content button')]

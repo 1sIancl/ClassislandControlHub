@@ -34,6 +34,7 @@ public static class ClientEndpoints
         authed.MapPost("/diagnostics", UploadDiagnosticAsync);
         authed.MapGet("/commands", GetCommandsAsync);
         authed.MapPost("/commands/report", ReportCommandAsync);
+        authed.MapPost("/commands/receipt", ReportNotificationReceiptAsync);
         authed.MapPost("/plugins", ReportPluginsAsync);
         authed.MapPost("/time-report", ReportTimeSyncAsync);
     }
@@ -520,6 +521,44 @@ public static class ClientEndpoints
                     ["commandId"] = request.CommandId,
                     ["exitCode"] = request.ExitCode,
                 }, cancellationToken);
+        }
+
+        return ApiResult<bool>.Success(true);
+    }
+
+    /// <summary>
+    /// 接收 B 端上报的通知回执（#7）。
+    /// <para>刻意**不**要求指令已完成：通知是「展示了再回报」，而展示可能发生在
+    /// 指令回报之后（异步渲染）。要求「先 done 再 receipt」会让回执在时序上变脆。</para>
+    /// </summary>
+    private static async Task<ApiResult<bool>> ReportNotificationReceiptAsync(
+        NotificationReceiptRequest request,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var device = http.RequireDevice();
+        if (string.IsNullOrWhiteSpace(request.CommandId))
+        {
+            throw HubException.Validation("缺少指令 ID。");
+        }
+
+        bool recorded;
+        try
+        {
+            recorded = await store.RecordNotificationReceiptAsync(device.Id, request.CommandId,
+                request.Stage, cancellationToken);
+        }
+        catch (ArgumentException ex)
+        {
+            throw HubException.Validation(ex.Message);
+        }
+
+        if (!recorded)
+        {
+            // 既可能是「重复上报」（正常，幂等），也可能是「这指令不是发给它的通知」。
+            // 两种都不该报错——前者是重试，后者是脏数据；回执本身不需要让设备重试。
+            return ApiResult<bool>.Success(false);
         }
 
         return ApiResult<bool>.Success(true);

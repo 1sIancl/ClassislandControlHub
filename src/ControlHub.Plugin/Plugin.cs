@@ -4,6 +4,7 @@ using ClassIsland.Core.Attributes;
 using ClassIsland.Core.Extensions.Registry;
 using ControlHub.Plugin.Models;
 using ControlHub.Plugin.Services;
+using ControlHub.Protocol.Dtos;
 using ControlHub.Plugin.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -78,6 +79,11 @@ public class Plugin : PluginBase
 
             executor.OnLogsRequested = entries =>
                 UploadAsync((client, url, token) => client.UploadLogsAsync(url, token, entries));
+
+            // 通知回执（#7）：展示开始 / 结束各报一次，A 端据此算到达率。
+            executor.OnNotificationReceipt = (commandId, stage) =>
+                UploadAsync((client, url, token) => client.ReportNotificationReceiptAsync(
+                    url, token, new NotificationReceiptRequest { CommandId = commandId, Stage = stage }));
 
             return executor;
         });

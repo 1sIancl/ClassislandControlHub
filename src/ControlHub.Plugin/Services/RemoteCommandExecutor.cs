@@ -42,6 +42,13 @@ public sealed class RemoteCommandExecutor(
     /// <summary>日志上报回调（采集诊断数据包时顺带把本地日志推给 A 端，供设备日志页查看）。</summary>
     public Func<List<LogEntryDto>, Task>? OnLogsRequested { get; set; }
 
+    /// <summary>
+    /// 通知回执上报回调（#7）。参数为（指令 ID, 阶段），阶段是 <c>shown</c> / <c>closed</c>。
+    /// <para>与指令回报是**两件事**：指令 done 表示「插件调用了展示」，
+    /// 而回执表示「通知真的开始显示 / 真的结束了」。后者才是管理员要的到达率。</para>
+    /// </summary>
+    public Func<string, string, Task>? OnNotificationReceipt { get; set; }
+
     /// <summary>执行一条指令。</summary>
     public async Task<CommandReportRequest> ExecuteAsync(RemoteCommandDto command)
     {
@@ -55,6 +62,7 @@ public sealed class RemoteCommandExecutor(
             {
                 RemoteCommandKinds.Shell => await RunShellAsync(command),
                 RemoteCommandKinds.Notify => UiThread.Run(() => RunNotify(command)),
+                // ↑ RunNotify 改成实例方法了（要触发回执回调），见下方实现。
                 RemoteCommandKinds.PluginRefresh => await ReportPluginsAsync(command),
                 RemoteCommandKinds.PluginToggle => UiThread.Run(() => TogglePlugin(command)),
                 RemoteCommandKinds.PluginUninstall => UiThread.Run(() => UninstallPlugin(command)),
@@ -180,7 +188,7 @@ public sealed class RemoteCommandExecutor(
 
     // ────────────────────────────── notify ──────────────────────────────
 
-    private static CommandReportRequest RunNotify(RemoteCommandDto command)
+    private CommandReportRequest RunNotify(RemoteCommandDto command)
     {
         var req = HubJson.Deserialize<NotifyRequestDto>(command.Payload) ?? new NotifyRequestDto();
         if (string.IsNullOrWhiteSpace(req.Title) && string.IsNullOrWhiteSpace(req.Message))
@@ -195,9 +203,36 @@ public sealed class RemoteCommandExecutor(
         }
 
         TimeSpan? duration = req.DurationSeconds > 0 ? TimeSpan.FromSeconds(req.DurationSeconds) : null;
-        provider.Show(req.Title, req.Message, req.Speak, duration);
+        var request = provider.Show(req.Title, req.Message, req.Speak, duration);
+
+        // 回执（#7）：Show 返回即「已交给通知系统」，记为 shown。
+        // 这与下面返回的「指令成功」不是同一件事——指令回报说的是「我执行了」，
+        // 回执说的是「它开始显示了」，后者是到达率的分子。
+        ReportReceipt(command.Id, "shown");
+
+        // 通知结束（超时或被关掉）再补一条 closed。
+        // Completed 可能在任意线程触发，所以回调里**不碰 UI**，只发网络请求。
+        request.Completed += (_, _) => ReportReceipt(command.Id, "closed");
 
         return Ok(command, $"提醒已展示（语音播报：{(req.Speak ? "开" : "关")}）");
+    }
+
+    /// <summary>
+    /// 上报通知回执（#7）。失败只记调试日志、绝不抛出。
+    /// <para>刻意 fire-and-forget：回执是**观测数据**，而「通知已经显示在教室大屏上」
+    /// 是既成事实。为了上报一条统计把展示流程拖住（或让它报错），是本末倒置。</para>
+    /// </summary>
+    private void ReportReceipt(string commandId, string stage)
+    {
+        var handler = OnNotificationReceipt;
+        if (handler is null)
+        {
+            return;
+        }
+
+        _ = handler(commandId, stage).ContinueWith(
+            t => logger.LogDebug(t.Exception, "通知回执上报失败（{Stage}）。", stage),
+            TaskContinuationOptions.OnlyOnFaulted);
     }
 
     // ────────────────────────────── plugins ──────────────────────────────

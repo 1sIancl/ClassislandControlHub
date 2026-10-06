@@ -558,6 +558,20 @@ public sealed partial class HubStore
         );
         CREATE INDEX IF NOT EXISTS idx_sync_targets_push ON sync_push_targets(push_id);
 
+        -- 通知回执（#7）：通知走的是指令通道，device_commands 的 status=done 只说明
+        -- 「插件把 Show 调下去了」，**不等于教室大屏真的显示过**——那才是管理员关心的。
+        -- 所以另记一条生命周期：shown（展示开始）/ closed（展示结束，超时或手动关都算）。
+        -- PRIMARY KEY 含 stage：同一阶段重复上报是幂等的（网络重试不会把计数刷高）。
+        CREATE TABLE IF NOT EXISTS notification_receipts (
+            command_id TEXT NOT NULL,
+            device_id  TEXT NOT NULL,
+            stage      TEXT NOT NULL,
+            at         TEXT NOT NULL,
+            PRIMARY KEY (command_id, device_id, stage)
+        );
+        CREATE INDEX IF NOT EXISTS idx_notif_receipts_command ON notification_receipts(command_id);
+        CREATE INDEX IF NOT EXISTS idx_notif_receipts_at ON notification_receipts(at);
+
         -- 设备标签（#10）：与「楼栋 / 楼层」的分组是**正交**的两个维度——
         -- 分组回答「它在哪」（一台设备只属于一处），标签回答「它是什么」（可以同时是
         -- 「高考考场」和「待维修」）。所以标签不替代分组，也不能靠分组凑出来。

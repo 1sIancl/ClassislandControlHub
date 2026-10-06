@@ -128,6 +128,15 @@ public sealed class HubClient
         return result.Data!;
     }
 
+    /// <summary>上报通知回执（#7）：展示开始 / 展示结束。</summary>
+    public async Task ReportNotificationReceiptAsync(string baseUrl, string deviceToken,
+        NotificationReceiptRequest request, CancellationToken cancellationToken = default)
+    {
+        await SendAsync<bool>(baseUrl, "/client/commands/receipt", HttpMethod.Post,
+            auth: HubProtocol.DeviceScheme + " " + deviceToken, body: request,
+            timeout: TimeSpan.FromSeconds(15), cancellationToken);
+    }
+
     /// <summary>上报配置应用结果。</summary>
     public async Task ReportAsync(string baseUrl, string deviceToken, ApplyReportRequest request,
         CancellationToken cancellationToken = default)
