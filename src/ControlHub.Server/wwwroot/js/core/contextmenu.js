@@ -10,7 +10,7 @@
  *      而用户看不见也点不到。
  */
 
-import { h, clear } from './ui.js?v=82';
+import { h, clear } from './ui.js?v=84';
 
 let host = null;
 let onDocPointerDown = null;

@@ -2,9 +2,9 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=82';
-import { toastError } from './core/errors.js?v=82';
-import { h, clear, toast, icon } from './core/ui.js?v=82';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=84';
+import { toastError } from './core/errors.js?v=84';
+import { h, clear, toast, icon } from './core/ui.js?v=84';
 import {
   initTheme, getTheme, applyTheme, THEMES,
   getSidebarCollapsed, setSidebarCollapsed,
@@ -13,11 +13,11 @@ import {
   getFont, setFont, FONTS,
   getRadius, setRadius, RADII,
   applyRemotePrefs, applySchedScale,
-} from './core/prefs.js?v=82';
-import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=82';
-import { initGlassHighlight } from './core/glass.js?v=82';
-import { initTopbar } from './topbar.js?v=82';
-import { openSearch } from './core/search.js?v=82';
+} from './core/prefs.js?v=84';
+import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=84';
+import { initGlassHighlight } from './core/glass.js?v=84';
+import { initTopbar } from './topbar.js?v=84';
+import { openSearch } from './core/search.js?v=84';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -85,6 +85,7 @@ const NAV = [
     items: [
       { key: 'reports', label: '报表', icon: 'clock', hash: '#/reports', perm: 'audit.read' },
       { key: 'audit', label: '审计日志', icon: 'list', hash: '#/audit', perm: 'audit.read' },
+      { key: 'appearance', label: '页面设置', icon: 'auto', hash: '#/appearance', perm: ['settings.read', 'settings.write'] },
       { key: 'settings', label: '系统设置', icon: 'gear', hash: '#/settings', perm: ['settings.read', 'accounts.read'] },
     ],
   },
@@ -102,18 +103,19 @@ const ROUTE_ALIASES = {
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=82'),
-  devices: () => import('./views/devices.js?v=82'),
+  dashboard: () => import('./views/dashboard.js?v=84'),
+  devices: () => import('./views/devices.js?v=84'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=82'),
-  profiles: () => import('./views/profiles.js?v=82'),
-  profileEditor: () => import('./views/profileEditor.js?v=82'),
-  deploy: () => import('./views/deploy.js?v=82'),
-  remote: () => import('./views/remote.js?v=82'),
-  reminders: () => import('./views/reminders.js?v=82'),
-  audit: () => import('./views/audit.js?v=82'),
-  reports: () => import('./views/reports.js?v=82'),
-  settings: () => import('./views/settings.js?v=82'),
+  groups: () => import('./views/devices.js?v=84'),
+  profiles: () => import('./views/profiles.js?v=84'),
+  profileEditor: () => import('./views/profileEditor.js?v=84'),
+  deploy: () => import('./views/deploy.js?v=84'),
+  remote: () => import('./views/remote.js?v=84'),
+  reminders: () => import('./views/reminders.js?v=84'),
+  audit: () => import('./views/audit.js?v=84'),
+  reports: () => import('./views/reports.js?v=84'),
+  appearance: () => import('./views/appearance.js?v=84'),
+  settings: () => import('./views/settings.js?v=84'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -128,6 +130,9 @@ const ROUTE_PERMS = {
   audit: 'audit.read',
   // 报表读的就是历史数据，权限与审计一致（#63 / #65 / #67）。
   reports: 'audit.read',
+  // 页面设置改的是全站品牌 / 登录页 / 外观：读要 settings.read，
+  // 保存走 /admin/branding 时会再校验 settings.write。
+  appearance: ['settings.read', 'settings.write'],
   settings: ['settings.read', 'accounts.read'],
 };
 
@@ -203,6 +208,18 @@ function applyBranding(info) {
 
   applyBrandMark('brandMark', logoText, branding.logoImage);
   applyBrandMark('loginBrandMark', logoText, branding.logoImage);
+  // 登录页顶栏：之前只更新了登录卡片的品牌块，**漏了这一处**，
+  // 于是它一直显示 index.html 里硬编码的「CI」——正是这次反馈的问题。
+  applyBrandMark('loginTopMark', logoText, branding.logoImage);
+
+  const topbar = document.getElementById('loginTopbar');
+  if (topbar) {
+    topbar.hidden = branding.loginTopbarHidden === true;
+    const title = document.getElementById('loginTopName');
+    if (title) {
+      title.textContent = branding.loginTopbarTitle || siteName;
+    }
+  }
 
   // 登录页背景（可选）：学校自定义的背景图 + 淡化程度，保证表单区域可读。
   const root = document.documentElement;
@@ -635,7 +652,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=82');
+    const { startTour } = await import('./core/tour.js?v=84');
     startTour({
       onFinish: async (skipped) => {
         try {

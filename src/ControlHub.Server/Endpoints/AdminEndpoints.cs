@@ -714,6 +714,11 @@ public static class AdminEndpoints
         {
             offsetSeconds = serverTime.ManualOffsetSeconds,
             ntpOffsetSeconds = serverTime.OffsetSeconds,
+            // 每日漂移（秒/天）+ 已累计天数 + 当前累计出的补偿量。
+            // 三个都给出来，管理员才能判断「这个数还合不合理、要不要重置基准」。
+            dailyDriftSeconds = serverTime.DailyDriftSeconds,
+            driftDays = serverTime.DriftDays,
+            driftCompensationSeconds = serverTime.DriftCompensationSeconds,
             serverTime = serverTime.GetUtcNow(),
             lastSyncStatus = serverTime.LastSyncStatus,
             lastSyncAt = serverTime.LastSyncAt,
@@ -735,12 +740,41 @@ public static class AdminEndpoints
             seconds.ToString("F3", System.Globalization.CultureInfo.InvariantCulture), cancellationToken);
         serverTime.SetManualOffsetSeconds(seconds);
 
+        var audit = $"设置时间偏移 {seconds:F3} 秒。";
+
+        // 每日漂移（#4）：补偿「设备时钟每天稳定快/慢几秒」这类硬件差异。
+        // 只在请求里带了该字段时才改（null = 不动），避免老客户端提交偏移时把它清零。
+        if (request.DailyDriftSeconds is { } drift)
+        {
+            var clamped = Math.Clamp(drift, -600, 600); // ±10 分钟/天，再大就不是「漂移」而是配置错误。
+            await store.SetSettingAsync("timeDailyDriftSeconds",
+                clamped.ToString("F3", System.Globalization.CultureInfo.InvariantCulture), cancellationToken);
+            serverTime.SetDailyDriftSeconds(clamped);
+            await store.SetSettingAsync("timeDailyDriftAnchor",
+                DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                cancellationToken);
+            audit += $"每日漂移 {clamped:F3} 秒/天（累计起点已重置为今天）。";
+        }
+
+        // 单独重置累计起点：设备做过一次人工校准后清零，保留漂移值。
+        if (request.ResetDriftAnchor == true)
+        {
+            serverTime.ResetDriftAnchor();
+            await store.SetSettingAsync("timeDailyDriftAnchor",
+                DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                cancellationToken);
+            audit += "已把漂移累计起点重置为今天。";
+        }
+
         await store.AddAuditAsync(session.Username, "timeoffset.updated", "timeOffsetSeconds",
-            $"设置时间偏移 {seconds:F3} 秒。", http.GetClientIpAddress(), cancellationToken);
+            audit, http.GetClientIpAddress(), cancellationToken);
 
         return ApiResult<object>.Success(new
         {
             offsetSeconds = seconds,
+            dailyDriftSeconds = serverTime.DailyDriftSeconds,
+            driftDays = serverTime.DriftDays,
+            driftCompensationSeconds = serverTime.DriftCompensationSeconds,
             serverTime = serverTime.GetUtcNow(),
         });
     }
@@ -1260,11 +1294,20 @@ public static class AdminEndpoints
     };
 }
 
-/// <summary>设置手动时间偏移的请求体。</summary>
+/// <summary>设置时间偏移的请求体（固定偏移 + 每日漂移）。</summary>
 public sealed class TimeOffsetRequest
 {
-    /// <summary>时间偏移（秒），正值表示整体提前。</summary>
+    /// <summary>固定时间偏移（秒），正值表示整体提前。</summary>
     public double OffsetSeconds { get; set; }
+
+    /// <summary>
+    /// 每日漂移（秒/天）。为空表示不改这一项——老客户端只提交 <see cref="OffsetSeconds"/> 时，
+    /// 不能把管理员配好的漂移值顺手清零。
+    /// </summary>
+    public double? DailyDriftSeconds { get; set; }
+
+    /// <summary>是否把漂移的累计起点重置为今天（保留漂移值）。</summary>
+    public bool? ResetDriftAnchor { get; set; }
 }
 
 /// <summary>完成两步验证。</summary>

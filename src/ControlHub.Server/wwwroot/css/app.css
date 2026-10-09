@@ -3125,23 +3125,22 @@ input.pcell-name:focus {
   font-weight: 600;
 }
 
-/* ────────────────────────── 响应式 ────────────────────────── */
-@media (max-width: 900px) {
+/* ────────────────────────── 响应式 ──────────────────────────
+   断点从 900px 收到 720px：900px 太靠上了——1366 的笔记本把窗口拉窄一点、
+   或高 DPI 缩放（150% 时 1280 物理宽只剩 853 CSS 像素）就会命中，
+   而命中的后果是**侧边栏被直接移出屏幕**且没有任何可见开关，
+   看起来就是「导航自己消失了」。720px 以下是真正的手机竖屏，那时才该换形态。
+
+   注意：这里不再用 `transform: translateX(-100%)` 把侧边栏推出屏幕，
+   而是老老实实 display:none——推出屏幕的元素仍在 Tab 序列里，
+   键盘用户会 focus 到一个看不见的按钮。 */
+@media (max-width: 720px) {
   .app-shell,
   .app-shell.collapsed {
     grid-template-columns: 1fr;
   }
   .sidebar {
-    position: fixed;
-    left: 0;
-    top: 0;
-    width: var(--sidebar-width);
-    z-index: 100;
-    transform: translateX(-100%);
-    transition: transform 0.2s;
-  }
-  .sidebar.open {
-    transform: none;
+    display: none;
   }
   .content {
     padding: 16px;

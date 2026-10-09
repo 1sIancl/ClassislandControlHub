@@ -1469,6 +1469,95 @@ function check(name, ok, extra = '') {
   await page.keyboard.press('Escape');
   await sleep(600);
 
+  // 25) 本轮改动：断点修复 / 登录页顶栏 logo / 页面设置页 / 每日时间漂移
+  //
+  // 断点：900px 宽曾经会隐藏一级导航并把侧边栏推出屏幕（用户反馈的「导航有时自动隐藏」）。
+  // 这条断言把那个宽度钉住——以后谁再把断点改回 900，它会立刻失败。
+  await page.setViewport({ width: 900, height: 800 });
+  await sleep(900);
+  // 必须先跳到「日常」组（含多个页面）再测：
+  // 设备分组只有 1 个页面，`renderSideNav` 会给侧边栏加 `is-single` 并隐藏它
+  // ——那是**设计如此**（侧栏只有孤零零一项看着像坏了），
+  // 在设备页测「侧边栏是否存在」测的其实是另一件事。
+  await page.evaluate(() => { window.location.hash = '#/dashboard'; });
+  await sleep(2200);
+
+  const at900 = await page.evaluate(() => {
+    // 摘掉折叠类而不是去点按钮：按钮的 is-active 与 app 上的 nav-collapsed
+    // 是两处状态，用「按钮看起来是展开的」判断「类是否被加上」并不可靠。
+    document.getElementById('app')?.classList.remove('nav-collapsed');
+    return {
+      triggers: [...document.querySelectorAll('.nav-trigger')].filter((t) => t.offsetParent !== null).length,
+      sidebar: getComputedStyle(document.getElementById('sidebar')).display !== 'none',
+    };
+  });
+  check('900px 宽下顶栏分组与侧边栏都还在（不再自动隐藏）',
+    at900.triggers >= 4 && at900.sidebar,
+    `一级触发器=${at900.triggers} 侧边栏=${at900.sidebar}`);
+
+  await page.setViewport({ width: 700, height: 800 });
+  await sleep(900);
+  const at700 = await page.evaluate(() => ({
+    triggers: [...document.querySelectorAll('.nav-trigger')].filter((t) => t.offsetParent !== null).length,
+    sidebar: getComputedStyle(document.getElementById('sidebar')).display !== 'none',
+  }));
+  check('700px 宽（真手机宽度）才换成抽屉形态',
+    at700.triggers === 0 && at700.sidebar === false,
+    `一级触发器=${at700.triggers} 侧边栏=${at700.sidebar}`);
+  await page.setViewport({ width: 1600, height: 1000 });
+  await sleep(800);
+
+  // 页面设置页：四个区齐、能改登录页顶栏开关
+  await page.goto(`${BASE}/#/appearance`, { waitUntil: 'networkidle2' });
+  await sleep(2400);
+  const appearance = await page.evaluate(() => {
+    const text = (document.getElementById('content')?.textContent || '').replace(/\s+/g, ' ');
+    return {
+      title: document.getElementById('pageTitle')?.textContent || '',
+      sections: ['品牌', '登录页', '外观（本机）', '高级（全站）'].filter((k) => text.includes(k)),
+      hasTopbarToggle: text.includes('隐藏登录页顶栏'),
+      inSideNav: [...document.querySelectorAll('#sideNavList .nav-item')]
+        .some((n) => n.textContent.includes('页面设置')),
+    };
+  });
+  check('「页面设置」页可打开且四个区齐全（品牌 / 登录页 / 外观 / 高级）',
+    appearance.title === '页面设置' && appearance.sections.length === 4 && appearance.hasTopbarToggle,
+    `标题=${appearance.title} 区块=${JSON.stringify(appearance.sections)} 顶栏开关=${appearance.hasTopbarToggle}`);
+  check('「页面设置」出现在系统分组的二级侧边栏里', appearance.inSideNav === true);
+
+  // 每日时间漂移：界面上的输入与三个只读值都要在
+  await page.goto(`${BASE}/#/settings`, { waitUntil: 'networkidle2' });
+  await sleep(2600);
+  const timeCard = await page.evaluate(
+    () => (document.getElementById('content')?.textContent || '').replace(/\s+/g, ' '));
+  check('时间卡片有「每日漂移」设置与累计显示',
+    timeCard.includes('每日漂移') && timeCard.includes('秒/天') && timeCard.includes('已累计')
+      && timeCard.includes('重置累计起点'),
+    timeCard.includes('每日漂移')
+      ? `含每日漂移 / 已累计 / 重置起点`
+      : `未找到，片段=${timeCard.slice(0, 120)}`);
+
+  // 登录页顶栏用 logo 图而不是文字（用户反馈的问题）
+  const loginTop = await page.evaluate(async () => {
+    localStorage.removeItem('token');
+    location.reload();
+    return true;
+  });
+  if (loginTop) {
+    await sleep(2600);
+    const topbarInfo = await page.evaluate(() => {
+      const mark = document.getElementById('loginTopMark');
+      return {
+        exists: !!document.getElementById('loginTopbar'),
+        isImage: !!mark?.querySelector('img'),
+        text: (mark?.textContent || '').trim(),
+      };
+    });
+    check('登录页顶栏用 logo 图（不是文字「CI」）',
+      topbarInfo.exists && topbarInfo.isImage,
+      `顶栏=${topbarInfo.exists} 是图片=${topbarInfo.isImage} 文字="${topbarInfo.text}"`);
+  }
+
   console.log('\n===== 验证结果 =====');
   for (const r of results) console.log(r);
   const failed = results.filter((r) => r.startsWith('FAIL')).length;

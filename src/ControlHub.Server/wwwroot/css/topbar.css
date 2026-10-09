@@ -260,7 +260,7 @@
 
 /* ── 移动端：导航折叠成抽屉 ─────────────────────────────────────────── */
 
-@media (max-width: 900px) {
+@media (max-width: 720px) {
   /* 顶栏放不下分组导航了：只留品牌与「菜单」按钮，导航进抽屉。 */
   .topbar-nav {
     display: none;
@@ -400,7 +400,7 @@
   white-space: nowrap;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 720px) {
   .topbar-titles { display: none; }
 }
 /* ══ 两级导航布局（顶栏一级 · 侧边栏二级）══════════════════════════════
@@ -532,7 +532,7 @@
   display: none !important;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 720px) {
   .sidebar {
     display: none !important;
   }
@@ -540,4 +540,56 @@
   .shell-body {
     display: block;
   }
+}
+/* ══ 中宽屏保险（721px 以上）：导航必须始终可用 ══════════════════════
+   背景：此前 900px 断点会隐藏一级导航、并把侧边栏移出屏幕，
+   导致「窗口一窄，导航就自己没了」。这里在**组件层之后**再声明一次，
+   把中宽屏（721px 以上）的导航钉死为可用状态，避免被任何更早的响应式规则带走。
+
+   顶栏分组导航改为**横向滚动**而不是换行或隐藏：
+   换行会把顶栏撑成两层、破坏玻璃条的整体感；隐藏等于砍掉一半功能。
+   滚动条本身藏掉（桌面端鼠标滚轮/触控板可滚，视觉上更干净）。 */
+@media (min-width: 721px) {
+  .topbar-nav {
+    display: flex !important;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    /* 导航变长时不要挤压右侧操作区 */
+    min-width: 0;
+  }
+
+  .topbar-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sidebar {
+    display: flex !important;
+    position: sticky !important;
+    top: 58px;
+    width: 208px !important;
+    height: calc(100vh - 58px);
+    transform: none !important;
+  }
+}
+/* 折叠按钮的「已折叠」态：折叠是持久化的，按钮必须看得出当前状态，
+   否则用户下次打开会以为导航自己消失了。 */
+.topbar-toggle.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+/* 登录页顶栏隐藏（品牌配置里可关）。
+   用 [hidden] 而不是 display:none 的条件类：hidden 是语义化的，
+   屏幕阅读器也会跳过；同时它必须能盖过上面那条 display:flex。 */
+.login-topbar[hidden] {
+  display: none !important;
+}
+
+/* 顶栏里的 logo 图：用品牌配置的 LogoImage（没有则退回 LogoText）。
+   高度限制住，避免学校上传一张大图把顶栏撑变形。 */
+.login-topbar .brand-mark img,
+.login-topbar .brand-mark svg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }

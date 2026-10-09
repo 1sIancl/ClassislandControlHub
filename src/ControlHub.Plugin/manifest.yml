@@ -3,7 +3,7 @@ name: ClassislandControlHub集控接收端
 description: ClassislandControlHub 集控的客户端接收端，接入集控服务器后自动接收并应用课表、时间表、科目与自定义设置的下发与同步，让教室大屏一键接入统一管理。插件支持管理端远程诊断（命令行、屏幕截图、前台进程、诊断数据包），其中屏幕截图与日志上报可在插件设置「远程协助与隐私」中关闭。
 entranceAssembly: "ControlHub.Plugin.dll"
 url: https://github.com/1sIancl/ClassislandControlHub
-version: 1.3.4.0
+version: 1.3.5.0
 apiVersion: 2.1.0.0
 author: 1sIancl
 # ── 插件市场（PluginIndex）元信息：随插件一起分发的图标与仓库定位 ──

@@ -14,8 +14,12 @@
  * </list>
  */
 
-/** 是否处于「窄屏需要抽屉」的状态。与 topbar.css 的断点保持一致。 */
-const NARROW_QUERY = window.matchMedia('(max-width: 900px)');
+/**
+ * 是否处于「窄屏需要抽屉」的状态。与 topbar.css 的断点保持一致。
+ * <para>720px（不是 900px）：900px 会在「笔记本窗口没开满」「高 DPI 缩放」
+ * 这类常见情况下命中，把导航换成抽屉——用户看到的是「导航自己消失了」。</para>
+ */
+const NARROW_QUERY = window.matchMedia('(max-width: 720px)');
 
 /**
  * 初始化顶栏交互。由 app.js 的 bindShellEvents 调用一次。
@@ -54,8 +58,14 @@ export function initTopbar(handlers = {}) {
         return;
       }
 
-      handlers.setCollapsed?.(!handlers.isCollapsed?.());
+      const next = !handlers.isCollapsed?.();
+      handlers.setCollapsed?.(next);
+      syncToggleState(next);
     });
+
+    // 初始状态：折叠是持久化的（localStorage），但按钮此前**没有反映它**——
+    // 用户上次折叠过、这次打开页面看到导航是空的，会以为「导航自己没了」。
+    syncToggleState(!!handlers.isCollapsed?.());
   }
 
   // 从窄屏拉回宽屏时，抽屉要自动消失——它盖住整屏，留着会让人以为页面坏了。
@@ -64,6 +74,23 @@ export function initTopbar(handlers = {}) {
       document.querySelector('.nav-drawer')?.remove();
     }
   });
+}
+
+/**
+ * 同步折叠按钮的外观与提示语。
+ * <para>按钮必须**看得出当前状态**：折叠是记住的，如果按钮长得一直一样，
+ * 用户下次打开会以为导航坏了；提示语也要写清「点下去会发生什么」。</para>
+ */
+function syncToggleState(collapsed) {
+  const toggle = document.getElementById('collapseBtn');
+  if (!toggle) {
+    return;
+  }
+
+  toggle.classList.toggle('is-active', collapsed);
+  toggle.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
+  toggle.title = collapsed ? '显示侧边导航' : '隐藏侧边导航';
+  toggle.setAttribute('aria-label', toggle.title);
 }
 
 /** 打开 / 关闭移动端抽屉。 */

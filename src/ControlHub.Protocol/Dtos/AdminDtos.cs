@@ -209,6 +209,20 @@ public sealed class BrandingDto
     public string FooterText { get; set; } = string.Empty;
 
     /// <summary>
+    /// 登录页顶栏文案；留空时用 <see cref="SiteName"/>。
+    /// <para>与 <see cref="SiteName"/> 分开：登录页顶栏可以写完整校名，
+    /// 而站内顶栏空间有限、常用简称——同一套系统在不同位置需要的长度往往不一样。</para>
+    /// </summary>
+    public string LoginTopbarTitle { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 是否隐藏登录页顶栏。
+    /// <para>默认显示：第一眼要让人知道「我在登录哪个系统」；
+    /// 但整页嵌入学校门户的场景下，那一行反而多余。</para>
+    /// </summary>
+    public bool LoginTopbarHidden { get; set; }
+
+    /// <summary>
     /// 主题色（<c>#rgb</c> / <c>#rrggbb</c>），留空用默认蓝。
     /// <para>它会覆盖全站的强调色，所以**只接受十六进制**——这个值最终会写进 CSS 变量，
     /// 放任任意字符串就是 CSS 注入。</para>
