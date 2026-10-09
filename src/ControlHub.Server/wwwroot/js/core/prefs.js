@@ -13,7 +13,7 @@
  * 对它们的要求往往不同，同步过去反而是打扰。
  */
 
-import { api, session } from './api.js?v=80';
+import { api, session } from './api.js?v=82';
 
 const PREFIX = 'controlhub.ui.';
 

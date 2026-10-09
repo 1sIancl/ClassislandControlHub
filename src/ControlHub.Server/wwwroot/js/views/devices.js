@@ -4,17 +4,17 @@
  * 并可切换到列表视图查看完整状态明细。注册码管理一并放在本页。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=80';
-import { toastError, errorBlock } from '../core/errors.js?v=80';
+import { api, fetchBlob } from '../core/api.js?v=82';
+import { toastError, errorBlock } from '../core/errors.js?v=82';
 import {
   h, clear, formatDateTime, relativeTime, toast, loadingBlock, skeletonRows,
   modal, confirmDialog, deviceStateBadge, syncBadge,
   emptyState, field, select, copyText, append, undoBar,
-} from '../core/ui.js?v=80';
-import { showContextMenu } from '../core/contextmenu.js?v=80';
-import { getLayout, saveLayout } from '../core/prefs.js?v=80';
-import { auditTimelineSection } from '../core/audit-timeline.js?v=80';
-import { selectionSummary } from '../core/batch-summary.js?v=80';
+} from '../core/ui.js?v=82';
+import { showContextMenu } from '../core/contextmenu.js?v=82';
+import { getLayout, saveLayout } from '../core/prefs.js?v=82';
+import { auditTimelineSection } from '../core/audit-timeline.js?v=82';
+import { selectionSummary } from '../core/batch-summary.js?v=82';
 
 export const meta = {
   title: '设备管理',
@@ -546,6 +546,8 @@ function renderBoardTree() {
 
   return h('div',
     overviewBar(tree),
+    // 批量条：看板视图也要有，否则「选中」是死功能——勾了台设备却发现没地方执行操作。
+    h('div#boardSelectionHost', selectionBar()),
     tree.length === 0
       ? emptyState('folder', '还没有楼栋',
         '按「楼栋 → 楼层 → 教室」组织：先建一栋楼，再往楼里加楼层，最后把教室设备拖进对应楼层。',
@@ -685,17 +687,24 @@ function ungroupedBlock(members) {
   );
 }
 
-/** 一台教室设备。可点击查看详情，可拖拽调整归属。 */
+/**
+ * 一台教室设备。
+ * <para>单击**选中**、双击打开详情、拖拽调整归属。</para>
+ *
+ * <para>为什么不沿用「单击直接开详情」：那样选中状态就没有存在的余地，而右键菜单与批量条
+ * 都要先回答「对谁操作」。选中是批量操作的前提，也是「当前对象」的可见表达。</para>
+ */
 function deviceChip(device) {
   const state = deviceStateKey(device);
   const group = groupOf(device);
+  const picked = selection.has(device.id);
 
-  const chip = h(`div.dchip.st-${state}`, {
+  const chip = h(`div.dchip.st-${state}${picked ? '.selected' : ''}`, {
     draggable: 'true',
     title: `${device.name}\n${STATE_LABEL[state]}`
       + (group ? `\n${group.name}` : '\n未分组')
       + (device.machineName ? `\n${device.machineName}` : '')
-      + '\n单击查看详情，拖拽可调整楼层',
+      + '\n单击选中（可批量操作），双击查看详情，拖拽可调整楼层',
   },
     h('span.dchip-dot'),
     h('span.dchip-name', device.name || device.id.slice(0, 8)),
@@ -703,7 +712,33 @@ function deviceChip(device) {
     state === 'pending' ? h('span.dchip-tag', `v${device.appliedRevision}`) : null,
   );
 
-  chip.addEventListener('click', () => openDeviceDialog(device));
+  // 单击与双击的区分：单击延迟一小段再生效，双击则取消它。
+  //
+  // 延迟取 200ms 是权衡的结果：再长，勾选会明显「跟不上手」；再短，会和系统的
+  // 双击判定（约 200~500ms，因系统设置而异）打架，导致双击时闪一下选中又消失。
+  // 注意这里**不重建整块看板**（那会丢滚动位置），只改这一张卡片 + 刷新批量条。
+  let clickTimer = null;
+  chip.addEventListener('click', () => {
+    if (clickTimer) {
+      return; // 这是双击的第二下，交给 dblclick 处理
+    }
+
+    clickTimer = setTimeout(() => {
+      clickTimer = null;
+      toggleChipSelection(device.id, chip);
+    }, 200);
+  });
+
+  chip.addEventListener('dblclick', () => {
+    clearTimeout(clickTimer);
+    clickTimer = null;
+    // 双击的设备顺手选中：用户点两下说明「就是它」，
+    // 而后面往往接着要发通知 / 下发配置（Finder 也是这个行为）。
+    selection.add(device.id);
+    chip.classList.add('selected');
+    refreshSelectionBar();
+    openDeviceDialog(device);
+  });
 
   chip.addEventListener('dragstart', (e) => {
     draggedDeviceId = device.id;
@@ -719,6 +754,36 @@ function deviceChip(device) {
   });
 
   return chip;
+}
+
+/** 切换一台设备的选中状态（看板视图用）。 */
+function toggleChipSelection(id, chip) {
+  if (selection.has(id)) {
+    selection.delete(id);
+  } else {
+    selection.add(id);
+  }
+
+  chip?.classList.toggle('selected', selection.has(id));
+  refreshSelectionBar();
+}
+
+/**
+ * 局部刷新看板视图的批量条。
+ * <para>不整板重画：选中一台教室就重建整页会让滚动位置跳回顶部，
+ * 而「勾几台 → 再勾几台」恰恰是最需要保持视野连贯的操作。</para>
+ */
+function refreshSelectionBar() {
+  const host = document.getElementById('boardSelectionHost');
+  if (!host) {
+    return;
+  }
+
+  clear(host);
+  const bar = selectionBar();
+  if (bar) {
+    host.appendChild(bar);
+  }
 }
 
 /** 把卡片变成放置目标：拖入设备即改归属。 */
@@ -1061,7 +1126,7 @@ document.addEventListener('contextmenu', (event) => {
   ]);
 });
 
-/** 批量操作条：仅在列表里勾选了设备时出现。 */
+/** 批量操作条：看板与列表两个视图共用，选中设备后出现。 */
 function selectionBar() {
   if (selection.size === 0) {
     return null;

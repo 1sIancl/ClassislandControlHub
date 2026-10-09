@@ -1338,6 +1338,137 @@ function check(name, ok, extra = '') {
     () => getComputedStyle(document.getElementById('sidebar')).display !== 'none');
   check('再次点击展开侧边栏', expanded === true);
 
+  // 24) 单击选中 / 双击打开（方案 3.1：让右键菜单与批量条的「对谁操作」有依据）
+  //
+  // 这里用 **reload** 而不是 goto 来构造前提：`page.goto` 只改 hash，
+  // 而 `view` / `filter` 是模块级变量——前面 23 项断言留下的状态会带进来
+  // （实测踩过：页面显示「看板视图」是激活的，DOM 里却按列表渲染，卡片数为 0）。
+  // reload 会重置模块状态，拿到一个确定的起点。
+  await page.goto(`${BASE}/#/devices`, { waitUntil: 'networkidle2' });
+  await sleep(600);
+  await page.reload({ waitUntil: 'networkidle2' });
+  await sleep(3000);
+
+  const singleClick = await page.evaluate(async () => {
+    // 卡片可能因为「视图残留 / 筛选残留」而不在页面上。
+    // 尤其是状态筛选：上一条断言把设备页预置成了「在线」，而本地假设备从不上线，
+    // 于是看板上 0 张卡片——这不是产品坏了，是断言自己没把前提摆正。
+    const allTab = [...document.querySelectorAll('.status-tab')].find((b) => b.textContent.trim().startsWith('全部'));
+    if (allTab && !allTab.classList.contains('active')) {
+      allTab.click();
+      await new Promise((r) => setTimeout(r, 1400));
+    }
+
+    const viewBtn = [...document.querySelectorAll('.segmented-item')].find((b) => b.textContent.includes('看板'));
+    if (viewBtn && !viewBtn.classList.contains('active')) {
+      viewBtn.click();
+      await new Promise((r) => setTimeout(r, 1600));
+    }
+
+    const chip = document.querySelector('.dchip');
+    if (!chip) {
+      return {
+        ok: false,
+        诊断: {
+          视图按钮: [...document.querySelectorAll('.segmented-item')]
+            .map((b) => b.textContent.trim() + (b.classList.contains('active') ? '*' : '')),
+          卡片数: document.querySelectorAll('.dchip').length,
+          当前筛选: [...document.querySelectorAll('.status-tab')]
+            .filter((b) => b.classList.contains('active')).map((b) => b.textContent.trim()),
+          内容首段: (document.getElementById('content')?.textContent || '').replace(/\s+/g, ' ').slice(0, 80),
+        },
+      };
+    }
+
+    chip.click();
+    // 单击是延迟生效的（与双击区分），等它一下
+    await new Promise((r) => setTimeout(r, 500));
+    // **重新查询**而不是复用上面的 chip 引用：页面有轮询，重绘后旧节点会游离，
+    // 拿它读 classList 永远是 false（会误报成「单击没生效」）。
+    // 顺带这也验证了「重绘后选中态能按 selection 恢复」——那才是真正要保证的行为。
+    const fresh = document.querySelector('.dchip');
+    return {
+      ok: true,
+      selected: !!fresh && fresh.classList.contains('selected'),
+      barVisible: !!document.querySelector('#boardSelectionHost .bulk-bar'),
+      barText: document.querySelector('#boardSelectionHost .bulk-text')?.textContent || '',
+      selectionSize: document.querySelector('#boardSelectionHost .bulk-text')?.textContent || '',
+    };
+  });
+  check('单击教室卡片即选中（看板视图出现批量条）',
+    singleClick.ok && singleClick.selected && singleClick.barVisible,
+    singleClick.ok
+      ? `选中=${singleClick.selected} 批量条=${singleClick.barVisible} 文本=${singleClick.barText}`
+      : `没有卡片：${JSON.stringify(singleClick.诊断)}`);
+
+  // 再点一次取消选中
+  const afterSecond = await page.evaluate(async () => {
+    const chip = document.querySelector('.dchip');
+    if (!chip) {
+      return { selected: null, bar: null };
+    }
+
+    chip.click();
+    await new Promise((r) => setTimeout(r, 500));
+    return {
+      selected: document.querySelector('.dchip')?.classList.contains('selected'),
+      bar: !!document.querySelector('#boardSelectionHost .bulk-bar'),
+    };
+  });
+  check('再次单击取消选中且批量条收起',
+    afterSecond.selected === false && afterSecond.bar === false,
+    `选中=${afterSecond.selected} 批量条=${afterSecond.bar}`);
+
+  // 双击应打开详情（而不是只选中）
+  const dblResult = await page.evaluate(async () => {
+    const chip = document.querySelector('.dchip');
+    if (!chip) {
+      return { modalOpen: false, hasDetail: false, stillSelected: false };
+    }
+
+    chip.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+    await new Promise((r) => setTimeout(r, 1600));
+    const host = document.getElementById('modalHost');
+    const text = host?.textContent || '';
+    return {
+      modalOpen: !!host && host.hidden === false,
+      hasDetail: /设备|状态|版本/.test(text),
+      // 同样重新查询：双击的设备应保持选中（Finder 行为）
+      stillSelected: !!document.querySelector('.dchip.selected'),
+    };
+  });
+  check('双击教室卡片打开详情弹窗（并保持选中）',
+    dblResult.modalOpen && dblResult.hasDetail && dblResult.stillSelected,
+    `弹窗=${dblResult.modalOpen} 有详情=${dblResult.hasDetail} 保持选中=${dblResult.stillSelected}`);
+
+  // 键盘 Enter 的语义必须与双击一致（否则卡片改交互后 Enter 会悄悄变成「选中」）
+  await page.keyboard.press('Escape');
+  await sleep(700);
+  await page.evaluate(() => {
+    document.querySelector('#boardSelectionHost .bulk-bar button.btn-ghost')?.click();
+  });
+  await sleep(1200);
+  await page.keyboard.press('j');
+  await sleep(400);
+  await page.keyboard.press('Enter');
+  await sleep(1600);
+  const enterResult = await page.evaluate(() => {
+    const host = document.getElementById('modalHost');
+    const open = !!host && host.hidden === false;
+    // 只判「有弹窗」不够：页面上可能存在别的弹窗残留，
+    // 那样即使 Enter 什么都没做也会误判通过。要求内容确实是设备详情。
+    const text = open ? (host.textContent || '') : '';
+    return {
+      modalOpen: open,
+      looksLikeDevice: /设备名称|所属|版本|最后心跳|操作历史|待执行指令/.test(text),
+    };
+  });
+  check('键盘 Enter 打开卡片详情（与双击语义一致）',
+    enterResult.modalOpen && enterResult.looksLikeDevice,
+    `弹窗=${enterResult.modalOpen} 内容像设备详情=${enterResult.looksLikeDevice}`);
+  await page.keyboard.press('Escape');
+  await sleep(600);
+
   console.log('\n===== 验证结果 =====');
   for (const r of results) console.log(r);
   const failed = results.filter((r) => r.startsWith('FAIL')).length;

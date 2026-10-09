@@ -9,8 +9,8 @@
  *   - `?` 打开帮助面板：**快捷键必须能被发现**，否则等于没做——侧边栏每个页面也带悬停提示。
  */
 
-import { h, modal, toast } from './ui.js?v=80';
-import { openSearch } from './search.js?v=80';
+import { h, modal, toast } from './ui.js?v=82';
+import { openSearch } from './search.js?v=82';
 
 /**
  * 由 app.js 注入的「当前账号可见的页面清单」。
@@ -234,6 +234,15 @@ function activateNavCursor() {
   const item = navItems()[navCursor];
   if (!item) {
     return false;
+  }
+
+  // 看板卡片（.dchip）要发 **dblclick** 而不是 click：
+  // 卡片的单击语义是「选中」（见 devices.js 的 deviceChip），双击才是「打开详情」。
+  // 早先这里发 click 是正确的，卡片改成交互语义后不跟着改，Enter 就会变成「选中」——
+  // 按键行为悄悄改变，用户只会觉得「Enter 坏了」。
+  if (item.classList.contains('dchip')) {
+    item.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+    return true;
   }
 
   const action = [...item.querySelectorAll('button')]
