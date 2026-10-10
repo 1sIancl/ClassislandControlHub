@@ -16,7 +16,7 @@ public static class HubProtocol
     public static string Version => $"{MajorVersion}.{MinorVersion}";
 
     /// <summary>集控系统产品版本号（三段式语义化版本，形如 <c>1.0.0</c>）。A/B 两端与界面展示共用。</summary>
-    public const string ProductVersion = "1.3.5";
+    public const string ProductVersion = "1.3.6";
 
     /// <summary>HTTP API 根路径。</summary>
     public const string ApiPrefix = "/api/v1";

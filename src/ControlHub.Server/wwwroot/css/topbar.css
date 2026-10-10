@@ -223,19 +223,19 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ── 顶栏搜索：正中 ─────────────────────────────────────────────────
-   用绝对定位居中而不是 flex 平分：分组数量因权限而异，flex 平分时
-   搜索框会跟着左右漂。固定居中让「想搜索时手可以闭着眼去同一个位置」。 */
+/* ── 顶栏搜索：在「导航与右侧操作之间」的剩余空间里居中 ──────────────
+   **不用绝对定位居中**：那样搜索框会浮在导航上面（实测 1600px 与 1280px 下
+   搜索框直接压在分组文字上——导航是 flex:1 铺满，绝对定位的搜索正好落在它中间）。
+   用 auto margin 在剩余空间里居中：分组数量因权限变化时它会跟着挪一点，
+   但**永远不会重叠**。不重叠是硬要求，严格居中只是好看。 */
 .topbar-search {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
   flex: none;
+  margin: 0 auto;
 }
 
-/* 分组导航过长时给搜索让位：左右各留出搜索框的宽度，宁可导航省略也不互相压。 */
+/* 导航按内容宽度占位，不再抢占整行——否则它会一路铺到搜索框下面。 */
 .topbar-nav {
-  max-width: calc(100% - 360px);
+  flex: 0 1 auto;
 }
 
 .topbar-right {
@@ -243,19 +243,6 @@
   align-items: center;
   gap: var(--space-2);
   flex: none;
-}
-
-/* 窄屏：居中搜索退回右侧流式排列（顶栏放不下三段了） */
-@media (max-width: 1100px) {
-  .topbar-search {
-    position: static;
-    transform: none;
-    margin-left: auto;
-  }
-
-  .topbar-nav {
-    max-width: none;
-  }
 }
 
 /* ── 移动端：导航折叠成抽屉 ─────────────────────────────────────────── */
@@ -552,15 +539,20 @@
 @media (min-width: 721px) {
   .topbar-nav {
     display: flex !important;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
-    /* 导航变长时不要挤压右侧操作区 */
     min-width: 0;
+    flex-wrap: nowrap;
+
+    /* ⚠️ 这里**绝对不能**加 overflow（x 或 y 都不行）。
+       分组下拉 .nav-dropdown 是绝对定位在 .nav-group 下方的子元素，
+       父容器一旦 overflow != visible，菜单会被整块裁掉——
+       表现就是「点分组没反应」，而菜单其实已经渲染、只是看不见。
+       （CSS 里 visible 与 auto 也不能混用：一个方向写 auto，另一个方向的
+       visible 会被计算成 auto，照样裁。） */
+    overflow: visible;
   }
 
-  .topbar-nav::-webkit-scrollbar {
-    display: none;
+  .nav-group {
+    flex: none;
   }
 
   .sidebar {
@@ -570,6 +562,41 @@
     width: 208px !important;
     height: calc(100vh - 58px);
     transform: none !important;
+  }
+}
+
+/* 顶栏宽度吃紧时按优先级砍次要元素，宁可少显示也不让导航溢出。
+   顺序：先砍文字提示，再砍次要按钮，最后才动分组导航本身。 */
+@media (max-width: 1240px) {
+  .topbar-conn {
+    display: none;
+  }
+}
+
+@media (max-width: 1080px) {
+  .topbar-ver {
+    display: none;
+  }
+}
+
+@media (max-width: 1000px) {
+  /* 搜索只留图标：它旁边永远有 Ctrl+K，占着「搜索 Ctrl K」这几个字不值得。 */
+  .topbar-search .kbd-hint,
+  .topbar-search {
+    font-size: 0;
+  }
+
+  .topbar-search svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  .topbar-search {
+    padding: var(--space-2);
+  }
+
+  .topbar-brand {
+    padding-right: var(--space-2);
   }
 }
 /* 折叠按钮的「已折叠」态：折叠是持久化的，按钮必须看得出当前状态，

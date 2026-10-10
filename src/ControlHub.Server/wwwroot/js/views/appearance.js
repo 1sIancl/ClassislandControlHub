@@ -13,11 +13,11 @@
  * </list>
  */
 
-import { api } from '../core/api.js?v=84';
-import { h, clear, field, select, loadingBlock, toast } from '../core/ui.js?v=84';
+import { api } from '../core/api.js?v=86';
+import { h, clear, field, select, loadingBlock, toast } from '../core/ui.js?v=86';
 import {
   THEMES, DENSITIES, getTheme, applyTheme, getDensity, setDensity,
-} from '../core/prefs.js?v=84';
+} from '../core/prefs.js?v=86';
 
 export const meta = {
   title: '页面设置',

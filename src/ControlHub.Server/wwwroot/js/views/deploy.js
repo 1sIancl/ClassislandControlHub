@@ -2,12 +2,12 @@
  * 配置下发视图：查看绑定关系、按范围推送，并跟踪客户端同步进度。
  */
 
-import { api, session } from '../core/api.js?v=84';
-import { toastError } from '../core/errors.js?v=84';
+import { api, session } from '../core/api.js?v=86';
+import { toastError } from '../core/errors.js?v=86';
 import {
   h, clear, relativeTime, toast, loadingBlock, modal, field, select,
   emptyState, confirmDialog, deviceStateBadge, syncBadge,
-} from '../core/ui.js?v=84';
+} from '../core/ui.js?v=86';
 
 export const meta = {
   title: '配置下发',

@@ -9,8 +9,8 @@
  *   - `?` 打开帮助面板：**快捷键必须能被发现**，否则等于没做——侧边栏每个页面也带悬停提示。
  */
 
-import { h, modal, toast } from './ui.js?v=84';
-import { openSearch } from './search.js?v=84';
+import { h, modal, toast } from './ui.js?v=86';
+import { openSearch } from './search.js?v=86';
 
 /**
  * 由 app.js 注入的「当前账号可见的页面清单」。

@@ -740,6 +740,28 @@ function check(name, ok, extra = '') {
     dropdown.open === 1 && dropdown.visible && dropdown.items.length > 0,
     `展开数=${dropdown.open} 可见=${dropdown.visible} 项=${JSON.stringify(dropdown.items)}`);
 
+  // 光看 visibility 不够：父容器只要 overflow != visible，绝对定位的菜单
+  // 会被**整块裁掉**——此时 visibility 仍是 visible、菜单也在 DOM 里，
+  // 但用户点分组等于没反应。必须验证「菜单区域内的点真的命中菜单」。
+  const hitTest = await page.evaluate(() => {
+    const dd = document.querySelector('.nav-group.open .nav-dropdown');
+    if (!dd) {
+      return { ok: false, reason: '没找到展开的下拉' };
+    }
+
+    const r = dd.getBoundingClientRect();
+    const mid = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return {
+      ok: r.height > 0 && !!mid && dd.contains(mid),
+      height: Math.round(r.height),
+      hit: mid ? (mid.className || mid.tagName) : '(null)',
+      navOverflow: getComputedStyle(document.querySelector('.topbar-nav')).overflowX,
+    };
+  });
+  check('下拉菜单未被父容器裁切（点得到，不只是 visibility:visible）',
+    hitTest.ok,
+    `高=${hitTest.height} 命中=${hitTest.hit} navOverflowX=${hitTest.navOverflow}`);
+
   // 点外部应收起。必须用**真实鼠标点击**：代码里监听的是 pointerdown，
   // 而 element.click() 只派发 click 事件，不会触发 pointerdown——
   // 那样测出来的是「断言自己写错了」，不是产品行为。
@@ -1557,6 +1579,45 @@ function check(name, ok, extra = '') {
       topbarInfo.exists && topbarInfo.isImage,
       `顶栏=${topbarInfo.exists} 是图片=${topbarInfo.isImage} 文字="${topbarInfo.text}"`);
   }
+
+  // 26) 顶栏不重叠：搜索框曾经因为「绝对定位居中 + 导航 flex:1 铺满」
+  //     直接压在分组文字上（实测 1600 / 1280 宽都在压）。
+  //     这类问题截图才看得出来，所以按宽度逐个量。
+  const overlapAt = async (width) => {
+    await page.setViewport({ width, height: 800 });
+    await sleep(700);
+    return page.evaluate(() => {
+      const rect = (sel) => document.querySelector(sel)?.getBoundingClientRect();
+      const nav = rect('.topbar-nav');
+      const search = rect('#searchBtn');
+      const brand = rect('.topbar-brand');
+      const right = rect('.topbar-right');
+      const tb = document.querySelector('.topbar');
+      const overlaps = (a, b) => !!a && !!b && a.left < b.right - 0.5 && b.left < a.right - 0.5;
+      return {
+        searchOnNav: overlaps(search, nav),
+        searchOnBrand: overlaps(search, brand),
+        searchOnRight: overlaps(search, right),
+        overflow: tb.scrollWidth > tb.clientWidth + 1,
+        triggers: document.querySelectorAll('.nav-trigger').length,
+      };
+    });
+  };
+
+  const wide = await overlapAt(1600);
+  const medium = await overlapAt(1280);
+  const narrow = await overlapAt(900);
+  check('顶栏搜索框不与分组导航 / 品牌 / 右侧操作重叠（1600 / 1280 / 900 三档）',
+    !wide.searchOnNav && !wide.searchOnBrand && !wide.searchOnRight
+      && !medium.searchOnNav && !medium.searchOnBrand && !medium.searchOnRight
+      && !narrow.searchOnNav && !narrow.searchOnBrand && !narrow.searchOnRight,
+    `1600=${JSON.stringify(wide)} 1280=${JSON.stringify(medium)} 900=${JSON.stringify(narrow)}`);
+
+  check('顶栏在各宽度下都不横向溢出',
+    !wide.overflow && !medium.overflow && !narrow.overflow,
+    `溢出: 1600=${wide.overflow} 1280=${medium.overflow} 900=${narrow.overflow}`);
+  await page.setViewport({ width: 1600, height: 1000 });
+  await sleep(700);
 
   console.log('\n===== 验证结果 =====');
   for (const r of results) console.log(r);
