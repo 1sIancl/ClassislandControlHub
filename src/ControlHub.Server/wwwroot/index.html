@@ -11,11 +11,11 @@
   <!-- 样式分三层加载：令牌（tokens）→ 基础样式（app）→ 玻璃皮肤（glass）。
        glass.css **必须排在最后**：它靠同名选择器覆盖 app.css 里的容器外观，
        用的是「后写的规则胜出」，而不是更高的优先级。 -->
-  <link rel="stylesheet" href="css/tokens.css?v=86" />
-  <link rel="stylesheet" href="css/base.css?v=86" />
-  <link rel="stylesheet" href="css/app.css?v=86" />
-  <link rel="stylesheet" href="css/topbar.css?v=86" />
-  <link rel="stylesheet" href="css/glass.css?v=86" />
+  <link rel="stylesheet" href="css/tokens.css?v=90" />
+  <link rel="stylesheet" href="css/base.css?v=90" />
+  <link rel="stylesheet" href="css/app.css?v=90" />
+  <link rel="stylesheet" href="css/topbar.css?v=90" />
+  <link rel="stylesheet" href="css/glass.css?v=90" />
 </head>
 
 <body>
@@ -23,7 +23,8 @@
   <div id="app" class="app-shell" hidden>
     <div class="main">
       <header class="topbar glass-topbar">
-        <!-- 品牌：原在侧边栏，改为顶栏最左（侧边栏已下线） -->
+        <!-- 一级导航在顶栏：品牌 + 四个分组（触发器 + 下拉）。
+             二级导航在顶栏下方的侧边栏（#sidebar），见 css/topbar.css 与 js/app.js 的 renderNav。 -->
         <div class="topbar-brand">
           <div class="brand-mark" id="brandMark">CI</div>
           <div class="brand-text">
@@ -48,10 +49,6 @@
         </button>
         <div class="topbar-right">
           <span class="revision-chip" id="revisionChip" title="当前全局配置版本号">版本 —</span>
-          <div class="user-menu">
-            <button class="btn btn-icon btn-ghost" id="themeBtn" title="切换主题" aria-label="切换主题"></button>
-            <div class="dropdown theme-menu" id="themeDropdown" hidden></div>
-          </div>
           <button class="btn btn-ghost" id="refreshBtn" title="刷新当前页面">刷新</button>
           <div class="user-menu">
             <button class="btn btn-ghost" id="userBtn">
@@ -288,7 +285,7 @@
   <!-- 新手引导浮层 -->
   <div id="tourHost" class="tour-host" hidden></div>
 
-  <script type="module" src="js/app.js?v=86"></script>
+  <script type="module" src="js/app.js?v=90"></script>
 </body>
 
 </html>

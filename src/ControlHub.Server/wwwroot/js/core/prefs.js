@@ -13,7 +13,7 @@
  * 对它们的要求往往不同，同步过去反而是打扰。
  */
 
-import { api, session } from './api.js?v=86';
+import { api, session } from './api.js?v=90';
 
 const PREFIX = 'controlhub.ui.';
 
@@ -278,33 +278,55 @@ export const RADII = [
   { key: 'round', label: '圆润' },
 ];
 
-function hexToRgba(hex, alpha) {
-  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
-  if (!m) return `rgba(30,144,255,${alpha})`;
-  const n = parseInt(m[1], 16);
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
-}
-
 export function getAccent() {
   return store.get('accent', '');
 }
 
+/**
+ * 全站强调色（来自品牌配置，见 app.js 的 applyBranding）。
+ * <para>它与本机偏好是两个来源，**在哪一处决定谁生效只有这里**——
+ * 早先是 app.js 直接写 CSS 变量、而变量又在品牌设置到达后被覆盖，
+ * 结果是「本机颜色改了没反应」（只有没配全站色时才看得出效果）。</para>
+ */
+let brandingAccent = '';
+
+/** 服务端品牌配置到达 / 变更时调用（登录页与站内都会走一遍）。 */
+export function setBrandingAccent(value) {
+  brandingAccent = String(value || '').trim();
+  applyAccent();
+}
+
+/**
+ * 应用强调色：**本机优先，全站作默认值**。
+ *
+ * <para>理由：「全站主题色」的作用是给所有人一个统一底色，而个人在这台电脑上
+ * 想换个颜色，属于和主题明暗、字体同一类的本机偏好——把它强行钉死在全站值上，
+ * 「外观（本机）」里那一项就成了摆设。</para>
+ */
 export function applyAccent() {
-  const accent = getAccent();
+  const accent = getAccent() || brandingAccent;
   const root = document.documentElement;
+
   if (!accent) {
     root.style.removeProperty('--accent');
     root.style.removeProperty('--accent-hover');
     root.style.removeProperty('--accent-active');
     root.style.removeProperty('--accent-soft');
     root.style.removeProperty('--accent-line');
+    root.dataset.accentCustom = '0';
     return;
   }
+
   root.style.setProperty('--accent', accent);
-  root.style.setProperty('--accent-hover', accent);
+  // 一个主色派生其余几档：hover 亮一点、浅底与描边用低透明度，省得让人填四个色值。
+  root.style.setProperty('--accent-hover', `color-mix(in srgb, ${accent} 85%, white)`);
   root.style.setProperty('--accent-active', accent);
-  root.style.setProperty('--accent-soft', hexToRgba(accent, 0.14));
-  root.style.setProperty('--accent-line', hexToRgba(accent, 0.5));
+  root.style.setProperty('--accent-soft', `color-mix(in srgb, ${accent} 14%, transparent)`);
+  root.style.setProperty('--accent-line', `color-mix(in srgb, ${accent} 50%, transparent)`);
+
+  // 记下「主题色是不是自定义的」：几个原本写死蓝紫渐变的元素（主按钮、登录页 Logo 方块）
+  // 只在自定义时改成从 --accent 派生，默认外观保持原样不动。
+  root.dataset.accentCustom = '1';
 }
 
 export function setAccent(value) {

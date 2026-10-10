@@ -239,14 +239,15 @@ table.data thead th {
 }
 
 /* ── ⑦-b 主题色联动（仅当用户配了自定义主题色时生效） ─────────────
-   主按钮与登录页的 Logo 方块原本写死了蓝紫渐变，配上橙色主题后会显得割裂。
+   主按钮与登录按钮原本写死了蓝紫渐变，配上橙色主题后会显得割裂。
    这里改成从 --accent 派生，让「一个主题色」真的管到底。
    用 `[data-accent-custom="1"]` 限定，是为了**默认外观一点不变**
    —— 没配主题色的站点不该因为这次改动看到按钮换样子。 */
 
+/* ⚠️ 品牌 Logo 方块（`.brand-mark`）**刻意不在这个列表里**：它的背景一律透明
+   （见 app.css），强调色是给按钮与选中态用的；染到校徽上会让自带底色的 logo 显脏。 */
 :root[data-accent-custom="1"] .btn-primary,
-:root[data-accent-custom="1"] .login-submit,
-:root[data-accent-custom="1"] .hero-brand .brand-mark.large {
+:root[data-accent-custom="1"] .login-submit {
   background: linear-gradient(
     135deg,
     color-mix(in srgb, var(--accent) 88%, white),
@@ -254,10 +255,6 @@ table.data thead th {
   );
   color: var(--on-accent);
   box-shadow: 0 10px 22px -12px color-mix(in srgb, var(--accent) 75%, transparent);
-}
-
-:root[data-accent-custom="1"] .hero-brand .brand-mark.large {
-  box-shadow: 0 12px 24px -12px color-mix(in srgb, var(--accent) 80%, transparent);
 }
 
 /* ── ⑧ 关掉高光（低配机 / 投影场景） ─────────────────────────────── */

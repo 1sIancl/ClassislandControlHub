@@ -1,6 +1,10 @@
 /* ==========================================================================
-   顶部导航（侧边栏已下线，改为顶栏 + 分组下拉）
+   两级导航：**顶栏（一级分组）+ 侧边栏（二级页面）**
    --------------------------------------------------------------------------
+   · 顶栏横跨全宽，放品牌、一级分组（触发器 + 下拉）、搜索与右侧全局动作；
+   · 顶栏下方左侧是二级侧边栏（当前分组下的页面），右侧是内容区。
+     侧边栏**始终存在**（窄屏除外）——页面标题、连接状态、版本号都挂在它上面。
+
    引入顺序：tokens → base → app → topbar → glass
    （topbar 要在 app 之后：它靠同名选择器覆盖 app.css 里的 .app-shell / .topbar /
    .nav-item 等布局，属于「后写胜出」而不是提高优先级。）
@@ -41,7 +45,7 @@
   align-items: center;
   gap: var(--space-3);
   height: auto;
-  min-height: 58px;
+  min-height: var(--topbar-h);
   padding: var(--space-2) var(--space-4);
   border-bottom: 1px solid var(--border) !important;
 }
@@ -404,10 +408,10 @@
   display: flex !important;
   flex-direction: column;
   position: sticky;
-  top: 58px;
+  top: var(--topbar-h);
   flex: none;
   width: 208px;
-  height: calc(100vh - 58px);
+  height: calc(100vh - var(--topbar-h));
   overflow-y: auto;
   border-right: 1px solid var(--border);
 }
@@ -503,10 +507,17 @@
   font-weight: var(--weight-medium);
 }
 
-/* 只有一个页面的分组不需要二级导航：侧栏里孤零零一项反而像坏了。
-   由 app.js 在只有一项时给 .sidebar 加 .is-single 隐藏它。 */
-.shell-body > .sidebar.is-single {
-  display: none !important;
+/* 侧栏里的 Alt+N 提示推到最右侧（与顶栏下拉同款）。
+   .nav-hint 的通用样式在本文件上方；这里只补「把标题撑开」这一条。 */
+.side-nav .nav-item .nav-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.side-nav .nav-item .nav-icon {
+  display: flex;
+  flex: none;
+  opacity: 0.75;
 }
 
 .content {
@@ -558,23 +569,27 @@
   .sidebar {
     display: flex !important;
     position: sticky !important;
-    top: 58px;
+    top: var(--topbar-h);
     width: 208px !important;
-    height: calc(100vh - 58px);
+    height: calc(100vh - var(--topbar-h));
     transform: none !important;
   }
 }
 
 /* 顶栏宽度吃紧时按优先级砍次要元素，宁可少显示也不让导航溢出。
-   顺序：先砍文字提示，再砍次要按钮，最后才动分组导航本身。 */
+   顺序：先砍文字提示，再砍次要按钮，最后才动分组导航本身。
+   ⚠️ 这里的类名必须是**页面上真实存在**的元素。此前写的是 `.topbar-conn` / `.topbar-ver`，
+   而顶栏里只有 `.revision-chip` / `#refreshBtn`——两条规则全是空转，
+   结果是窗口一窄，「系统」分组直接压在「版本 #207」上面（截图可见）。 */
 @media (max-width: 1240px) {
-  .topbar-conn {
+  /* 品牌副标题（服务器名）：主标题已经说明了「我在哪个系统」。 */
+  .topbar-brand .brand-text span {
     display: none;
   }
 }
 
-@media (max-width: 1080px) {
-  .topbar-ver {
+@media (max-width: 1120px) {
+  .revision-chip {
     display: none;
   }
 }
@@ -597,6 +612,18 @@
 
   .topbar-brand {
     padding-right: var(--space-2);
+  }
+
+  /* 刷新按钮让位给分组导航：切页面本来就会重新拉数据。 */
+  #refreshBtn {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  /* 最后才砍品牌文字：只留 logo 方块，「这是哪个系统」仍能靠它认出来。 */
+  .topbar-brand .brand-text {
+    display: none;
   }
 }
 /* 折叠按钮的「已折叠」态：折叠是持久化的，按钮必须看得出当前状态，

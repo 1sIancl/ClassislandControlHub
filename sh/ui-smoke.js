@@ -14,7 +14,7 @@
  *   node sh/ui-smoke.js
  *   SMOKE_BASE=http://127.0.0.1:29800 SMOKE_BROWSER="C:\\...\\msedge.exe" node sh/ui-smoke.js
  *
- * 覆盖的断言（77 项）：
+ * 覆盖的断言（112 项，分组见文件内的 `// n)` 注释）：
  *   1) 起点归零：清空账号偏好与本机布局缓存 → 仪表盘回到默认布局
  *   2) 「自定义仪表盘」面板能打开，含「统计卡片 + 页面模块」两组、共 10 项
  *   3) 面板里关掉「最近事件」→ 页面立即不再渲染该模块
@@ -32,6 +32,12 @@
  *  15) Esc 关闭搜索面板
  *  16) 每个错误码都有「怎么办」文案（#51）
  *  17) 公共兜底出口的提示同时含「服务端原文 + 怎么办」
+ *  18) 备份与数据库卡（#59 / #62）、加密导出弹窗要求两次口令（#60）
+ *  19) 两级导航：顶栏分组下拉不被裁切、二级侧栏列出当前分组、分组高亮
+ *  20) 「系统设置」拆成四页后各页可打开、旧链接 `#/settings` 兜底到账号与权限
+ *  21) 新手引导的高亮框落在**可见**元素上，并跟着步骤切页（曾指向收起的下拉）
+ *  22) 品牌外链图片真的加载成功（安全响应头的 CSP 曾把它整块拦掉）
+ *  23) 顶栏在 8 档宽度（1600 → 760）下都不重叠、不横向溢出
  *
  * 注意：脚本会改动演示账号的界面偏好（跑完停在「最近事件 / 最近心跳」隐藏的状态），
  *       可在「自定义仪表盘 / 列设置」里勾回来。
@@ -476,8 +482,9 @@ function check(name, ok, extra = '') {
   await page.keyboard.press('Escape');
   await sleep(500);
 
-  // 17) 备份与数据库维护（#59 / #62）：设置页能看到数据库占用与可回收空间，备份弹窗含内容选项
-  await page.goto(`${BASE}/#/settings`, { waitUntil: 'networkidle2' });
+  // 17) 备份与数据库维护（#59 / #62）：系统维护页能看到数据库占用与可回收空间，备份弹窗含内容选项
+  //     （原「系统设置」已拆成四页，备份落在「系统维护」）
+  await page.goto(`${BASE}/#/maintenance`, { waitUntil: 'networkidle2' });
   await sleep(3000);
   const backupUi = await page.evaluate(async () => {
     const { hasPermission } = await import('/js/core/api.js?v=56');
@@ -494,7 +501,7 @@ function check(name, ok, extra = '') {
       head: text.replace(/\s+/g, ' ').slice(0, 200),
     };
   });
-  check('设置页出现「备份与数据库」卡', backupUi.hasCard === true,
+  check('「系统维护」页出现「备份与数据库」卡', backupUi.hasCard === true,
     `canRead=${backupUi.canRead} canWrite=${backupUi.canWrite} 首段=${backupUi.head}`);
   check('显示数据库占用 / 完整性 / 可回收空间',
     backupUi.size && backupUi.integrity && backupUi.reclaim, JSON.stringify(backupUi));
@@ -776,7 +783,7 @@ function check(name, ok, extra = '') {
   const sideNav = await page.evaluate(() => ({
     visible: (() => {
       const s = document.getElementById('sidebar');
-      return !!s && getComputedStyle(s).display !== 'none' && !s.classList.contains('is-single');
+      return !!s && getComputedStyle(s).display !== 'none';
     })(),
     title: document.querySelector('.side-nav-title')?.textContent.trim() || '(无)',
     items: [...document.querySelectorAll('#sideNavList .nav-item')].map((n) => n.textContent.trim()),
@@ -1491,16 +1498,64 @@ function check(name, ok, extra = '') {
   await page.keyboard.press('Escape');
   await sleep(600);
 
+  // 24-b) 多选：Ctrl + A 全选、Shift + 点击选一段（设备页）
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('.bulk-bar button')].find((b) => /取消选择/.test(b.textContent));
+    btn?.click();
+  });
+  await sleep(400);
+  await page.mouse.click(1000, 780);
+  await page.keyboard.down('Control');
+  await page.keyboard.press('a');
+  await page.keyboard.up('Control');
+  await sleep(700);
+  const selAll = await page.evaluate(() => ({
+    chips: document.querySelectorAll('.dchip[data-device-id]').length,
+    picked: document.querySelectorAll('.dchip.selected').length,
+    bar: !!document.querySelector('.bulk-bar'),
+  }));
+  check('Ctrl + A 全选当前筛选结果并弹出批量条',
+    selAll.chips > 0 && selAll.picked === selAll.chips && selAll.bar,
+    JSON.stringify(selAll));
+
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('.bulk-bar button')].find((b) => /取消选择/.test(b.textContent));
+    btn?.click();
+  });
+  await sleep(400);
+  const chipBoxes = await page.evaluate(() => [...document.querySelectorAll('.dchip[data-device-id]')]
+    .slice(0, 4)
+    .map((el) => {
+      const r = el.getBoundingClientRect();
+      return { id: el.dataset.deviceId, x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }));
+  if (chipBoxes.length >= 3) {
+    await page.mouse.click(chipBoxes[0].x, chipBoxes[0].y);
+    await sleep(420);
+    await page.keyboard.down('Shift');
+    await page.mouse.click(chipBoxes[2].x, chipBoxes[2].y);
+    await page.keyboard.up('Shift');
+    await sleep(600);
+    const rangeSel = await page.evaluate(() => [...document.querySelectorAll('.dchip.selected')]
+      .map((el) => el.dataset.deviceId));
+    check('Shift + 点击选中「锚点 → 目标」整段',
+      rangeSel.length === 3 && rangeSel.includes(chipBoxes[0].id) && rangeSel.includes(chipBoxes[2].id),
+      JSON.stringify(rangeSel));
+  } else {
+    check('Shift + 点击选中「锚点 → 目标」整段', false, '设备不足 3 台，跳过');
+  }
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('.bulk-bar button')].find((b) => /取消选择/.test(b.textContent));
+    btn?.click();
+  });
+  await sleep(400);
+
   // 25) 本轮改动：断点修复 / 登录页顶栏 logo / 页面设置页 / 每日时间漂移
   //
   // 断点：900px 宽曾经会隐藏一级导航并把侧边栏推出屏幕（用户反馈的「导航有时自动隐藏」）。
   // 这条断言把那个宽度钉住——以后谁再把断点改回 900，它会立刻失败。
   await page.setViewport({ width: 900, height: 800 });
   await sleep(900);
-  // 必须先跳到「日常」组（含多个页面）再测：
-  // 设备分组只有 1 个页面，`renderSideNav` 会给侧边栏加 `is-single` 并隐藏它
-  // ——那是**设计如此**（侧栏只有孤零零一项看着像坏了），
-  // 在设备页测「侧边栏是否存在」测的其实是另一件事。
   await page.evaluate(() => { window.location.hash = '#/dashboard'; });
   await sleep(2200);
 
@@ -1529,7 +1584,7 @@ function check(name, ok, extra = '') {
   await page.setViewport({ width: 1600, height: 1000 });
   await sleep(800);
 
-  // 页面设置页：四个区齐、能改登录页顶栏开关
+  // 页面设置页：四个区齐、能改登录页顶栏开关、含从顶栏搬来的整套外观项
   await page.goto(`${BASE}/#/appearance`, { waitUntil: 'networkidle2' });
   await sleep(2400);
   const appearance = await page.evaluate(() => {
@@ -1538,17 +1593,175 @@ function check(name, ok, extra = '') {
       title: document.getElementById('pageTitle')?.textContent || '',
       sections: ['品牌', '登录页', '外观（本机）', '高级（全站）'].filter((k) => text.includes(k)),
       hasTopbarToggle: text.includes('隐藏登录页顶栏'),
+      // 从顶栏「外观」下拉整组搬过来的五项
+      lookFields: ['明暗主题', '界面密度', '强调色', '字体', '圆角']
+        .filter((k) => [...document.querySelectorAll('#content .field > span:first-child')]
+          .some((s) => s.textContent.trim() === k)),
+      // 顶栏那套按钮必须真的没了（留着等于功能有两处入口）
+      topbarStillHasThemeBtn: !!document.getElementById('themeBtn')
+        || !!document.getElementById('themeDropdown'),
       inSideNav: [...document.querySelectorAll('#sideNavList .nav-item')]
         .some((n) => n.textContent.includes('页面设置')),
+      // 站内顶栏的品牌方块也要透明（与登录页同一套样式）
+      brandMark: (() => {
+        const el = document.getElementById('brandMark');
+        const cs = el ? getComputedStyle(el) : null;
+        return cs ? { bg: cs.backgroundColor, image: cs.backgroundImage } : null;
+      })(),
     };
   });
   check('「页面设置」页可打开且四个区齐全（品牌 / 登录页 / 外观 / 高级）',
     appearance.title === '页面设置' && appearance.sections.length === 4 && appearance.hasTopbarToggle,
     `标题=${appearance.title} 区块=${JSON.stringify(appearance.sections)} 顶栏开关=${appearance.hasTopbarToggle}`);
   check('「页面设置」出现在系统分组的二级侧边栏里', appearance.inSideNav === true);
+  check('顶栏「切换主题」整组已搬到页面设置（主题 / 密度 / 强调色 / 字体 / 圆角 五项齐全）',
+    appearance.lookFields.length === 5 && !appearance.topbarStillHasThemeBtn,
+    `项=${JSON.stringify(appearance.lookFields)} 顶栏还有主题按钮=${appearance.topbarStillHasThemeBtn}`);
+  check('站内顶栏品牌方块背景透明',
+    !!appearance.brandMark
+      && (appearance.brandMark.bg === 'rgba(0, 0, 0, 0)' || appearance.brandMark.bg === 'transparent')
+      && appearance.brandMark.image === 'none',
+    JSON.stringify(appearance.brandMark));
 
-  // 每日时间漂移：界面上的输入与三个只读值都要在
+  // 27) 系统设置拆成四页 + 二级侧栏的修复（本轮改动）
+  const systemNav = await page.evaluate(() => ({
+    items: [...document.querySelectorAll('#sideNavList .nav-item')].map((n) => n.textContent.trim()),
+    hints: [...document.querySelectorAll('#sideNavList .nav-hint')].map((n) => n.textContent.trim()),
+    title: document.querySelector('.side-nav-title')?.textContent.trim() || '',
+    pageTitle: document.getElementById('pageTitle')?.textContent || '',
+  }));
+  check('二级侧栏列出「系统」组下的 7 个页面',
+    systemNav.items.length === 7 && systemNav.items.some((t) => t.includes('账号与权限'))
+      && systemNav.items.some((t) => t.includes('系统维护')),
+    `组=${systemNav.title} 项=${JSON.stringify(systemNav.items)}`);
+  check('二级侧栏项带 Alt + N 快捷键提示（快捷键帮助里承诺过）',
+    systemNav.hints.length > 0, JSON.stringify(systemNav.hints));
+
+  const splitPages = [
+    ['#/accounts', '账号与权限', '账号安全'],
+    ['#/server', '服务器信息', '管理界面地址'],
+    ['#/integrations', '通知与集成', 'Webhook'],
+    ['#/maintenance', '系统维护', '备份与数据库'],
+  ];
+  for (const [hash, title, keyText] of splitPages) {
+    await page.goto(`${BASE}/${hash}`, { waitUntil: 'networkidle2' });
+    await sleep(2400);
+    const info = await page.evaluate(() => ({
+      title: document.getElementById('pageTitle')?.textContent || '',
+      text: (document.getElementById('content')?.textContent || '').replace(/\s+/g, ' '),
+      active: document.querySelector('#sideNavList .nav-item.active')?.dataset.key || '',
+    }));
+    check(`新页面 ${hash} 可打开（标题=${title}，含「${keyText}」，侧栏高亮）`,
+      info.title === title && info.text.includes(keyText) && info.active === hash.slice(2),
+      `标题=${info.title} 高亮=${info.active} 片段=${info.text.slice(0, 60)}`);
+  }
+
+  // 旧链接兜底：收藏夹里的 #/settings 不能变成 404
   await page.goto(`${BASE}/#/settings`, { waitUntil: 'networkidle2' });
+  await sleep(2400);
+  const legacy = await page.evaluate(() => ({
+    title: document.getElementById('pageTitle')?.textContent || '',
+    hash: location.hash,
+  }));
+  check('旧链接 #/settings 兜底到「账号与权限」（不再 404）',
+    legacy.title === '账号与权限', `标题=${legacy.title} hash=${legacy.hash}`);
+
+  // 「时间偏移」挂在教学配置分组下（它调的是教室大屏的时钟，不是服务器维护）
+  await page.goto(`${BASE}/#/timesync`, { waitUntil: 'networkidle2' });
+  await sleep(2600);
+  const timesync = await page.evaluate(() => ({
+    title: document.getElementById('pageTitle')?.textContent || '',
+    group: document.querySelector('.nav-group.active')?.dataset.group || '(无)',
+    sideTitle: document.querySelector('.side-nav-title')?.textContent.trim() || '',
+    items: [...document.querySelectorAll('#sideNavList .nav-item')].map((n) => n.dataset.key),
+    text: (document.getElementById('content')?.textContent || '').replace(/\s+/g, ' '),
+  }));
+  check('「时间偏移」已移到教学配置分组，且页面能打开',
+    timesync.title === '时间偏移' && timesync.group === '教学配置'
+      && timesync.sideTitle === '教学配置' && timesync.items.includes('timesync')
+      && timesync.text.includes('每日漂移'),
+    `标题=${timesync.title} 分组=${timesync.group} 侧栏项=${JSON.stringify(timesync.items)}`);
+
+  // 27-b) info 类提示的构建路径（曾经整个坏掉，见 core/ui.js 的 toast 注释）
+  const infoToast = await page.evaluate(async () => {
+    const { toast } = await import('/js/core/ui.js?v=90');
+    toast('info', 'E2E info 提示', '这条曾经因为 tag 里多一个点而永远显示不出来', 0);
+    await new Promise((r) => setTimeout(r, 250));
+    const el = [...document.querySelectorAll('#toastHost .toast')]
+      .find((t) => t.textContent.includes('E2E info 提示'));
+    const ok = !!el;
+    el?.remove();
+    return { ok, cls: el?.className || '' };
+  });
+  check('info 类提示能显示（`div.toast.` 那个多出来的点曾让它整条抛异常）',
+    infoToast.ok === true, JSON.stringify(infoToast));
+
+  // 28) 新手引导：高亮框必须落在**真正可见**的元素上，并且会跟着步骤切页
+  //（上一版指向顶栏下拉里的 .nav-item，下拉收起时矩形全 0，看起来就是「引导坏了」）
+  const tourStart = await page.evaluate(async () => {
+    const { startTour } = await import('/js/core/tour.js?v=88');
+    window.__tourSkipped = null;
+    startTour({ onFinish: (skipped) => { window.__tourSkipped = skipped; } });
+    await new Promise((r) => setTimeout(r, 900));
+    const spot = document.querySelector('.tour-spot')?.getBoundingClientRect();
+    const card = document.querySelector('.tour-card')?.getBoundingClientRect();
+    return {
+      visible: document.getElementById('tourHost')?.hidden === false,
+      step: document.querySelector('.tour-step')?.textContent.trim() || '',
+      spot: spot ? { x: Math.round(spot.left), y: Math.round(spot.top), w: Math.round(spot.width), h: Math.round(spot.height) } : null,
+      card: card ? { x: Math.round(card.left), y: Math.round(card.top) } : null,
+      viewport: { w: window.innerWidth, h: window.innerHeight },
+    };
+  });
+  check('引导第一步高亮的是顶栏品牌（尺寸正常，不是 0×0）',
+    tourStart.visible && !!tourStart.spot && tourStart.spot.w > 60 && tourStart.spot.h > 20,
+    JSON.stringify(tourStart.spot));
+  check('引导卡片落在视口内（不再跑到屏幕外）',
+    !!tourStart.card && tourStart.card.x >= 0 && tourStart.card.y >= 0
+      && tourStart.card.x + 340 <= tourStart.viewport.w + 1
+      && tourStart.card.y + 200 <= tourStart.viewport.h + 1,
+    `${JSON.stringify(tourStart.card)} 视口=${JSON.stringify(tourStart.viewport)}`);
+
+  const tourNext = await page.evaluate(async () => {
+    const btn = [...document.querySelectorAll('.tour-card button')]
+      .find((b) => /下一步|开始使用/.test(b.textContent));
+    btn?.click();
+    await new Promise((r) => setTimeout(r, 2200));
+    const spot = document.querySelector('.tour-spot')?.getBoundingClientRect();
+    return {
+      hash: window.location.hash,
+      spot: spot ? { x: Math.round(spot.left), w: Math.round(spot.width) } : null,
+      sideKey: document.querySelector('#sideNavList .nav-item.active')?.dataset.key || '',
+    };
+  });
+  check('点「下一步」会先切到对应页面，再把高亮框移到该页的侧栏项上',
+    tourNext.hash === '#/profiles' && !!tourNext.spot && tourNext.spot.x >= 0
+      && tourNext.spot.x < 300 && tourNext.spot.w > 60,
+    JSON.stringify(tourNext));
+
+  await page.keyboard.press('Escape');
+  await sleep(600);
+  const tourEnded = await page.evaluate(() => ({
+    hidden: document.getElementById('tourHost')?.hidden === true,
+    skipped: window.__tourSkipped,
+  }));
+  check('Esc 结束引导并如实回报「被跳过」', tourEnded.hidden === true && tourEnded.skipped === true,
+    JSON.stringify(tourEnded));
+
+  // 单页分组（设备）也必须留着侧栏：它是页面标题 / 连接状态 / 版本号的容器
+  await page.goto(`${BASE}/#/devices`, { waitUntil: 'networkidle2' });
+  await sleep(2600);
+  const singleGroup = await page.evaluate(() => ({
+    display: getComputedStyle(document.getElementById('sidebar')).display,
+    title: document.getElementById('pageTitle')?.textContent || '',
+    conn: document.getElementById('connState')?.textContent.trim() || '',
+  }));
+  check('「设备」组只有一个页面时侧栏仍在（标题与连接状态不再跟着消失）',
+    singleGroup.display !== 'none' && singleGroup.title === '设备管理' && singleGroup.conn.length > 0,
+    JSON.stringify(singleGroup));
+
+  // 每日时间漂移：界面上的输入与三个只读值都要在（已从「系统维护」搬到「教学配置 → 时间偏移」）
+  await page.goto(`${BASE}/#/timesync`, { waitUntil: 'networkidle2' });
   await sleep(2600);
   const timeCard = await page.evaluate(
     () => (document.getElementById('content')?.textContent || '').replace(/\s+/g, ' '));
@@ -1559,30 +1772,50 @@ function check(name, ok, extra = '') {
       ? `含每日漂移 / 已累计 / 重置起点`
       : `未找到，片段=${timeCard.slice(0, 120)}`);
 
-  // 登录页顶栏用 logo 图而不是文字（用户反馈的问题）
+  // 登录页顶栏用 logo 图而不是文字（用户反馈的问题）。
+  // 这里要连「图真的加载出来了」一起断言：品牌图片是**外链地址**，曾被响应头的
+  // CSP（img-src 只允许 'self' data: blob:）整块拦掉——元素在、图不显示，
+  // 界面还会退回文字「CI」。所以 naturalWidth > 0 才是真正的通过标准。
   const loginTop = await page.evaluate(async () => {
     localStorage.removeItem('token');
     location.reload();
     return true;
   });
   if (loginTop) {
-    await sleep(2600);
+    await sleep(3400);
     const topbarInfo = await page.evaluate(() => {
       const mark = document.getElementById('loginTopMark');
+      const img = mark?.querySelector('img');
+      const cs = mark ? getComputedStyle(mark) : null;
+      const hero = document.getElementById('loginBrandMark');
       return {
         exists: !!document.getElementById('loginTopbar'),
-        isImage: !!mark?.querySelector('img'),
+        isImage: !!img,
+        loaded: !!img && img.naturalWidth > 0,
+        src: img?.getAttribute('src')?.slice(0, 60) || '(无)',
         text: (mark?.textContent || '').trim(),
+        bg: cs?.backgroundColor || '',
+        bgImage: cs?.backgroundImage || '',
+        heroBg: hero ? getComputedStyle(hero).backgroundColor : '',
+        heroImage: hero ? getComputedStyle(hero).backgroundImage : '',
       };
     });
-    check('登录页顶栏用 logo 图（不是文字「CI」）',
-      topbarInfo.exists && topbarInfo.isImage,
-      `顶栏=${topbarInfo.exists} 是图片=${topbarInfo.isImage} 文字="${topbarInfo.text}"`);
+    check('登录页顶栏用 logo 图，且外链图片真的加载成功（CSP 不再拦）',
+      topbarInfo.exists && topbarInfo.isImage && topbarInfo.loaded,
+      `顶栏=${topbarInfo.exists} 是图片=${topbarInfo.isImage} 已加载=${topbarInfo.loaded} `
+        + `src=${topbarInfo.src} 文字="${topbarInfo.text}"`);
+    // 品牌 Logo 方块背景必须透明：叠强调色会让自带底色的校徽显脏（用户明确要求）
+    const seeThrough = (bg, image) => (bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') && image === 'none';
+    check('品牌 Logo 方块背景透明（不叠强调色 / 渐变）',
+      seeThrough(topbarInfo.bg, topbarInfo.bgImage) && seeThrough(topbarInfo.heroBg, topbarInfo.heroImage),
+      `顶栏=${topbarInfo.bg}/${topbarInfo.bgImage} 大logo=${topbarInfo.heroBg}/${topbarInfo.heroImage}`);
   }
 
   // 26) 顶栏不重叠：搜索框曾经因为「绝对定位居中 + 导航 flex:1 铺满」
-  //     直接压在分组文字上（实测 1600 / 1280 宽都在压）。
-  //     这类问题截图才看得出来，所以按宽度逐个量。
+  //     直接压在分组文字上（实测 1600 / 1280 宽都在压）；
+  //     分组触发器本身也曾压到右侧的「版本 #x」上（那条规则写错了类名，等于空转）。
+  //     这类问题截图才看得出来，所以按宽度逐个量——**而且要多量几档**：
+  //     1600 全绿不代表 900 / 800 也绿。
   const overlapAt = async (width) => {
     await page.setViewport({ width, height: 800 });
     await sleep(700);
@@ -1594,28 +1827,32 @@ function check(name, ok, extra = '') {
       const right = rect('.topbar-right');
       const tb = document.querySelector('.topbar');
       const overlaps = (a, b) => !!a && !!b && a.left < b.right - 0.5 && b.left < a.right - 0.5;
+      // 逐个分组触发器与右侧区块比对：`flex: 1` 的导航容器整体矩形可能不相交，
+      // 但里面的最后一个分组会实实在在压上去。
+      const groups = [...document.querySelectorAll('.nav-group')]
+        .filter((g) => g.offsetParent !== null)
+        .map((g) => g.getBoundingClientRect());
       return {
         searchOnNav: overlaps(search, nav),
         searchOnBrand: overlaps(search, brand),
         searchOnRight: overlaps(search, right),
+        groupOnRight: groups.some((g) => overlaps(g, right)),
         overflow: tb.scrollWidth > tb.clientWidth + 1,
-        triggers: document.querySelectorAll('.nav-trigger').length,
+        triggers: groups.length,
       };
     });
   };
 
-  const wide = await overlapAt(1600);
-  const medium = await overlapAt(1280);
-  const narrow = await overlapAt(900);
-  check('顶栏搜索框不与分组导航 / 品牌 / 右侧操作重叠（1600 / 1280 / 900 三档）',
-    !wide.searchOnNav && !wide.searchOnBrand && !wide.searchOnRight
-      && !medium.searchOnNav && !medium.searchOnBrand && !medium.searchOnRight
-      && !narrow.searchOnNav && !narrow.searchOnBrand && !narrow.searchOnRight,
-    `1600=${JSON.stringify(wide)} 1280=${JSON.stringify(medium)} 900=${JSON.stringify(narrow)}`);
+  const widths = [1600, 1440, 1280, 1120, 1000, 900, 800, 760];
+  const byWidth = {};
+  for (const w of widths) byWidth[w] = await overlapAt(w);
 
-  check('顶栏在各宽度下都不横向溢出',
-    !wide.overflow && !medium.overflow && !narrow.overflow,
-    `溢出: 1600=${wide.overflow} 1280=${medium.overflow} 900=${narrow.overflow}`);
+  const clean = (r) => !r.searchOnNav && !r.searchOnBrand && !r.searchOnRight
+    && !r.groupOnRight && !r.overflow;
+  check(`顶栏在 ${widths.join(' / ')} 各宽度下都不重叠、不横向溢出`,
+    widths.every((w) => clean(byWidth[w])),
+    widths.map((w) => `${w}=${JSON.stringify(byWidth[w])}`).join(' '));
+
   await page.setViewport({ width: 1600, height: 1000 });
   await sleep(700);
 

@@ -1,7 +1,7 @@
 /** 轻量 DOM 构建与通用交互组件，无框架依赖。 */
 
 // 只引「错误码 → 怎么办」的纯映射（#51）：本文件是最底层模块，不能反过来依赖 errors.js。
-import { formatErrorText, hasErrorHint } from './error-hints.js?v=86';
+import { formatErrorText, hasErrorHint } from './error-hints.js?v=90';
 
 /**
  * 创建元素。
@@ -14,8 +14,11 @@ export function h(tag, attrs = {}, ...children) {
   const el = document.createElement(name || 'div');
 
   for (const token of classAndId) {
-    if (token.startsWith('.')) el.classList.add(token.slice(1));
-    else if (token.startsWith('#')) el.id = token.slice(1);
+    // `token.length > 1` 不是多余的判断：类名写成 `div.toast.` 这种（末尾多一个点）
+    // 会让 classList.add('') 抛 SyntaxError，而异常发生在**构建阶段**，
+    // 表现是「这个提示/面板整个不出现」——排查时很难想到是 tag 字符串多了个点。
+    if (token.startsWith('.') && token.length > 1) el.classList.add(token.slice(1));
+    else if (token.startsWith('#') && token.length > 1) el.id = token.slice(1);
   }
 
   // 兼容旧写法：第二个参数若非「普通属性对象」（字符串 / Node / 数组），
@@ -198,7 +201,10 @@ export function toast(type, title, body = '', timeout = 3600) {
   const host = document.getElementById('toastHost');
   if (!host) return;
 
-  const el = h(`div.toast.${type === 'info' ? '' : type}`,
+  // `info` 用默认的 .toast 样式（不加修饰类）：原先写成 `div.toast.${type === 'info' ? '' : type}`，
+  // 于是 info 类提示的 tag 是 `div.toast.`——末尾那个点让 classList.add('') 抛异常，
+  // **所有 info 提示都显示不出来**（`/` 找不到搜索框时的提示就是其中一个）。
+  const el = h(`div.toast${type === 'info' ? '' : `.${type}`}`,
     h('div.toast-title', title),
     body ? h('div.toast-body', body) : null,
   );
@@ -473,6 +479,7 @@ const ICON_PATHS = {
   book: 'M19 20.5H6.6A2.6 2.6 0 0 1 4 17.9V6.1A2.6 2.6 0 0 1 6.6 3.5H19zM4 17.9a2.6 2.6 0 0 1 2.6-2.6H19',
   key: 'M8 18.5a4.2 4.2 0 1 1 0-8.4 4.2 4.2 0 0 1 0 8.4M11.3 12.9L20 4.2M16.8 4.2H20v3.2',
   chart: 'M4.5 19.5V9.5M9.8 19.5v-15M15.2 19.5v-6.4M20.5 19.5V7.6M3.5 21h17',
+  user: 'M20 20.5v-1.8a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v1.8M12 11.2a4 4 0 1 0 0-8 4 4 0 0 0 0 8',
 
   // 外观
   menu: 'M3.5 7h17M3.5 12h17M3.5 17h17',
@@ -549,6 +556,36 @@ export function field(label, control, hint) {
     h('span', label),
     control,
     hint ? h('span.hint', hint) : null,
+  );
+}
+
+/**
+ * 「标签 : 值」的信息行（服务器信息 / 账号信息这类只读卡片里到处在用）。
+ *
+ * <para>`value` 允许是**节点**（如「已开启 TOTP」徽标）：节点直接挂上去。
+ * 早先的实现在这里写死了 `String(value)`，于是「两步验证」那一行在浏览器里
+ * 显示成 `[object HTMLSpanElement]`——接口正常、控制台干净，只有肉眼能发现。</para>
+ *
+ * @param {string} label 左侧标签。
+ * @param {any} value 右侧内容（字符串 / 数字 / 节点）。
+ * @param {boolean} [mono] 是否用等宽字体（路径、密钥这类）。
+ */
+export function kvRow(label, value, mono = false) {
+  const box = h('span', {
+    style: {
+      textAlign: 'right',
+      wordBreak: 'break-all',
+      fontFamily: mono ? 'var(--mono)' : 'inherit',
+      fontSize: mono ? '12px' : 'inherit',
+    },
+  });
+
+  if (value instanceof Node) box.appendChild(value);
+  else box.textContent = String(value ?? '—');
+
+  return h('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'baseline' } },
+    h('span', { style: { color: 'var(--text-dim)', flex: 'none' } }, label),
+    box,
   );
 }
 

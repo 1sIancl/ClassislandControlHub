@@ -3,7 +3,7 @@
 给**要自己写脚本 / 对接监控 / 做二次开发**的人看的。完整字段定义见 [`protocol.md`](protocol.md)，
 插件扩展相关见 [`plugin-protocol.md`](plugin-protocol.md)。
 
-> **鉴权方式（推荐）**：用 **API 密钥** ——「系统设置 → API 密钥」或 `POST /admin/api-keys`。
+> **鉴权方式（推荐）**：用 **API 密钥** ——「账号与权限 → API 密钥」或 `POST /admin/api-keys`。
 > 密钥可以**只授予只读权限**、可以设有效期、可以随时撤销，不必为此专门建一个账号。
 > 请求头二选一：`Authorization: ApiKey chk_...` 或 `X-Api-Key: chk_...`。
 > 明文只在创建响应里出现**一次**（服务端只存哈希），丢了就重新签发。

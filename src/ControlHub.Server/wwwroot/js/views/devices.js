@@ -4,17 +4,17 @@
  * 并可切换到列表视图查看完整状态明细。注册码管理一并放在本页。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=86';
-import { toastError, errorBlock } from '../core/errors.js?v=86';
+import { api, fetchBlob } from '../core/api.js?v=90';
+import { toastError, errorBlock } from '../core/errors.js?v=90';
 import {
   h, clear, formatDateTime, relativeTime, toast, loadingBlock, skeletonRows,
   modal, confirmDialog, deviceStateBadge, syncBadge,
   emptyState, field, select, copyText, append, undoBar,
-} from '../core/ui.js?v=86';
-import { showContextMenu } from '../core/contextmenu.js?v=86';
-import { getLayout, saveLayout } from '../core/prefs.js?v=86';
-import { auditTimelineSection } from '../core/audit-timeline.js?v=86';
-import { selectionSummary } from '../core/batch-summary.js?v=86';
+} from '../core/ui.js?v=90';
+import { showContextMenu } from '../core/contextmenu.js?v=90';
+import { getLayout, saveLayout } from '../core/prefs.js?v=90';
+import { auditTimelineSection } from '../core/audit-timeline.js?v=90';
+import { selectionSummary } from '../core/batch-summary.js?v=90';
 
 export const meta = {
   title: '设备管理',
@@ -331,6 +331,8 @@ export async function render(container, params = {}) {
     h('div#deviceBoardHost', renderBoard()),
     renderEnrollCodes(),
   ));
+
+  bindListSelectionShortcuts();
 }
 
 function renderToolbar() {
@@ -701,6 +703,8 @@ function deviceChip(device) {
 
   const chip = h(`div.dchip.st-${state}${picked ? '.selected' : ''}`, {
     draggable: 'true',
+    // 带上 id：右键菜单、Ctrl+A 全选、Shift 范围选择都按它认设备。
+    dataset: { deviceId: device.id },
     title: `${device.name}\n${STATE_LABEL[state]}`
       + (group ? `\n${group.name}` : '\n未分组')
       + (device.machineName ? `\n${device.machineName}` : '')
@@ -718,7 +722,15 @@ function deviceChip(device) {
   // 双击判定（约 200~500ms，因系统设置而异）打架，导致双击时闪一下选中又消失。
   // 注意这里**不重建整块看板**（那会丢滚动位置），只改这一张卡片 + 刷新批量条。
   let clickTimer = null;
-  chip.addEventListener('click', () => {
+  chip.addEventListener('click', (event) => {
+    // Shift + 单击是「从上次点的那台选到这台」：它是明确的一次性手势，
+    // 不必等双击判定，立即生效（否则连点几下时勾选会明显跟不上手）。
+    if (event.shiftKey && selectDeviceRange(device.id)) {
+      clearTimeout(clickTimer);
+      clickTimer = null;
+      return;
+    }
+
     if (clickTimer) {
       return; // 这是双击的第二下，交给 dblclick 处理
     }
@@ -764,8 +776,82 @@ function toggleChipSelection(id, chip) {
     selection.add(id);
   }
 
+  lastPickedId = id;
   chip?.classList.toggle('selected', selection.has(id));
   refreshSelectionBar();
+}
+
+// ────────────────────────── 多选：全选与范围选择 ──────────────────────────
+//
+// 选中集合（`selection`）在本模块里，所以这两个操作也留在这里：
+// 放到 core/shortcuts.js 就只能按 DOM 反查，而「全选」要的恰恰是**当前筛选后的可见集合**
+// （分页 / 筛选 / 切换视图后两者会不一致）。
+
+/** 最近一次点选的设备：Shift + 点击的范围选择以它为锚点。 */
+let lastPickedId = null;
+
+/**
+ * 当前视图里**看得见**的设备 id，按 DOM 顺序。
+ * <para>用 DOM 顺序而不是 `cache.devices`：范围选择要的是「从锚点到这一台之间的那几台」
+ * ——那是眼睛看到的那一段；而缓存里的顺序与可见顺序在筛选、分页、看板/列表切换后并不一致。</para>
+ */
+function visibleDeviceIds() {
+  return [...document.querySelectorAll('.dchip[data-device-id], table.data tbody tr[data-device-id]')]
+    .filter((el) => el.offsetParent !== null)
+    .map((el) => el.dataset.deviceId)
+    .filter(Boolean);
+}
+
+/**
+ * 选中「锚点 → 这一台」之间的全部设备（Shift + 点击）。
+ * <para>与文件管理器一致：区间内的**全部**被选中，而不是只有点到的那一台。
+ * 连勾五台教室时，这是最省事的一个手势。</para>
+ * @returns {boolean} 有没有按范围处理（没有锚点时返回 false，让调用方退回普通点选）
+ */
+function selectDeviceRange(id) {
+  const ids = visibleDeviceIds();
+  const from = ids.indexOf(lastPickedId);
+  const to = ids.indexOf(id);
+  if (from < 0 || to < 0) return false;
+
+  const [lo, hi] = from <= to ? [from, to] : [to, from];
+  for (let i = lo; i <= hi; i += 1) selection.add(ids[i]);
+  repaintAll();
+  return true;
+}
+
+/**
+ * Ctrl / Cmd + A：全选「当前筛选结果」，等价于点表头那个全选复选框。
+ *
+ * <para>为什么要自己接管而不是交给 `core/shortcuts.js`：那里只做「按选择器找元素」，
+ * 而这里要写的是本模块的选中集合。另外**必须挡掉两种场景**——焦点在输入框里
+ * （用户想全选搜索框里的文字）与有弹窗时（在弹窗里全选文本），
+ * 否则这个快捷键会变成「按了没法选文字」的干扰项。</para>
+ */
+function bindListSelectionShortcuts() {
+  if (bindListSelectionShortcuts.bound) return;
+  bindListSelectionShortcuts.bound = true;
+
+  document.addEventListener('keydown', (event) => {
+    if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey) return;
+    if (event.key.toLowerCase() !== 'a') return;
+    // 只在设备页生效：别的页面按 Ctrl+A 应该保持浏览器的默认行为。
+    if (!document.getElementById('deviceBoardHost')) return;
+    if (document.getElementById('modalHost')?.hidden === false) return;
+
+    const tag = event.target?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || event.target?.isContentEditable) return;
+
+    const ids = visibleDeviceIds();
+    if (ids.length === 0) return;
+
+    event.preventDefault();
+    for (const id of ids) selection.add(id);
+    lastPickedId = ids[0];
+    repaintAll();
+    toast('info', `已选中 ${ids.length} 台`,
+      `底部批量条可以下发配置 / 发通知 / 重启；按 Shift + 点击可只选其中一段。`, 4000);
+  });
 }
 
 /**
@@ -1058,12 +1144,20 @@ function renderTable() {
         h('tbody', ...devices.map((d) => {
           const box = h('input', { type: 'checkbox' });
           box.checked = selection.has(d.id);
+          // Shift + 点击行首复选框：选中区间。这里必须拦下默认行为——
+          // 让它先把自己勾上再重绘，会出现「区间选中了、锚点那一台却被取消」的错觉。
+          box.addEventListener('click', (event) => {
+            if (event.shiftKey && selectDeviceRange(d.id)) {
+              event.preventDefault();
+            }
+          });
           box.addEventListener('change', () => {
             if (box.checked) {
               selection.add(d.id);
             } else {
               selection.delete(d.id);
             }
+            lastPickedId = d.id;
             repaintAll();
           });
 

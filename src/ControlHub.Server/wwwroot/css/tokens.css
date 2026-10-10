@@ -46,6 +46,13 @@
   --z-modal: 200;
   --z-toast: 300;
 
+  /* ── 外壳骨架 ──
+     顶栏高度必须是一个**变量**：二级侧边栏用 `top: var(--topbar-h)` 与
+     `height: calc(100vh - var(--topbar-h))` 贴着它排（见 topbar.css）。
+     以前这三处各写一个 58px，改顶栏高度时会漏掉其中一处，
+     表现是侧栏顶部露出或压住内容。 */
+  --topbar-h: 58px;
+
   /* ── 玻璃：三档强度由 `--glass-alpha` 与两个模糊半径决定 ──
      默认是「标准档」，`[data-glass]` 只覆盖这三个值（见文件末尾）。 */
   --glass-blur: 18px;

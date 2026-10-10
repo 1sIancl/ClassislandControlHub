@@ -9,8 +9,8 @@
  *   - `?` 打开帮助面板：**快捷键必须能被发现**，否则等于没做——侧边栏每个页面也带悬停提示。
  */
 
-import { h, modal, toast } from './ui.js?v=86';
-import { openSearch } from './search.js?v=86';
+import { h, modal, toast } from './ui.js?v=90';
+import { openSearch } from './search.js?v=90';
 
 /**
  * 由 app.js 注入的「当前账号可见的页面清单」。
@@ -34,6 +34,7 @@ const SHORTCUTS = [
   { keys: '/', desc: '聚焦本页搜索框（设备管理 / 审计日志）' },
   { keys: 'J / K', desc: '在当前列表里上下移动（设备卡片、设备表格行）' },
   { keys: 'X', desc: '勾选 / 取消勾选当前行（配合底部批量操作条）' },
+  { keys: 'Ctrl + A', desc: '设备列表里全选「当前筛选结果」；按住 Shift 再点某一台可选整段' },
   { keys: 'Enter', desc: '打开当前行（设备详情 / 编辑）' },
   { keys: '?', desc: '打开这份快捷键帮助（Shift + /）' },
   { keys: 'Esc', desc: '关闭弹窗、取消当前操作' },

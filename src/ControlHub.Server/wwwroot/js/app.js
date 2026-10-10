@@ -2,22 +2,20 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=86';
-import { toastError } from './core/errors.js?v=86';
-import { h, clear, toast, icon } from './core/ui.js?v=86';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=90';
+import { toastError } from './core/errors.js?v=90';
+import { h, clear, toast, icon } from './core/ui.js?v=90';
 import {
-  initTheme, getTheme, applyTheme, THEMES,
+  initTheme,
   getSidebarCollapsed, setSidebarCollapsed,
-  getDensity, setDensity, applyDensity, DENSITIES,
-  applyAppearance, getAccent, setAccent, ACCENTS,
-  getFont, setFont, FONTS,
-  getRadius, setRadius, RADII,
+  applyDensity,
+  applyAppearance, setBrandingAccent,
   applyRemotePrefs, applySchedScale,
-} from './core/prefs.js?v=86';
-import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=86';
-import { initGlassHighlight } from './core/glass.js?v=86';
-import { initTopbar } from './topbar.js?v=86';
-import { openSearch } from './core/search.js?v=86';
+} from './core/prefs.js?v=90';
+import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=90';
+import { initGlassHighlight } from './core/glass.js?v=90';
+import { initTopbar } from './topbar.js?v=90';
+import { openSearch } from './core/search.js?v=90';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -72,6 +70,9 @@ const NAV = [
     items: [
       { key: 'profiles', label: '配置档案', icon: 'profiles', hash: '#/profiles', perm: 'profiles.read' },
       { key: 'reminders', label: '定时提醒', icon: 'bell', hash: '#/reminders', perm: 'reminders.read' },
+      // 授时偏移调的是教室大屏的时钟，属于教学场景（原来挂在「系统维护」下，
+      // 找它得先经过服务器维护，不合理）。接口权限仍是 settings.read。
+      { key: 'timesync', label: '时间偏移', icon: 'clock', hash: '#/timesync', perm: 'settings.read' },
     ],
   },
   {
@@ -86,7 +87,12 @@ const NAV = [
       { key: 'reports', label: '报表', icon: 'clock', hash: '#/reports', perm: 'audit.read' },
       { key: 'audit', label: '审计日志', icon: 'list', hash: '#/audit', perm: 'audit.read' },
       { key: 'appearance', label: '页面设置', icon: 'auto', hash: '#/appearance', perm: ['settings.read', 'settings.write'] },
-      { key: 'settings', label: '系统设置', icon: 'gear', hash: '#/settings', perm: ['settings.read', 'accounts.read'] },
+      // 原来的「系统设置」一页十四张卡，管理员每找一个开关都要滚很久；
+      // 拆成四页之后每一页只讲一件事（账号 / 服务器 / 维护 / 集成）。
+      { key: 'accounts', label: '账号与权限', icon: 'user', hash: '#/accounts', perm: ['accounts.read', 'settings.read'] },
+      { key: 'server', label: '服务器信息', icon: 'database', hash: '#/server', perm: 'settings.read' },
+      { key: 'integrations', label: '通知与集成', icon: 'link', hash: '#/integrations', perm: 'settings.read' },
+      { key: 'maintenance', label: '系统维护', icon: 'gear', hash: '#/maintenance', perm: ['settings.read', 'backup.read'] },
     ],
   },
 ];
@@ -99,23 +105,31 @@ const NAV = [
 const ROUTE_ALIASES = {
   // 「分组管理」早就并入了设备管理。
   groups: 'devices',
+  // 「系统设置」已拆成四页：旧地址落到最常用的那一页（账号与权限），
+  // 而不是给一个 404 —— 收藏夹里那条链接多半就是冲着改账号去的。
+  settings: 'accounts',
 };
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=86'),
-  devices: () => import('./views/devices.js?v=86'),
+  dashboard: () => import('./views/dashboard.js?v=90'),
+  devices: () => import('./views/devices.js?v=90'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=86'),
-  profiles: () => import('./views/profiles.js?v=86'),
-  profileEditor: () => import('./views/profileEditor.js?v=86'),
-  deploy: () => import('./views/deploy.js?v=86'),
-  remote: () => import('./views/remote.js?v=86'),
-  reminders: () => import('./views/reminders.js?v=86'),
-  audit: () => import('./views/audit.js?v=86'),
-  reports: () => import('./views/reports.js?v=86'),
-  appearance: () => import('./views/appearance.js?v=86'),
-  settings: () => import('./views/settings.js?v=86'),
+  groups: () => import('./views/devices.js?v=90'),
+  profiles: () => import('./views/profiles.js?v=90'),
+  profileEditor: () => import('./views/profileEditor.js?v=90'),
+  deploy: () => import('./views/deploy.js?v=90'),
+  remote: () => import('./views/remote.js?v=90'),
+  reminders: () => import('./views/reminders.js?v=90'),
+  audit: () => import('./views/audit.js?v=90'),
+  reports: () => import('./views/reports.js?v=90'),
+  appearance: () => import('./views/appearance.js?v=90'),
+  // 「系统设置」拆成四页（原 settings.js 已按此拆分，见各文件头部说明）。
+  accounts: () => import('./views/accounts.js?v=90'),
+  server: () => import('./views/server.js?v=90'),
+  integrations: () => import('./views/integrations.js?v=90'),
+  maintenance: () => import('./views/maintenance.js?v=90'),
+  timesync: () => import('./views/timesync.js?v=90'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -133,7 +147,15 @@ const ROUTE_PERMS = {
   // 页面设置改的是全站品牌 / 登录页 / 外观：读要 settings.read，
   // 保存走 /admin/branding 时会再校验 settings.write。
   appearance: ['settings.read', 'settings.write'],
-  settings: ['settings.read', 'accounts.read'],
+  // 拆出来的四页各自的最小权限：与导航里的 perm 保持一致，
+  // 否则会出现「导航里有、直接敲地址却说没权限」这种自相矛盾。
+  accounts: ['accounts.read', 'settings.read'],
+  server: 'settings.read',
+  integrations: 'settings.read',
+  // 系统维护页里有备份卡，而备份权限独立于系统设置（backup.read）。
+  maintenance: ['settings.read', 'backup.read'],
+  // 授时接口要 settings.read（服务端 /admin/time-offset 的校验不随导航走）。
+  timesync: 'settings.read',
 };
 
 /** 运行状态。 */
@@ -278,22 +300,10 @@ function applyBranding(info) {
     footer.hidden = !branding.footerText;
   }
 
-  // ── 主题色：连带派生 hover / 浅底 / 描边，省得让人填四个色值 ──────────
-  if (branding.accentColor) {
-    root.style.setProperty('--accent', branding.accentColor);
-    // color-mix 让「一个主色」就够用：hover 亮一点、浅底与描边用低透明度。
-    root.style.setProperty('--accent-hover', `color-mix(in srgb, ${branding.accentColor} 85%, white)`);
-    root.style.setProperty('--accent-soft', `color-mix(in srgb, ${branding.accentColor} 14%, transparent)`);
-    root.style.setProperty('--accent-line', `color-mix(in srgb, ${branding.accentColor} 50%, transparent)`);
-  } else {
-    for (const key of ['--accent', '--accent-hover', '--accent-soft', '--accent-line']) {
-      root.style.removeProperty(key);
-    }
-  }
-
-  // 记下「主题色是不是自定义的」：几个原本写死蓝紫渐变的元素（主按钮、登录页 Logo 方块）
-  // 只在自定义时改成从 --accent 派生，默认外观保持原样不动。
-  root.dataset.accentCustom = branding.accentColor ? '1' : '0';
+  // ── 主题色：全站值交给 prefs 统一处理 ─────────────────────────────
+  // 强调色有「全站（这里）」「本机（页面设置 → 外观）」两个来源，
+  // 谁生效只在 prefs.applyAccent 里判断一次，这边只负责把全站值送过去。
+  setBrandingAccent(branding.accentColor);
 
   // ── 玻璃强度 / 高光 / 登录页布局：加 data 属性，让 CSS 去响应 ─────────
   root.dataset.glass = branding.glassLevel || 'standard';
@@ -484,7 +494,7 @@ async function completeSignIn(result) {
   await showApp();
 
   if (session.me.mustChangePassword) {
-    toast('warn', '请修改初始密码', '当前账号仍在使用初始密码，建议立即在「系统设置」中修改。', 8000);
+    toast('warn', '请修改初始密码', '当前账号仍在使用初始密码，建议立即在「账号与权限」中修改。', 8000);
   }
 
   // 密码到期提醒（#28）：服务端在**登录应答**里直接给出可读提示（临近到期 / 已过期），
@@ -652,7 +662,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=86');
+    const { startTour } = await import('./core/tour.js?v=90');
     startTour({
       onFinish: async (skipped) => {
         try {
@@ -660,7 +670,7 @@ async function showApp() {
           session.me.onboardingDone = true;
         } catch { /* 记录失败也无妨，下次登录会再放一次 */ }
         if (!skipped) {
-          toast('ok', '引导已完成', '之后可以在「系统设置」里重新观看。');
+          toast('ok', '引导已完成', '之后可以在「账号与权限」里重新观看。');
         }
       },
     });
@@ -683,7 +693,8 @@ function renderNav() {
   clear(nav);
 
   // 快捷键序号：只给「有权限、真的出现在导航里」的页面编号，与 Alt + 数字一一对应（#46）。
-  let shortcutIndex = 0;
+  // 序号统一由 pageHintMap() 算，顶栏下拉 / 二级侧栏 / 命令面板共用一份。
+  const hints = pageHintMap();
 
   for (const group of NAV) {
     // 没有权限的页面直接不出现；整组都没权限时连这个分组都不出现。
@@ -692,8 +703,7 @@ function renderNav() {
 
     const dropdown = h('div.nav-dropdown');
     for (const item of items) {
-      shortcutIndex++;
-      const hint = shortcutIndex <= 9 ? shortcutHint(shortcutIndex) : '';
+      const hint = hints.get(item.key) || '';
       const iconEl = h('span.nav-icon');
       iconEl.appendChild(icon(item.icon, 16));
       dropdown.appendChild(h('button.nav-item', {
@@ -743,45 +753,42 @@ function renderNav() {
  * 「在这个场景里还能去哪」，而不是把顶栏再抄一遍。全列出来等于两个导航做同一件事，
  * 用户还得判断该看哪个。</para>
  *
- * <para>分组里**只有一个页面时隐藏侧边栏**：这时候它只会显示孤零零一项，
- * 看着像加载失败。隐藏掉，内容区就全宽。</para>
- *
- * <para>页面模块可以通过导出 `renderSidebar(container)` 接管这里的内容
- * （比如设备页想放楼栋/楼层筛选树），没导出就用默认的页面列表。</para>
+ * <para>侧边栏**始终渲染**（窄屏除外）。早先「分组里只有一个页面就把整条侧栏
+ * 隐藏」的做法有两个后果：内容区宽度随页面跳变（设备管理页会突然变宽），
+ * 以及页面标题、连接状态、版本号**跟着一起消失**——它们是环境信息，
+ * 不该因为「这一组只有一个页面」就看不到。</para>
  */
 function renderSideNav() {
   const host = document.getElementById('sideNavList');
-  const sidebar = document.getElementById('sidebar');
-  if (!host || !sidebar) return;
+  if (!host) return;
 
   clear(host);
 
-  // 注意用 runtime.currentKey 而不是「顶栏当前展开的分组」：通过旧链接别名
-  // 或命令面板直接跳页时，展开的组和当前页可能不是一个。
-  const group = NAV.find((g) => g.items.some((i) => i.key === runtime.currentKey));
+  // 注意用 activeNavKey() 而不是「顶栏当前展开的分组」：通过旧链接别名、
+  // 命令面板或档案编辑器这类子页面进来时，展开的组和当前页可能不是一个。
+  const group = NAV.find((g) => g.items.some((i) => i.key === activeNavKey()));
   const list = (group?.items || []).filter((item) => can(item.perm));
+  const hints = pageHintMap();
 
-  if (list.length <= 1) {
-    sidebar.classList.add('is-single');
-    return;
-  }
-
-  sidebar.classList.remove('is-single');
-  host.appendChild(h('div.side-nav-title', group.label));
+  host.appendChild(h('div.side-nav-title', group ? group.label : '导航'));
 
   for (const item of list) {
+    const hint = hints.get(item.key) || '';
     const iconEl = h('span.nav-icon');
     iconEl.appendChild(icon(item.icon, 16));
     host.appendChild(h('button.nav-item', {
       type: 'button',
-      title: item.label,
-      dataset: { key: item.key, group: group.label, hash: item.hash },
+      // 悬停提示带上 Alt + 数字：快捷键帮助里写着「侧边栏每个页面也带快捷键提示」，
+      // 而之前只有顶栏下拉带、侧边栏没有——那句话是空头承诺。
+      title: hint ? `${item.label}（${hint}）` : item.label,
+      dataset: { key: item.key, group: group ? group.label : '', hash: item.hash },
       onClick: () => {
         window.location.hash = item.hash;
       },
     },
       iconEl,
       h('span.nav-label', item.label),
+      hint ? h('span.nav-hint', hint) : null,
     ));
   }
 
@@ -790,22 +797,29 @@ function renderSideNav() {
 
 /** ── 以下是二级导航（侧边栏）相关 ───────────────────────────────── */
 
-/** 二级侧边栏的高亮跟当前页走。 */
-function syncSideNavActive() {
-  document.querySelectorAll('#sideNavList .nav-item').forEach((el) => {
-    el.classList.toggle('active', el.dataset.key === runtime.currentKey);
-  });
+/**
+ * 不在导航里的**子页面**用它所属的导航页来高亮。
+ *
+ * <para>典型是配置档案编辑器 `#/profiles/{id}`：它的路由 key 是 `profileEditor`，
+ * 而导航里只有 `profiles`。此前这里直接用 `runtime.currentKey` 去找所属分组，
+ * 编辑档案时**顶栏分组与侧栏项会全部失去高亮**——用户以为导航坏了。</para>
+ */
+const PARENT_NAV_KEY = {
+  profileEditor: 'profiles',
+};
+
+/** 当前页在导航里的「身份」：子页面归到它所属的导航页。 */
+function activeNavKey() {
+  return PARENT_NAV_KEY[runtime.currentKey] || runtime.currentKey;
 }
 
 /**
- * 供命令面板使用的页面清单（已按权限过滤）。
- * <para>命令面板空闲时要列出「所有有权限的页面」，不能自己再过滤一遍 ——
- * 过滤规则只应该有一处（renderNav / can()），两处各写一份迟早会不一致。</para>
+ * 按导航顺序给「有权限的页面」编号（跨分组连续，Alt + 数字按它跳页）。
+ *
+ * <para>顶栏下拉、二级侧栏、命令面板**共用这一份**编号。三处各编一次的话，
+ * 只要有一处漏改就会「提示写着 Alt+7、按下去跳到别处」。</para>
  */
-function navPagesForPalette() {
-  // 全局序号与 renderNav 的 shortcutIndex 同一套编法：跨分组连续 1..9。
-  // 顶栏下拉和侧边栏**都**渲染 .nav-item，按 DOM 查会拿两份、序号错位——
-  // 所以 Alt+N 与命令面板都必须走这份清单，而不是 visibleNavItems()。
+function indexedPages() {
   let index = 0;
   return NAV.flatMap((group) => group.items
     .filter((item) => can(item.perm))
@@ -816,10 +830,42 @@ function navPagesForPalette() {
         label: item.label,
         hash: item.hash,
         groupLabel: group.label,
-        keys: index <= 9 ? [`Alt ${index}`] : [],
         index,
+        // 只有 1..9 有对应按键；第 10 个之后不显示提示（写了也按不出来）。
+        hint: index <= 9 ? shortcutHint(index) : '',
       };
     }));
+}
+
+/** key → 「Alt + N」提示语，供顶栏下拉与侧栏共用。 */
+function pageHintMap() {
+  return new Map(indexedPages().map((page) => [page.key, page.hint]));
+}
+
+/** 二级侧边栏的高亮跟当前页走。 */
+function syncSideNavActive() {
+  const current = activeNavKey();
+  document.querySelectorAll('#sideNavList .nav-item').forEach((el) => {
+    el.classList.toggle('active', el.dataset.key === current);
+  });
+}
+
+/**
+ * 供命令面板使用的页面清单（已按权限过滤）。
+ * <para>命令面板空闲时要列出「所有有权限的页面」，不能自己再过滤一遍 ——
+ * 过滤规则只应该有一处（NAV + can()），两处各写一份迟早会不一致。</para>
+ */
+function navPagesForPalette() {
+  // 顶栏下拉和侧边栏**都**渲染 .nav-item，按 DOM 查会拿两份、序号错位——
+  // 所以 Alt+N 与命令面板都必须走这份清单，而不是 visibleNavItems()。
+  return indexedPages().map((page) => ({
+    key: page.key,
+    label: page.label,
+    hash: page.hash,
+    groupLabel: page.groupLabel,
+    keys: page.hint ? [page.hint] : [],
+    index: page.index,
+  }));
 }
 
 /** 收起所有分组下拉（点外部、Esc、选中页面后都会用到）。 */
@@ -845,9 +891,9 @@ function toggleNavDropdown(group) {
  * 这是导航改造最容易出的 bug，因为它「第一次打开时是对的」。</para>
  */
 function syncActiveNavGroup() {
-  // 用 runtime.currentKey 而不是从 DOM 反查：它是路由的唯一真相来源，
-  // 页面还没渲染完时 DOM 上可能还没有对应的 .nav-item。
-  const current = runtime.currentKey;
+  // 用 runtime.currentKey（经 activeNavKey 归到导航页）而不是从 DOM 反查：
+  // 它是路由的唯一真相来源，页面还没渲染完时 DOM 上可能还没有对应的 .nav-item。
+  const current = activeNavKey();
   if (!current) return;
 
   const groupLabel = NAV.find((g) => g.items.some((i) => i.key === current))?.label;
@@ -886,33 +932,9 @@ function bindShellEvents() {
     document.getElementById('app')?.classList.add('nav-collapsed');
   }
 
-  // 主题 + 密度（外观）下拉
-  const themeBtn = document.getElementById('themeBtn');
-  const themeDropdown = document.getElementById('themeDropdown');
-  renderAppearanceMenu();
-  themeBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    themeDropdown.hidden = !themeDropdown.hidden;
-  });
-  themeDropdown.addEventListener('click', (e) => {
-    const btn = e.target.closest('button');
-    if (!btn) return;
-    const { action, value } = btn.dataset;
-    if (action === 'theme') {
-      applyTheme(value);
-    } else if (action === 'density') {
-      setDensity(value);
-    } else if (action === 'accent') {
-      setAccent(value);
-    } else if (action === 'font') {
-      setFont(value);
-    } else if (action === 'radius') {
-      setRadius(value);
-    }
-    renderAppearanceMenu();
-    themeDropdown.hidden = true;
-  });
-
+  // 主题 / 密度 / 字体 / 圆角 / 强调色**不在这里**：整套外观设置已挪到
+  // 「系统 → 页面设置」（views/appearance.js）。顶栏只留全局动作（搜索、刷新、账号），
+  // 这也顺带把顶栏右侧腾空，窄窗口不再互相挤压。
   const userBtn = document.getElementById('userBtn');
   const dropdown = document.getElementById('userDropdown');
   userBtn.addEventListener('click', (e) => {
@@ -922,7 +944,6 @@ function bindShellEvents() {
 
   document.addEventListener('click', () => {
     dropdown.hidden = true;
-    themeDropdown.hidden = true;
   });
 
   dropdown.addEventListener('click', (e) => {
@@ -935,58 +956,11 @@ function bindShellEvents() {
       stopPolling();
       showLogin('已退出登录。');
     } else if (action === 'change-password') {
-      window.location.hash = '#/settings';
+      window.location.hash = '#/accounts';
     }
   });
 
   window.addEventListener('hashchange', () => route());
-}
-
-/** 渲染「外观」下拉：主题、强调色、字体、圆角、密度。 */
-function renderAppearanceMenu() {
-  const dropdown = document.getElementById('themeDropdown');
-  const themeBtn = document.getElementById('themeBtn');
-
-  clear(dropdown);
-  clear(themeBtn);
-  themeBtn.appendChild(icon(document.documentElement.dataset.theme === 'light' ? 'sun' : 'moon', 16));
-
-  const addItem = (label, active, dataset, marker) => dropdown.appendChild(h('button', { dataset },
-    h('span.menu-marker', marker),
-    h('span', label),
-    active ? h('span.menu-check', icon('check', 13)) : null,
-  ));
-
-  const addGroup = (title) => {
-    dropdown.appendChild(h('div.menu-sep'));
-    dropdown.appendChild(h('div.dropdown-section', title));
-  };
-
-  dropdown.appendChild(h('div.dropdown-section', '主题'));
-  for (const t of THEMES) {
-    addItem(t.label, getTheme() === t.key, { action: 'theme', value: t.key }, icon(t.icon, 15));
-  }
-
-  addGroup('强调色');
-  for (const a of ACCENTS) {
-    addItem(a.label, getAccent() === a.value, { action: 'accent', value: a.value },
-      h('span.accent-dot', { style: { background: a.value } }));
-  }
-
-  addGroup('字体');
-  for (const f of FONTS) {
-    addItem(f.label, getFont() === f.value, { action: 'font', value: f.value }, 'A');
-  }
-
-  addGroup('圆角');
-  for (const r of RADII) {
-    addItem(r.label, getRadius() === r.key, { action: 'radius', value: r.key }, icon('square', 14));
-  }
-
-  addGroup('密度');
-  for (const d of DENSITIES) {
-    addItem(d.label, getDensity() === d.key, { action: 'density', value: d.key }, icon('rows', 14));
-  }
 }
 
 // ────────────────────────────── 路由 ──────────────────────────────
@@ -1014,8 +988,11 @@ async function route() {
   const { key, module, params } = parseHash();
   runtime.currentKey = key;
 
+  // 高亮用 activeNavKey()：档案编辑器（#/profiles/{id}）这类子页面要归到
+  // 它所属的导航页上，否则进编辑器之后导航会整块失去高亮。
+  const activeKey = activeNavKey();
   for (const button of document.querySelectorAll('.nav-item')) {
-    button.classList.toggle('active', button.dataset.key === key);
+    button.classList.toggle('active', button.dataset.key === activeKey);
   }
 
   // 分组高亮跟着一起换（顶栏改造后新增）：上面那句只管下拉里的页面项，
@@ -1037,7 +1014,7 @@ async function route() {
         h('span.notice-icon', '!'),
         h('div',
           h('strong', '当前账号没有访问该页面的权限'),
-          h('div', `请联系超级管理员在「系统设置 → 账号管理」中为你的账号勾选相应权限。`)),
+          h('div', `请联系超级管理员在「账号与权限」中为你的账号勾选相应权限。`)),
       ),
     ));
     return;

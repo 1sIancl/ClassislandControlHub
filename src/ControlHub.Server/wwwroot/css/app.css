@@ -197,8 +197,12 @@ code {
   width: 34px;
   height: 34px;
   border-radius: 8px;
-  background: var(--accent);
-  color: var(--on-accent);
+  /* 背景**透明**：品牌标识只放 logo 图（或没有图时的两个字），
+     不再叠一层强调色方块。叠色会让自带底色 / 透明底 / 白色描边的校徽
+     看起来「糊在一块色块上」，而强调色是给按钮和选中态用的，不该染到校徽。
+     文字态用常规文字色——以前是白字（配强调色底），底色没了白字就看不见了。 */
+  background: transparent;
+  color: var(--text);
   font-weight: 600;
   font-size: 13.5px;
   display: grid;
@@ -998,8 +1002,10 @@ input[type="checkbox"] {
   height: 54px;
   font-size: 20px;
   border-radius: 15px;
-  background: var(--login-grad);
-  box-shadow: 0 12px 24px -12px var(--login-glow);
+  /* 同上：透明底、不投影。登录页的 Logo 常常是带底色的校徽图片，
+     再叠渐变底 + 光晕会显得脏。 */
+  background: transparent;
+  box-shadow: none;
   overflow: hidden;
 }
 .hero-brand-text {
@@ -1500,20 +1506,6 @@ input[type="checkbox"] {
   height: 1px;
   background: var(--border);
   margin: 5px 4px;
-}
-.dropdown .menu-marker {
-  width: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  opacity: 0.85;
-}
-.dropdown .menu-check {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  color: var(--accent);
 }
 
 /* ────────────────────────── Toast ────────────────────────── */
@@ -2586,24 +2578,9 @@ input.pcell-name:focus {
    自定义功能（可配置主题 / 布局 / 模块 / 字段）
    ========================================================================== */
 
-/* 外观下拉 */
-.theme-menu {
-  min-width: 200px;
-}
-.dropdown-section {
-  font-size: 11px;
-  color: var(--text-faint);
-  padding: 7px 11px 3px;
-  letter-spacing: 0.4px;
-  pointer-events: none;
-}
-.accent-dot {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  flex: none;
-  box-shadow: 0 0 0 1px var(--glass-border);
-}
+/* 说明：顶栏原来的「外观」下拉（.theme-menu / .dropdown-section / .accent-dot /
+   .menu-marker / .menu-check）已随功能搬到「页面设置」而删除，
+   对应的样式也一并清掉——留着会让人以为界面上还有那个菜单。 */
 
 /* 配置面板（模块 / 列，统一样式） */
 .config-section + .config-section {

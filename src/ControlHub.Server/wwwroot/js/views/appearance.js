@@ -8,16 +8,23 @@
  * <para>两类配置在这里**刻意分开标注**，因为它们的生效范围完全不同：</para>
  * <list type="bullet">
  *   <item>**全站**（品牌 / 登录页 / 主题色 / 玻璃 / 自定义 CSS）：存服务端，所有人看到的一样。</item>
- *   <item>**本机**（主题明暗 / 密度 / 字体 / 圆角）：只存这台电脑的浏览器，
+ *   <item>**本机**（主题明暗 / 密度 / 字体 / 圆角 / 强调色）：只存这台电脑的浏览器，
  *       办公室电脑与教室大屏对它们的偏好往往不同，同步过去反而是打扰。</item>
  * </list>
+ *
+ * <para>顶栏原来的「外观」下拉（主题 / 强调色 / 字体 / 圆角 / 密度）已整组搬到
+ * 本页的「外观（本机）」。</para>
  */
 
-import { api } from '../core/api.js?v=86';
-import { h, clear, field, select, loadingBlock, toast } from '../core/ui.js?v=86';
+import { api } from '../core/api.js?v=90';
 import {
-  THEMES, DENSITIES, getTheme, applyTheme, getDensity, setDensity,
-} from '../core/prefs.js?v=86';
+  h, clear, field, select, loadingBlock, toast, confirmDialog,
+} from '../core/ui.js?v=90';
+import {
+  THEMES, DENSITIES, ACCENTS, FONTS, RADII,
+  getTheme, applyTheme, getDensity, setDensity,
+  getAccent, setAccent, getFont, setFont, getRadius, setRadius,
+} from '../core/prefs.js?v=90';
 
 export const meta = {
   title: '页面设置',
@@ -42,6 +49,54 @@ export async function render(container) {
 /** 一行说明文字（用来标注生效范围这类容易混淆的信息）。 */
 function scopeNote(text) {
   return h('p.card-desc', { style: { margin: '0 0 10px' } }, text);
+}
+
+/**
+ * 试加载一张图片，返回它到底能不能显示出来。
+ *
+ * <para>为什么要做这件事：品牌图片（Logo / 浏览器图标 / 登录页背景）填的是**外部地址**，
+ * 从输入框里根本看不出对错。地址写错、图床要登录、图床禁外链，现象都一样——
+ * 「填了 URL，刷新后还是老样子」。以前只能靠管理员自己怀疑人生；现在保存前先试一次，
+ * 失败就问一句「这张图打不开，还要保存吗」，并说清常见原因。</para>
+ *
+ * <para>注意：外链图片还受页面 CSP 的 <c>img-src</c> 约束（服务端已放开 https/http）。
+ * 这个探测走的是同一套规则，所以它失败 = 页面上同样显示不出来。</para>
+ */
+function probeImage(url) {
+  return new Promise((resolve) => {
+    if (!url) {
+      resolve(true);
+      return;
+    }
+
+    const img = new Image();
+    // 图床慢的时候不要让人一直等：5 秒够不够都算失败（失败也允许保存）。
+    const timer = setTimeout(() => {
+      img.src = '';
+      resolve(false);
+    }, 5000);
+    img.onload = () => { clearTimeout(timer); resolve(true); };
+    img.onerror = () => { clearTimeout(timer); resolve(false); };
+    img.src = url;
+  });
+}
+
+/**
+ * 保存前检查若干图片地址；都打得开就返回 false（不用再问），
+ * 有打不开的就把名字列出来问一句「还存吗」。
+ */
+async function confirmBrokenImages(entries) {
+  const broken = [];
+  for (const [label, url] of entries) {
+    if (!await probeImage(url)) broken.push(label);
+  }
+  if (broken.length === 0) return false;
+
+  const ok = await confirmDialog('这些图片打不开',
+    `${broken.join('、')} 加载失败，保存后界面上仍会显示成文字或默认图标。`
+    + '常见原因：地址写错、图床需要登录、图床禁止外链（防盗链）。仍要保存吗？',
+    '仍然保存');
+  return !ok;
 }
 
 // ────────────────────────────── 品牌（全站） ──────────────────────────────
@@ -70,6 +125,12 @@ function renderBrandCard(branding) {
       h('button.btn.btn-primary', {
         type: 'button',
         onClick: async () => {
+          const stop = await confirmBrokenImages([
+            ['Logo 图片', logoImageInput.value.trim()],
+            ['浏览器标签图标', faviconInput.value.trim()],
+          ]);
+          if (stop) return;
+
           await saveBranding({
             siteName: siteInput.value.trim(),
             logoText: logoTextInput.value.trim(),
@@ -139,6 +200,9 @@ function renderLoginCard(branding) {
       h('button.btn.btn-primary', {
         type: 'button',
         onClick: async () => {
+          const stop = await confirmBrokenImages([['登录页背景图', bgInput.value.trim()]]);
+          if (stop) return;
+
           await saveBranding({
             loginLayout: layoutSelect.value,
             loginTitle: titleInput.value.trim(),
@@ -163,6 +227,15 @@ function renderAppearanceCard() {
     THEMES.map((t) => ({ value: t.key, label: t.label })), getTheme(), (v) => applyTheme(v));
   const densitySelect = select(
     DENSITIES.map((d) => ({ value: d.key, label: d.label })), getDensity(), (v) => setDensity(v));
+  const fontSelect = select(
+    FONTS.map((f) => ({ value: f.value, label: f.label })), getFont(), (v) => setFont(v));
+  const radiusSelect = select(
+    RADII.map((r) => ({ value: r.key, label: r.label })), getRadius(), (v) => setRadius(v));
+  // 强调色的第一项是「跟随全站」：它不是「不设置」，而是明确地把控制权交回
+  // 全站主题色（见 prefs.applyAccent 的取值顺序：本机优先、全站兜底）。
+  const accentSelect = select(
+    [{ value: '', label: '跟随全站设置' }, ...ACCENTS.map((a) => ({ value: a.value, label: a.label }))],
+    getAccent(), (v) => setAccent(v));
 
   return h('div.card',
     h('h3', '外观（本机）'),
@@ -172,10 +245,11 @@ function renderAppearanceCard() {
       field('明暗主题', themeSelect, '「跟随系统」会随操作系统的深色模式切换。'),
       field('界面密度', densitySelect, '紧凑模式一屏能多看几行。'),
     ),
-    // 主题色 / 字体 / 圆角刻意不在这里重复：顶栏的外观菜单已经有了，
-    // 而且本机色会覆盖全站色——两处都能改时，「为什么我这儿和同事那儿不一样」
-    // 会变成一个很难解释的问题。要统一，去下面的「高级（全站）」。
-    h('p.card-desc', '主题色、字体、圆角在顶栏的「外观」菜单里；要改成**全站统一**的，用下面的「高级」。'),
+    h('div.form-row',
+      field('强调色', accentSelect, '「跟随全站设置」表示用下面「高级」里配的那个颜色；选了具体颜色则只改这台电脑。'),
+      field('字体', fontSelect, '换一套中文字体有时比调整字号更管用。'),
+    ),
+    field('圆角', radiusSelect, '直角看起来更硬朗；圆润在大屏上观感更柔和。'),
   );
 }
 
@@ -208,7 +282,7 @@ function renderAdvancedCard(branding) {
       accentDefaultChk,
       h('span', '主题色用默认蓝'),
       h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } }, '（取消勾选后可自选颜色）')),
-    field('全站主题色', accentInput, '会覆盖所有人的强调色。'),
+    field('全站主题色', accentInput, '所有人的默认强调色；个人可在上面的「外观（本机）」里改成只对自己生效的颜色。'),
     field('玻璃材质强度', glassSelect, '低配机或投影场景建议打「轻」。'),
     h('label.checkbox-field',
       shineChk,

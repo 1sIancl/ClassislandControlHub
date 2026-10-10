@@ -14,12 +14,18 @@ namespace ControlHub.Server.Http;
 /// <para>CSP 保留 <c>'unsafe-inline'</c>（style 与 script）是有意的：管理界面是原生 HTML/CSS/JS，
 /// 主题、密度与品牌色依赖内联样式与少量内联脚本，去掉会直接白屏。要收紧到 nonce 必须先改造前端的
 /// 资源加载方式——在那之前不要「顺手加严」，否则等于把界面改坏。</para>
+/// <para><c>img-src</c> 允许 <c>https: http:</c> 同样是有意的：「页面设置 → 品牌」支持直接填
+/// **图片地址**（校徽、登录页背景图、浏览器图标），学校常把图片放在自己的图床或校内服务器上。
+/// 早先只允许 <c>'self' data: blob:</c>，这些外链图片会被浏览器整块拦掉——现象正是
+/// 「填了 URL 但 Logo / 背景图不显示」，而控制台只有一行 CSP 报错、界面照常能操作，很难联想到是响应头。
+/// 风险可控：<c>Referrer-Policy</c> 已是 <c>same-origin</c>（不向图床泄漏来源页），
+/// 且地址只能由有 <c>settings.write</c> 权限的管理员填写。</para>
 /// </summary>
 public sealed class SecurityHeadersMiddleware(RequestDelegate next)
 {
     private const string ContentSecurityPolicy =
         "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; " +
-        "img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; " +
+        "img-src 'self' data: blob: https: http:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; " +
         "connect-src 'self'; font-src 'self' data:";
 
     public async Task InvokeAsync(HttpContext context)
