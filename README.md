@@ -159,7 +159,7 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 
 ## 最近更新
 
-- **`1.3.8.0`**（A 端 `1.3.8` / 插件 `1.3.8.0`，**尚未发版**，工作区已就绪）：
+- **发布 `1.3.8.0`**（A 端 `1.3.8` / 插件 `1.3.8.0`）：
   - **快捷换课**（教学配置 → 快捷换课）：读教室端 ClassIsland 的**课表实时状态**
     （上课中 / 课间 / 当前与下节科目 / 下节时间 / 剩余秒数），并直接下发
     **临时换课、调休、恢复原课表**——写进 ClassIsland 自己的临时层课表与日期预定，
@@ -316,8 +316,8 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 
 | 集控版本 | 插件包 | 支持的 ClassIsland | 插件市场 | 状态 |
 |---|---|---|---|---|
-| A 端 `1.3.8` / 插件 `1.3.8.0` | `ControlHub.Plugin.cipx` `1.3.8.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | 🕓 未发布 | 🕓 **尚未发版**（快捷换课 / 品牌图片上传 / 登录页预览） |
-| A 端 `1.3.7` / 插件 `1.3.7.0` | `ControlHub.Plugin.cipx` `1.3.7.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ✅ 当前已发布版本（两级导航 / 设置拆页 / 多选快捷键） |
+| A 端 `1.3.8` / 插件 `1.3.8.0` | `ControlHub.Plugin.cipx` `1.3.8.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ✅ **当前已发布版本**（快捷换课 / 品牌图片上传 / 登录页预览） |
+| A 端 `1.3.7` / 插件 `1.3.7.0` | `ControlHub.Plugin.cipx` `1.3.7.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（两级导航 / 设置拆页 / 多选快捷键） |
 | A 端 `1.3.6` / 插件 `1.3.6.0` | `ControlHub.Plugin.cipx` `1.3.6.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（导航仍是单层侧栏、品牌图片外链不显示） |
 | A 端 `1.3.5` / 插件 `1.3.5.0` | `ControlHub.Plugin.cipx` `1.3.5.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ **有缺陷**（顶栏分组菜单点不开、搜索框压住导航），请升级到 1.3.7 |
 | A 端 `1.3.4` / 插件 `1.3.4.0` | `ControlHub.Plugin.cipx` `1.3.4.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（无页面设置 / 每日漂移，导航断点仍是 900px） |
