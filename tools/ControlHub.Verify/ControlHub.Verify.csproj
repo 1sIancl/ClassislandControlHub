@@ -32,8 +32,12 @@
 
   <!--
     ClassIsland.Core 会传递引入 Avalonia（课表桥接的 UiThread 要 Avalonia 的 Dispatcher）。
-    Avalonia 带的 Skia 原生资源包**没有** .pdb，复制阶段会因为「文件不存在」以 MSB3030 失败。
-    验证工具不渲染任何东西，把不存在的这些文件从复制清单里去掉即可。
+    ⚠️ 下面这段是**兜底**，别把它当成「SkiaSharp 这个包本来就没有 pdb」——
+    `skiasharp.nativeassets.win32` 的 .nupkg 里其实带了 3 个 libSkiaSharp.pdb（每个约 84MB），
+    只是本机 NuGet 缓存里的这几份被清掉过，复制阶段就报 MSB3030「找不到该文件」
+    （同一个原因也会让 `src/ControlHub.Desktop` 构建失败，CI 上是新解压所以不会遇到）。
+    真正的修法是把它从**本地已有的 .nupkg** 重新解压回缓存目录；
+    这里过滤掉不存在的文件，只是让缓存再次出问题时验证台仍然能跑。
   -->
   <Target Name="ControlHubSkipMissingNativeSymbols"
           DependsOnTargets="ResolvePackageAssets"
