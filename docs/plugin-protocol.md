@@ -19,7 +19,7 @@
 
 | 类别 | 取值 | 说明 |
 |---|---|---|
-| 内置 | `shell`、`notify`、`plugin.*`、`power.*`、`appearance.apply`、`automation.*`、`diagnostic.*` | 现状不变（见 `RemoteCommandKinds`） |
+| 内置 | `shell`、`notify`、`plugin.*`、`power.*`、`appearance.apply`、`volume.set`、`brightness.set`、`automation.*`、`diagnostic.*` | 现状不变（见 `RemoteCommandKinds`） |
 | 扩展 | **`ext.<插件ID>.<操作名>`** | 必须带 `ext.` 前缀 |
 
 扩展 ID 约束：

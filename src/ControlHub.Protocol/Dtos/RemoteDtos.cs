@@ -62,6 +62,43 @@ public static class RemoteCommandKinds
 
     /// <summary>请求上报课表目录（今天各节 / 科目 / 可调休的课表），结果随命令回报带回。</summary>
     public const string LessonCatalog = "lesson.catalog";
+
+    /// <summary>
+    /// 设置教室机的**系统主音量**，载荷为 <see cref="VolumePayload"/>（#23）。
+    /// <para>只对 Windows 教室端有效；非 Windows 会回 <c>COMMAND_PLATFORM_UNSUPPORTED</c>。</para>
+    /// </summary>
+    public const string SetVolume = "volume.set";
+
+    /// <summary>
+    /// 设置教室机**屏幕亮度**，载荷为 <see cref="BrightnessPayload"/>（#24）。
+    /// <para>依赖显示器的软件亮度控制（内置屏或支持 DDC/CI 的外接屏）；一台都不支持时
+    /// 回 <c>COMMAND_PLATFORM_UNSUPPORTED</c> 并说明原因，而不是假装成功。</para>
+    /// </summary>
+    public const string SetBrightness = "brightness.set";
+}
+
+/// <summary>音量指令（<see cref="RemoteCommandKinds.SetVolume"/>）的载荷。</summary>
+/// <remarks>
+/// <para><b>两个字段都可选</b>：只调音量不动静音状态、或只切静音不改音量，都是常见需求。
+/// 但**不能都为 null**——那样等于什么都没要求，教室端会按「载荷不完整」拒绝。</para>
+/// </remarks>
+public sealed class VolumePayload
+{
+    /// <summary>目标音量百分比 0~100；<c>null</c> 表示不改动音量。</summary>
+    public int? Percent { get; set; }
+
+    /// <summary><c>true</c> 静音 / <c>false</c> 取消静音；<c>null</c> 表示不改动静音状态。</summary>
+    public bool? Mute { get; set; }
+}
+
+/// <summary>亮度指令（<see cref="RemoteCommandKinds.SetBrightness"/>）的载荷。</summary>
+public sealed class BrightnessPayload
+{
+    /// <summary>
+    /// 目标亮度百分比 0~100。<b>不建议用 0</b>——教室大屏黑掉之后，现场只能靠显示器本身的按键恢复。
+    /// </summary>
+    /// <remarks>刻意用可空类型：漏传时应当报「载荷不完整」，而不是把亮度默默设成 0。</remarks>
+    public int? Percent { get; set; }
 }
 
 /// <summary>触发自动化信号的载荷。</summary>

@@ -85,6 +85,10 @@ public sealed class RemoteCommandExecutor(
                 RemoteCommandKinds.LessonSwap => RunLessonSwap(command),
                 RemoteCommandKinds.LessonAdjust => RunLessonAdjust(command),
                 RemoteCommandKinds.LessonCatalog => await ReportLessonCatalogAsync(command),
+                // 音量 / 亮度：都是**不涉及界面**的系统调用，刻意留在后台线程——
+                // COM 与显示器接口都可能阻塞几百毫秒，放 UI 线程会把教室大屏卡住。
+                RemoteCommandKinds.SetVolume => RunSetVolume(command),
+                RemoteCommandKinds.SetBrightness => RunSetBrightness(command),
                 _ => Fail(command, CommandErrorCodes.Unsupported, $"不支持的指令类型：{command.Kind}"),
             };
         }
@@ -852,6 +856,102 @@ public sealed class RemoteCommandExecutor(
         {
             return Fail(command, CommandErrorCodes.ExecutionFailed, "睡眠失败：" + ex.Message);
         }
+    }
+
+    // ────────────────────── 教室端设备控制：音量 / 亮度（#23 / #24）──────────────────────
+
+    /// <summary>设置系统主音量（#23）。</summary>
+    private static CommandReportRequest RunSetVolume(RemoteCommandDto command)
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            return Fail(command, CommandErrorCodes.PlatformUnsupported, "音量控制目前只在 Windows 教室端可用。");
+        }
+
+        var payload = HubJson.Deserialize<VolumePayload>(command.Payload) ?? new VolumePayload();
+        if (payload.Percent is null && payload.Mute is null)
+        {
+            return Fail(command, CommandErrorCodes.PayloadInvalid,
+                "载荷里既没有 percent 也没有 mute（两个都空等于什么也没要求）。");
+        }
+
+        var notes = new List<string>();
+        if (payload.Percent is { } percent)
+        {
+            if (percent is < 0 or > 100)
+            {
+                return Fail(command, CommandErrorCodes.PayloadInvalid, $"音量应在 0~100 之间，收到 {percent}。");
+            }
+
+            if (!AudioVolume.TrySetPercent(percent, out var setError))
+            {
+                return Fail(command, CommandErrorCodes.ExecutionFailed, "设置音量失败：" + setError);
+            }
+
+            notes.Add($"音量 {percent}%");
+        }
+
+        if (payload.Mute is { } mute)
+        {
+            if (!AudioVolume.TrySetMute(mute, out var muteError))
+            {
+                return Fail(command, CommandErrorCodes.ExecutionFailed, "切换静音失败：" + muteError);
+            }
+
+            notes.Add(mute ? "已静音" : "已取消静音");
+        }
+
+        // 回读一次再回报：教室机上常有「调完被别的程序改回去」的情况，
+        // 只回「已设置」会把这类问题掩盖成成功。
+        var readBack = AudioVolume.TryGet(out var current, out var muted, out _)
+            ? $"，回读 {current}%{(muted ? "（静音中）" : string.Empty)}"
+            : string.Empty;
+        return Ok(command, $"已设置{string.Join("、", notes)}{readBack}。");
+    }
+
+    /// <summary>设置屏幕亮度（#24）。</summary>
+    private static CommandReportRequest RunSetBrightness(RemoteCommandDto command)
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            return Fail(command, CommandErrorCodes.PlatformUnsupported, "亮度控制目前只在 Windows 教室端可用。");
+        }
+
+        var payload = HubJson.Deserialize<BrightnessPayload>(command.Payload) ?? new BrightnessPayload();
+        if (payload.Percent is not { } percent)
+        {
+            return Fail(command, CommandErrorCodes.PayloadInvalid, "载荷里缺少 percent（0~100）。");
+        }
+
+        if (percent is < 0 or > 100)
+        {
+            return Fail(command, CommandErrorCodes.PayloadInvalid, $"亮度应在 0~100 之间，收到 {percent}。");
+        }
+
+        var result = DisplayBrightness.SetPercent(percent);
+        if (result.Total == 0)
+        {
+            return Fail(command, CommandErrorCodes.PlatformUnsupported,
+                "系统没有报告任何显示器，无法调整亮度（这台机器是不是没接显示输出？）。");
+        }
+
+        if (result.Adjustable == 0)
+        {
+            return Fail(command, CommandErrorCodes.PlatformUnsupported,
+                $"检测到 {result.Total} 台显示器，但都不支持软件调亮度——外接显示器多为这种情况，"
+                + "请用显示器本身的按键或厂商工具调整。");
+        }
+
+        if (result.Applied == 0)
+        {
+            return Fail(command, CommandErrorCodes.ExecutionFailed,
+                $"亮度接口可用，但设置被系统拒绝（{result.Adjustable} 台可调显示器一台都没改成功）。");
+        }
+
+        var partial = result.Applied < result.Adjustable
+            ? $"（{result.Total} 台显示器里成功 {result.Applied} 台，其余不支持软件调亮度）"
+            : string.Empty;
+        return Ok(command, $"已把亮度设为 {percent}%{partial}。");
     }
 
     [DllImport("powrprof.dll", SetLastError = true)]

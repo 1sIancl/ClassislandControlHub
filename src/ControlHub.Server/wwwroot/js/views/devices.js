@@ -4,17 +4,17 @@
  * 并可切换到列表视图查看完整状态明细。注册码管理一并放在本页。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=96';
-import { toastError, errorBlock } from '../core/errors.js?v=96';
+import { api, fetchBlob } from '../core/api.js?v=97';
+import { toastError, errorBlock } from '../core/errors.js?v=97';
 import {
   h, clear, formatDateTime, relativeTime, toast, loadingBlock, skeletonRows,
   modal, confirmDialog, deviceStateBadge, syncBadge,
   emptyState, field, select, copyText, append, undoBar,
-} from '../core/ui.js?v=96';
-import { showContextMenu } from '../core/contextmenu.js?v=96';
-import { getLayout, saveLayout } from '../core/prefs.js?v=96';
-import { auditTimelineSection } from '../core/audit-timeline.js?v=96';
-import { selectionSummary } from '../core/batch-summary.js?v=96';
+} from '../core/ui.js?v=97';
+import { showContextMenu } from '../core/contextmenu.js?v=97';
+import { getLayout, saveLayout } from '../core/prefs.js?v=97';
+import { auditTimelineSection } from '../core/audit-timeline.js?v=97';
+import { selectionSummary } from '../core/batch-summary.js?v=97';
 
 export const meta = {
   title: '设备管理',

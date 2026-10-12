@@ -2076,6 +2076,91 @@ function check(name, ok, extra = '') {
     });
   }, seeded.deviceId);
 
+  // 31) 教室端设备控制（#23 音量 / #24 亮度）：标签页齐全，且从界面点一下能真的下发指令
+  //     （回归点：新指令种类必须真的接进界面——只加协议常量、界面没接，
+  //     管理端看起来"有这个功能"，实际发不出去）
+  const volumeDeviceId = await page.evaluate(async () => {
+    const token = localStorage.getItem('controlhub.admin.token');
+    const api = async (path, body) => {
+      const r = await fetch('/api/v1' + path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify(body),
+      });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || j?.ok === false) throw new Error(path + ' → ' + r.status);
+      return j?.data;
+    };
+
+    const deviceId = 'e2e-uidev-' + Date.now();
+    const code = await api('/admin/enroll-codes', { note: 'e2e 界面音量', maxUses: 1 });
+    await api('/client/enroll', {
+      enrollCode: code.code || code.Code, deviceId, deviceName: 'E2E 界面音量教室',
+    });
+    return deviceId;
+  });
+
+  // ⚠️ 必须 reload：此刻已经在 #/remote 上，`goto('#/remote')` 只改 hash、不会重新拉设备列表，
+  //    新注册的那台就不会出现在下拉里（断言会以 "no-select" 失败）。
+  await page.reload({ waitUntil: 'networkidle2' });
+  await sleep(1500);
+  const openedDeviceTab = await page.evaluate(() => {
+    const tab = [...document.querySelectorAll('#content .tabs .tab')]
+      .find((b) => b.textContent.trim() === '音量与亮度');
+    if (!tab) return false;
+    tab.click();
+    return true;
+  });
+  await sleep(700);
+  const deviceUi = await page.evaluate(() => {
+    const sliders = [...document.querySelectorAll('#content .slider-row input[type=range]')];
+    const buttons = [...document.querySelectorAll('#content button')].map((b) => b.textContent.trim());
+    return {
+      sliders: sliders.length,
+      ranges: sliders.map((s) => `${s.min}~${s.max}`),
+      volumeBtn: buttons.includes('设置音量'),
+      brightnessBtn: buttons.includes('设置亮度'),
+    };
+  });
+  check('「音量与亮度」页可打开，两个滑块（0~100）与两个动作按钮齐全',
+    openedDeviceTab && deviceUi.sliders === 2
+      && deviceUi.ranges.every((r) => r === '0~100')
+      && deviceUi.volumeBtn && deviceUi.brightnessBtn,
+    JSON.stringify(deviceUi));
+
+  const volumePayload = await page.evaluate(async (deviceId) => {
+    const sel = [...document.querySelectorAll('#content select')]
+      .find((s) => [...s.options].some((o) => o.value === deviceId));
+    if (!sel) return 'no-select';
+    sel.value = deviceId;
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+
+    const btn = [...document.querySelectorAll('#content button')]
+      .find((b) => b.textContent.trim() === '设置音量');
+    if (!btn) return 'no-button';
+    btn.click();
+    await new Promise((r) => setTimeout(r, 1000));
+
+    const token = localStorage.getItem('controlhub.admin.token');
+    const r = await fetch(`/api/v1/admin/devices/${deviceId}/commands`, {
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    const j = await r.json();
+    const cmd = (j?.data ?? []).find((c) => c.kind === 'volume.set');
+    return cmd ? cmd.payload : 'no-command';
+  }, volumeDeviceId);
+  check('点「设置音量」真的下发了 volume.set，载荷带音量数值',
+    typeof volumePayload === 'string' && volumePayload.includes('percent'),
+    String(volumePayload).slice(0, 80));
+
+  // 清掉这台断言设备
+  await page.evaluate(async (deviceId) => {
+    const token = localStorage.getItem('controlhub.admin.token');
+    await fetch('/api/v1/admin/devices/' + deviceId, {
+      method: 'DELETE', headers: { Authorization: 'Bearer ' + token },
+    });
+  }, volumeDeviceId);
+
   await page.setViewport({ width: 1600, height: 1000 });
   await sleep(700);
 

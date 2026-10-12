@@ -129,6 +129,7 @@ curl -s "$BASE/admin/devices" -H "Authorization: Bearer $TOKEN" \
 | DELETE | `/admin/devices/{id}/diagnostics` | `remote.write` | 清空诊断记录 |
 
 指令类型（`kind`）：`shell`、`plugin.*`、`appearance.*`、`notify`、`power.*`、`automation.*`、
+`volume.set` / `brightness.set`（教室端系统音量 / 屏幕亮度）、
 `lesson.swap` / `lesson.adjust` / `lesson.catalog`、
 `diagnostic.screenshot` / `diagnostic.processes` / `diagnostic.bundle`。语义：**一次性派发**、
 **2 小时 TTL**、关机 / 重启有 **15 秒撤销窗口**。

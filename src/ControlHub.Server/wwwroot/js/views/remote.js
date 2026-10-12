@@ -3,12 +3,12 @@
  * 数据来自 A 端 /admin/devices、/admin/backups 等接口。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=96';
-import { toastError } from '../core/errors.js?v=96';
-import { hintForCode } from '../core/error-hints.js?v=96';
+import { api, fetchBlob } from '../core/api.js?v=97';
+import { toastError } from '../core/errors.js?v=97';
+import { hintForCode } from '../core/error-hints.js?v=97';
 import {
   h, clear, toast, loadingBlock, confirmDialog, field, select, emptyState, formatDateTime, modal,
-} from '../core/ui.js?v=96';
+} from '../core/ui.js?v=97';
 
 export const meta = {
   title: '远程管理',
@@ -20,6 +20,7 @@ const TABS = [
   { key: 'diagnostic', label: '远程诊断' },
   { key: 'plugins', label: '插件管理' },
   { key: 'appearance', label: '外观下发' },
+  { key: 'device', label: '音量与亮度' },
   { key: 'notify', label: '发送提醒' },
   { key: 'automation', label: '自动化' },
   { key: 'backup', label: '备份' },
@@ -72,6 +73,7 @@ function renderTab(container) {
     case 'diagnostic': return renderDiagnostic(container);
     case 'plugins': return renderPlugins(container);
     case 'appearance': return renderAppearance(container);
+    case 'device': return renderDeviceControl(container);
     case 'notify': return renderNotify(container);
     case 'automation': return renderAutomation(container);
     case 'backup': return renderBackup();
@@ -487,6 +489,96 @@ function isHubPlugin(plugin) {
 }
 
 // ────────────────────── 外观下发 ──────────────────────
+
+/**
+ * 教室端设备控制：系统音量（#23）与屏幕亮度（#24）。
+ *
+ * <para>为什么单独一页：这两项是教室机**本机**的状态，和课表、外观都不搭，
+ * 而最常用的场景恰恰是「整栋楼统一静音」——所以目标设备默认给「全部在线设备」。</para>
+ */
+function renderDeviceControl(container) {
+  const targetSelect = select(
+    [{ value: '__all__', label: '全部在线设备（统一）' }, ...deviceOptions()],
+    '__all__',
+  );
+  const offline = offlineOption();
+
+  const slider = (initial) => {
+    const range = h('input', { type: 'range', min: '0', max: '100', step: '5', value: String(initial) });
+    const label = h('span.cmd-kind', `${initial}%`);
+    range.addEventListener('input', () => { label.textContent = `${range.value}%`; });
+    return { range, label, value: () => Number(range.value) };
+  };
+
+  const volume = slider(60);
+  const brightness = slider(60);
+  const muteSelect = select([
+    { value: '', label: '不改动静音状态' },
+    { value: 'on', label: '静音' },
+    { value: 'off', label: '取消静音' },
+  ], '');
+  const out = h('div');
+
+  /** 下发一条指令；只发给单台时把执行结果拉回来（复用命令行页那套历史）。 */
+  const dispatch = async (kind, payload, title) => {
+    try {
+      if (targetSelect.value === '__all__') {
+        const r = await api('/admin/devices/command', {
+          method: 'POST',
+          body: { kind, payload: JSON.stringify(payload), includeOffline: offline.input.checked },
+        });
+        toast('ok', title, broadcastResult(r));
+        return;
+      }
+
+      await api(`/admin/devices/${targetSelect.value}/command`, {
+        method: 'POST',
+        body: { kind, payload: JSON.stringify(payload) },
+      });
+      toast('ok', title, '已发送，结果见下方。');
+      await loadCommandHistory(targetSelect.value, out);
+      pollHistory(targetSelect.value, out);
+    } catch (e) {
+      toastError(e, '下发失败');
+    }
+  };
+
+  const volumeBtn = h('button.btn.btn-primary', {
+    type: 'button',
+    onClick: () => {
+      // 只把「真正要改的项」放进载荷：没选静音就不带 mute，
+      // 否则会把教室端原本的静音状态一并覆盖掉。
+      const payload = { percent: volume.value() };
+      if (muteSelect.value) payload.mute = muteSelect.value === 'on';
+      dispatch('volume.set', payload, '已下发音量设置');
+    },
+  }, '设置音量');
+
+  const brightnessBtn = h('button.btn.btn-primary', {
+    type: 'button',
+    onClick: () => dispatch('brightness.set', { percent: brightness.value() }, '已下发亮度设置'),
+  }, '设置亮度');
+
+  return h('div',
+    h('div.notice.notice-info',
+      h('span.notice-icon', 'i'),
+      h('div', '统一调整教室机的系统音量与屏幕亮度（仅 Windows 教室端有效）。音量作用于'
+        + '系统主输出，与音量面板里那条一致；亮度依赖显示器支持软件调亮度——外接显示器多数不支持，'
+        + '此时教室机**如实回报「不支持」**而不是假装成功，这种情况需要到显示器上手动调。')),
+    h('div.form-row',
+      field('目标设备', targetSelect, '「全部在线设备」用于整栋楼统一静音这类场景。'),
+      field('静音', muteSelect, '只想调音量时保持「不改动」。'),
+    ),
+    h('div.form-row',
+      field('音量', h('div.slider-row', volume.range, volume.label), '0~100。'),
+      field('亮度', h('div.slider-row', brightness.range, brightness.label),
+        '0~100；建议别用 0——屏幕全黑后现场只能靠显示器本身的按键恢复。'),
+    ),
+    h('div', { style: { display: 'flex', gap: '8px', marginTop: '12px' } }, volumeBtn, brightnessBtn),
+    offline.el,
+    h('div', { style: { marginTop: '16px' } }, out),
+  );
+}
 
 function renderAppearance(container) {
   const unchanged = { value: '', label: '不修改' };

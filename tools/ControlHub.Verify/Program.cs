@@ -24,7 +24,7 @@ internal static class Program
     private static int _passed;
     private static int _failed;
 
-    private static int Main()
+    private static async Task<int> Main()
     {
         Console.WriteLine("=== ControlHub B 端映射验证 ===");
         Console.WriteLine();
@@ -214,6 +214,9 @@ internal static class Program
 
         // 课表桥接（教室端档案语义）：这一层没有 HTTP 接口可验，只能在这里跑。
         LessonBridgeChecks.Run(Check);
+
+        // 教室端设备控制（音量 / 亮度）：这一层同样没有 HTTP 接口可验，只能在这里真调实现。
+        await DeviceControlChecks.RunAsync(Check);
 
         return Report();
     }

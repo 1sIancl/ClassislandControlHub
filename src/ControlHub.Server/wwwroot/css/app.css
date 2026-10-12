@@ -2475,6 +2475,16 @@ input.pcell-name:focus {
   font-size: 11px;
   color: var(--text-faint);
 }
+/* #23 / #24：音量与亮度滑块（当前值紧跟其后） */
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.slider-row input[type='range'] {
+  flex: 1;
+  accent-color: var(--accent);
+}
 
 /* ────────────────────────── 日志视图 ────────────────────────── */
 .log-list {

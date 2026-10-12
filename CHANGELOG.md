@@ -20,6 +20,19 @@
     此前只会回「不支持的指令类型」；现在这条失败带上 `COMMAND_UNSUPPORTED`，管理端能一眼看出是版本不匹配。
   - 老版本插件不上报该字段时按「无分类」处理（只显示原文），不硬猜。
   - 失败分类同时进审计与 `command.failed` Webhook 载荷，接通知的脚本可据此分流，不必正则匹配中文。
+- **教室端音量与亮度统一管理（#23 / #24）**：新增两条指令 `volume.set` / `brightness.set`，
+  「远程管理 → 音量与亮度」有滑块与按钮，支持「全部在线设备」一键统一（最常用的场景是整栋楼静音）。
+  - **音量**走 Windows CoreAudio 的 `IAudioEndpointVolume`（手写 COM 接口，**不引第三方包**），
+    载荷 `{percent?, mute?}` 两者至少给一个；设完**回读**再回报——教室机上常有「调完被别的程序
+    改回去」的情况，只回「已设置」会把这类问题掩盖成成功。
+  - **亮度**走 `dxva2.dll` 的显示器亮度接口：内置屏可用，外接显示器多数不支持。不支持时
+    **如实回 `COMMAND_PLATFORM_UNSUPPORTED` 并说明「请用显示器按键或厂商工具调整」**，
+    绝不假装成功（教室大屏没变、管理端显示"已设置"，现场只会以为系统坏了）。
+  - 载荷校验刻意严格：`brightness.set` 的 `percent` 是**可空**类型，漏传报「载荷不完整」，
+    而不是默默把屏幕设成 0（全黑后现场只能靠显示器按键恢复）；音量越界同样直接拒绝。
+  - 实测：`ControlHub.Verify` **82 项**（含在这台机器上**真读真写真还原**系统音量、
+    以及把指令喂给执行器跑通两个新分支与全部校验分支）；`sh/ui-smoke.js` **129 项**
+    （新增 2 项：标签页控件齐全、从界面点一下真的发出 `volume.set`）。
 - **清掉 11 个既有的构建警告**（#82）：桌面外壳里 Avalonia 已废弃的 XAML 属性
   （`TextBox.Watermark` → `PlaceholderText`、`Window.SystemDecorations` → `WindowDecorations`，
   共 10 处）与 `ConnectViewModel.password` 未初始化（CS8618）。此前「构建 0 警告」**只在增量构建时成立**，
