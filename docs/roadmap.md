@@ -176,7 +176,7 @@
 | 116 | 开放数据集 | ⬜ |
 | 117 | 硬件集成（电子班牌 / 摄像头 / 考勤机） | ⬜ |
 | 118 | 标准协议支持 | ⬜ |
-| 119 | ClassIsland 2.2 适配 | 🔨（**技术栈同源**：编译所依赖的 ClassIsland 2.1.1.1 与 PluginSdk 2.1.1.1 就是 2.2 同期的 Avalonia 12 / .NET 10 技术栈，预期可直接使用；剩余工作 = 在 2.2 预览版上实测，必要时调整 manifest 的 `apiVersion`） |
+| 119 | ClassIsland 2.2 适配 | 🔨（**技术栈同源**：编译所依赖的 ClassIsland 2.1.1.1 与 PluginSdk 2.1.1.1 就是 2.2 同期的 Avalonia 12 / .NET 10 技术栈，预期可直接使用；剩余工作 = 在 2.2 预览版上实测。`manifest.yml` 的 `apiVersion` 自 1.3.8 起已与编译所用的 PluginSdk 对齐为 `2.1.1.1`） |
 | 120 | B 端跨平台（Linux / macOS 教室端） | ⬜ |
 
 ---

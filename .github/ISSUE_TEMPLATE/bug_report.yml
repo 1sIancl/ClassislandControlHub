@@ -36,7 +36,7 @@ body:
     id: classisland_version
     attributes:
       label: ClassIsland 版本
-      description: B 端问题必填；请填写 ClassIsland 的完整版本号（预览版请注明）
+      description: B 端问题必填；请填写 ClassIsland 的完整版本号（预览版请注明）。插件要求 2.1.1.1 及以上
       placeholder: 例如 2.1.1.1 / 2.2.0.0-preview
     validations:
       required: false

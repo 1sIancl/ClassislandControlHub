@@ -382,8 +382,15 @@ public sealed class SyncEngine(
 
     private static readonly DateTime ProcessStartTime = DateTime.UtcNow;
 
+    /// <summary>宿主 ClassIsland 的版本号。</summary>
+    /// <remarks>
+    /// <para>取不到程序集版本时回落到 <c>2.1.1.1</c>：那是插件要求的**最低**宿主版本
+    /// （编译所用的 <c>ClassIsland.PluginSdk</c> 与包内 <c>manifest.yml</c> 的 <c>apiVersion</c> 都是它）。
+    /// 报到比真实支持范围更低的版本，管理端会把教室端显示成「ClassIsland 2.1.0.0」这种
+    /// 本来不可能跑起来的配置，排查时容易被带偏。</para>
+    /// </remarks>
     private static string GetClassIslandVersion() =>
-        typeof(ClassIsland.Core.Abstractions.PluginBase).Assembly.GetName().Version?.ToString() ?? "2.1.0.0";
+        typeof(ClassIsland.Core.Abstractions.PluginBase).Assembly.GetName().Version?.ToString() ?? "2.1.1.1";
 
     private static string GetPluginVersion() =>
         typeof(SyncEngine).Assembly.GetName().Version?.ToString() ?? "1.0.0.0";

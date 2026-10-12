@@ -20,6 +20,8 @@ env:
   DOTNET_VERSION: '10.0.x'
   DOTNET_NOLOGO: 'true'
   DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  # 插件编译/打包所用的 ClassIsland 宿主版本；**不得低于 2.1.1.1**
+  # （插件按 ClassIsland.PluginSdk 2.1.1.1 编译，包内 manifest 的 apiVersion 也是 2.1.1.1）。
   CLASSISLAND_VERSION: '2.1.1.1'
 
 jobs:

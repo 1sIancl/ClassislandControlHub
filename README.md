@@ -5,7 +5,7 @@
 [![构建](https://github.com/1sIancl/ClassislandControlHub/actions/workflows/build.yml/badge.svg)](https://github.com/1sIancl/ClassislandControlHub/actions/workflows/build.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
-**ClassislandControlHub集控** 是面向 **ClassIsland 2.x（.NET 10）** 的班级大屏集中管理系统，分为 A、B 两端：
+**ClassislandControlHub集控** 是面向 **ClassIsland 2.1.1.1 及以上（.NET 10）** 的班级大屏集中管理系统，分为 A、B 两端：
 
 - **A 端 · 集控服务器**：ASP.NET Core 应用，自带可视化 Web 管理界面。可作为学校内网本地服务器运行，也可部署到服务器以网页形式访问，负责课表、时间表、科目的统一下发与设备管理。
 - **B 端 · ClassislandControlHub集控接收端**：以 ClassIsland 插件形式运行在教室大屏上，连接 A 端，自动接收并应用**课表、时间表、科目、自定义设置**的下发与同步。
@@ -95,7 +95,7 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
    # 产物：src/ControlHub.Plugin/cipx/ControlHub.Plugin.cipx 与 checksums.md（自动生成，无需 pwsh）
    ```
 
-2. 在教室电脑安装 ClassIsland（2.1+），把 `.cipx` 放入插件目录，或通过 **ClassIsland 插件市场** 搜索「ClassislandControlHub集控接收端」安装。
+2. 在教室电脑安装 ClassIsland（2.1.1.1 及以上），把 `.cipx` 放入插件目录，或通过 **ClassIsland 插件市场** 搜索「ClassislandControlHub集控接收端」安装。
 3. 回到 A 端 Web 界面「设备管理 → 生成注册码」，复制注册码。
 4. 打开 ClassIsland【应用设置 → ClassislandControlHub集控接收端】：
    - 点「自动发现服务器」（同一局域网），或手动填写服务器地址（如 `http://192.168.1.5:29800`）；
@@ -271,7 +271,7 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
   `Environment.TickCount64`，即**操作系统开机以来**的时长——机器开了几天、服务端刚重启完，仪表盘照旧显示
   「已运行几天」，升级或改配置后无法从界面确认重启是否生效。现在改为取服务端进程自身的启动时间，重启即归零。
 - **发布 `1.2.0.0`**（A 端 `1.2.0` / 插件 `1.2.0.0`）：从本版本起，打标签即由 GitHub Actions 自动构建并发布
-  （插件 `.cipx` + Linux / Windows 两份 A 端包），无需再手动打包上传。插件需在 ClassIsland 2.1.x 上使用。
+  （插件 `.cipx` + Linux / Windows 两份 A 端包），无需再手动打包上传。插件需在 **ClassIsland 2.1.1.1 及以上**使用。
 - **Webhook 外部通知**：设备掉线、配置应用失败、远程指令失败时，自动推送到企业微信群机器人、钉钉（支持加签）、
   飞书或自定义端点。「通知与集成 → Webhook 外部通知」可增删改、按事件订阅，并支持一键测试发送（失败会告诉你具体原因）。
 - **两步验证（TOTP）**：「账号与权限 → 账号安全」可开启基于时间的一次性密码（Google / Microsoft Authenticator
@@ -316,31 +316,35 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 
 | 集控版本 | 插件包 | 支持的 ClassIsland | 插件市场 | 状态 |
 |---|---|---|---|---|
-| A 端 `1.3.8` / 插件 `1.3.8.0` | `ControlHub.Plugin.cipx` `1.3.8.0` | `2.1.x / 2.2.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | 🕓 未发布 | 🕓 **尚未发版**（快捷换课 / 品牌图片上传 / 登录页预览） |
-| A 端 `1.3.7` / 插件 `1.3.7.0` | `ControlHub.Plugin.cipx` `1.3.7.0` | `2.1.x / 2.2.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ✅ 当前已发布版本（两级导航 / 设置拆页 / 多选快捷键） |
-| A 端 `1.3.6` / 插件 `1.3.6.0` | `ControlHub.Plugin.cipx` `1.3.6.0` | `2.1.x / 2.2.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（导航仍是单层侧栏、品牌图片外链不显示） |
-| A 端 `1.3.5` / 插件 `1.3.5.0` | `ControlHub.Plugin.cipx` `1.3.5.0` | `2.1.x / 2.2.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ **有缺陷**（顶栏分组菜单点不开、搜索框压住导航），请升级到 1.3.7 |
-| A 端 `1.3.4` / 插件 `1.3.4.0` | `ControlHub.Plugin.cipx` `1.3.4.0` | `2.1.x / 2.2.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（无页面设置 / 每日漂移，导航断点仍是 900px） |
-| A 端 `1.3.3` / 插件 `1.3.3.0` | `ControlHub.Plugin.cipx` `1.3.3.0` | `2.1.x / 2.2.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（无 Webhook 增强 / 外观扩项 / 密码到期提醒） |
-| A 端 `1.3.2` / 插件 `1.3.2.0` | `ControlHub.Plugin.cipx` `1.3.2.0` | `2.1.x` | ✅ 可直接安装 | ⚠️ 上一版本（无 API 密钥、无界面导入导出） |
-| A 端 `1.3.1` / 插件 `1.3.1.0` | `ControlHub.Plugin.cipx` `1.3.1.0` | `2.1.x` | ✅ 可直接安装 | ⚠️ 上一版本（无差异预览 / 安全加固 / 批量导入导出等） |
-| A 端 `1.3.0` / 插件 `1.3.0.0` | `ControlHub.Plugin.cipx` `1.3.0.0` | `2.1.x` | ✅ 可直接安装 | ⚠️ 旧版本（无本地外壳与教室端截图开关） |
-| A 端 `1.2.x` / 插件 `1.2.x` | `1.2.1.0` | `2.1.x` | ✅ 可直接安装 | ⚠️ 上一版本（不含远程诊断） |
-| A 端 `1.1.0` / 插件 `1.1.0.0` | `1.1.0.0` | `2.1.x` | ✅ 可直接安装 | ⚠️ 旧版本（不含两步验证 / Webhook 等） |
-| A 端 `1.0.x` / 插件 `1.0.0.0` | `1.0.0.0` | `2.1.x` | ✅ 可直接安装 | ⚠️ 早期版本，建议同步升级 |
+| A 端 `1.3.8` / 插件 `1.3.8.0` | `ControlHub.Plugin.cipx` `1.3.8.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | 🕓 未发布 | 🕓 **尚未发版**（快捷换课 / 品牌图片上传 / 登录页预览） |
+| A 端 `1.3.7` / 插件 `1.3.7.0` | `ControlHub.Plugin.cipx` `1.3.7.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ✅ 当前已发布版本（两级导航 / 设置拆页 / 多选快捷键） |
+| A 端 `1.3.6` / 插件 `1.3.6.0` | `ControlHub.Plugin.cipx` `1.3.6.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（导航仍是单层侧栏、品牌图片外链不显示） |
+| A 端 `1.3.5` / 插件 `1.3.5.0` | `ControlHub.Plugin.cipx` `1.3.5.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ **有缺陷**（顶栏分组菜单点不开、搜索框压住导航），请升级到 1.3.7 |
+| A 端 `1.3.4` / 插件 `1.3.4.0` | `ControlHub.Plugin.cipx` `1.3.4.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（无页面设置 / 每日漂移，导航断点仍是 900px） |
+| A 端 `1.3.3` / 插件 `1.3.3.0` | `ControlHub.Plugin.cipx` `1.3.3.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（无 Webhook 增强 / 外观扩项 / 密码到期提醒） |
+| A 端 `1.3.2` / 插件 `1.3.2.0` | `ControlHub.Plugin.cipx` `1.3.2.0` | `2.1.1.1 及以上`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（无 API 密钥、无界面导入导出） |
+| A 端 `1.3.1` / 插件 `1.3.1.0` | `ControlHub.Plugin.cipx` `1.3.1.0` | `2.1.1.1 及以上`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（无差异预览 / 安全加固 / 批量导入导出等） |
+| A 端 `1.3.0` / 插件 `1.3.0.0` | `ControlHub.Plugin.cipx` `1.3.0.0` | `2.1.1.1 及以上`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 旧版本（无本地外壳与教室端截图开关） |
+| A 端 `1.2.x` / 插件 `1.2.x` | `1.2.1.0` | `2.1.1.1 及以上`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（不含远程诊断） |
+| A 端 `1.1.0` / 插件 `1.1.0.0` | `1.1.0.0` | `2.1.1.1 及以上`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 旧版本（不含两步验证 / Webhook 等） |
+| A 端 `1.0.x` / 插件 `1.0.0.0` | `1.0.0.0` | `2.1.1.1 及以上`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 早期版本，建议同步升级 |
+| — | — | `2.2.x`（预览版） | ❌ 暂不支持 | — |
 
 「插件市场」一列的含义：Release 里带 `.cipx` 资产、且标签符合 `manifest.yml` 的 `tagPattern: "1.*.*.*"`，
 即可在 ClassIsland 的插件市场里直接搜到并安装。**不需要手动下载 .cipx**；只有在市场列表里搜不到
 （例如网络受限）时，才需要从 [Releases](https://github.com/1sIancl/ClassislandControlHub/releases) 下载 `.cipx` 后手动导入。
-| — | — | `2.2.x`（预览版） | ❌ 暂不支持 |
 
 补充说明：
 
-- 插件 `manifest.yml` 声明了 `apiVersion: 2.1.0.0` 与 `supportedOSPlatforms: [Windows]`，
-  即**只支持 Windows 上的 ClassIsland**。
+- 插件 `manifest.yml` 声明了 `apiVersion: 2.1.1.1` 与 `supportedOSPlatforms: [Windows]`，
+  即**只支持 Windows 上 ClassIsland 2.1.1.1 及以上**的教室端。
+- **「支持的 ClassIsland」按实际编译依赖填写**：所有版本都是用 `ClassIsland.PluginSdk 2.1.1.1`
+  编译的（自 2026-09-12 首个提交起一直是这个值），所以真实下限**始终是 2.1.1.1**；
+  而包内 `apiVersion` 在 1.3.8 之前都写作 `2.1.0.0`——声明得比实际能力低，会让根本跑不起来的
+  2.1.0.x 教室端被算进支持范围。**自 `1.3.8` 起两者已对齐为 `2.1.1.1`**（表内保留了各版本的声明原值）。
 - **关于 ClassIsland 2.2**：本插件编译所依赖的 ClassIsland 2.1.1.1 与 `PluginSdk 2.1.1.1`
   **本身就是 2.2 同期的技术栈**（Avalonia 12 / .NET 10），因此 2.2 上应当可以直接使用。
-  目前 `apiVersion` 仍按 2.1.0.0 声明——如果 2.2 主程序按更高 `apiVersion` 校验插件，可能需要在 2.2 正式版
+  `apiVersion` 现按 `2.1.1.1` 声明——如果 2.2 主程序按更高 `apiVersion` 校验插件，需要在 2.2 正式版
   发布后再调整该字段；在 2.2 预览版上实测通过前，这一条以"技术栈同源、预期可用"为准，不宣称已验证。
 - A 端与插件通过 `ControlHub.Protocol` 共享同一份协议定义（协议版本 `1.0`）。**建议两端同步升级**：
   只升一端时注册、心跳与配置下发仍可用，但新增能力（远程命令、定时提醒等）需要两端都升级才会生效。
@@ -359,7 +363,7 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 > | 部分 | 支持平台 |
 > |---|---|
 > | A 端服务端 + Web 管理界面 | **跨平台**：Windows / Linux 都能部署（Linux 一键 systemd、Windows 一键注册服务），浏览器访问即可管理 |
-> | B 端插件（教室端） | **仅 Windows** 上的 ClassIsland 2.1.x（`supportedOSPlatforms: [Windows]`） |
+> | B 端插件（教室端） | **仅 Windows** 上的 ClassIsland 2.1.1.1 及以上（`supportedOSPlatforms: [Windows]`） |
 > | 本地桌面外壳 `ControlHub.Shell` | **仅 Windows**（用 WebView2 内嵌界面，并依赖 Windows 服务控制 API） |
 >
 > 也就是说：**外壳只是「双击即用」的可选入口，没有它任何功能都不受影响**——其它平台直接用浏览器访问 A 端即可。

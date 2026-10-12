@@ -16,7 +16,7 @@
 |---|---|---|
 | .NET SDK | 10.0 | 服务端、插件、外壳、压测工具都用它 |
 | Node.js | 任意 LTS（可选） | 只用于 `node --check` 校验前端语法，前端**没有构建步骤** |
-| ClassIsland | 2.1.x | 只有要在本机调试 B 端插件时才需要 |
+| ClassIsland | 2.1.1.1 及以上 | 只有要在本机调试 B 端插件时才需要（插件按 `ClassIsland.PluginSdk 2.1.1.1` 编译） |
 
 ```bash
 git clone https://github.com/1sIancl/ClassislandControlHub.git

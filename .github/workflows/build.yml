@@ -104,10 +104,23 @@ jobs:
     name: 构建 B 端插件（.cipx）
     runs-on: ubuntu-latest
     env:
-      # 仓库变量 CLASSISLAND_VERSION 可覆盖；未设置时用下面的默认值
+      # 仓库变量 CLASSISLAND_VERSION 可覆盖；未设置时用下面的默认值。
+      # ⚠️ 不得低于 2.1.1.1：插件按 ClassIsland.PluginSdk 2.1.1.1 编译，拿更旧的宿主程序集去编译
+      #    会报出一堆难懂的 CS1061（属性/类型不存在）。下面第一步就是这条下限的校验。
       CLASSISLAND_VERSION: ${{ vars.CLASSISLAND_VERSION || '2.1.1.1' }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: 校验 ClassIsland 版本不低于 2.1.1.1
+        run: |
+          set -euo pipefail
+          min=2.1.1.1
+          lowest="$(printf '%s\n%s\n' "$min" "$CLASSISLAND_VERSION" | sort -V | head -n1)"
+          if [ "$lowest" != "$min" ]; then
+            echo "::error::CLASSISLAND_VERSION=$CLASSISLAND_VERSION 低于插件要求的最低版本 $min"
+            exit 1
+          fi
+          echo "ClassIsland 版本 $CLASSISLAND_VERSION ≥ $min，继续。"
 
       - uses: actions/setup-dotnet@v4
         with:

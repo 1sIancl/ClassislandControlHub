@@ -101,7 +101,7 @@ cd dist/server
 ## 3. B 端部署
 
 1. 构建出 `ControlHub.Plugin.cipx`（见上文）。
-2. 在教室电脑上安装 ClassIsland（2.1+）。
+2. 在教室电脑上安装 ClassIsland（2.1.1.1 及以上）。
 3. 把 `.cipx` 放入 ClassIsland 的插件目录（或通过插件市场分发安装）。
 4. 在 A 端 Web 界面生成注册码。
 5. 打开 ClassIsland【应用设置 → 集控客户端】：
