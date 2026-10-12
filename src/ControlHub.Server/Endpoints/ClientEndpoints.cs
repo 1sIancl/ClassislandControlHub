@@ -240,6 +240,7 @@ public static class ClientEndpoints
             request.CurrentClassPlanName,
             request.LastError,
             HubJson.Serialize(request.Metrics),
+            request.MacAddress,
             cancellationToken);
 
         // 课表实时状态：一台设备只留最新一条（管理员要看的是「这间教室现在在上什么」）。
@@ -360,9 +361,11 @@ public static class ClientEndpoints
         }
         else
         {
+            // macAddress 传 null：这条路径只是把设备标成出错，**不该顺带改**网卡地址
+            // （SQL 里是 COALESCE(NULLIF($mac,''), mac_address)，传 null 等于「不动这一列」）。
             await store.UpdateHeartbeatAsync(device.Id, DeviceStates.Error, device.AppliedRevision,
                 device.AppliedPushEpoch, device.CurrentClassPlanName, request.Message, device.Metrics,
-                cancellationToken);
+                null, cancellationToken);
         }
 
         var sections = string.Join(",", request.AppliedSections);

@@ -4,17 +4,17 @@
  * 并可切换到列表视图查看完整状态明细。注册码管理一并放在本页。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=97';
-import { toastError, errorBlock } from '../core/errors.js?v=97';
+import { api, fetchBlob } from '../core/api.js?v=98';
+import { toastError, errorBlock } from '../core/errors.js?v=98';
 import {
   h, clear, formatDateTime, relativeTime, toast, loadingBlock, skeletonRows,
   modal, confirmDialog, deviceStateBadge, syncBadge,
   emptyState, field, select, copyText, append, undoBar,
-} from '../core/ui.js?v=97';
-import { showContextMenu } from '../core/contextmenu.js?v=97';
-import { getLayout, saveLayout } from '../core/prefs.js?v=97';
-import { auditTimelineSection } from '../core/audit-timeline.js?v=97';
-import { selectionSummary } from '../core/batch-summary.js?v=97';
+} from '../core/ui.js?v=98';
+import { showContextMenu } from '../core/contextmenu.js?v=98';
+import { getLayout, saveLayout } from '../core/prefs.js?v=98';
+import { auditTimelineSection } from '../core/audit-timeline.js?v=98';
+import { selectionSummary } from '../core/batch-summary.js?v=98';
 
 export const meta = {
   title: '设备管理',
@@ -1210,6 +1210,7 @@ document.addEventListener('contextmenu', (event) => {
     { label: '发送通知', action: () => bulkNotify([id]) },
     { label: '查看日志', action: () => openLogsDialog(device) },
     '-',
+    { label: '唤醒（开机）', action: () => bulkWake([id]) },
     { label: '重启 ClassIsland', action: () => bulkRestart([id]) },
     {
       label: '关机',
@@ -1255,6 +1256,10 @@ function selectionBar() {
       type: 'button',
       onClick: () => bulkNotify(active()),
     }, '发送通知'),
+    h('button.btn.btn-sm', {
+      type: 'button',
+      onClick: () => bulkWake(active()),
+    }, '唤醒'),
     h('button.btn.btn-sm', {
       type: 'button',
       onClick: () => bulkRestart(active()),
@@ -1460,6 +1465,41 @@ async function bulkPower(ids, kind, label, warning) {
   }
 
   await sendGuardedCommand({ kind, deviceIds: ids, includeOffline: false }, `批量${label}`);
+  selection.clear();
+  await refresh();
+}
+
+/**
+ * 批量唤醒（Wake-on-LAN，#20）。
+ * <para>与关机 / 重启**不是同一套机制**：要唤醒的机器按定义是关着的、插件也没在跑，
+ * 指令队列根本没法送达，只能由 A 端直接发魔术包。所以这里逐台列出跳过原因——
+ * 「没上报 MAC」「不在同一广播域」这些都不是重试能解决的，含糊一句"部分失败"帮不上忙。</para>
+ */
+async function bulkWake(ids) {
+  if (ids.length === 0) { toast('warn', '所选设备均已被停用'); return; }
+  if (!await confirmDialog('批量唤醒',
+    `将向 ${ids.length} 台设备发送唤醒魔术包（Wake-on-LAN）。\n`
+    + `${selectionSummary(cache.devices, ids)}\n`
+    + '前提：教室机已在 BIOS / 网卡里启用「网络唤醒」，且 A 端与教室处于同一广播域'
+    + '（跨 VLAN 需要在交换机上开 WoL 中继）。',
+    '唤醒')) {
+    return;
+  }
+
+  try {
+    const r = await api('/admin/devices/wake', { method: 'POST', body: { deviceIds: ids } });
+    const skipped = r?.skipped ?? [];
+    if (skipped.length === 0) {
+      toast('ok', '已发送唤醒包', `已向 ${r?.sent ?? 0} 台设备发送。`);
+    } else {
+      toast('warn', `已向 ${r?.sent ?? 0} 台发送，${skipped.length} 台跳过`,
+        skipped.slice(0, 3).map((s) => `${s.deviceName}：${s.reason}`).join('；')
+        + (skipped.length > 3 ? ` …等 ${skipped.length} 台` : ''));
+    }
+  } catch (e) {
+    toastError(e, '唤醒失败');
+  }
+
   selection.clear();
   await refresh();
 }
@@ -1724,6 +1764,10 @@ function openDeviceDialog(device) {
         h('div.summary-line',
           h('span.summary-key', '机器名'), device.machineName || '—',
           h('span.summary-key', 'IP'), device.ipAddress || '—'),
+        // 网卡地址单独一行并写明用途：点「唤醒」失败时，第一个要查的就是它有没有上报（#20）。
+        h('div.summary-line',
+          h('span.summary-key', '网卡（唤醒用）'),
+          device.macAddress || '未上报——用 1.3.9.0 及以上的插件在线一次即可'),
         // 离线原因诊断：在线时不显示，离线时给出可行动的原因（从未连接 / 离线多久 / 最近报错）。
         device.offlineReason
           ? h('div.summary-line', { style: { color: 'var(--text-dim)' } },

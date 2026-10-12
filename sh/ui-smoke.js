@@ -2161,6 +2161,83 @@ function check(name, ok, extra = '') {
     });
   }, volumeDeviceId);
 
+  // 32) 远程唤醒（#20）：设备详情要能看到「网卡（唤醒用）」，批量条要有「唤醒」按钮
+  //     （回归点：唤醒不走指令队列，页面入口漏了的话管理员只能手动发 UDP，等于功能不存在）
+  const wakeDeviceId = await page.evaluate(async () => {
+    const token = localStorage.getItem('controlhub.admin.token');
+    const api = async (path, body) => {
+      const r = await fetch('/api/v1' + path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: JSON.stringify(body),
+      });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || j?.ok === false) throw new Error(path + ' → ' + r.status);
+      return j?.data;
+    };
+
+    const deviceId = 'e2e-uiwake-' + Date.now();
+    const code = await api('/admin/enroll-codes', { note: 'e2e 界面唤醒', maxUses: 1 });
+    const enrol = await api('/client/enroll', {
+      enrollCode: code.code || code.Code, deviceId, deviceName: 'E2E 界面唤醒教室',
+    });
+    await fetch('/api/v1/client/heartbeat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'HubDevice ' + enrol.deviceToken },
+      body: JSON.stringify({ state: 'idle', macAddress: 'AA-BB-CC-DD-EE-F1' }),
+    });
+    return deviceId;
+  });
+
+  // 上一块停在 #/remote，这里要**换 hash 跳回设备页**（SPA 会重新渲染并拉设备列表）。
+  await page.goto(`${BASE}/#/devices`, { waitUntil: 'networkidle2' });
+  await sleep(1600);
+  // 设备页默认是看板视图；勾选框与行内「编辑」按钮在列表视图下才稳定可定位（同 #6 那条先切视图）。
+  await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === '列表视图');
+    if (btn) btn.click();
+  });
+  await sleep(800);
+  const wakeUi = await page.evaluate(async () => {
+    // 勾选任意一台设备即可（「唤醒」按钮是通用的，不依赖具体是哪台）
+    const box = [...document.querySelectorAll('table tbody input[type=checkbox]')][0];
+    if (box) {
+      box.click();
+      await new Promise((r) => setTimeout(r, 500));
+    }
+
+    const buttons = [...document.querySelectorAll('.bulk-bar button')].map((b) => b.textContent.trim());
+    return { checked: !!box, hasWake: buttons.includes('唤醒'), bulkButtons: buttons.slice(0, 8) };
+  });
+  check('选中设备后批量条里有「唤醒」按钮（#20）', wakeUi.checked && wakeUi.hasWake, JSON.stringify(wakeUi));
+
+  const macField = await page.evaluate(async () => {
+    // 打开设备详情（行内「编辑」按钮），看有没有「网卡（唤醒用）」那一行
+    const edit = [...document.querySelectorAll('table button, #content button')]
+      .find((b) => b.textContent.trim() === '编辑');
+    if (!edit) return { opened: false };
+    edit.click();
+    await new Promise((r) => setTimeout(r, 900));
+    return { opened: true, hasLabel: (document.body.textContent ?? '').includes('网卡（唤醒用）') };
+  });
+  const macExposed = await page.evaluate(async (deviceId) => {
+    const token = localStorage.getItem('controlhub.admin.token');
+    const r = await fetch('/api/v1/admin/devices', { headers: { Authorization: 'Bearer ' + token } });
+    const j = await r.json();
+    return (j?.data ?? []).find((d) => d.id === deviceId)?.macAddress ?? '';
+  }, wakeDeviceId);
+  check('设备详情有「网卡（唤醒用）」字段，且列表接口带回了上报的 MAC',
+    macField.opened && macField.hasLabel && macExposed === 'AA-BB-CC-DD-EE-F1',
+    `${JSON.stringify(macField)} mac=${macExposed}`);
+
+  // 清掉这台断言设备
+  await page.evaluate(async (deviceId) => {
+    const token = localStorage.getItem('controlhub.admin.token');
+    await fetch('/api/v1/admin/devices/' + deviceId, {
+      method: 'DELETE', headers: { Authorization: 'Bearer ' + token },
+    });
+  }, wakeDeviceId);
+
   await page.setViewport({ width: 1600, height: 1000 });
   await sleep(700);
 

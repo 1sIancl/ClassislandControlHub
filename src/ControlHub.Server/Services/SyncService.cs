@@ -233,6 +233,7 @@ public sealed class SyncService(
             ClassIslandVersion = device.ClassIslandVersion,
             PluginVersion = device.PluginVersion,
             IpAddress = device.IpAddress,
+            MacAddress = device.MacAddress,
             Remark = device.Remark,
             CurrentClassPlanName = device.CurrentClassPlanName,
             LastError = device.LastError,

@@ -95,6 +95,13 @@ public sealed class HeartbeatRequest
     /// <summary>客户端最近一条告警信息，可为空。</summary>
     public string? LastError { get; set; }
 
+    /// <summary>
+    /// 本机**主网卡的物理地址**（远程唤醒 / Wake-on-LAN 用，路线图 #20），形如 <c>AA-BB-CC-DD-EE-FF</c>。
+    /// <para>取不到时留空。服务端**不会**用空值清掉上一次报上来的地址——否则一次取不到（网卡切换、
+    /// 权限受限）就会让这台设备永久失去唤醒能力，而管理员完全看不出为什么。</para>
+    /// </summary>
+    public string? MacAddress { get; set; }
+
     /// <summary>附加运行指标，键值均为字符串以便扩展。</summary>
     public Dictionary<string, string> Metrics { get; set; } = [];
 
@@ -314,6 +321,12 @@ public sealed class DeviceSummaryDto
 
     /// <summary>插件版本。</summary>
     public string PluginVersion { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 主网卡物理地址（#20 远程唤醒用）；为空表示这台设备**还没上报过**——
+    /// 此时管理员点「唤醒」会被明确告知原因，而不是发一个注定无效的包。
+    /// </summary>
+    public string MacAddress { get; set; } = string.Empty;
 
     /// <summary>IP 地址。</summary>
     public string? IpAddress { get; set; }

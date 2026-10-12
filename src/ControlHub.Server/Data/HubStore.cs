@@ -91,6 +91,8 @@ public sealed partial class HubStore
 
         // 迁移：设备备注（管理员自己标注，例如「三楼东侧」「班主任 张老师」）。
         await EnsureColumnAsync(connection, "devices", "remark", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+        // #20：主网卡 MAC（远程唤醒用）。空串 = 还没上报过；点「唤醒」前会先查这一列并明确报错。
+        await EnsureColumnAsync(connection, "devices", "mac_address", "TEXT NOT NULL DEFAULT ''", cancellationToken);
 
         // 迁移：指令的「最早可派发时间」，用于给关机等不可逆操作留出撤销窗口。
         await EnsureColumnAsync(connection, "device_commands", "not_before", "TEXT", cancellationToken);
@@ -463,6 +465,7 @@ public sealed partial class HubStore
             name                    TEXT NOT NULL DEFAULT '',
             machine_name            TEXT NOT NULL DEFAULT '',
             os_version              TEXT NOT NULL DEFAULT '',
+            mac_address             TEXT NOT NULL DEFAULT '',
             classisland_version     TEXT NOT NULL DEFAULT '',
             plugin_version          TEXT NOT NULL DEFAULT '',
             group_id                TEXT,

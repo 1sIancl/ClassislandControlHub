@@ -42,6 +42,11 @@ public static class RemoteEndpoints
         group.MapDelete("/devices/commands/{id}", CancelCommandAsync).RequirePermission(PermissionKeys.RemoteWrite);
         group.MapPost("/devices/commands/cancel", CancelCommandsAsync).RequirePermission(PermissionKeys.RemoteWrite);
 
+        // 远程唤醒（Wake-on-LAN，#20）：**开机只能由 A 端做**——教室机断电时插件也停了，
+        // 它叫不醒自己。所以这一对接口不进指令队列，而是直接发魔术包。
+        group.MapPost("/devices/{id}/wake", WakeDeviceAsync).RequirePermission(PermissionKeys.RemoteWrite);
+        group.MapPost("/devices/wake", WakeDevicesAsync).RequirePermission(PermissionKeys.RemoteWrite);
+
 
     }
 
@@ -426,6 +431,96 @@ public static class RemoteEndpoints
         return ApiResult<object>.Success(new { affected = targets.Count, skipped });
     }
 
+    // ────────────────────────── 远程唤醒（Wake-on-LAN，#20） ──────────────────────────
+
+    /// <summary>给一台设备发魔术包；返回失败原因（成功时为 <c>null</c>）。不做权限与审计，由调用方负责。</summary>
+    /// <remarks>
+    /// 失败原因一律写成**管理员能照做的话**：这类问题（没上报 MAC、服务器不在同一广播域）
+    /// 都不是「重试就好」，含糊的报错只会让人反复点。
+    /// </remarks>
+    private static async Task<string?> TryWakeAsync(DeviceRow device, CancellationToken cancellationToken)
+    {
+        if (device.Revoked)
+        {
+            return "设备已停用，不唤醒。";
+        }
+
+        if (string.IsNullOrWhiteSpace(device.MacAddress))
+        {
+            return "这台设备还没上报网卡地址（MAC）——让它用 1.3.9.0 及以上的插件在线一次即可。";
+        }
+
+        if (!WakeOnLan.TryParseMac(device.MacAddress, out _))
+        {
+            return $"设备上报的网卡地址无法识别：{device.MacAddress}";
+        }
+
+        return await WakeOnLan.SendAsync(device.MacAddress, device.IpAddress, cancellationToken);
+    }
+
+    /// <summary>唤醒一台设备。</summary>
+    private static async Task<ApiResult<object>> WakeDeviceAsync(
+        string id, HttpContext http, HubStore store, CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var device = await store.GetDeviceAsync(id, cancellationToken)
+                     ?? throw HubException.NotFound("设备不存在。");
+
+        var error = await TryWakeAsync(device, cancellationToken);
+        if (error is not null)
+        {
+            throw HubException.Validation(error);
+        }
+
+        await store.AddAuditAsync(session.Username, "device.wake", device.Name,
+            $"向 {device.MacAddress} 发送唤醒魔术包。", http.GetClientIpAddress(), cancellationToken);
+        return ApiResult<object>.Success(new { deviceId = device.Id, deviceName = device.Name, mac = device.MacAddress });
+    }
+
+    /// <summary>批量唤醒（按设备 ID 或分组）。</summary>
+    /// <remarks>
+    /// 这里**刻意不按「在线」过滤**：要唤醒的机器按定义就是关着的（在线反而说明它没关）。
+    /// 只跳过已停用的设备——唤醒一台被停用的机器等于绕过管理员的停用决定。
+    /// </remarks>
+    private static async Task<ApiResult<object>> WakeDevicesAsync(
+        WakeRequest request, HttpContext http, HubStore store, CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        if (request.DeviceIds.Count == 0 && string.IsNullOrWhiteSpace(request.GroupId))
+        {
+            throw HubException.Validation("请指定要唤醒的设备或分组。");
+        }
+
+        var all = await store.GetDevicesAsync(cancellationToken);
+        var devices = request.DeviceIds.Count > 0
+            ? all.Where(d => request.DeviceIds.Contains(d.Id, StringComparer.Ordinal)).ToList()
+            : [.. all.Where(d => string.Equals(d.GroupId, request.GroupId!.Trim(), StringComparison.Ordinal))];
+
+        if (devices.Count == 0)
+        {
+            throw HubException.Validation("所选范围内没有设备。");
+        }
+
+        var sent = 0;
+        var skipped = new List<object>();
+        foreach (var device in devices)
+        {
+            var error = await TryWakeAsync(device, cancellationToken);
+            if (error is null)
+            {
+                sent++;
+            }
+            else
+            {
+                skipped.Add(new { deviceId = device.Id, deviceName = device.Name, reason = error });
+            }
+        }
+
+        await store.AddAuditAsync(session.Username, "device.wake", $"{sent} 台设备",
+            $"批量唤醒：成功 {sent} 台，跳过 {skipped.Count} 台。", http.GetClientIpAddress(), cancellationToken);
+        return ApiResult<object>.Success(new { sent, skipped });
+    }
+
     private static DeviceCommandDto ToDto(RemoteCommandRow row, string? deviceName) => new()
     {
         Id = row.Id,
@@ -444,6 +539,16 @@ public static class RemoteEndpoints
         NotBefore = row.NotBefore,
         ExpiresAt = row.ExpiresAt,
     };
+}
+
+/// <summary>批量唤醒请求（Wake-on-LAN，#20）。</summary>
+public sealed class WakeRequest
+{
+    /// <summary>目标设备 ID 列表（与 <see cref="GroupId"/> 二选一）。</summary>
+    public List<string> DeviceIds { get; set; } = [];
+
+    /// <summary>目标分组 ID。</summary>
+    public string? GroupId { get; set; }
 }
 
 /// <summary>下发指令的请求体。</summary>

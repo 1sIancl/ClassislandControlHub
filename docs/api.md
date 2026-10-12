@@ -122,6 +122,8 @@ curl -s "$BASE/admin/devices" -H "Authorization: Bearer $TOKEN" \
 | GET | `/admin/devices/{id}/commands` | `remote.read` | 指令历史（含状态与输出） |
 | GET | `/admin/devices/{id}/commands/queue` | `remote.read` | **待执行队列**（离线排队 / 定时未到 / 已派发在途 + 到期时间） |
 | DELETE | `/admin/devices/commands/{id}` | `remote.write` | 取消尚未派发的指令 |
+| POST | `/admin/devices/{id}/wake` | `remote.write` | 远程唤醒（Wake-on-LAN）：**直接发魔术包，不进指令队列**——要唤醒的机器是关着的，插件没在跑 |
+| POST | `/admin/devices/wake` | `remote.write` | 批量唤醒（`{deviceIds:[]}` 或 `{groupId}`），返回 `{sent, skipped:[{deviceId,deviceName,reason}]}`；已停用的设备会被跳过 |
 | POST | `/admin/devices/{id}/notify` | `remote.write` | 发送通知 |
 | POST | `/admin/devices/appearance` | `remote.write` | 下发外观 |
 | GET | `/admin/devices/{id}/diagnostics` | `remote.read` | 诊断工件列表（截图） |

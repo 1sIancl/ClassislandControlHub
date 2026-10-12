@@ -76,6 +76,7 @@ public sealed class DeviceRow
     public string Name { get; set; } = string.Empty;
     public string MachineName { get; set; } = string.Empty;
     public string OsVersion { get; set; } = string.Empty;
+    public string MacAddress { get; set; } = string.Empty;
     public string ClassIslandVersion { get; set; } = string.Empty;
     public string PluginVersion { get; set; } = string.Empty;
     public string? GroupId { get; set; }

@@ -7,7 +7,7 @@ namespace ControlHub.Server.Data;
 public sealed partial class HubStore
 {
     private const string DeviceColumns = """
-        id, token, name, machine_name, os_version, classisland_version, plugin_version,
+        id, token, name, machine_name, os_version, mac_address, classisland_version, plugin_version,
         group_id, profile_id, applied_profile_id, applied_profile_revision, state, applied_revision, push_epoch, applied_push_epoch,
         last_seen_at, last_sync_at, last_error, ip_address, revoked,
         current_class_plan_name, metrics, remark, created_at
@@ -20,6 +20,7 @@ public sealed partial class HubStore
         Name = GetString(reader, "name"),
         MachineName = GetString(reader, "machine_name"),
         OsVersion = GetString(reader, "os_version"),
+        MacAddress = GetString(reader, "mac_address"),
         ClassIslandVersion = GetString(reader, "classisland_version"),
         PluginVersion = GetString(reader, "plugin_version"),
         GroupId = GetNullableString(reader, "group_id"),
@@ -141,7 +142,7 @@ public sealed partial class HubStore
     /// <summary>更新心跳信息。</summary>
     public async Task UpdateHeartbeatAsync(string deviceId, string state, long appliedRevision,
         long appliedPushEpoch, string? currentClassPlanName, string? lastError, string metrics,
-        CancellationToken cancellationToken = default)
+        string? macAddress, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
@@ -153,7 +154,8 @@ public sealed partial class HubStore
                 last_seen_at            = $now,
                 current_class_plan_name = $plan,
                 last_error              = $error,
-                metrics                 = $metrics
+                metrics                 = $metrics,
+                mac_address             = COALESCE(NULLIF($mac, ''), mac_address)
             WHERE id = $id;
             """;
         AddParameters(command,
@@ -164,6 +166,9 @@ public sealed partial class HubStore
             ("$plan", TextOrNull(currentClassPlanName)),
             ("$error", TextOrNull(lastError)),
             ("$metrics", metrics),
+            // 只在上报非空时才覆盖：网卡切换 / 权限受限会让插件偶尔取不到 MAC，
+            // 用空值清掉等于「这台设备永久失去唤醒能力」，而管理员看不出原因。
+            ("$mac", TextOrNull(macAddress)),
             ("$id", deviceId));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

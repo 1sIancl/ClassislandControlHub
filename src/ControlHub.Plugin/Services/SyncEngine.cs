@@ -194,6 +194,9 @@ public sealed class SyncEngine(
             AppliedRevision = cfg.AppliedRevision,
             AppliedPushEpoch = cfg.AppliedPushEpoch,
             UptimeSeconds = (long)(DateTime.UtcNow - ProcessStartTime).TotalSeconds,
+            // 主网卡 MAC：管理端「唤醒」要用它发魔术包（#20）。取不到就留空，
+            // 服务端不会用空值覆盖上一次的地址。
+            MacAddress = MacAddressProvider.Primary(),
             CurrentClassPlanName = state.CurrentClassPlanName,
             // 课表实时状态随心跳上报（读宿主服务，内部已切 UI 线程）。
             // 读失败**不能**让心跳失败：心跳一断，这台设备在管理端就变成离线，
