@@ -37,6 +37,12 @@ public sealed class RemoteCommandExecutor(
     /// <summary>插件上报回调（由插件入口注入，负责把插件列表回传 A 端）。</summary>
     public Func<List<PluginInfoDto>, Task>? OnPluginsReported { get; set; }
 
+    /// <summary>
+    /// 插件包下载回调（由插件入口注入，用设备令牌从 A 端的代理缓存取包，#121）。
+    /// <para>与其它上报回调不同，这里的异常**不能吞**：取不到包就没法安装，必须如实回报。</para>
+    /// </summary>
+    public Func<string, CancellationToken, Task<byte[]>>? OnDownloadPackage { get; set; }
+
     /// <summary>课表目录上报回调（由插件入口注入，负责把课表目录回传 A 端）。</summary>
     public Func<LessonCatalogDto, Task>? OnLessonCatalogRead { get; set; }
 
@@ -68,6 +74,8 @@ public sealed class RemoteCommandExecutor(
                 RemoteCommandKinds.Notify => UiThread.Run(() => RunNotify(command)),
                 // ↑ RunNotify 改成实例方法了（要触发回执回调），见下方实现。
                 RemoteCommandKinds.PluginRefresh => await ReportPluginsAsync(command),
+                // 插件安装（#121）：下载 + 校验 + 落盘，都是普通 IO，刻意不切 UI 线程。
+                RemoteCommandKinds.PluginInstall => await RunInstallPluginAsync(command),
                 RemoteCommandKinds.PluginToggle => UiThread.Run(() => TogglePlugin(command)),
                 RemoteCommandKinds.PluginUninstall => UiThread.Run(() => UninstallPlugin(command)),
                 RemoteCommandKinds.AppearanceApply => UiThread.Run(() => ApplyAppearance(command)),
@@ -401,10 +409,42 @@ public sealed class RemoteCommandExecutor(
         return Ok(command, $"插件 {Path.GetFileName(dir)} 已卸载，需重启 ClassIsland 生效。");
     }
 
-    private sealed class PluginTogglePayload
+    /// <summary>
+    /// 安装插件（#121）：从 A 端的代理缓存取包，校验 SHA256 与包内 manifest 后，
+    /// 放进宿主的待安装目录——**重启 ClassIsland 才会真正装上去**（宿主在启动时解压该目录）。
+    /// </summary>
+    private async Task<CommandReportRequest> RunInstallPluginAsync(RemoteCommandDto command)
     {
-        public string? PluginId { get; set; }
-        public bool Enabled { get; set; }
+        var payload = HubJson.Deserialize<PluginInstallPayload>(command.Payload);
+        if (payload is null
+            || string.IsNullOrWhiteSpace(payload.PluginId)
+            || string.IsNullOrWhiteSpace(payload.CipxUrl))
+        {
+            return Fail(command, CommandErrorCodes.PayloadInvalid, "载荷缺少插件 ID 或下载地址。");
+        }
+
+        if (OnDownloadPackage is null)
+        {
+            return Fail(command, CommandErrorCodes.HostApiUnavailable,
+                "当前插件版本没有接入插件包下载通道，请先升级集控插件。");
+        }
+
+        byte[] package;
+        try
+        {
+            package = await OnDownloadPackage(payload.CipxUrl, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            return Fail(command, CommandErrorCodes.ExecutionFailed, "从集控服务器取插件包失败：" + ex.Message);
+        }
+
+        var outcome = PluginPackageInstaller.Install(package, payload.PluginId.Trim(),
+            (payload.Version ?? string.Empty).Trim(), payload.Sha256 ?? string.Empty);
+
+        return outcome.Ok
+            ? Ok(command, outcome.Message)
+            : Fail(command, outcome.ErrorCode ?? CommandErrorCodes.ExecutionFailed, outcome.Message);
     }
 
     private static IEnumerable<string> PluginRoots()

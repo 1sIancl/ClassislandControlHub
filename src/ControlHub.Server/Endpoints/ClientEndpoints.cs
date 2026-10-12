@@ -36,6 +36,9 @@ public static class ClientEndpoints
         authed.MapPost("/commands/report", ReportCommandAsync);
         authed.MapPost("/commands/receipt", ReportNotificationReceiptAsync);
         authed.MapPost("/plugins", ReportPluginsAsync);
+        // 插件包下载（#121）：地址由 plugin.install 指令下发，从 A 端的代理缓存取，
+        // 教室端因此不需要访问 GitHub / 插件市场。
+        authed.MapGet("/plugin-packages/{id}/{version}/download", DownloadPluginPackageAsync);
         // 课表目录（今天各节 / 科目 / 课表）：管理员点「读取课表」后由插件回报。
         authed.MapPost("/lessons/catalog", ReportLessonCatalogAsync);
         authed.MapPost("/time-report", ReportTimeSyncAsync);
@@ -609,7 +612,36 @@ public static class ClientEndpoints
     {
         var device = http.RequireDevice();
         await store.SetSettingAsync($"device_plugins.{device.Id}", HubJson.Serialize(request.Plugins), cancellationToken);
+        // 同时记下上报时刻：清单是快照，管理端要能看出「这份清单有多旧」。
+        await store.SetSettingAsync($"device_plugins_at.{device.Id}",
+            DateTimeOffset.UtcNow.ToString("O"), cancellationToken);
         return ApiResult<bool>.Success(true);
+    }
+
+    /// <summary>
+    /// 教室端从 A 端的代理缓存取插件包（#121）。
+    /// <para>走设备令牌鉴权：只有已注册的教室机能取。文件路径取自缓存记录，
+    /// 并会被限定在缓存目录之内（记录被改过也不能变成任意文件读取）。</para>
+    /// </summary>
+    private static async Task<IResult> DownloadPluginPackageAsync(
+        string id,
+        string version,
+        HttpContext http,
+        HubStore store,
+        PluginPackageCacheService cache,
+        CancellationToken cancellationToken)
+    {
+        http.RequireDevice();
+        var row = await store.GetPackageAsync(id, version, cancellationToken)
+                  ?? throw HubException.NotFound("A 端没有缓存这个插件包。");
+
+        var path = cache.ResolvePath(row);
+        if (!File.Exists(path))
+        {
+            throw HubException.NotFound("缓存文件已不在磁盘上，请在管理端重新缓存该插件包。");
+        }
+
+        return Results.File(path, "application/octet-stream", row.FileName);
     }
 
     /// <summary>接收 B 端时间同步结果，便于管理端展示。</summary>

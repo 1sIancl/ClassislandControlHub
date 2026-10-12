@@ -14,7 +14,7 @@ public sealed partial class HubStore
 
     private const string CommandColumns =
         "id, device_id, kind, payload, status, output, exit_code, issued_at, finished_at, issued_by, "
-        + "dispatched_at, expires_at, not_before, error_code";
+        + "dispatched_at, expires_at, not_before, error_code, deployment_id";
 
     private static RemoteCommandRow ReadCommand(SqliteDataReader reader) => new()
     {
@@ -32,6 +32,7 @@ public sealed partial class HubStore
         ExpiresAt = GetTimestamp(reader, "expires_at"),
         NotBefore = GetTimestamp(reader, "not_before"),
         ErrorCode = GetString(reader, "error_code"),
+        DeploymentId = GetString(reader, "deployment_id") is { Length: > 0 } deployment ? deployment : null,
     };
 
     /// <summary>创建一条待执行指令。</summary>
@@ -42,7 +43,7 @@ public sealed partial class HubStore
         command.CommandText = $"""
             INSERT INTO device_commands ({CommandColumns})
             VALUES ($id, $deviceId, $kind, $payload, $status, $output, $exitCode, $issuedAt, $finishedAt,
-                    $issuedBy, $dispatchedAt, $expiresAt, $notBefore, $errorCode);
+                    $issuedBy, $dispatchedAt, $expiresAt, $notBefore, $errorCode, $deploymentId);
             """;
         AddParameters(command,
             ("$id", row.Id),
@@ -58,7 +59,8 @@ public sealed partial class HubStore
             ("$dispatchedAt", row.DispatchedAt is null ? null : Ts(row.DispatchedAt.Value)),
             ("$expiresAt", row.ExpiresAt is null ? null : Ts(row.ExpiresAt.Value)),
             ("$notBefore", row.NotBefore is null ? null : Ts(row.NotBefore.Value)),
-            ("$errorCode", row.ErrorCode));
+            ("$errorCode", row.ErrorCode),
+            ("$deploymentId", row.DeploymentId));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -292,6 +294,12 @@ public sealed class RemoteCommandRow
 
     /// <summary>失败原因分类（取值见 <see cref="CommandErrorCodes"/>）；空串表示教室端没上报分类。</summary>
     public string ErrorCode { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 这条指令属于哪一批插件下发（<c>plugin_deployments.id</c>）。
+    /// <para>普通远程指令为空；插件下发的逐台进度就是按这一列归拢的。</para>
+    /// </summary>
+    public string? DeploymentId { get; set; }
 
     public DateTimeOffset IssuedAt { get; set; }
     public DateTimeOffset? FinishedAt { get; set; }

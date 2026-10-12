@@ -2,20 +2,20 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=98';
-import { toastError } from './core/errors.js?v=98';
-import { h, clear, toast, icon } from './core/ui.js?v=98';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=99';
+import { toastError } from './core/errors.js?v=99';
+import { h, clear, toast, icon } from './core/ui.js?v=99';
 import {
   initTheme,
   getSidebarCollapsed, setSidebarCollapsed,
   applyDensity,
   applyAppearance, setBrandingAccent,
   applyRemotePrefs, applySchedScale,
-} from './core/prefs.js?v=98';
-import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=98';
-import { initGlassHighlight } from './core/glass.js?v=98';
-import { initTopbar } from './topbar.js?v=98';
-import { openSearch } from './core/search.js?v=98';
+} from './core/prefs.js?v=99';
+import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=99';
+import { initGlassHighlight } from './core/glass.js?v=99';
+import { initTopbar } from './topbar.js?v=99';
+import { openSearch } from './core/search.js?v=99';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -81,6 +81,9 @@ const NAV = [
     label: '设备',
     items: [
       { key: 'devices', label: '设备管理', icon: 'monitor', hash: '#/devices', perm: 'devices.read' },
+      // 插件管理（#121）：从 ClassIsland 插件市场缓存 .cipx 再批量下发到教室端。
+      // 教室端的一条轴——插件装没装、装的是哪一版，不用再跑到教室机上看。
+      { key: 'plugins', label: '插件管理', icon: 'database', hash: '#/plugins', perm: 'plugins.read' },
     ],
   },
   {
@@ -114,25 +117,26 @@ const ROUTE_ALIASES = {
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=98'),
-  devices: () => import('./views/devices.js?v=98'),
+  dashboard: () => import('./views/dashboard.js?v=99'),
+  devices: () => import('./views/devices.js?v=99'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=98'),
-  profiles: () => import('./views/profiles.js?v=98'),
-  profileEditor: () => import('./views/profileEditor.js?v=98'),
-  deploy: () => import('./views/deploy.js?v=98'),
-  remote: () => import('./views/remote.js?v=98'),
-  reminders: () => import('./views/reminders.js?v=98'),
-  audit: () => import('./views/audit.js?v=98'),
-  reports: () => import('./views/reports.js?v=98'),
-  appearance: () => import('./views/appearance.js?v=98'),
+  groups: () => import('./views/devices.js?v=99'),
+  profiles: () => import('./views/profiles.js?v=99'),
+  profileEditor: () => import('./views/profileEditor.js?v=99'),
+  deploy: () => import('./views/deploy.js?v=99'),
+  remote: () => import('./views/remote.js?v=99'),
+  reminders: () => import('./views/reminders.js?v=99'),
+  audit: () => import('./views/audit.js?v=99'),
+  reports: () => import('./views/reports.js?v=99'),
+  appearance: () => import('./views/appearance.js?v=99'),
   // 「系统设置」拆成四页（原 settings.js 已按此拆分，见各文件头部说明）。
-  accounts: () => import('./views/accounts.js?v=98'),
-  server: () => import('./views/server.js?v=98'),
-  integrations: () => import('./views/integrations.js?v=98'),
-  maintenance: () => import('./views/maintenance.js?v=98'),
-  timesync: () => import('./views/timesync.js?v=98'),
-  lessons: () => import('./views/lessons.js?v=98'),
+  accounts: () => import('./views/accounts.js?v=99'),
+  server: () => import('./views/server.js?v=99'),
+  integrations: () => import('./views/integrations.js?v=99'),
+  maintenance: () => import('./views/maintenance.js?v=99'),
+  timesync: () => import('./views/timesync.js?v=99'),
+  lessons: () => import('./views/lessons.js?v=99'),
+  plugins: () => import('./views/pluginMarket.js?v=99'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -162,6 +166,9 @@ const ROUTE_PERMS = {
   // 快捷换课读的是设备状态（devices.read）；换课 / 调休的下发要 remote.write，
   // 由接口层再校验一次（页面对只读账号也可打开，看得到但发不出去）。
   lessons: 'devices.read',
+  // 插件管理：看市场与缓存要 plugins.read；同步 / 缓存 / 下发由接口层再校验 plugins.write，
+  // 所以只读账号也能打开这一页看清单（看得到但发不出去）。
+  plugins: 'plugins.read',
 };
 
 /** 运行状态。 */
@@ -673,7 +680,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=98');
+    const { startTour } = await import('./core/tour.js?v=99');
     startTour({
       onFinish: async (skipped) => {
         try {

@@ -208,6 +208,9 @@ public sealed partial class HubStore
             await deliveries.ExecuteNonQueryAsync(cancellationToken);
         }
 
+        // 插件市场代理缓存（#121）：索引缓存、包缓存、下发记录三张表，以及指令的 deployment_id 归属列。
+        await EnsurePluginMarketSchemaAsync(connection, cancellationToken);
+
         // 确保全局版本号存在，保证任何一次同步请求都能拿到确定值。
         await using var seed = connection.CreateCommand();
         seed.CommandText = """

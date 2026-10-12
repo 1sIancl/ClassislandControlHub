@@ -82,6 +82,20 @@ public class Plugin : PluginBase
             executor.OnPluginsReported = plugins =>
                 UploadAsync((client, url, token) => client.ReportPluginsAsync(url, token, plugins));
 
+            // 插件包下载（#121）：从 A 端的代理缓存取包（用设备令牌）。
+            // 这里**不吞异常**——取不到包就得如实回报，管理员才知道是网络还是服务器的问题。
+            executor.OnDownloadPackage = (path, token) =>
+            {
+                var cfg = sp.GetRequiredService<HubSettingsStore>().Load();
+                if (string.IsNullOrWhiteSpace(cfg.DeviceToken) || string.IsNullOrWhiteSpace(cfg.ServerUrl))
+                {
+                    throw new InvalidOperationException("设备尚未注册，无法从集控服务器取插件包。");
+                }
+
+                return sp.GetRequiredService<HubClient>()
+                    .DownloadBytesAsync(cfg.ServerUrl, cfg.DeviceToken, path, token);
+            };
+
             executor.OnDiagnosticUploaded = request =>
                 UploadAsync((client, url, token) => client.UploadDiagnosticAsync(url, token, request));
 

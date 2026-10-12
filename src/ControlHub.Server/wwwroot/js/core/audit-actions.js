@@ -26,6 +26,8 @@ const PREFIX_LABELS = {
   audit: '审计日志',
   tag: '标签',
   template: '课表模板',
+  // 插件管理（#121）：同步索引 / 缓存包 / 批量下发。
+  plugin: '插件',
   admin: '登录',
 };
 
@@ -62,6 +64,14 @@ const VERB_LABELS = {
   'import-cses': '导入 CSES 课表',
   'version.delete': '删除历史版本',
   'deliveries.clear': '清空投递记录',
+  // 插件管理（#121）。前缀是 plugin，这里填的是动作码去掉前缀后的部分。
+  refresh: '刷新插件列表',
+  cache: '缓存插件包',
+  'cache.delete': '删除插件包缓存',
+  deploy: '下发插件',
+  'market.sync': '同步市场索引',
+  'market.settings': '修改市场设置',
+  'inventory.refresh': '刷新已装清单',
 };
 
 /**

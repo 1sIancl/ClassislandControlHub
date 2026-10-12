@@ -218,6 +218,9 @@ internal static class Program
         // 教室端设备控制（音量 / 亮度）：这一层同样没有 HTTP 接口可验，只能在这里真调实现。
         await DeviceControlChecks.RunAsync(Check);
 
+        // 插件包校验与安装（#121）：A 端下发的是字节，能不能装由教室端判定。
+        await PluginMarketChecks.RunAsync(Check);
+
         return Report();
     }
 

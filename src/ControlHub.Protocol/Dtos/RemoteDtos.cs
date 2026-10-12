@@ -6,7 +6,12 @@ public static class RemoteCommandKinds
     /// <summary>执行命令行（统一/单台），载荷为 <c>{"command":"...","args":"..."}</c> 或纯命令字符串。</summary>
     public const string Shell = "shell";
 
-    /// <summary>安装插件，载荷为 <c>{"cipxUrl":"...","cipxBase64":"...","fileName":"..."}</c>。</summary>
+    /// <summary>
+    /// 安装插件，载荷为 <see cref="PluginInstallPayload"/>。
+    /// <para>包由 A 端的代理缓存提供（教室端不必有外网）：教室端按设备令牌从
+    /// <c>cipxUrl</c> 取 <c>.cipx</c>，核对 SHA256 后放进宿主的待安装目录，
+    /// **重启 ClassIsland 才生效**。</para>
+    /// </summary>
     public const string PluginInstall = "plugin.install";
 
     /// <summary>卸载插件，载荷为 <c>{"pluginId":"..."}</c>。</summary>

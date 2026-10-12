@@ -1,0 +1,714 @@
+/**
+ * 插件管理：#121「A 端代理缓存插件市场 + 批量下发到教室端」的管理界面。
+ *
+ * <para>为什么要有这一页：教室机往往没有外网（或者外网要过认证），
+ * 让每台机器自己去 GitHub / 插件市场取插件包是不现实的。这一页让 A 端**替它们取**：
+ * 先同步 ClassIsland 官方的插件索引，再把选中的 .cipx 缓存到本地，
+ * 教室端安装时只从 A 端下载——A 端能上外网就够了。</para>
+ *
+ * <para>安装的落点是 ClassIsland 的待安装目录，**重启教室端才生效**；因此界面上
+ * 每一步都写明「要不要重启」，卸载 / 启停也复用同一套下发与进度。</para>
+ */
+
+import { api, hasPermission } from '../core/api.js?v=99';
+import { toastError, errorBlock } from '../core/errors.js?v=99';
+import { hintForCode } from '../core/error-hints.js?v=99';
+import {
+  h, clear, toast, loadingBlock, field, select, confirmDialog, emptyState,
+  formatDateTime, relativeTime,
+} from '../core/ui.js?v=99';
+
+export const meta = {
+  title: '插件管理',
+  subtitle: '从 ClassIsland 插件市场缓存插件包，批量安装到教室终端',
+};
+
+const TABS = [
+  { key: 'market', label: '插件市场' },
+  { key: 'installed', label: '已安装' },
+  { key: 'deployments', label: '下发记录' },
+  { key: 'settings', label: '市场设置' },
+];
+
+/** 页面状态（局部重画用）。 */
+const state = {
+  tab: 'market',
+  items: [],
+  settings: {},
+  inventory: [],
+  deployments: [],
+  query: '',
+  expanded: new Set(),
+};
+
+/** 页面容器（局部刷新时重画它，避免整页 reload 丢滚动位置）。 */
+let host = null;
+
+const canWrite = () => hasPermission('plugins.write');
+
+export async function render(container) {
+  host = container;
+  clear(container);
+  container.appendChild(loadingBlock());
+
+  try {
+    await loadAll();
+  } catch (err) {
+    clear(container);
+    container.appendChild(errorBlock(err, { title: '读取插件市场失败' }));
+    return;
+  }
+
+  paint();
+}
+
+async function loadAll() {
+  const [market, inventory, deployments] = await Promise.all([
+    api('/admin/plugin-market'),
+    api('/admin/plugin-inventory'),
+    api('/admin/plugin-deployments'),
+  ]);
+
+  state.items = market.items ?? [];
+  state.settings = market.settings ?? {};
+  state.inventory = inventory.devices ?? [];
+  state.deployments = deployments ?? [];
+}
+
+function paint() {
+  clear(host);
+  host.appendChild(h('div',
+    renderHeaderCard(),
+    state.tab === 'market'
+      ? renderMarketCard()
+      : state.tab === 'installed'
+        ? renderInstalledCard()
+        : state.tab === 'deployments'
+          ? renderDeploymentsCard()
+          : renderSettingsCard(),
+  ));
+}
+
+// ────────────────────────────── 顶部：标签页与同步状态 ──────────────────────────────
+
+function renderHeaderCard() {
+  const last = state.settings.lastSyncAt;
+  const error = state.settings.lastError;
+
+  return h('div.card',
+    h('div.tabs', ...TABS.map((t) => h('button', {
+      class: `tab${state.tab === t.key ? ' active' : ''}`,
+      type: 'button',
+      onClick: () => { state.tab = t.key; paint(); },
+    }, t.label))),
+
+    h('div.card-head',
+      h('div',
+        h('h3', '插件市场索引'),
+        h('p.card-desc', last
+          ? `上次同步：${formatDateTime(last)}（${relativeTime(last)}）。`
+          : '还没有同步过索引——点右侧「同步索引」从 ClassIsland 官方插件市场取一次。'),
+      ),
+      h('div.card-actions',
+        canWrite()
+          ? h('button.btn.btn-sm', { type: 'button', onClick: () => syncNow() }, '同步索引')
+          : null,
+        h('button.btn.btn-sm', { type: 'button', onClick: () => refresh() }, '刷新页面数据'),
+      ),
+    ),
+
+    error
+      ? h('div.notice.notice-warn',
+        h('span.notice-icon', '!'),
+        h('div', `上次同步失败：${error}`))
+      : null,
+  );
+}
+
+async function syncNow() {
+  try {
+    const result = await api('/admin/plugin-market/sync', { method: 'POST' });
+    if (result.ok) {
+      toast('ok', '索引已同步', `共 ${result.count} 个插件。`);
+    } else {
+      toast('error', '同步失败', result.error ?? '未知原因');
+    }
+  } catch (err) {
+    toastError(err, '同步失败');
+  }
+
+  await refresh();
+}
+
+async function refresh() {
+  try {
+    await loadAll();
+  } catch (err) {
+    toastError(err, '刷新失败');
+    return;
+  }
+
+  paint();
+}
+
+// ────────────────────────────── 插件市场 ──────────────────────────────
+
+function renderMarketCard() {
+  const keyword = state.query.trim().toLowerCase();
+  const items = keyword
+    ? state.items.filter((i) => `${i.name} ${i.id} ${i.author}`.toLowerCase().includes(keyword))
+    : state.items;
+
+  const search = h('input', {
+    type: 'search',
+    placeholder: '搜索插件名称 / ID / 作者',
+    value: state.query,
+    onInput: (e) => {
+      state.query = e.target.value;
+      const body = document.getElementById('marketBody');
+      if (body) {
+        clear(body);
+        body.appendChild(renderMarketRows(items));
+      }
+    },
+  });
+
+  return h('div.card',
+    h('div.card-head',
+      h('div',
+        h('h3', '插件市场'),
+        h('p.card-desc', `索引里共 ${state.items.length} 个插件；「缓存」是把 .cipx 取到 A 端本地，`
+          + '教室端安装时只从 A 端下载，不需要外网。'),
+      ),
+      h('div.card-actions', h('div', { style: { width: '240px' } }, search)),
+    ),
+    h('div#marketBody', renderMarketRows(items)),
+    h('div.notice.notice-info',
+      h('span.notice-icon', 'i'),
+      h('div', '插件由第三方作者提供，装了它就在教室机上运行别人的代码；'
+        + '只装确实需要的，并留意索引里的「要求 API」是否高于教室端的 ClassIsland 版本。')),
+  );
+}
+
+function renderMarketRows(items) {
+  if (state.items.length === 0) {
+    return emptyState('database', '索引还是空的',
+      '点上方「同步索引」从 ClassIsland 官方插件市场取一份；如果同步失败，多半是 A 端访问不了外网。');
+  }
+
+  if (items.length === 0) {
+    return h('div.table-wrap', h('table.data',
+      h('thead', h('tr', h('th', '插件'))),
+      h('tbody', h('tr', h('td', '没有匹配的插件。'))),
+    ));
+  }
+
+  return h('div.table-wrap', h('table.data',
+    h('thead', h('tr',
+      h('th', '插件'),
+      h('th', '版本'),
+      h('th', '要求 API'),
+      h('th', '作者'),
+      h('th', '下载量'),
+      h('th', '缓存状态'),
+      h('th', { style: { width: '210px' } }, '操作'),
+    )),
+    h('tbody', ...items.map((item) => h('tr',
+      h('td',
+        h('div', { style: { fontWeight: '600' } }, item.name),
+        h('div', { style: { fontSize: '12px', color: 'var(--text-dim)' } }, item.id),
+        item.description
+          ? h('div', { style: { fontSize: '12px', color: 'var(--text-dim)', marginTop: '2px' } },
+            item.description)
+          : null,
+      ),
+      h('td', item.version || '—'),
+      h('td', item.apiVersion || '—'),
+      h('td', item.author || '—'),
+      h('td', item.downloadCount ? String(item.downloadCount) : '—'),
+      h('td', renderCacheCell(item)),
+      h('td', h('div.row-actions',
+        canWrite()
+          ? h('button.btn.btn-sm', {
+            type: 'button',
+            title: item.cached ? '重新从镜像取一次这个包' : '把 .cipx 取到 A 端本地',
+            onClick: (e) => cachePackage(item, e.currentTarget),
+          }, item.cached ? '重新缓存' : '缓存')
+          : null,
+        canWrite()
+          ? h('button.btn.btn-sm.btn-primary', {
+            type: 'button',
+            disabled: !item.cached,
+            title: item.cached ? '下发安装到教室端' : '先缓存，再下发',
+            onClick: () => openDeployDialog(item),
+          }, '下发安装')
+          : null,
+      )),
+    ))),
+  ));
+}
+
+function renderCacheCell(item) {
+  if (!item.cached) {
+    // 索引里这一版没缓存，但可能缓存过别的版本——这正说明「有新版本可用」。
+    const others = (item.cachedVersions ?? []).filter((v) => v !== item.version);
+    return h('div',
+      h('span.badge.badge-neutral', '未缓存'),
+      others.length > 0
+        ? h('div', { style: { fontSize: '12px', color: 'var(--text-dim)', marginTop: '2px' } },
+          `本地有：${others.join(' / ')}`)
+        : null,
+    );
+  }
+
+  const size = item.sizeBytes ? `${(item.sizeBytes / 1024).toFixed(0)} KB` : '';
+  return h('div',
+    h('span.badge.badge-ok', '已缓存'),
+    h('div', { style: { fontSize: '12px', color: 'var(--text-dim)', marginTop: '2px' } },
+      `${size}${item.cachedAt ? ` · ${relativeTime(item.cachedAt)}` : ''}`),
+    h('div', { style: { fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'var(--mono)' } },
+      (item.sha256 ?? '').slice(0, 16) + '…'),
+  );
+}
+
+async function cachePackage(item, button) {
+  if (button) {
+    button.disabled = true;
+    button.textContent = '缓存中…';
+  }
+
+  try {
+    const result = await api('/admin/plugin-packages', {
+      method: 'POST',
+      body: { pluginId: item.id, version: item.version },
+    });
+    toast('ok', '已缓存', `${item.name} ${result.version}（SHA256 ${String(result.sha256).slice(0, 12)}…）`);
+  } catch (err) {
+    toastError(err, '缓存失败');
+  }
+
+  await refresh();
+}
+
+// ────────────────────────────── 下发 ──────────────────────────────
+
+function openDeployDialog(item) {
+  const deviceBoxes = state.inventory.map((device) => ({
+    device,
+    box: h('input', {
+      type: 'checkbox',
+      checked: false,
+      dataset: { deviceId: device.deviceId },
+      disabled: device.revoked,
+    }),
+  }));
+
+  const allOnline = h('input', { type: 'radio', name: 'scope', value: 'online', checked: true });
+  const allDevices = h('input', { type: 'radio', name: 'scope', value: 'all' });
+  const picked = h('input', { type: 'radio', name: 'scope', value: 'picked' });
+  const includeOffline = h('input', { type: 'checkbox' });
+  const restartAfter = h('input', { type: 'checkbox', checked: true });
+
+  const targetList = h('div.checkbox-list',
+    ...deviceBoxes.map(({ device, box }) => h('label.checkbox-field',
+      box,
+      h('span', `${device.deviceName}${device.online ? '' : '（离线）'}`
+        + `${device.revoked ? '（已停用）' : ''}`),
+    )),
+  );
+
+  // 「指定设备」才允许勾选，避免管理员以为勾了就等于选中了。
+  const syncPickedState = () => {
+    const disabled = !picked.checked;
+    for (const { box } of deviceBoxes) {
+      box.disabled = disabled || box.dataset.disabled === 'true';
+    }
+    targetList.style.opacity = disabled ? '0.55' : '1';
+  };
+  picked.addEventListener('change', syncPickedState);
+  allOnline.addEventListener('change', syncPickedState);
+  allDevices.addEventListener('change', syncPickedState);
+  syncPickedState();
+
+  modal({
+    title: `下发安装 · ${item.name} ${item.version}`,
+    width: 'wide',
+    confirmText: '下发安装',
+    body: h('div',
+      h('div.notice.notice-warn',
+        h('span.notice-icon', '!'),
+        h('div', '安装会在教室机上放一份第三方代码，**重启 ClassIsland 后才真正生效**；'
+          + '上课期间重启会让大屏短暂黑屏，建议避开上课时间。')),
+
+      field('范围',
+        h('div',
+          h('label.checkbox-field', allOnline, h('span', '全部在线设备')),
+          h('label.checkbox-field', allDevices, h('span', '全部设备（含离线，排队等它们上线）')),
+          h('label.checkbox-field', picked, h('span', '指定设备（在下面勾选）')),
+        )),
+
+      field('包含离线设备', includeOffline, '离线设备会把指令排队，等它上线后再执行。'),
+      field('安装后顺带重启', restartAfter, '不勾的话需要你自己挑时间重启教室端，插件才会生效。'),
+      field('指定设备', targetList),
+    ),
+    onConfirm: async () => {
+      let scope = 'online';
+      if (allDevices.checked) {
+        scope = 'all';
+      } else if (picked.checked) {
+        scope = 'picked';
+      }
+
+      const deviceIds = scope === 'picked'
+        ? deviceBoxes.filter(({ box }) => box.checked).map(({ device }) => device.deviceId)
+        : [];
+
+      if (scope === 'picked' && deviceIds.length === 0) {
+        toast('warn', '没有选设备', '请至少勾选一台设备，或改成「全部在线设备」。');
+        return false;
+      }
+
+      try {
+        const result = await api('/admin/plugin-deployments', {
+          method: 'POST',
+          body: {
+            action: 'install',
+            pluginId: item.id,
+            version: item.version,
+            deviceIds,
+            includeOffline: includeOffline.checked,
+            restartAfter: restartAfter.checked,
+          },
+        });
+
+        const skipped = result.skipped ?? 0;
+        if (result.affected === 0) {
+          toast('warn', '没有可下发的设备', (result.skips ?? []).map((s) => s.reason).join('；')
+            || '所有目标都被跳过了。');
+        } else {
+          toast('ok', '已下发',
+            `${result.affected} 台设备开始安装${skipped > 0 ? `，跳过 ${skipped} 台` : ''}。`
+            + '安装完成后需要重启才会生效。');
+        }
+
+        state.tab = 'deployments';
+        state.expanded.add(result.deploymentId);
+      } catch (err) {
+        toastError(err, '下发失败');
+        return false;
+      }
+
+      await refresh();
+      pollDeployments();
+      return true;
+    },
+  });
+}
+
+/** 下发后短轮询几次：教室端回报通常几秒内到达，不必让管理员手动刷新。 */
+function pollDeployments(times = 4) {
+  if (times <= 0 || state.tab !== 'deployments') {
+    return;
+  }
+
+  setTimeout(async () => {
+    try {
+      state.deployments = await api('/admin/plugin-deployments');
+      // 只有还停在下发记录这一页时才重画；管理员已经切走的话就别抢走他的界面。
+      if (host && host.querySelector('#deploymentBody')) {
+        paint();
+      }
+    } catch {
+      // 轮询失败就算了：界面上还有手动刷新。
+    }
+
+    pollDeployments(times - 1);
+  }, 2500);
+}
+
+// ────────────────────────────── 已安装清单 ──────────────────────────────
+
+function renderInstalledCard() {
+  const rows = state.inventory.filter((d) => d.plugins?.length > 0);
+  const byPlugin = new Map();
+  for (const device of state.inventory) {
+    for (const plugin of device.plugins ?? []) {
+      const key = plugin.id;
+      if (!byPlugin.has(key)) {
+        byPlugin.set(key, { id: key, name: plugin.name, versions: new Set(), devices: [], disabled: 0 });
+      }
+
+      const entry = byPlugin.get(key);
+      entry.versions.add(plugin.version);
+      entry.devices.push(device.deviceName);
+      if (!plugin.isEnabled) {
+        entry.disabled++;
+      }
+    }
+  }
+
+  return h('div.card',
+    h('div.card-head',
+      h('div',
+        h('h3', '已安装的插件'),
+        h('p.card-desc', `共 ${state.inventory.length} 台设备，其中 ${rows.length} 台装过第三方插件。`
+          + '清单来自教室端上一次上报，可能不是最新的。'),
+      ),
+      h('div.card-actions',
+        canWrite()
+          ? h('button.btn.btn-sm', { type: 'button', onClick: () => refreshInventory() }, '让教室端重新上报')
+          : null,
+      ),
+    ),
+
+    h('div', { style: { fontSize: '13px', color: 'var(--text-dim)', margin: '4px 0 8px' } }, '按插件'),
+    h('div.table-wrap', h('table.data',
+      h('thead', h('tr',
+        h('th', '插件'),
+        h('th', '版本'),
+        h('th', '已安装'),
+        h('th', { style: { width: '190px' } }, '操作'),
+      )),
+      h('tbody', ...[...byPlugin.values()].map((entry) => h('tr',
+        h('td', h('div', { style: { fontWeight: '600' } }, entry.name),
+          h('div', { style: { fontSize: '12px', color: 'var(--text-dim)' } }, entry.id)),
+        h('td', [...entry.versions].join(' / ')),
+        h('td', `${entry.devices.length} 台${entry.disabled > 0 ? `（禁用 ${entry.disabled}）` : ''}`),
+        h('td', h('div.row-actions',
+          canWrite()
+            ? h('button.btn.btn-sm', {
+              type: 'button',
+              onClick: () => deployQuick(entry.id, '', 'uninstall', `卸载 ${entry.name}`),
+            }, '批量卸载')
+            : null,
+          canWrite()
+            ? h('button.btn.btn-sm', {
+              type: 'button',
+              onClick: () => deployQuick(entry.id, '', 'disable', `禁用 ${entry.name}`),
+            }, '批量禁用')
+            : null,
+          canWrite()
+            ? h('button.btn.btn-sm', {
+              type: 'button',
+              onClick: () => deployQuick(entry.id, '', 'enable', `启用 ${entry.name}`),
+            }, '批量启用')
+            : null,
+        )),
+      ))),
+    )),
+
+    h('div', { style: { fontSize: '13px', color: 'var(--text-dim)', margin: '14px 0 8px' } }, '按设备'),
+    h('div.table-wrap', h('table.data',
+      h('thead', h('tr',
+        h('th', '设备'),
+        h('th', '状态'),
+        h('th', 'ClassIsland'),
+        h('th', '已装插件'),
+        h('th', '上报时间'),
+      )),
+      h('tbody', ...state.inventory.map((device) => h('tr',
+        h('td', device.deviceName),
+        h('td', device.revoked
+          ? h('span.badge.badge-danger', '已停用')
+          : device.online
+            ? h('span.badge.badge-ok', '在线')
+            : h('span.badge.badge-neutral', '离线')),
+        h('td', h('div',
+          h('div', device.classislandVersion || '—'),
+          h('div', { style: { fontSize: '12px', color: 'var(--text-dim)' } },
+            device.pluginVersion ? `集控插件 ${device.pluginVersion}` : '集控插件版本未知'),
+        )),
+        h('td', (device.plugins ?? []).length === 0
+          ? h('span', { style: { color: 'var(--text-dim)' } }, '（无）')
+          : h('div', ...(device.plugins ?? []).map((p) => h('span.badge.badge-info',
+            { style: { marginRight: '4px' } },
+            `${p.name} ${p.version}${p.isEnabled ? '' : '（禁用）'}`)))),
+        h('td', device.reportedAt ? relativeTime(device.reportedAt) : '—'),
+      ))),
+    )),
+  );
+}
+
+async function refreshInventory() {
+  try {
+    const count = await api('/admin/plugin-inventory/refresh', { method: 'POST' });
+    toast('ok', '已请求上报', `已通知 ${count} 台在线设备；稍等几秒再刷新即可看到新清单。`);
+  } catch (err) {
+    toastError(err, '请求上报失败');
+  }
+}
+
+async function deployQuick(pluginId, version, action, label) {
+  const online = state.inventory.filter((d) => d.online && !d.revoked).length;
+  const ok = await confirmDialog(label,
+    `将向 ${online} 台在线设备下发「${label}」。`
+    + (action === 'uninstall' ? '卸载后需要重启教室端才生效。' : '启停需要重启教室端才生效。'),
+    '下发');
+  if (!ok) {
+    return;
+  }
+
+  try {
+    const result = await api('/admin/plugin-deployments', {
+      method: 'POST',
+      body: { action, pluginId, version, deviceIds: [], includeOffline: false, restartAfter: false },
+    });
+    toast('ok', '已下发', `${result.affected} 台设备${result.skipped > 0 ? `，跳过 ${result.skipped} 台` : ''}。`);
+    state.tab = 'deployments';
+    await refresh();
+    pollDeployments();
+  } catch (err) {
+    toastError(err, '下发失败');
+  }
+}
+
+// ────────────────────────────── 下发记录 ──────────────────────────────
+
+/** 指令状态 → 文案（与「远程管理」里的指令历史同一套词，别再自创一套）。 */
+const STATUS_LABELS = {
+  pending: '排队中',
+  dispatched: '已派发',
+  done: '已完成',
+  failed: '失败',
+  expired: '已过期',
+  canceled: '已撤销',
+};
+
+function renderDeploymentsCard() {
+  if (state.deployments.length === 0) {
+    return h('div.card',
+      h('div.card-head', h('div', h('h3', '下发记录'), h('p.card-desc', '还没有下发过插件。'))),
+    );
+  }
+
+  return h('div.card',
+    h('div.card-head',
+      h('div',
+        h('h3', '下发记录'),
+        h('p.card-desc', '逐台结果直接来自教室端回报（安装成功的下一步通常是重启）。'),
+      ),
+    ),
+    h('div#deploymentBody', ...state.deployments.map((d) => renderDeployment(d))),
+  );
+}
+
+function renderDeployment(deployment) {
+  const done = deployment.done ?? 0;
+  const failed = deployment.failed ?? 0;
+  const total = deployment.total || 1;
+  const percent = Math.round(((done + failed) / total) * 100);
+  const expanded = state.expanded.has(deployment.id);
+
+  return h('div.deploy-row',
+    h('div.deploy-head',
+      h('div',
+        h('div', { style: { fontWeight: '600' } },
+          `${deployment.pluginName} ${deployment.version} · ${actionLabel(deployment.action)}`),
+        h('div', { style: { fontSize: '12px', color: 'var(--text-dim)' } },
+          `${formatDateTime(deployment.createdAt)} · ${deployment.createdBy} · ${deployment.targetSummary}`),
+      ),
+      h('div.card-actions',
+        h('span', { style: { fontSize: '12.5px', color: 'var(--text-dim)' } },
+          `成功 ${done} · 失败 ${failed} · 进行中 ${deployment.pending}`),
+        h('button.btn.btn-sm', {
+          type: 'button',
+          onClick: () => {
+            if (expanded) {
+              state.expanded.delete(deployment.id);
+            } else {
+              state.expanded.add(deployment.id);
+            }
+
+            paint();
+          },
+        }, expanded ? '收起' : '逐台明细'),
+      ),
+    ),
+    h('div.progress', h('span', { style: { width: `${percent}%` } })),
+    expanded
+      ? h('div.table-wrap', h('table.data',
+        h('thead', h('tr', h('th', '设备'), h('th', '状态'), h('th', '结果'))),
+        h('tbody', ...(deployment.items ?? []).map((item) => {
+          const hint = item.errorCode ? hintForCode(item.errorCode) : '';
+          return h('tr',
+            h('td', item.deviceName),
+            h('td', h('span', {
+              class: item.status === 'done'
+                ? 'badge badge-ok'
+                : item.status === 'failed' || item.status === 'expired'
+                  ? 'badge badge-danger'
+                  : 'badge badge-neutral',
+            }, STATUS_LABELS[item.status] ?? item.status)),
+            h('td',
+              h('div', { style: { fontSize: '12.5px' } }, item.output || '—'),
+              hint
+                ? h('div', { style: { fontSize: '12px', color: 'var(--text-dim)', marginTop: '2px' } },
+                  `怎么办：${hint}`)
+                : null,
+            ),
+          );
+        })),
+      ))
+      : null,
+  );
+}
+
+function actionLabel(action) {
+  return {
+    install: '安装',
+    uninstall: '卸载',
+    enable: '启用',
+    disable: '禁用',
+  }[action] ?? action;
+}
+
+// ────────────────────────────── 市场设置 ──────────────────────────────
+
+function renderSettingsCard() {
+  const indexInput = h('input', { type: 'text', value: state.settings.indexUrl ?? '' });
+  const mirrorOptions = [{ value: '-', label: '自动（代理镜像优先，失败换下一个）' }];
+  for (const name of Object.keys(state.settings.mirrors ?? {})) {
+    mirrorOptions.push({ value: name, label: `${name}（${state.settings.mirrors[name]}）` });
+  }
+
+  const mirrorSelect = select(mirrorOptions, state.settings.preferredMirror || '-', null);
+
+  return h('div.card',
+    h('div.card-head',
+      h('div',
+        h('h3', '市场设置'),
+        h('p.card-desc', '索引地址默认是 ClassIsland 官方的插件索引（一个 zip 包）；'
+          + '镜像决定插件包从哪里下载，留「自动」时会优先走代理镜像。'),
+      ),
+    ),
+
+    field('索引地址', indexInput, '含 {time} 占位符会自动替换成时间戳（用于穿透 CDN 缓存）；'
+      + '留空不改，填 - 恢复官方默认。'),
+    field('首选镜像', mirrorSelect, '下载 .cipx 时优先使用哪一个镜像根地址（取自索引）。'),
+
+    canWrite()
+      ? h('div.card-actions',
+        h('button.btn.btn-primary', {
+          type: 'button',
+          onClick: async () => {
+            try {
+              await api('/admin/plugin-market/settings', {
+                method: 'PUT',
+                body: { indexUrl: indexInput.value, preferredMirror: mirrorSelect.value },
+              });
+              toast('ok', '已保存');
+              await refresh();
+            } catch (err) {
+              toastError(err, '保存失败');
+            }
+          },
+        }, '保存设置'),
+      )
+      : null,
+
+    h('div.notice.notice-info',
+      h('span.notice-icon', 'i'),
+      h('div', 'A 端只在这里取一次索引与插件包；教室端安装时从 A 端下载，'
+        + '所以教室机没有外网也能装插件。缓存目录与数据库同级（data/plugin-cache）。')),
+  );
+}

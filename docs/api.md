@@ -130,6 +130,10 @@ curl -s "$BASE/admin/devices" -H "Authorization: Bearer $TOKEN" \
 | GET | `/admin/devices/diagnostics/{id}/content` | `remote.read` | 读取截图内容（图片字节流，**需带令牌**，不能直接给 `<img>` 用） |
 | DELETE | `/admin/devices/{id}/diagnostics` | `remote.write` | 清空诊断记录 |
 
+`plugin.install` 的载荷是 `{pluginId, version, cipxUrl, sha256, fileName}`：`cipxUrl` 是 **A 端的相对路径**
+（`/client/plugin-packages/{id}/{version}/download`，绝对地址也接受），教室端用自己的服务器地址与设备令牌去取，
+取回后核对 `sha256`（不一致回 `COMMAND_INTEGRITY_FAILED`）与包内 `manifest.yml`，再放进宿主的待安装目录。
+
 指令类型（`kind`）：`shell`、`plugin.*`、`appearance.*`、`notify`、`power.*`、`automation.*`、
 `volume.set` / `brightness.set`（教室端系统音量 / 屏幕亮度）、
 `lesson.swap` / `lesson.adjust` / `lesson.catalog`、
@@ -164,6 +168,34 @@ curl -s "$BASE/admin/devices" -H "Authorization: Bearer $TOKEN" \
 > ⚠️ **目标设备必填**（`deviceIds` 或 `groupId`，两者都不给返回 400）：课表指令里的节次与科目是从
 > **某一台**设备读来的，早先「没指定」会被当成「全部设备」——等于把某个班的换课发给全校。
 
+### 插件管理（#121）
+
+A 端把 ClassIsland 官方插件市场的索引与插件包**代理缓存到本地**，教室端只从 A 端取包——
+教室机因此不需要外网。读用 `plugins.read`、写用 `plugins.write`。
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/admin/plugin-market` | `plugins.read` | 市场列表（缓存状态 / 已缓存版本 / SHA256）与市场设置（索引地址、首选镜像、镜像表、上次同步时间与失败原因） |
+| POST | `/admin/plugin-market/sync` | `plugins.write` | 立刻同步一次索引。失败**不推翻已有缓存**，原因记在设置里由界面显示 |
+| PUT | `/admin/plugin-market/settings` | `plugins.write` | `{indexUrl, preferredMirror}`；字段给 `-` 表示恢复默认 / 改回「自动」 |
+| GET | `/admin/plugin-packages` | `plugins.read` | 已缓存的插件包列表 |
+| POST | `/admin/plugin-packages` | `plugins.write` | 下载并缓存：`{pluginId, version?}`（省略版本 = 索引里的最新版）；镜像逐个回退，MD5 与包内 manifest 都要对上 |
+| DELETE | `/admin/plugin-packages/{id}/{version}` | `plugins.write` | 删除缓存（文件一并删） |
+| GET | `/admin/plugin-inventory` | `plugins.read` | 全部设备的已装插件清单（含上报时间与教室端 ClassIsland 版本） |
+| POST | `/admin/plugin-inventory/refresh` | `plugins.write` | 让在线设备重新上报清单（批量 `plugin.refresh`） |
+| POST | `/admin/plugin-deployments` | `plugins.write` | 批量下发：`{action, pluginId, version?, deviceIds?, includeOffline?, restartAfter?}`，`action ∈ install / uninstall / enable / disable`；返回 `{deploymentId, affected, skipped, skips[]}` |
+| GET | `/admin/plugin-deployments` | `plugins.read` | 最近 30 条下发记录（含逐台进度统计） |
+| GET | `/admin/plugin-deployments/{id}` | `plugins.read` | 单条下发的逐台明细（状态 / 失败分类 / 教室端原文） |
+
+> ⚠️ **安装的落点是宿主的待安装目录，重启 ClassIsland 才生效**：宿主只在启动时把
+> `<缓存目录>/PluginPackages/*.cipx` 解压到插件目录，没有「安装这个文件」的公开接口
+> （`ProcessPluginsInstall` 在宿主主程序集、非 public 非 async）。因此教室端回报的成功文案里
+> 必定带「重启后生效」，`restartAfter` 只是顺带再下发一条 `restart`。
+
+> ⚠️ **版本与平台在 A 端预校验**：插件声明的 `apiVersion` 高于教室端 ClassIsland 版本、插件不支持
+> Windows、已装着同一版本——这三种被**跳过**并在 `skips[].reason` 写明原因。卸载 / 启停刻意不做
+> 「是否已安装」判断：清单是上一次上报的快照，拿它拦人会把「刚装好还没上报」的设备误拦。
+
 ### 教室端（设备侧）
 
 | 方法 | 路径 | 鉴权 | 说明 |
@@ -176,6 +208,7 @@ curl -s "$BASE/admin/devices" -H "Authorization: Bearer $TOKEN" \
 | GET | `/client/commands` | `HubDevice` | 领取待执行指令（一次性：领取即标记已派发） |
 | POST | `/client/commands/report` | `HubDevice` | 回报执行结果与输出 |
 | POST | `/client/lessons/catalog` | `HubDevice` | 上报课表目录（当天各节、可选科目与课表），供「快捷换课」页填充下拉框 |
+| GET | `/client/plugin-packages/{id}/{version}/download` | `HubDevice` | 从 A 端的代理缓存下载插件包（地址由 `plugin.install` 指令下发；**必须带设备令牌**） |
 | POST | `/client/logs` | `HubDevice` | 上报日志 |
 | POST | `/client/diagnostics` | `HubDevice` | 上传诊断工件（Base64，单张 ≤ 4 MB，类型白名单） |
 

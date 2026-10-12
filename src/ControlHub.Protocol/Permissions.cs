@@ -37,6 +37,15 @@ public static class PermissionKeys
     /// <summary>远程管理：下发命令 / 启停插件 / 下发外观 / 发送提醒。</summary>
     public const string RemoteWrite = "remote.write";
 
+    /// <summary>插件管理：查看插件市场、缓存清单与下发记录。</summary>
+    public const string PluginsRead = "plugins.read";
+
+    /// <summary>
+    /// 插件管理：同步索引 / 缓存插件包 / 批量下发安装与卸载。
+    /// <para>影响面是**在教室机上装第三方代码**，因此默认不勾给新账号（见 <see cref="DefaultForNewUser"/>）。</para>
+    /// </summary>
+    public const string PluginsWrite = "plugins.write";
+
     /// <summary>定时提醒：查看自己的提醒。</summary>
     public const string RemindersRead = "reminders.read";
 
@@ -74,6 +83,7 @@ public static class PermissionKeys
         DevicesRead, DevicesWrite,
         DeployWrite,
         RemoteRead, RemoteWrite,
+        PluginsRead, PluginsWrite,
         RemindersRead, RemindersWrite,
         AuditRead,
         BackupRead, BackupWrite,

@@ -14,7 +14,7 @@
  *   node sh/ui-smoke.js
  *   SMOKE_BASE=http://127.0.0.1:29800 SMOKE_BROWSER="C:\\...\\msedge.exe" node sh/ui-smoke.js
  *
- * 覆盖的断言（112 项，分组见文件内的 `// n)` 注释）：
+ * 覆盖的断言（138 项，分组见文件内的 `// n)` 注释）：
  *   1) 起点归零：清空账号偏好与本机布局缓存 → 仪表盘回到默认布局
  *   2) 「自定义仪表盘」面板能打开，含「统计卡片 + 页面模块」两组、共 10 项
  *   3) 面板里关掉「最近事件」→ 页面立即不再渲染该模块
@@ -38,6 +38,7 @@
  *  21) 新手引导的高亮框落在**可见**元素上，并跟着步骤切页（曾指向收起的下拉）
  *  22) 品牌外链图片真的加载成功（安全响应头的 CSP 曾把它整块拦掉）
  *  23) 顶栏在 8 档宽度（1600 → 760）下都不重叠、不横向溢出
+ *  24) 插件管理页（#121）：页面能打开、四个标签齐全、市场卡片渲染、市场设置能真的存进去
  *
  * 注意：脚本会改动演示账号的界面偏好（跑完停在「最近事件 / 最近心跳」隐藏的状态），
  *       可在「自定义仪表盘 / 列设置」里勾回来。
@@ -1658,8 +1659,19 @@ function check(name, ok, extra = '') {
     systemNav.items.length === 7 && systemNav.items.some((t) => t.includes('账号与权限'))
       && systemNav.items.some((t) => t.includes('系统维护')),
     `组=${systemNav.title} 项=${JSON.stringify(systemNav.items)}`);
-  check('二级侧栏项带 Alt + N 快捷键提示（快捷键帮助里承诺过）',
-    systemNav.hints.length > 0, JSON.stringify(systemNav.hints));
+  // 这一段原来查的是「系统」组的侧栏有没有快捷键提示。加了「插件管理」页之后，
+  // 系统组整体排到了第 10 个页面之后，而快捷键只到 Alt + 9（见 app.js 的
+  // `index <= 9 ? shortcutHint(index) : ''`），所以本组按设计不再显示提示——
+  // 断言因此改到「日常」组（仍是前 9 个页面）验证同一件事：侧栏确实渲染提示。
+  await page.goto(`${BASE}/#/dashboard`, { waitUntil: 'networkidle2' });
+  await sleep(1800);
+  const homeNav = await page.evaluate(() => ({
+    items: [...document.querySelectorAll('#sideNavList .nav-item')].map((n) => n.textContent.trim()),
+    hints: [...document.querySelectorAll('#sideNavList .nav-hint')].map((n) => n.textContent.trim()),
+  }));
+  check('二级侧栏项带 Alt + N 快捷键提示（快捷键帮助里承诺过；仅前 9 个页面有键位）',
+    homeNav.hints.length > 0 && homeNav.hints.every((t) => /^Alt \+ \d$/.test(t)),
+    `组=${homeNav.items.join('/')} 提示=${JSON.stringify(homeNav.hints)}`);
 
   const splitPages = [
     ['#/accounts', '账号与权限', '账号安全'],
@@ -2237,6 +2249,96 @@ function check(name, ok, extra = '') {
       method: 'DELETE', headers: { Authorization: 'Bearer ' + token },
     });
   }, wakeDeviceId);
+
+  await page.setViewport({ width: 1600, height: 1000 });
+  await sleep(700);
+
+  // ── 插件管理页（#121）：页面能打开、四个标签齐全、设置能真的存进去 ──
+  // 直接敲 hash 进页面（同 hash 的 goto 不重载，所以先回根再进）。
+  await page.goto(`${BASE}/#/dashboard`, { waitUntil: 'networkidle2' });
+  await page.goto(`${BASE}/#/plugins`, { waitUntil: 'networkidle2' });
+  await page.reload({ waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => document.getElementById('pageTitle')?.textContent?.trim() === '插件管理',
+    { timeout: 20000 }).catch(() => {});
+
+  const title = await page.evaluate(() => document.getElementById('pageTitle')?.textContent?.trim() ?? '');
+  check('插件管理页能打开（导航与路由都登记了）', title === '插件管理', title);
+
+  const tabs = await page.evaluate(() => [...document.querySelectorAll('#content .tabs .tab')]
+    .map((b) => b.textContent.trim()));
+  check('四个标签齐全（插件市场 / 已安装 / 下发记录 / 市场设置）',
+    ['插件市场', '已安装', '下发记录', '市场设置'].every((t) => tabs.includes(t)),
+    tabs.join(' / '));
+
+  const marketReady = await page.evaluate(() => {
+    const content = document.getElementById('content');
+    return {
+      syncButton: [...content.querySelectorAll('button')].some((b) => b.textContent.trim() === '同步索引'),
+      hasTable: !!content.querySelector('table.data'),
+      hasEmpty: !!content.querySelector('.empty-state, .empty'),
+      shaShown: /SHA256|缓存/.test(content.textContent),
+    };
+  });
+  check('「同步索引」按钮在（管理员有 plugins.write）', marketReady.syncButton);
+  check('市场卡片渲染出来了（表格或空态，至少不是白屏）',
+    marketReady.hasTable || marketReady.hasEmpty, JSON.stringify(marketReady));
+
+  const installed = await page.evaluate(() => {
+    const tab = [...document.querySelectorAll('#content .tabs .tab')].find((b) => b.textContent.trim() === '已安装');
+    tab?.click();
+    return !!tab;
+  });
+  await sleep(600);
+  const installedText = await page.evaluate(() => document.getElementById('content')?.textContent ?? '');
+  check('「已安装」标签能切过去并渲染两个维度（按插件 / 按设备）',
+    installed && installedText.includes('按插件') && installedText.includes('按设备'));
+
+  const settingsUi = await page.evaluate(() => {
+    const tab = [...document.querySelectorAll('#content .tabs .tab')].find((b) => b.textContent.trim() === '市场设置');
+    tab?.click();
+    return !!tab;
+  });
+  await sleep(600);
+  const settings = await page.evaluate(() => {
+    const content = document.getElementById('content');
+    const inputs = [...content.querySelectorAll('input')];
+    return {
+      indexInput: inputs.some((i) => (i.value ?? '').includes('index.zip') || (i.value ?? '').includes('get.classisland')),
+      mirrorSelect: !!content.querySelector('select'),
+      saveButton: [...content.querySelectorAll('button')].some((b) => b.textContent.trim() === '保存设置'),
+    };
+  });
+  check('「市场设置」里有索引地址输入框、镜像下拉与保存按钮',
+    settingsUi && settings.indexInput && settings.mirrorSelect && settings.saveButton, JSON.stringify(settings));
+
+  // 通过界面真的存一次（用一个一眼能认出的地址），再读回接口确认写进去了；
+  // 最后还原成官方默认，别让这台 A 端一直拿着一个假地址去同步。
+  const saved = await page.evaluate(async () => {
+    const content = document.getElementById('content');
+    const input = [...content.querySelectorAll('input')]
+      .find((i) => (i.value ?? '').includes('index.zip') || (i.value ?? '').includes('get.classisland'));
+    if (!input) return null;
+
+    input.value = 'http://127.0.0.1:1/ui-smoke-index.zip?time={time}';
+    const button = [...content.querySelectorAll('button')].find((b) => b.textContent.trim() === '保存设置');
+    button.click();
+    await new Promise((r) => setTimeout(r, 1200));
+
+    const token = localStorage.getItem('controlhub.admin.token');
+    const res = await fetch('/api/v1/admin/plugin-market', { headers: { Authorization: 'Bearer ' + token } });
+    const json = await res.json();
+    const current = json?.data?.settings?.indexUrl ?? '';
+
+    await fetch('/api/v1/admin/plugin-market/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ indexUrl: '-' }),
+    });
+
+    return current;
+  });
+  check('在市场设置里保存能真的写进服务端（并已还原默认）',
+    (saved ?? '').includes('ui-smoke-index.zip'), String(saved));
 
   await page.setViewport({ width: 1600, height: 1000 });
   await sleep(700);

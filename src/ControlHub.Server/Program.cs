@@ -173,6 +173,13 @@ builder.Services.AddHostedService<StatsService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ServerTimeService>());
 // UpdateService 同理：单例 + 后台自动检查，用工厂引用同一实例。
 builder.Services.AddHostedService(sp => sp.GetRequiredService<UpdateService>());
+// 插件市场代理缓存（#121）：A 端同步 ClassIsland 插件索引并把 .cipx 缓存到本地，
+// 教室端从 A 端取包安装——教室机因此不需要访问 GitHub。
+builder.Services.AddSingleton<PluginPackageCacheService>();
+// 与 WebhookService 同样处理：PluginMarketSyncService **既是**可被端点注入的单例（管理端点「同步索引」
+// 要直接调它），**也是**后台定时同步服务；用工厂引用同一实例，避免出现两个各自持锁的对象。
+builder.Services.AddSingleton<PluginMarketSyncService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<PluginMarketSyncService>());
 
 builder.Services.AddProblemDetails();
 
@@ -329,6 +336,8 @@ app.MapNoticeTemplateEndpoints();
 app.MapTimetableOverrideEndpoints();
 // 快捷换课：读教室端实时课表状态（下节课 / 倒计时），并下发临时换课与调休。
 app.MapLessonEndpoints();
+// 插件市场代理缓存（#121）：市场索引 / 包缓存 / 已装清单 / 批量下发。
+app.MapPluginMarketEndpoints();
 app.MapWebhookEndpoints();
 
 // 未匹配到的 API 路径统一返回 JSON 404，而不是落到前端页面。

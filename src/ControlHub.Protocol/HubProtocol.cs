@@ -16,7 +16,7 @@ public static class HubProtocol
     public static string Version => $"{MajorVersion}.{MinorVersion}";
 
     /// <summary>集控系统产品版本号（三段式语义化版本，形如 <c>1.0.0</c>）。A/B 两端与界面展示共用。</summary>
-    public const string ProductVersion = "1.3.9";
+    public const string ProductVersion = "1.3.10";
 
     /// <summary>HTTP API 根路径。</summary>
     public const string ApiPrefix = "/api/v1";
@@ -165,6 +165,13 @@ public static class CommandErrorCodes
 
     /// <summary>执行过程中失败：外部程序报错、系统拒绝等，具体原因看文案。</summary>
     public const string ExecutionFailed = "COMMAND_EXECUTION_FAILED";
+
+    /// <summary>
+    /// 取回的插件包**完整性校验没过**（SHA256 与 A 端记录的不一致）。
+    /// <para>与「执行失败」分开：这多半是传输途中损坏或 A 端缓存被改过，正确处置是**重新缓存该包**再下发，
+    /// 而不是去教室机上排查。</para>
+    /// </summary>
+    public const string IntegrityFailed = "COMMAND_INTEGRITY_FAILED";
 }
 
 /// <summary>

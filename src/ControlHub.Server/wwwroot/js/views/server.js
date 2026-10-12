@@ -1,9 +1,9 @@
 /** 服务器信息视图（系统设置拆分而来）：运行参数、数据目录、部署与接入说明。 */
 
-import { api, session } from '../core/api.js?v=98';
+import { api, session } from '../core/api.js?v=99';
 import {
   h, clear, formatDateTime, formatDuration, toast, confirmDialog, copyText, loadingBlock, kvRow,
-} from '../core/ui.js?v=98';
+} from '../core/ui.js?v=99';
 
 export const meta = {
   title: '服务器信息',

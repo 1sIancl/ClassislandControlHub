@@ -210,6 +210,57 @@ public sealed class HubClient
             timeout: TimeSpan.FromSeconds(20), cancellationToken);
     }
 
+    /// <summary>
+    /// 下载一个二进制资源（插件包等，#121）。<paramref name="path"/> 可以是 A 端的相对路径
+    /// （推荐：<c>/client/plugin-packages/…/download</c>），也可以是绝对地址。
+    /// </summary>
+    /// <exception cref="HubApiException">网络失败、超时，或服务端返回失败封套。</exception>
+    public async Task<byte[]> DownloadBytesAsync(string baseUrl, string deviceToken, string path,
+        CancellationToken cancellationToken = default)
+    {
+        var url = path.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                  || path.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            ? path
+            : baseUrl.TrimEnd('/') + HubProtocol.ApiPrefix + "/" + path.TrimStart('/');
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.TryAddWithoutValidation("Authorization", HubProtocol.DeviceScheme + " " + deviceToken);
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        // 包可能有几 MB，给足时间；比共享 HttpClient 的总超时（90 秒）宽松。
+        cts.CancelAfter(TimeSpan.FromMinutes(5));
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new HubApiException("TIMEOUT", $"下载超时：{path}");
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new HubApiException("NETWORK", $"无法连接服务器：{ex.Message}");
+        }
+
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                // 失败时服务端仍回 JSON 封套，尽量把它的中文原因带出来（否则只剩一个状态码）。
+                var text = await response.Content.ReadAsStringAsync(cancellationToken);
+                var envelope = HubJson.DeserializeOrDefault(text, new ApiResult<bool> { Ok = false });
+                throw new HubApiException(
+                    envelope.Error?.Code ?? HubErrorCodes.Internal,
+                    envelope.Error?.Message ?? $"下载失败：HTTP {(int)response.StatusCode}",
+                    (int)response.StatusCode);
+            }
+
+            return await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        }
+    }
+
     private async Task<ApiResult<T>> SendAsync<T>(string baseUrl, string path, HttpMethod method,
         string? auth, object? body, TimeSpan timeout, CancellationToken cancellationToken)
     {
