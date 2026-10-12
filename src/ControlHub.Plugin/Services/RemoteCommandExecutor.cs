@@ -25,7 +25,8 @@ namespace ControlHub.Plugin.Services;
 public sealed class RemoteCommandExecutor(
     ILogger<RemoteCommandExecutor> logger,
     HubState state,
-    HubSettingsStore settings)
+    HubSettingsStore settings,
+    LessonBridge lessonBridge)
 {
     /// <summary>单条指令回报的输出上限，避免超大输出占满上行链路。</summary>
     private const int MaxOutputLength = 24 * 1024;
@@ -35,6 +36,9 @@ public sealed class RemoteCommandExecutor(
 
     /// <summary>插件上报回调（由插件入口注入，负责把插件列表回传 A 端）。</summary>
     public Func<List<PluginInfoDto>, Task>? OnPluginsReported { get; set; }
+
+    /// <summary>课表目录上报回调（由插件入口注入，负责把课表目录回传 A 端）。</summary>
+    public Func<LessonCatalogDto, Task>? OnLessonCatalogRead { get; set; }
 
     /// <summary>诊断工件上传回调（截图等二进制内容经此回传 A 端）。</summary>
     public Func<DiagnosticUploadRequest, Task>? OnDiagnosticUploaded { get; set; }
@@ -76,6 +80,11 @@ public sealed class RemoteCommandExecutor(
                 RemoteCommandKinds.DiagnosticScreenshot => await UiThread.RunAsync(() => CaptureScreenshotAsync(command)),
                 RemoteCommandKinds.DiagnosticProcesses => Ok(command, DiagnosticsCollector.CollectProcesses()),
                 RemoteCommandKinds.DiagnosticBundle => await CollectDiagnosticBundleAsync(command),
+                // 课表类指令：LessonBridge 自己会切 UI 线程（宿主档案被课表控件订阅），
+                // 所以这里**不再**套一层 UiThread.Run——嵌套没有意义，还会让日志更难读。
+                RemoteCommandKinds.LessonSwap => RunLessonSwap(command),
+                RemoteCommandKinds.LessonAdjust => RunLessonAdjust(command),
+                RemoteCommandKinds.LessonCatalog => await ReportLessonCatalogAsync(command),
                 _ => Fail(command, $"不支持的指令类型：{command.Kind}"),
             };
         }
@@ -1026,6 +1035,70 @@ public sealed class RemoteCommandExecutor(
         }
 
         return Ok(command, text);
+    }
+
+    // ────────────────────────────── 课表：换课 / 调休 ──────────────────────────────
+
+    /// <summary>临时换课，或恢复原课表。</summary>
+    private CommandReportRequest RunLessonSwap(RemoteCommandDto command)
+    {
+        try
+        {
+            var request = HubJson.DeserializeOrDefault(command.Payload, new LessonSwapRequestDto());
+            var message = lessonBridge.Swap(request);
+
+            // Bridge 用「…失败：原因」表达**业务失败**（例如教室端没有这个科目）：
+            // 它不是异常，但也绝不能回报成功——否则管理端显示「已生效」而教室端毫无变化。
+            return message.Contains("失败", StringComparison.Ordinal)
+                ? Fail(command, message)
+                : Ok(command, message);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "执行临时换课失败。");
+            return Fail(command, "换课失败：" + ex.Message);
+        }
+    }
+
+    /// <summary>调休：给某个日期指定一张课表；或撤销该日期的调休。</summary>
+    private CommandReportRequest RunLessonAdjust(RemoteCommandDto command)
+    {
+        try
+        {
+            var request = HubJson.DeserializeOrDefault(command.Payload, new LessonAdjustRequestDto());
+            var message = lessonBridge.Adjust(request);
+            return message.Contains("失败", StringComparison.Ordinal)
+                ? Fail(command, message)
+                : Ok(command, message);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "执行调休失败。");
+            return Fail(command, "调休失败：" + ex.Message);
+        }
+    }
+
+    /// <summary>上报课表目录（今天各节 / 科目 / 课表）。</summary>
+    private async Task<CommandReportRequest> ReportLessonCatalogAsync(RemoteCommandDto command)
+    {
+        try
+        {
+            var catalog = lessonBridge.ReadCatalog();
+            if (OnLessonCatalogRead is not null)
+            {
+                // 走独立接口上报（不是命令 Output）：目录 JSON 可能有上万字节，而命令输出会被截断，
+                // 截断后的 JSON 解析不出来，反而更难查。上报失败不影响本次指令的成败。
+                await OnLessonCatalogRead(catalog);
+            }
+
+            return Ok(command, $"已上报课表目录：{catalog.Slots.Count} 节、"
+                + $"{catalog.Subjects.Count} 个科目、{catalog.ClassPlans.Count} 张课表。");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "读取课表目录失败。");
+            return Fail(command, "读取课表目录失败：" + ex.Message);
+        }
     }
 
     // ────────────────────────────── helpers ──────────────────────────────

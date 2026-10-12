@@ -24,6 +24,12 @@ public static class AdminEndpoints
             .WithTags("public")
             .AllowAnonymous();
 
+        // 品牌图片（登录壁纸 / Logo / 站点图标）同样必须公开：登录页在**未登录**时就要显示它，
+        // 所以不能挂在带 AdminAuthFilter 的分组上。
+        app.MapGet($"{BrandingImageStore.UrlPrefix}{{name}}", GetBrandingImageAsync)
+            .WithTags("public")
+            .AllowAnonymous();
+
         var group = app.NewVersionedGroup("admin");
 
         // ── 公开接口（无需登录）──
@@ -76,6 +82,11 @@ public static class AdminEndpoints
         // ── 系统设置 ──
         authed.MapGet("/branding", GetBrandingAsync).RequirePermission(PermissionKeys.SettingsRead);
         authed.MapPut("/branding", SetBrandingAsync).RequirePermission(PermissionKeys.SettingsWrite);
+        // 品牌图片本地上传：有了它，管理员不必再自己找图床（外部图床的防盗链与限速
+        // 会直接表现为「壁纸不好用」）。权限与保存品牌一致。
+        authed.MapPost("/branding/image", UploadBrandingImageAsync)
+            .RequirePermission(PermissionKeys.SettingsWrite)
+            .DisableAntiforgery();
         authed.MapGet("/time-offset", GetTimeOffsetAsync).RequirePermission(PermissionKeys.SettingsRead);
         authed.MapPut("/time-offset", SetTimeOffsetAsync).RequirePermission(PermissionKeys.SettingsWrite);
         authed.MapGet("/update/state", GetUpdateStateAsync).RequirePermission(PermissionKeys.SettingsRead);
@@ -646,10 +657,18 @@ public static class AdminEndpoints
     }
 
     /// <summary>保存品牌个性化配置。</summary>
+    /// <remarks>
+    /// <para><b>整体替换，不是部分更新</b>：请求体里没出现的字段会被**重置为默认值**。
+    /// 所以调用方必须先读后合并再提交（前端的 <c>saveBranding()</c> 就是这么做的）。</para>
+    /// <para>为什么不做成部分更新：DTO 的字段都是「非空值类型 + 默认值」，服务端分不清
+    /// 「没传」和「就想要默认值」——而「把壁纸清空」恰恰是靠传空串表达的。分不清就只好
+    /// 整体替换，把这条约束写在文档与调用方，而不是让人在生产配置上试出来。</para>
+    /// </remarks>
     private static async Task<ApiResult<BrandingDto>> SetBrandingAsync(
         BrandingDto request,
         HttpContext http,
         HubStore store,
+        BrandingImageStore images,
         CancellationToken cancellationToken)
     {
         var session = http.RequireAdminSession();
@@ -684,6 +703,10 @@ public static class AdminEndpoints
 
         await store.SetSettingAsync("branding", JsonSerializer.Serialize(request), cancellationToken);
 
+        // 换掉的旧图已经没人引用了，顺手清掉。不清理的话，管理员每换一次壁纸
+        // 就在磁盘里留下一张没人用的 4K 图（几 MB），换十次就是几十 MB。
+        images.PruneExcept([request.LogoImage, request.Favicon, request.LoginBackground]);
+
         var note = string.IsNullOrEmpty(request.CustomCss)
             ? "更新站点品牌配置"
             : $"更新站点品牌配置（含自定义 CSS {request.CustomCss.Length} 字符）";
@@ -691,6 +714,73 @@ public static class AdminEndpoints
             http.GetClientIpAddress(), cancellationToken);
 
         return ApiResult<BrandingDto>.Success(request);
+    }
+
+    /// <summary>上传一张品牌图片，返回可直接写进品牌配置的站内地址。</summary>
+    private static async Task<ApiResult<BrandingImageDto>> UploadBrandingImageAsync(
+        HttpContext http,
+        HubStore store,
+        BrandingImageStore images,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        if (!http.Request.HasFormContentType)
+        {
+            throw HubException.Validation("请以表单方式上传图片（字段名 file）。");
+        }
+
+        var form = await http.Request.ReadFormAsync(cancellationToken);
+        var file = form.Files["file"] ?? (form.Files.Count > 0 ? form.Files[0] : null);
+        if (file is null || file.Length == 0)
+        {
+            throw HubException.Validation("没有收到图片文件（字段名 file）。");
+        }
+
+        if (file.Length > BrandingImageStore.MaxBytes)
+        {
+            throw HubException.Validation($"图片超过 {BrandingImageStore.MaxBytes / 1024 / 1024}MB 上限。");
+        }
+
+        BrandingImageDto saved;
+        await using (var stream = file.OpenReadStream())
+        {
+            saved = await images.SaveAsync(stream, cancellationToken);
+        }
+
+        // 上传本身不改配置（要等管理员点保存），但它是「谁往服务器里放了文件」，值得进审计。
+        await store.AddAuditAsync(session.Username, "branding.image.upload", file.FileName,
+            $"上传品牌图片 {saved.Name}（{saved.ContentType}，{saved.Size / 1024}KB）。",
+            http.GetClientIpAddress(), cancellationToken);
+
+        return ApiResult<BrandingImageDto>.Success(saved);
+    }
+
+    /// <summary>读取一张本站托管的品牌图片。<b>公开</b>：登录页未登录时也要显示它。</summary>
+    private static async Task GetBrandingImageAsync(
+        string name,
+        HttpContext http,
+        BrandingImageStore images,
+        CancellationToken cancellationToken)
+    {
+        if (!images.TryResolve(name, out var path, out var contentType))
+        {
+            throw HubException.NotFound("图片不存在。");
+        }
+
+        // 内容类型是服务端按文件头判定出来的，不采信任何请求头；
+        // nosniff 兜住"浏览器自己猜类型"，CSP + sandbox 断掉一切脚本能力（图片不需要脚本）。
+        http.Response.ContentType = contentType;
+        http.Response.Headers.CacheControl = "public, max-age=86400";
+        http.Response.Headers["X-Content-Type-Options"] = "nosniff";
+        http.Response.Headers["Content-Security-Policy"] = "default-src 'none'; sandbox";
+        // 直接写字节流：SendFileAsync 的重载集合里有 (string, IFileInfo, long?, long?, …) 这类
+        // 签名，参数个数对得上却类型全错，报错很难指向"其实是重载选错了"；图片也不需要 Range 支持。
+        // ⚠️ 换成手写流之后要**自己设 ContentType**——SendFileAsync 会顺手设掉，
+        // 漏了的话浏览器收到一个没有类型的 200，只能靠 nosniff 猜（结果是当成下载而不是显示）。
+        await using (var stream = File.OpenRead(path))
+        {
+            await stream.CopyToAsync(http.Response.Body, cancellationToken);
+        }
     }
 
     /// <summary>主题色白名单：只接受 <c>#rgb</c> / <c>#rrggbb</c>。</summary>

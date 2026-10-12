@@ -341,6 +341,7 @@ public sealed partial class HubStore
                 DELETE FROM client_logs WHERE device_id = $id;
                 DELETE FROM device_commands WHERE device_id = $id;
                 DELETE FROM device_diagnostics WHERE device_id = $id;
+                DELETE FROM device_lesson_states WHERE device_id = $id;
                 """;
             drop.Parameters.AddWithValue("$id", placeholder.Id);
             await drop.ExecuteNonQueryAsync(cancellationToken);
@@ -426,6 +427,7 @@ public sealed partial class HubStore
             "DELETE FROM client_logs WHERE device_id = $id;",
             "DELETE FROM device_commands WHERE device_id = $id;",
             "DELETE FROM device_diagnostics WHERE device_id = $id;",
+            "DELETE FROM device_lesson_states WHERE device_id = $id;",
         ];
 
         foreach (var sql in statements)

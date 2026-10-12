@@ -97,6 +97,14 @@ public sealed class HeartbeatRequest
 
     /// <summary>附加运行指标，键值均为字符串以便扩展。</summary>
     public Dictionary<string, string> Metrics { get; set; } = [];
+
+    /// <summary>
+    /// 教室端课表实时状态（下节课科目 / 开始时间 / 剩余秒数）。
+    /// <para>放在心跳里而不是单开一个上报接口：管理员打开「快捷换课」页时，要看的正是
+    /// **此刻**每间教室的进度，而心跳本来就是每分钟一次的现成通道；体积也只有十几个字段。</para>
+    /// <para>「今天各节 / 科目 / 课表」这类大一点的数据不在这里，按需用 <c>lesson.catalog</c> 指令拉取。</para>
+    /// </summary>
+    public LessonStateDto? Lesson { get; set; }
 }
 
 /// <summary>

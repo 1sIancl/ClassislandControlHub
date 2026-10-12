@@ -332,6 +332,26 @@ public sealed partial class HubStore
         CREATE INDEX IF NOT EXISTS idx_timetable_overrides_profile
             ON timetable_overrides(profile_id, start_date);
 
+        -- 教室端课表实时状态（「快捷换课」用）：随心跳更新，一台设备只留最新一条。
+        -- 为什么不并进 devices 表：这里有十几个字段且会被每分钟覆盖，混进设备表会让
+        -- 设备列表的读写都被这些高频字段拖累；单独一张表 upsert 更省事，删设备时一起删。
+        -- catalog 是「今天各节 / 科目 / 课表」的完整 JSON，只在管理员点「读取课表」时拉取。
+        CREATE TABLE IF NOT EXISTS device_lesson_states (
+            device_id       TEXT PRIMARY KEY,
+            state           TEXT NOT NULL DEFAULT 'none',
+            lesson_date     TEXT NOT NULL DEFAULT '',
+            class_plan_name TEXT,
+            current_subject TEXT,
+            next_subject    TEXT,
+            next_start_at   TEXT,
+            next_end_at     TEXT,
+            left_seconds    INTEGER NOT NULL DEFAULT 0,
+            is_adjusted     INTEGER NOT NULL DEFAULT 0,
+            reported_at     TEXT NOT NULL,
+            catalog         TEXT,
+            catalog_at      TEXT
+        );
+
         -- 配置档案历史版本：每次保存前存一份快照，改坏了可以一键回滚。
         CREATE TABLE IF NOT EXISTS profile_versions (
             id          TEXT PRIMARY KEY,

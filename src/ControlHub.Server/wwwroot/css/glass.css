@@ -179,9 +179,18 @@ table.data thead th {
 
 /* 登录页的底比管理界面浓：页面元素少，得靠背景撑起玻璃的层次。 */
 .login-page {
+  /* ⚠️ 学校自定义的登录页壁纸**必须写在这一层里**，不能只写在 app.css 的 .login-page 上：
+     这里是 `background` 简写，而简写会把 background-image / background-size / background-position
+     一起重置——之前壁纸定义在 app.css（`background-image: var(--login-bg-image, none)`），
+     结果被下面这条简写整个抹掉。现象极难判断：**CSS 变量设对了、图片也确实加载成功**
+     （探针 img 能拿到 3840×2160），可页面上一点都看不到壁纸。
+     ——教训：验证「壁纸生效」要断言**真正画出来的 background-image**，不能只断言 CSS 变量。 */
   background:
     radial-gradient(ellipse 70% 60% at 20% 15%, var(--glass-tint-1), transparent 58%),
     radial-gradient(ellipse 60% 55% at 80% 85%, var(--glass-tint-2), transparent 58%),
+    /* 壁纸放在装饰渐变**下面**（靠前的是更上层）：光斑仍叠在壁纸之上；
+       若把壁纸放最上层，它会把整个页面的渐变底都盖住。 */
+    var(--login-bg-image, none) center / cover no-repeat,
     var(--bg-base);
 }
 

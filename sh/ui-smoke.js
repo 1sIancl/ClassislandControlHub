@@ -691,6 +691,30 @@ function check(name, ok, extra = '') {
     opsText.includes('操作总数') && opsText.includes('参与账号') && opsText.includes('按类别'),
     opsText.slice(0, 150));
 
+  // 「配置同步」报表只统计**最近 7 天**，而且是按**日期**取整（from = 今天 − 6 天），
+  // 所以它迟早会因为「上次下发是 8 天前」而变成空状态——这条断言于是会莫名其妙地反掉
+  // （实测：2026-10-05 的 5 条记录，到 10-12 就滑出了窗口）。
+  // 按项目自己的规矩：断言不该依赖这种偶然状态，测试自己造一次下发记录。
+  const pushProbe = await page.evaluate(async () => {
+    const token = localStorage.getItem('controlhub.admin.token');
+    const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+    const devices = await (await fetch('/api/v1/admin/devices', { headers })).json();
+    // 挑一台**离线**的测试设备：不会打扰真实教室，也不会真的改到谁。
+    const target = (devices.data || []).find((d) => !d.revoked && !d.online);
+    if (!target) {
+      return '(没有离线设备)';
+    }
+
+    const res = await fetch('/api/v1/admin/push', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        scope: 'device', targetIds: [target.id], message: 'ui-smoke 探针',
+      }),
+    });
+    return `${res.status} ${target.name}`;
+  });
+
   await page.evaluate(() => {
     const btn = [...document.querySelectorAll('#content button')]
       .find((b) => b.textContent.trim() === '配置同步');
@@ -698,12 +722,12 @@ function check(name, ok, extra = '') {
       btn.click();
     }
   });
-  await sleep(1800);
+  await sleep(2200);
   const syncText = await page.evaluate(
     () => (document.getElementById('content')?.textContent || '').replace(/\s+/g, ' '));
   check('配置同步报表显示批次 / 覆盖率 / 完全到位（#64）',
     syncText.includes('下发批次') && syncText.includes('整体覆盖率') && syncText.includes('完全到位'),
-    syncText.slice(0, 150));
+    `探针下发=${pushProbe} ${syncText.slice(0, 110)}`);
 
   // 切到 30 天：标题里的区间应随之变化（证明真的重新取了数，而不是静态文案）
   await page.evaluate(() => {
@@ -1809,7 +1833,91 @@ function check(name, ok, extra = '') {
     check('品牌 Logo 方块背景透明（不叠强调色 / 渐变）',
       seeThrough(topbarInfo.bg, topbarInfo.bgImage) && seeThrough(topbarInfo.heroBg, topbarInfo.heroImage),
       `顶栏=${topbarInfo.bg}/${topbarInfo.bgImage} 大logo=${topbarInfo.heroBg}/${topbarInfo.heroImage}`);
+
+    // 登录页壁纸：**必须断言真正画出来的 background-image**，不能只断言 CSS 变量。
+    // 这不是洁癖：壁纸曾整块不显示，而变量是对的、图片也确实能下载——因为 glass.css 里
+    // `.login-page` 用的是 `background` **简写**，把 app.css 里
+    // `background-image: var(--login-bg-image)` 整个重置了。
+    //
+    // ⚠️ 基准取「CSS 变量里那个地址」，**不要在页面里 fetch 服务端配置**：这条 fetch 会 401，
+    // 拿到的 branding 是空的，于是断言会静默走「未配置」分支——看起来通过，其实什么都没测。
+    const wall = await page.evaluate(() => {
+      const root = document.documentElement;
+      const view = document.getElementById('loginView');
+      const hero = document.querySelector('.login-hero');
+      const expected = root.style.getPropertyValue('--login-bg-image').trim();
+      // 形如 url("https://…")，取出裸地址
+      const url = expected.startsWith('url("') ? expected.slice(5, -2) : '';
+      const style = view ? getComputedStyle(view) : null;
+      const painted = style ? style.backgroundImage : '';
+      const size = style ? style.backgroundSize : '';
+      const scrim = hero ? getComputedStyle(hero, '::before').opacity : '(没有介绍区)';
+      // 摘掉变量再看一次：没配壁纸时衬底必须完全透明，不能留残影
+      root.style.removeProperty('--login-hero-scrim');
+      const scrimWithoutWall = hero ? getComputedStyle(hero, '::before').opacity : '(没有介绍区)';
+      return { url, painted, size, scrim, scrimWithoutWall };
+    });
+    check(wall.url
+      ? '登录页壁纸真的画出来了（断言 background-image 含该地址，不只看 CSS 变量）'
+      : '未配置壁纸：登录页背景不含任何 url() 图层',
+      wall.url
+        ? wall.painted.includes(wall.url) && wall.size.includes('cover')
+        : !/url\(/.test(wall.painted),
+      `壁纸=${wall.url ? wall.url.slice(0, 60) : '(未配置)'} `
+        + `painted=${wall.painted.slice(0, 50)} size=${wall.size}`);
+    check('左侧介绍区的可读性衬底：配了壁纸才出现，去掉壁纸后完全不透明变 0',
+      wall.url ? Number(wall.scrim) > 0 && wall.scrimWithoutWall === '0'
+        : wall.scrim === '0',
+      `有壁纸时=${wall.scrim} 去掉变量后=${wall.scrimWithoutWall}`);
   }
+
+  // 29b) 品牌图片字段（本地上传 + 缩略图 + 清除）与登录页实时预览。
+  //      这两项直接对应「壁纸不好用」：以前只能填外链地址（受图床防盗链/限速影响），
+  //      而且调淡化程度必须「保存 → 退出登录 → 刷新」才看得到。
+  await page.goto(`${BASE}/#/appearance`, { waitUntil: 'networkidle2' });
+  await sleep(2600);
+  const appearancePage = await page.evaluate(() => {
+    const fields = [...document.querySelectorAll('#content .image-field')];
+    const bgField = fields.find(
+      (f) => (f.querySelector('.field > span')?.textContent || '').includes('背景图'));
+    return {
+      fields: fields.length,
+      withFile: fields.filter((f) => f.querySelector('input[type=file]')).length,
+      withClear: fields.filter(
+        (f) => [...f.querySelectorAll('button')].some((b) => b.textContent.trim() === '清除')).length,
+      withPick: fields.filter(
+        (f) => [...f.querySelectorAll('button')].some((b) => b.textContent.trim() === '选择本地图片')).length,
+      hasPreview: !!document.querySelector('#content .login-preview'),
+      bgValue: bgField ? bgField.querySelector('input[type=text]').value.trim() : '',
+      previewImage: document.querySelector('.login-preview-bg')?.style.backgroundImage || '',
+      previewDim: document.querySelector('.login-preview-dim')?.style.opacity || '',
+      dimValue: document.querySelector('#content input[type=number]')?.value || '0',
+    };
+  });
+  check('Logo / 站点图标 / 登录壁纸三处都是「地址 + 选本地图片 + 清除」的完整控件',
+    appearancePage.fields === 3 && appearancePage.withFile === 3
+    && appearancePage.withClear === 3 && appearancePage.withPick === 3,
+    `字段=${appearancePage.fields} 文件输入=${appearancePage.withFile} `
+    + `选择=${appearancePage.withPick} 清除=${appearancePage.withClear}`);
+  check('登录页有实时预览，初始与填写的壁纸 / 淡化程度一致',
+    appearancePage.hasPreview
+    && (appearancePage.bgValue
+      ? appearancePage.previewImage.includes(appearancePage.bgValue)
+      : appearancePage.previewImage === '')
+    && Math.abs(Number(appearancePage.previewDim)
+      - (Number(appearancePage.dimValue) || 0) / 100) < 0.01,
+    `壁纸=${appearancePage.bgValue.slice(0, 36)} 预览=${appearancePage.previewImage.slice(0, 36)} `
+    + `淡化=${appearancePage.previewDim}`);
+
+  const livePreview = await page.evaluate(async () => {
+    const dim = document.querySelector('#content input[type=number]');
+    dim.value = '80';
+    dim.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 200));
+    return document.querySelector('.login-preview-dim').style.opacity;
+  });
+  check('调整化程度时预览实时变化（不用保存、不用退出登录）',
+    Math.abs(Number(livePreview) - 0.8) < 0.01, `预览淡化=${livePreview}`);
 
   // 26) 顶栏不重叠：搜索框曾经因为「绝对定位居中 + 导航 flex:1 铺满」
   //     直接压在分组文字上（实测 1600 / 1280 宽都在压）；
@@ -1852,6 +1960,46 @@ function check(name, ok, extra = '') {
   check(`顶栏在 ${widths.join(' / ')} 各宽度下都不重叠、不横向溢出`,
     widths.every((w) => clean(byWidth[w])),
     widths.map((w) => `${w}=${JSON.stringify(byWidth[w])}`).join(' '));
+
+  // 29) 快捷换课页：实时课表 + 换课 / 调休，且必须有明确的「目标教室」
+  //     （回归点：早先请求里不带目标，服务端默认发给**全部设备**，
+  //     而节次与科目又是从某一台设备读来的——「改某个班第 3 节」会变成全校一起改）
+  await page.goto(`${BASE}/#/lessons`, { waitUntil: 'networkidle2' });
+  await sleep(2600);
+  const lessonsPage = await page.evaluate(() => {
+    const labels = [...document.querySelectorAll('#content .field > span:first-child')]
+      .map((s) => s.textContent.trim());
+    const selects = [...document.querySelectorAll('#content select')];
+    const targetSelects = selects.filter((s) => [...s.options].some((o) => o.value === '__all__'));
+    const first = targetSelects[0];
+    return {
+      title: document.getElementById('pageTitle')?.textContent || '',
+      cards: [...document.querySelectorAll('#content .card h3')].map((h) => h.textContent.trim()),
+      targetLabels: labels.filter((l) => l === '目标教室').length,
+      targetCount: targetSelects.length,
+      targetValues: first ? [...first.options].map((o) => o.value) : [],
+      targetTexts: first ? [...first.options].map((o) => o.textContent.trim()) : [],
+      selected: first?.value || '',
+      hasSwapBtn: [...document.querySelectorAll('#content button')].some((b) => b.textContent.trim() === '下发换课'),
+      hasAdjustBtn: [...document.querySelectorAll('#content button')].some((b) => b.textContent.trim() === '应用调休'),
+      hasReadBtn: [...document.querySelectorAll('#content button')].some((b) => b.textContent.trim() === '读取课表'),
+    };
+  });
+  check('「快捷换课」页可打开，三张卡与三个动作按钮齐全',
+    lessonsPage.title === '快捷换课'
+      && lessonsPage.cards.some((c) => c.includes('教室实时课表'))
+      && lessonsPage.cards.some((c) => c.includes('临时换课'))
+      && lessonsPage.cards.some((c) => c.includes('调休'))
+      && lessonsPage.hasSwapBtn && lessonsPage.hasAdjustBtn && lessonsPage.hasReadBtn,
+    `标题=${lessonsPage.title} 卡=${JSON.stringify(lessonsPage.cards)}`);
+  check('换课与调休都带「目标教室」选择器，默认落在具体教室上',
+    lessonsPage.targetCount === 2 && lessonsPage.targetLabels === 2
+      && (lessonsPage.targetValues.filter((v) => v !== '__all__').length === 0
+        || lessonsPage.selected !== '__all__'),
+    `选择器=${lessonsPage.targetCount} 标签=${lessonsPage.targetLabels} 默认=${lessonsPage.selected}`);
+  check('目标下拉里有显式的「全部设备（慎用）」选项',
+    lessonsPage.targetTexts.some((t) => t.includes('全部设备')),
+    JSON.stringify(lessonsPage.targetTexts.slice(0, 6)));
 
   await page.setViewport({ width: 1600, height: 1000 });
   await sleep(700);

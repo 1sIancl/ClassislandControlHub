@@ -20,6 +20,7 @@ public sealed class SyncEngine(
     HubState state,
     HubClient client,
     ClassIslandAdapter adapter,
+    LessonBridge lessonBridge,
     RemoteCommandExecutor commandExecutor,
     ILogger<SyncEngine> logger) : BackgroundService
 {
@@ -194,6 +195,10 @@ public sealed class SyncEngine(
             AppliedPushEpoch = cfg.AppliedPushEpoch,
             UptimeSeconds = (long)(DateTime.UtcNow - ProcessStartTime).TotalSeconds,
             CurrentClassPlanName = state.CurrentClassPlanName,
+            // 课表实时状态随心跳上报（读宿主服务，内部已切 UI 线程）。
+            // 读失败**不能**让心跳失败：心跳一断，这台设备在管理端就变成离线，
+            // 而「课表读不出来」远没有「整台设备失联」严重。所以这里自己吞异常。
+            Lesson = ReadLessonStateSafe(),
             LastError = string.IsNullOrWhiteSpace(state.LastError) ? null : state.LastError,
             Metrics = new Dictionary<string, string>
             {
@@ -202,6 +207,29 @@ public sealed class SyncEngine(
         }, ct);
 
         return response;
+    }
+
+    /// <summary>
+    /// 读一次课表实时状态；任何异常都吞掉并记日志。
+    /// <para>心跳是设备「在线」的唯一依据，不能因为课表读不到就让整台设备显成离线。</para>
+    /// </summary>
+    private LessonStateDto? ReadLessonStateSafe()
+    {
+        try
+        {
+            var lessonState = lessonBridge.ReadState();
+            if (!string.IsNullOrWhiteSpace(lessonState.ClassPlanName))
+            {
+                state.CurrentClassPlanName = lessonState.ClassPlanName;
+            }
+
+            return lessonState;
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "读取 ClassIsland 课表状态失败，本次心跳不带课表信息。");
+            return null;
+        }
     }
 
     private async Task<ApplyResult> SyncAndApplyAsync(PluginSettings cfg, bool force, CancellationToken ct)

@@ -135,6 +135,7 @@ builder.Services.AddSingleton<NtpClient>();
 builder.Services.AddSingleton<ServerTimeService>();
 builder.Services.AddSingleton<UpdateService>();
 builder.Services.AddSingleton<BackupService>();
+builder.Services.AddSingleton<BrandingImageStore>();
 builder.Services.AddSingleton<AiTimetableService>();
 
 // 静态敏感数据加密（#36，见 docs/adr/0005）：设备注册码、管理端邀请码、Webhook 加签密钥
@@ -326,6 +327,8 @@ app.MapReminderEndpoints();
 app.MapRegistrationEndpoints();
 app.MapNoticeTemplateEndpoints();
 app.MapTimetableOverrideEndpoints();
+// 快捷换课：读教室端实时课表状态（下节课 / 倒计时），并下发临时换课与调休。
+app.MapLessonEndpoints();
 app.MapWebhookEndpoints();
 
 // 未匹配到的 API 路径统一返回 JSON 404，而不是落到前端页面。

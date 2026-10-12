@@ -16,15 +16,15 @@
  * 本页的「外观（本机）」。</para>
  */
 
-import { api } from '../core/api.js?v=90';
+import { api } from '../core/api.js?v=95';
 import {
   h, clear, field, select, loadingBlock, toast, confirmDialog,
-} from '../core/ui.js?v=90';
+} from '../core/ui.js?v=95';
 import {
   THEMES, DENSITIES, ACCENTS, FONTS, RADII,
   getTheme, applyTheme, getDensity, setDensity,
   getAccent, setAccent, getFont, setFont, getRadius, setRadius,
-} from '../core/prefs.js?v=90';
+} from '../core/prefs.js?v=95';
 
 export const meta = {
   title: '页面设置',
@@ -99,17 +99,166 @@ async function confirmBrokenImages(entries) {
   return !ok;
 }
 
+// ────────────────────────────── 图片字段 ──────────────────────────────
+
+/**
+ * 上传一张本地图片，返回服务端给出的站内地址。
+ *
+ * <para>有了它就不用再自己找图床：外部图床的防盗链、限速、校内网打不开，
+ * 三件事最终都会表现为「壁纸不好用」。服务端按**文件头**判定类型并限制大小，
+ * 伪装成 .png 的其它文件会被拒（否则同源发回 HTML 就是 XSS）。</para>
+ */
+async function uploadImage(file) {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  return api('/admin/branding/image', { method: 'POST', body: form });
+}
+
+/**
+ * 「图片」输入项：地址框 + 选择本地图片 + 缩略图 + 清除。
+ *
+ * <para>这三样放在一起，是因为它们其实是同一个动作的三个阶段：选图 → 看有没有选对 → 改主意清掉。
+ * 以前只有一个地址框，管理员存完只能回登录页刷新一次才知道行不行。</para>
+ *
+ * @param {string} label 字段名。
+ * @param {string} initial 初始地址。
+ * @param {string} desc 说明文字。
+ * @param {{onChange?: (value: string) => void, previewHeight?: string}} [options]
+ * @returns {{node: HTMLElement, input: HTMLInputElement, setValue: (value: string) => void}}
+ */
+function imageField(label, initial, desc, options = {}) {
+  const input = h('input', {
+    type: 'text',
+    value: initial || '',
+    placeholder: 'https://… 或点右侧「选择本地图片」',
+  });
+
+  const file = h('input', { type: 'file', accept: 'image/*', style: { display: 'none' } });
+  const preview = h('div.image-field-preview');
+  const status = h('span.image-field-status');
+
+  const pickBtn = h('button.btn.btn-sm', { type: 'button', onClick: () => file.click() }, '选择本地图片');
+  const clearBtn = h('button.btn.btn-sm', {
+    type: 'button',
+    onClick: () => {
+      input.value = '';
+      paint();
+      options.onChange?.('');
+    },
+  }, '清除');
+
+  function paint() {
+    const url = input.value.trim();
+    clear(preview);
+    status.textContent = '';
+
+    if (!url) {
+      preview.hidden = true;
+      return;
+    }
+
+    preview.hidden = false;
+    const img = h('img', {
+      alt: '预览',
+      src: url,
+      style: { maxHeight: options.previewHeight || '72px' },
+    });
+    img.addEventListener('error', () => {
+      // 「打不开」是最需要当场知道的事：地址写错、要登录、图床防盗链，现象全一样。
+      clear(preview);
+      status.textContent = '这张图打不开（地址写错、需要登录，或图床禁止外链）';
+      status.classList.add('is-bad');
+    });
+    preview.appendChild(img);
+  }
+
+  input.addEventListener('input', () => {
+    paint();
+    options.onChange?.(input.value.trim());
+  });
+
+  file.addEventListener('change', async () => {
+    const picked = file.files && file.files[0];
+    file.value = '';
+    if (!picked) return;
+
+    status.classList.remove('is-bad');
+    status.textContent = '上传中…';
+    pickBtn.disabled = true;
+    try {
+      const saved = await uploadImage(picked);
+      input.value = saved.url;
+      paint();
+      status.textContent = `已上传 ${Math.round(saved.size / 1024)}KB（存本站，不依赖外部图床）`;
+      options.onChange?.(saved.url);
+    } catch (err) {
+      status.classList.add('is-bad');
+      status.textContent = err.message || '上传失败';
+    } finally {
+      pickBtn.disabled = false;
+    }
+  });
+
+  paint();
+
+  return {
+    node: h('div.image-field',
+      field(label, input, desc),
+      h('div.image-field-actions', pickBtn, file, clearBtn, status),
+      preview,
+    ),
+    input,
+    setValue: (value) => {
+      input.value = value || '';
+      paint();
+    },
+  };
+}
+
+/**
+ * 登录页的实时预览（缩小的示意）。
+ *
+ * <para>它是**示意**，不是像素级还原**：只保留真正会被壁纸影响的三样东西——
+ * 背景图（cover）、淡化层、左侧品牌区那块可读性衬底。这三样正是「壁纸好不好用」的判断依据，
+ * 剩下的（顶栏、输入框、按钮）在真实登录页里看就行。</para>
+ */
+function loginPreview() {
+  const bg = h('div.login-preview-bg');
+  const dim = h('div.login-preview-dim');
+  const scrim = h('div.login-preview-scrim');
+  const heroTitle = h('span.login-preview-title');
+  const heroLine = h('span.login-preview-line');
+  const hero = h('div.login-preview-hero', heroTitle, heroLine);
+  const card = h('div.login-preview-card',
+    h('span.login-preview-field'),
+    h('span.login-preview-field'),
+    h('span.login-preview-btn'));
+
+  const node = h('div.login-preview', bg, dim, scrim, hero, card);
+
+  return {
+    node,
+    update({ background, dim: dimValue, layout, title }) {
+      // 没有壁纸时交给 CSS 画默认渐变，这里必须显式清掉，否则上一张图会留着。
+      bg.style.backgroundImage = background ? `url("${background}")` : '';
+      dim.style.opacity = String(Math.min(0.9, Math.max(0, Number(dimValue) || 0) / 100));
+      scrim.style.opacity = background ? '1' : '0';
+      heroTitle.textContent = title || '站点名称';
+      node.dataset.layout = layout === 'centered' ? 'centered' : 'split';
+    },
+  };
+}
+
 // ────────────────────────────── 品牌（全站） ──────────────────────────────
 
 function renderBrandCard(branding) {
   const siteInput = h('input', { type: 'text', value: branding.siteName || '' });
-  const logoImageInput = h('input', {
-    type: 'text',
-    value: branding.logoImage || '',
-    placeholder: 'https://…/logo.png 或 data:image/png;base64,…',
-  });
+  const logoImage = imageField('Logo 图片', branding.logoImage,
+    '留空则用下面的「Logo 文字」。**填了就用图片**（登录页顶栏、登录卡片、站内顶栏都会换）。',
+    { previewHeight: '48px' });
   const logoTextInput = h('input', { type: 'text', value: branding.logoText || '', placeholder: 'CI' });
-  const faviconInput = h('input', { type: 'text', value: branding.favicon || '', placeholder: '留空使用默认图标' });
+  const favicon = imageField('浏览器标签图标', branding.favicon, '小尺寸图（32×32 左右）最合适。',
+    { previewHeight: '32px' });
 
   return h('div.card',
     h('h3', '品牌'),
@@ -118,24 +267,23 @@ function renderBrandCard(branding) {
       field('站点名称', siteInput, '显示在浏览器标题与界面各处。'),
       field('Logo 文字', logoTextInput, '没有上传图片时，用这几个字作为标识。'),
     ),
-    field('Logo 图片', logoImageInput,
-      '填图片地址或 data URL。**填了就用图片**（登录页顶栏、登录卡片、站内顶栏都会换）。'),
-    field('浏览器标签图标', faviconInput, '小尺寸图（32×32 左右）最合适。'),
+    logoImage.node,
+    favicon.node,
     h('div.card-actions',
       h('button.btn.btn-primary', {
         type: 'button',
         onClick: async () => {
           const stop = await confirmBrokenImages([
-            ['Logo 图片', logoImageInput.value.trim()],
-            ['浏览器标签图标', faviconInput.value.trim()],
+            ['Logo 图片', logoImage.input.value.trim()],
+            ['浏览器标签图标', favicon.input.value.trim()],
           ]);
           if (stop) return;
 
           await saveBranding({
             siteName: siteInput.value.trim(),
             logoText: logoTextInput.value.trim(),
-            logoImage: logoImageInput.value.trim(),
-            favicon: faviconInput.value.trim(),
+            logoImage: logoImage.input.value.trim(),
+            favicon: favicon.input.value.trim(),
           });
         },
       }, '保存品牌')),
@@ -148,7 +296,7 @@ function renderLoginCard(branding) {
   const layoutSelect = select([
     { value: 'split', label: '左右分栏（左品牌 / 右表单）' },
     { value: 'centered', label: '单列居中（只要一张登录卡）' },
-  ], branding.loginLayout || 'split', () => { });
+  ], branding.loginLayout || 'split', () => paintPreview());
 
   const titleInput = h('input', { type: 'text', value: branding.loginTitle || '', placeholder: '留空使用站点名称' });
   const subtitleInput = h('input', { type: 'text', value: branding.loginSubtitle || '' });
@@ -167,10 +315,31 @@ function renderLoginCard(branding) {
     placeholder: '留空使用站点名称',
   });
 
-  const bgInput = h('input', { type: 'text', value: branding.loginBackground || '', placeholder: '图片地址或 data URL' });
+  const preview = loginPreview();
+
+  /**
+   * 把当前填的壁纸 / 淡化 / 布局同步到预览上。
+   * <para>以前要调好「淡化程度」必须：保存 → 退出登录 → 刷新 → 看 → 再回来改，
+   * 来回三四次才敢确定。壁纸越亮越需要淡化，这两个参数本来就得**一起**看。</para>
+   */
+  function paintPreview() {
+    preview.update({
+      background: bg.input.value.trim(),
+      dim: Number(dimInput.value) || 0,
+      layout: layoutSelect.value,
+      title: titleInput.value.trim() || branding.siteName || '站点名称',
+    });
+  }
+
+  const bg = imageField('背景图', branding.loginBackground,
+    '留空使用默认的蓝紫渐变。也可以直接选本地图片——存在本站，不受外部图床的防盗链与限速影响。',
+    { previewHeight: '110px', onChange: () => paintPreview() });
   const dimInput = h('input', {
     type: 'number', min: '0', max: '90', value: String(branding.loginBackgroundDim ?? 45),
   });
+  dimInput.addEventListener('input', paintPreview);
+  titleInput.addEventListener('input', paintPreview);
+  paintPreview();
 
   return h('div.card',
     h('h3', '登录页'),
@@ -193,14 +362,17 @@ function renderLoginCard(branding) {
     field('顶栏文案', topbarTitleInput, '留空使用站点名称；这里可以写完整校名。'),
 
     h('div.config-section-title', { style: { marginTop: '14px' } }, '背景'),
-    field('背景图', bgInput, '留空使用默认的蓝紫渐变。'),
+    bg.node,
     field('淡化程度', dimInput, '0~90，数值越大背景越淡（保证表单可读）。'),
+    h('p.card-desc', { style: { margin: '6px 0 8px' } },
+      '下面是登录页的实时示意（左侧品牌区 + 右侧表单）。改地址、改淡化程度、换布局都会立刻反映，不用保存。'),
+    preview.node,
 
     h('div.card-actions',
       h('button.btn.btn-primary', {
         type: 'button',
         onClick: async () => {
-          const stop = await confirmBrokenImages([['登录页背景图', bgInput.value.trim()]]);
+          const stop = await confirmBrokenImages([['登录页背景图', bg.input.value.trim()]]);
           if (stop) return;
 
           await saveBranding({
@@ -212,7 +384,7 @@ function renderLoginCard(branding) {
             footerText: footerInput.value.trim(),
             loginTopbarHidden: topbarHiddenChk.checked,
             loginTopbarTitle: topbarTitleInput.value.trim(),
-            loginBackground: bgInput.value.trim(),
+            loginBackground: bg.input.value.trim(),
             loginBackgroundDim: Math.min(90, Math.max(0, Number(dimInput.value) || 45)),
           });
         },

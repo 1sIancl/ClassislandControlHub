@@ -36,6 +36,8 @@ public static class ClientEndpoints
         authed.MapPost("/commands/report", ReportCommandAsync);
         authed.MapPost("/commands/receipt", ReportNotificationReceiptAsync);
         authed.MapPost("/plugins", ReportPluginsAsync);
+        // 课表目录（今天各节 / 科目 / 课表）：管理员点「读取课表」后由插件回报。
+        authed.MapPost("/lessons/catalog", ReportLessonCatalogAsync);
         authed.MapPost("/time-report", ReportTimeSyncAsync);
     }
 
@@ -239,6 +241,14 @@ public static class ClientEndpoints
             request.LastError,
             HubJson.Serialize(request.Metrics),
             cancellationToken);
+
+        // 课表实时状态：一台设备只留最新一条（管理员要看的是「这间教室现在在上什么」）。
+        // 插件没装新版 / 读不到课表时 request.Lesson 为 null，此时**不动**库里已有的记录——
+        // 否则一次偶发的读取失败会把界面上的实时信息抹成空白。
+        if (request.Lesson is not null)
+        {
+            await store.UpsertLessonStateAsync(device.Id, request.Lesson, cancellationToken);
+        }
 
         var shouldSync = request.AppliedRevision < revision
                          || request.AppliedPushEpoch < device.PushEpoch;
@@ -481,6 +491,23 @@ public static class ClientEndpoints
             IssuedAt = r.IssuedAt,
             IssuedBy = r.IssuedBy,
         }).ToList());
+    }
+
+    /// <summary>
+    /// 上课表目录：当天各节、可选科目、可选课表。
+    /// <para>由「快捷换课」页点「读取课表」触发（下发 <c>lesson.catalog</c> 指令），插件读完主动回报。
+    /// 走独立接口而不是命令回报的 Output：目录 JSON 可能上万字节，而命令输出有长度上限，
+    /// 截断后是**坏 JSON**，解析起来会变成更难查的问题。</para>
+    /// </summary>
+    private static async Task<ApiResult<bool>> ReportLessonCatalogAsync(
+        LessonCatalogDto request,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var device = http.RequireDevice();
+        await store.SaveLessonCatalogAsync(device.Id, HubJson.Serialize(request), cancellationToken);
+        return ApiResult<bool>.Success(true);
     }
 
     /// <summary>回报远程指令的执行结果。只能回报属于本设备的指令。</summary>

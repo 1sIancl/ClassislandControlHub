@@ -170,6 +170,22 @@ public sealed class SecretKindDto
     public int Unavailable { get; set; }
 }
 
+/// <summary>上传一张品牌图片（Logo / 浏览器图标 / 登录壁纸）的结果。</summary>
+public sealed class BrandingImageDto
+{
+    /// <summary>可直接写进品牌配置的站内地址（相对路径，同源可用）。</summary>
+    public string Url { get; set; } = string.Empty;
+
+    /// <summary>服务端保存的文件名。</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>识别出的真实图片类型（由文件头判定，不采信客户端申报的 MIME）。</summary>
+    public string ContentType { get; set; } = string.Empty;
+
+    /// <summary>文件字节数。</summary>
+    public long Size { get; set; }
+}
+
 /// <summary>
 /// 站点品牌个性化配置，仿 VoiceHub 站点配置，用于替换站点名称、Logo 与图标。
 /// </summary>

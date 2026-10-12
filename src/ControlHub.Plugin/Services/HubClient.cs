@@ -200,6 +200,16 @@ public sealed class HubClient
             timeout: TimeSpan.FromSeconds(20), cancellationToken);
     }
 
+    /// <summary>上报课表目录（今天各节 / 科目 / 课表），供管理端渲染下拉框。</summary>
+    public async Task ReportLessonCatalogAsync(string baseUrl, string deviceToken, LessonCatalogDto catalog,
+        CancellationToken cancellationToken = default)
+    {
+        await SendAsync<bool>(baseUrl, "/client/lessons/catalog", HttpMethod.Post,
+            auth: HubProtocol.DeviceScheme + " " + deviceToken,
+            body: catalog,
+            timeout: TimeSpan.FromSeconds(20), cancellationToken);
+    }
+
     private async Task<ApiResult<T>> SendAsync<T>(string baseUrl, string path, HttpMethod method,
         string? auth, object? body, TimeSpan timeout, CancellationToken cancellationToken)
     {

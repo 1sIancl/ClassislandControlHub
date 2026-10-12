@@ -37,6 +37,13 @@ public class Plugin : PluginBase
         services.AddSingleton<ClassIslandAdapter>(sp => new ClassIslandAdapter(
             sp.GetRequiredService<IProfileService>(),
             sp.GetRequiredService<ILogger<ClassIslandAdapter>>()));
+        // 课表桥接：读「下节课」实时状态、执行临时换课与调休（宿主服务，注入 Core 接口）。
+        services.AddSingleton(sp => new LessonBridge(
+            sp.GetRequiredService<IProfileService>(),
+            sp.GetRequiredService<ILessonsService>(),
+            sp.GetRequiredService<IExactTimeService>(),
+            sp.GetRequiredService<ILogger<LessonBridge>>()));
+
         services.AddSingleton<SyncEngine>();
         services.AddSingleton<ClassIslandClockService>();
         services.AddSingleton<TimeSyncService>();
@@ -69,7 +76,8 @@ public class Plugin : PluginBase
             var executor = new RemoteCommandExecutor(
                 sp.GetRequiredService<ILogger<RemoteCommandExecutor>>(),
                 sp.GetRequiredService<HubState>(),
-                sp.GetRequiredService<HubSettingsStore>());
+                sp.GetRequiredService<HubSettingsStore>(),
+                sp.GetRequiredService<LessonBridge>());
 
             executor.OnPluginsReported = plugins =>
                 UploadAsync((client, url, token) => client.ReportPluginsAsync(url, token, plugins));
@@ -79,6 +87,10 @@ public class Plugin : PluginBase
 
             executor.OnLogsRequested = entries =>
                 UploadAsync((client, url, token) => client.UploadLogsAsync(url, token, entries));
+
+            // 课表目录：管理员点「读取课表」时由插件回报（今天各节 / 科目 / 课表）。
+            executor.OnLessonCatalogRead = catalog =>
+                UploadAsync((client, url, token) => client.ReportLessonCatalogAsync(url, token, catalog));
 
             // 通知回执（#7）：展示开始 / 结束各报一次，A 端据此算到达率。
             executor.OnNotificationReceipt = (commandId, stage) =>

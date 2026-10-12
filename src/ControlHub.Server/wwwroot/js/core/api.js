@@ -63,8 +63,12 @@ export async function api(path, options = {}) {
     }
   }
 
+  // FormData（文件上传）要**原样发出**：既不能 JSON.stringify，也不能手动设 Content-Type——
+  // multipart 的 boundary 是浏览器自己生成的，手动设 application/json 会让服务端读不到文件。
+  const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
+
   const headers = {};
-  if (body !== undefined) {
+  if (body !== undefined && !isForm) {
     headers['Content-Type'] = 'application/json';
   }
   if (auth && session.token) {
@@ -76,7 +80,7 @@ export async function api(path, options = {}) {
     response = await fetch(url, {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : (isForm ? body : JSON.stringify(body)),
     });
   } catch (networkError) {
     throw new ApiError('NETWORK', '无法连接到服务器，请检查网络或服务是否已启动。', 0);

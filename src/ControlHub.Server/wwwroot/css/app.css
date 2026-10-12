@@ -921,13 +921,6 @@ input[type="checkbox"] {
 .login-page[hidden] {
   display: none;
 }
-/* 学校自定义的登录页背景图（未设置时为 none，走默认渐变与光斑） */
-.login-page {
-  background-image: var(--login-bg-image, none);
-  background-size: cover;
-  background-position: center;
-  background-color: var(--bg-base);
-}
 /* 背景图淡化层：数值越大越淡，保证卡片与文字始终可读 */
 .login-page::before {
   content: "";
@@ -988,8 +981,30 @@ input[type="checkbox"] {
 
 /* ── 左侧：产品介绍 ── */
 .login-hero {
+  position: relative; /* 给下面那层可读性衬底做定位上下文 */
   min-width: 0;
   animation: login-rise 0.52s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* 有自定义壁纸时，介绍区的文字是**直接压在照片上**的：标题还是渐变文字
+   （background-clip: text），说明与功能标签用的是弱对比色，碰到亮一点的图就整体糊掉。
+   这里垫一层同底色的柔化衬底；`--login-hero-scrim` 由 app.js 的 applyBranding 在
+   「配置了壁纸」时置 1，所以没有壁纸时这层完全透明，默认观感一点不变。 */
+.login-hero::before {
+  content: "";
+  position: absolute;
+  inset: -28px -36px;
+  background: linear-gradient(100deg,
+      color-mix(in srgb, var(--bg-base) 90%, transparent) 0%,
+      color-mix(in srgb, var(--bg-base) 66%, transparent) 58%,
+      transparent 100%);
+  opacity: var(--login-hero-scrim, 0);
+  pointer-events: none;
+}
+
+/* 衬底在下、文字在上（::before 是第一个子元素，定位后按顺序绘制，这里显式让内容也定位）。 */
+.login-hero > * {
+  position: relative;
 }
 .hero-brand {
   display: flex;
@@ -2581,6 +2596,145 @@ input.pcell-name:focus {
 /* 说明：顶栏原来的「外观」下拉（.theme-menu / .dropdown-section / .accent-dot /
    .menu-marker / .menu-check）已随功能搬到「页面设置」而删除，
    对应的样式也一并清掉——留着会让人以为界面上还有那个菜单。 */
+
+/* ── 图片字段：地址 + 选本地图片 + 缩略图 + 清除 ─────────────────────────── */
+
+.image-field .field {
+  margin-bottom: 8px;
+}
+
+.image-field-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.image-field-status {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.image-field-status.is-bad {
+  color: var(--danger, #e5484d);
+}
+
+.image-field-preview[hidden] {
+  display: none;
+}
+
+.image-field-preview img {
+  display: block;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-base);
+}
+
+/* ── 登录页实时预览（示意，不是像素级还原） ───────────────────────────────── */
+
+.login-preview {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px;
+  gap: 16px;
+  align-items: center;
+  height: 200px;
+  padding: 16px 18px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 12px);
+  background: var(--bg-base);
+}
+
+/* 单列布局的真实登录页没有左侧品牌区，预览里也就不该画 */
+.login-preview[data-layout='centered'] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.login-preview[data-layout='centered'] .login-preview-hero,
+.login-preview[data-layout='centered'] .login-preview-scrim {
+  display: none;
+}
+
+.login-preview-bg,
+.login-preview-dim,
+.login-preview-scrim {
+  position: absolute;
+  inset: 0;
+}
+
+/* 没配壁纸时的兜底底色（update 会把内联 background-image 清空，于是这里生效） */
+.login-preview-bg {
+  background-image: linear-gradient(135deg, rgba(166, 194, 247, 0.55) 0%, rgba(77, 59, 142, 0.5) 100%);
+  background-size: cover;
+  background-position: center;
+}
+
+.login-preview-dim {
+  background: var(--bg-base);
+  opacity: 0;
+}
+
+/* 左侧品牌区的可读性衬底，与登录页真实渲染用的是同一套做法 */
+.login-preview-scrim {
+  background: linear-gradient(100deg,
+      color-mix(in srgb, var(--bg-base) 90%, transparent) 0%,
+      color-mix(in srgb, var(--bg-base) 66%, transparent) 58%,
+      transparent 100%);
+  opacity: 0;
+}
+
+.login-preview-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.login-preview-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.login-preview-line {
+  height: 8px;
+  width: 68%;
+  border-radius: 4px;
+  background: var(--text-faint);
+  opacity: 0.5;
+}
+
+.login-preview-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--bg-elevated, #fff);
+  border: 1px solid var(--border);
+}
+
+.login-preview-field {
+  height: 10px;
+  border-radius: 4px;
+  background: var(--text-faint);
+  opacity: 0.35;
+}
+
+.login-preview-btn {
+  height: 14px;
+  border-radius: 5px;
+  background: var(--accent);
+  opacity: 0.85;
+}
 
 /* 配置面板（模块 / 列，统一样式） */
 .config-section + .config-section {

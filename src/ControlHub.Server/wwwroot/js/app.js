@@ -2,20 +2,20 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=90';
-import { toastError } from './core/errors.js?v=90';
-import { h, clear, toast, icon } from './core/ui.js?v=90';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=95';
+import { toastError } from './core/errors.js?v=95';
+import { h, clear, toast, icon } from './core/ui.js?v=95';
 import {
   initTheme,
   getSidebarCollapsed, setSidebarCollapsed,
   applyDensity,
   applyAppearance, setBrandingAccent,
   applyRemotePrefs, applySchedScale,
-} from './core/prefs.js?v=90';
-import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=90';
-import { initGlassHighlight } from './core/glass.js?v=90';
-import { initTopbar } from './topbar.js?v=90';
-import { openSearch } from './core/search.js?v=90';
+} from './core/prefs.js?v=95';
+import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=95';
+import { initGlassHighlight } from './core/glass.js?v=95';
+import { initTopbar } from './topbar.js?v=95';
+import { openSearch } from './core/search.js?v=95';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -73,6 +73,8 @@ const NAV = [
       // 授时偏移调的是教室大屏的时钟，属于教学场景（原来挂在「系统维护」下，
       // 找它得先经过服务器维护，不合理）。接口权限仍是 settings.read。
       { key: 'timesync', label: '时间偏移', icon: 'clock', hash: '#/timesync', perm: 'settings.read' },
+      // 快捷换课：读教室端实时课表（下节课 + 倒计时），并直接改教室端课表（换课 / 调休）。
+      { key: 'lessons', label: '快捷换课', icon: 'list', hash: '#/lessons', perm: 'devices.read' },
     ],
   },
   {
@@ -112,24 +114,25 @@ const ROUTE_ALIASES = {
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=90'),
-  devices: () => import('./views/devices.js?v=90'),
+  dashboard: () => import('./views/dashboard.js?v=95'),
+  devices: () => import('./views/devices.js?v=95'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=90'),
-  profiles: () => import('./views/profiles.js?v=90'),
-  profileEditor: () => import('./views/profileEditor.js?v=90'),
-  deploy: () => import('./views/deploy.js?v=90'),
-  remote: () => import('./views/remote.js?v=90'),
-  reminders: () => import('./views/reminders.js?v=90'),
-  audit: () => import('./views/audit.js?v=90'),
-  reports: () => import('./views/reports.js?v=90'),
-  appearance: () => import('./views/appearance.js?v=90'),
+  groups: () => import('./views/devices.js?v=95'),
+  profiles: () => import('./views/profiles.js?v=95'),
+  profileEditor: () => import('./views/profileEditor.js?v=95'),
+  deploy: () => import('./views/deploy.js?v=95'),
+  remote: () => import('./views/remote.js?v=95'),
+  reminders: () => import('./views/reminders.js?v=95'),
+  audit: () => import('./views/audit.js?v=95'),
+  reports: () => import('./views/reports.js?v=95'),
+  appearance: () => import('./views/appearance.js?v=95'),
   // 「系统设置」拆成四页（原 settings.js 已按此拆分，见各文件头部说明）。
-  accounts: () => import('./views/accounts.js?v=90'),
-  server: () => import('./views/server.js?v=90'),
-  integrations: () => import('./views/integrations.js?v=90'),
-  maintenance: () => import('./views/maintenance.js?v=90'),
-  timesync: () => import('./views/timesync.js?v=90'),
+  accounts: () => import('./views/accounts.js?v=95'),
+  server: () => import('./views/server.js?v=95'),
+  integrations: () => import('./views/integrations.js?v=95'),
+  maintenance: () => import('./views/maintenance.js?v=95'),
+  timesync: () => import('./views/timesync.js?v=95'),
+  lessons: () => import('./views/lessons.js?v=95'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -156,6 +159,9 @@ const ROUTE_PERMS = {
   maintenance: ['settings.read', 'backup.read'],
   // 授时接口要 settings.read（服务端 /admin/time-offset 的校验不随导航走）。
   timesync: 'settings.read',
+  // 快捷换课读的是设备状态（devices.read）；换课 / 调休的下发要 remote.write，
+  // 由接口层再校验一次（页面对只读账号也可打开，看得到但发不出去）。
+  lessons: 'devices.read',
 };
 
 /** 运行状态。 */
@@ -249,9 +255,14 @@ function applyBranding(info) {
     root.style.setProperty('--login-bg-image', `url("${branding.loginBackground}")`);
     const dim = Math.min(0.9, Math.max(0, (branding.loginBackgroundDim ?? 45) / 100));
     root.style.setProperty('--login-bg-dim', String(dim));
+    // 左侧介绍区（标题 / 说明 / 功能列表）没有自己的底，文字是直接压在页面背景上的。
+    // 没有壁纸时那点对比度来自默认渐变，够用；一旦换成照片，标题（还是渐变文字）、
+    // 说明与功能标签会一起糊掉。所以配了壁纸就额外开一层衬底，见 app.css 的 .login-hero::before。
+    root.style.setProperty('--login-hero-scrim', '1');
   } else {
     root.style.removeProperty('--login-bg-image');
     root.style.removeProperty('--login-bg-dim');
+    root.style.removeProperty('--login-hero-scrim');
   }
 
   if (branding.favicon) {
@@ -662,7 +673,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=90');
+    const { startTour } = await import('./core/tour.js?v=95');
     startTour({
       onFinish: async (skipped) => {
         try {

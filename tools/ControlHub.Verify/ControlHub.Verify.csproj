@@ -22,6 +22,30 @@
     -->
     <PackageReference Include="ClassIsland.Shared" Version="2.1.1.1" />
     <PackageReference Include="ClassIsland.Shared.IPC" Version="2.1.1.1" />
+    <!--
+      ClassIsland.Core：课表桥接测试要用到宿主的 IProfileService / ILessonsService / IExactTimeService。
+      它同时会（传递地）把 Avalonia 带进来——插件里的 UiThread 用的是 Avalonia 的 Dispatcher，
+      在宿主里由宿主提供，在这里必须显式引入，否则一调 LessonBridge 就是 TypeLoadException。
+    -->
+    <PackageReference Include="ClassIsland.Core" Version="2.1.1.1" />
   </ItemGroup>
+
+  <!--
+    ClassIsland.Core 会传递引入 Avalonia（课表桥接的 UiThread 要 Avalonia 的 Dispatcher）。
+    Avalonia 带的 Skia 原生资源包**没有** .pdb，复制阶段会因为「文件不存在」以 MSB3030 失败。
+    验证工具不渲染任何东西，把不存在的这些文件从复制清单里去掉即可。
+  -->
+  <Target Name="ControlHubSkipMissingNativeSymbols"
+          DependsOnTargets="ResolvePackageAssets"
+          BeforeTargets="GenerateBuildDependencyFile;_CopyFilesMarkedCopyLocal">
+    <ItemGroup>
+      <!-- 复制阶段（_CopyFilesMarkedCopyLocal）读这个。 -->
+      <ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)" Condition="!Exists('%(FullPath)')" />
+      <!-- 生成 deps.json 阶段（GenerateDepsFile）读这几个，缺文件会在读版本号时直接抛异常。 -->
+      <NativeCopyLocalItems Remove="@(NativeCopyLocalItems)" Condition="!Exists('%(FullPath)')" />
+      <RuntimeCopyLocalItems Remove="@(RuntimeCopyLocalItems)" Condition="!Exists('%(FullPath)')" />
+      <RuntimeTargetsCopyLocalItems Remove="@(RuntimeTargetsCopyLocalItems)" Condition="!Exists('%(FullPath)')" />
+    </ItemGroup>
+  </Target>
 
 </Project>

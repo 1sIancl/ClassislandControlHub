@@ -212,6 +212,9 @@ internal static class Program
             """{"command":"echo hi"}""");
         Check("默认 JsonSerializer 区分大小写（因此必须用 HubJson）", caseSensitive?.Command is null);
 
+        // 课表桥接（教室端档案语义）：这一层没有 HTTP 接口可验，只能在这里跑。
+        LessonBridgeChecks.Run(Check);
+
         return Report();
     }
 

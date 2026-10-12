@@ -50,6 +50,18 @@ public static class RemoteCommandKinds
 
     /// <summary>采集诊断数据包：系统环境、应用与插件版本、集控运行状态与最近日志（结果放在 Output 中）。</summary>
     public const string DiagnosticBundle = "diagnostic.bundle";
+
+    /// <summary>
+    /// 临时换课 / 恢复原课表，载荷为 <see cref="LessonSwapRequestDto"/>。
+    /// <para>落点是 ClassIsland 的临时层课表，效果与在教室大屏上手动换课一致。</para>
+    /// </summary>
+    public const string LessonSwap = "lesson.swap";
+
+    /// <summary>调休：给某个日期指定一张课表，载荷为 <see cref="LessonAdjustRequestDto"/>。</summary>
+    public const string LessonAdjust = "lesson.adjust";
+
+    /// <summary>请求上报课表目录（今天各节 / 科目 / 可调休的课表），结果随命令回报带回。</summary>
+    public const string LessonCatalog = "lesson.catalog";
 }
 
 /// <summary>触发自动化信号的载荷。</summary>

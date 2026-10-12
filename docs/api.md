@@ -68,6 +68,7 @@ curl -s "$BASE/admin/devices" -H "Authorization: Bearer $TOKEN" \
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/server/info` | 版本、启动时间、运行时长、设备统计、数据目录、`secretsEncrypted`（注册码 / 邀请码 / Webhook 密钥的已加密与不可用条数，可用于监控「加密到底生效没有」） |
+| GET | `/branding/img/{name}` | 上传的品牌图片（Logo / 浏览器图标 / 登录壁纸）。**免鉴权**——登录页在未登录时就要显示它；响应带 `nosniff` 与 `Content-Security-Policy: default-src 'none'; sandbox` |
 | GET | `/ping` | 探针 |
 | GET | `/api/health` | 健康检查（注意：不在 `/api/v1` 下） |
 
@@ -109,8 +110,37 @@ curl -s "$BASE/admin/devices" -H "Authorization: Bearer $TOKEN" \
 | DELETE | `/admin/devices/{id}/diagnostics` | `remote.write` | 清空诊断记录 |
 
 指令类型（`kind`）：`shell`、`plugin.*`、`appearance.*`、`notify`、`power.*`、`automation.*`、
+`lesson.swap` / `lesson.adjust` / `lesson.catalog`、
 `diagnostic.screenshot` / `diagnostic.processes` / `diagnostic.bundle`。语义：**一次性派发**、
 **2 小时 TTL**、关机 / 重启有 **15 秒撤销窗口**。
+
+### 系统设置与品牌
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET/PUT | `/admin/branding` | `settings.read` / `settings.write` | 品牌个性化配置（站点名 / Logo / 登录页 / 主题色 / 玻璃 / 自定义 CSS） |
+| POST | `/admin/branding/image` | `settings.write` | 上传品牌图片：`multipart/form-data`、字段名 `file`。**按文件内容判定类型**（PNG / JPEG / WebP / GIF / AVIF，≤ 8 MB，**不收 SVG**），返回 `{url,name,contentType,size}`；保存品牌时自动清理不再被引用的旧图 |
+| GET | `/admin/time-offset` | `settings.read` | 时间偏移与每日漂移（写入用同路径 PUT） |
+
+> ⚠️ **`PUT /admin/branding` 是整体替换**：请求体里**没出现的字段会被重置为默认值**。
+> 调用方必须「先 GET 读回 → 合并要改的字段 → 整份 PUT」（前端 `saveBranding()` 就是这么做的），
+> 否则会把没展示的字段（例如登录页壁纸、主题色）清成默认。
+
+### 课表（快捷换课）
+
+直接操作教室端 ClassIsland 的**临时层课表与日期预定**，效果与在教室大屏上手动换课等价。
+读用 `devices.read`、写用 `remote.write`。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/admin/lessons/live` | 各设备的课表实时状态（状态 / 当前课表名 / 当前与下节科目 / 下节起止 / **剩余秒数** / 是否已调整） |
+| GET | `/admin/lessons/catalog?deviceId=` | 取某台设备上次上报的课表目录（当天各节、可选科目、可选课表） |
+| POST | `/admin/lessons/catalog` | 请设备重新上报课表目录：`{"deviceIds":["..."]}` |
+| POST | `/admin/lessons/swap` | 临时换课 / 恢复：`{"deviceIds":["..."],"swap":{"date":"2026-10-10","classIndex":1,"subjectId":"…","swap":false,"swapWithIndex":-1,"restore":false}}` |
+| POST | `/admin/lessons/adjust` | 调休 / 撤销：`{"deviceIds":["..."],"adjust":{"date":"2026-10-10","classPlanId":"…","restore":false}}` |
+
+> ⚠️ **目标设备必填**（`deviceIds` 或 `groupId`，两者都不给返回 400）：课表指令里的节次与科目是从
+> **某一台**设备读来的，早先「没指定」会被当成「全部设备」——等于把某个班的换课发给全校。
 
 ### 教室端（设备侧）
 
@@ -123,6 +153,7 @@ curl -s "$BASE/admin/devices" -H "Authorization: Bearer $TOKEN" \
 | POST | `/client/report` | `HubDevice` | 上报配置应用结果（成功 / 部分 / 失败） |
 | GET | `/client/commands` | `HubDevice` | 领取待执行指令（一次性：领取即标记已派发） |
 | POST | `/client/commands/report` | `HubDevice` | 回报执行结果与输出 |
+| POST | `/client/lessons/catalog` | `HubDevice` | 上报课表目录（当天各节、可选科目与课表），供「快捷换课」页填充下拉框 |
 | POST | `/client/logs` | `HubDevice` | 上报日志 |
 | POST | `/client/diagnostics` | `HubDevice` | 上传诊断工件（Base64，单张 ≤ 4 MB，类型白名单） |
 
