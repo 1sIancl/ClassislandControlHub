@@ -9,7 +9,7 @@
         Width="1280" Height="800"
         MinWidth="960" MinHeight="600"
         WindowStartupLocation="CenterScreen"
-        SystemDecorations="None"
+        WindowDecorations="None"
         TransparencyLevelHint="Mica"
         Background="Transparent">
 

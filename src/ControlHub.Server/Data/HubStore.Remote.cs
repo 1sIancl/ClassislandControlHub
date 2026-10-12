@@ -1,3 +1,4 @@
+using ControlHub.Protocol;
 using Microsoft.Data.Sqlite;
 
 namespace ControlHub.Server.Data;
@@ -8,9 +9,12 @@ public sealed partial class HubStore
     /// <summary>单条指令的输出上限。超出部分截断，避免一条命令把数据库撑大。</summary>
     private const int MaxCommandOutputLength = 32 * 1024;
 
+    /// <summary>指令错误码字段的上限。分类是枚举式的短码，超长的只可能是异常实现或恶意上报。</summary>
+    private const int MaxCommandErrorCodeLength = 64;
+
     private const string CommandColumns =
         "id, device_id, kind, payload, status, output, exit_code, issued_at, finished_at, issued_by, "
-        + "dispatched_at, expires_at, not_before";
+        + "dispatched_at, expires_at, not_before, error_code";
 
     private static RemoteCommandRow ReadCommand(SqliteDataReader reader) => new()
     {
@@ -27,6 +31,7 @@ public sealed partial class HubStore
         DispatchedAt = GetTimestamp(reader, "dispatched_at"),
         ExpiresAt = GetTimestamp(reader, "expires_at"),
         NotBefore = GetTimestamp(reader, "not_before"),
+        ErrorCode = GetString(reader, "error_code"),
     };
 
     /// <summary>创建一条待执行指令。</summary>
@@ -37,7 +42,7 @@ public sealed partial class HubStore
         command.CommandText = $"""
             INSERT INTO device_commands ({CommandColumns})
             VALUES ($id, $deviceId, $kind, $payload, $status, $output, $exitCode, $issuedAt, $finishedAt,
-                    $issuedBy, $dispatchedAt, $expiresAt, $notBefore);
+                    $issuedBy, $dispatchedAt, $expiresAt, $notBefore, $errorCode);
             """;
         AddParameters(command,
             ("$id", row.Id),
@@ -52,7 +57,8 @@ public sealed partial class HubStore
             ("$issuedBy", row.IssuedBy),
             ("$dispatchedAt", row.DispatchedAt is null ? null : Ts(row.DispatchedAt.Value)),
             ("$expiresAt", row.ExpiresAt is null ? null : Ts(row.ExpiresAt.Value)),
-            ("$notBefore", row.NotBefore is null ? null : Ts(row.NotBefore.Value)));
+            ("$notBefore", row.NotBefore is null ? null : Ts(row.NotBefore.Value)),
+            ("$errorCode", row.ErrorCode));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -219,9 +225,12 @@ public sealed partial class HubStore
     /// <summary>
     /// 回写指令执行结果，返回是否命中。
     /// <para>带上 <paramref name="deviceId"/> 条件，避免任意已认证设备回报/覆盖其它设备的指令。</para>
+    /// <para><paramref name="errorCode"/> 是失败原因的**结构化分类**（见 <see cref="CommandErrorCodes"/>）。
+    /// 文案仍然整体存进 <c>output</c>（含 <c>[错误]</c> 前缀）：分类只用来帮界面给出「怎么办」，
+    /// **不替代原文** —— 原文里有「哪个字段不对」「宿主报了什么」这类只有它才有的信息。</para>
     /// </summary>
     public async Task<bool> CompleteCommandAsync(string deviceId, string id, bool success, string output,
-        int exitCode, string? error, CancellationToken cancellationToken = default)
+        int exitCode, string? error, string? errorCode, CancellationToken cancellationToken = default)
     {
         var text = string.IsNullOrEmpty(error) ? output : $"{output}\n[错误] {error}";
         if (text.Length > MaxCommandOutputLength)
@@ -230,17 +239,29 @@ public sealed partial class HubStore
                    + $"\n…（输出过长，已截断至 {MaxCommandOutputLength / 1024} KB）";
         }
 
+        // 分类**不做白名单校验**：老服务端遇到新插件的新码时，丢掉反而更糟（前端只会显示不出建议，
+        // 但原文还在；丢掉则连分类都查不到）。只做长度收敛，避免设备塞进来一大段内容。
+        var code = string.IsNullOrWhiteSpace(errorCode) ? string.Empty : errorCode.Trim();
+        if (code.Length > MaxCommandErrorCodeLength)
+        {
+            code = code[..MaxCommandErrorCodeLength];
+        }
+
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE device_commands
-            SET status = $status, output = $output, exit_code = $exitCode, finished_at = $now
+            SET status = $status, output = $output, exit_code = $exitCode, error_code = $errorCode,
+                finished_at = $now
             WHERE id = $id AND device_id = $deviceId;
             """;
         AddParameters(command,
             ("$status", success ? "done" : "failed"),
             ("$output", text),
             ("$exitCode", exitCode),
+            // 成功时**一律清空分类**：教室端若在成功路径上带了码（例如实现有 bug），
+            // 留着会让界面把一条成功指令标成「失败原因：…」。
+            ("$errorCode", success ? string.Empty : code),
             ("$now", Ts(DateTimeOffset.UtcNow)),
             ("$id", id),
             ("$deviceId", deviceId));
@@ -268,6 +289,10 @@ public sealed class RemoteCommandRow
     public string Status { get; set; } = "pending";
     public string Output { get; set; } = string.Empty;
     public int ExitCode { get; set; }
+
+    /// <summary>失败原因分类（取值见 <see cref="CommandErrorCodes"/>）；空串表示教室端没上报分类。</summary>
+    public string ErrorCode { get; set; } = string.Empty;
+
     public DateTimeOffset IssuedAt { get; set; }
     public DateTimeOffset? FinishedAt { get; set; }
     public string IssuedBy { get; set; } = string.Empty;

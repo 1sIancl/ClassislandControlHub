@@ -3,11 +3,12 @@
  * 数据来自 A 端 /admin/devices、/admin/backups 等接口。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=95';
-import { toastError } from '../core/errors.js?v=95';
+import { api, fetchBlob } from '../core/api.js?v=96';
+import { toastError } from '../core/errors.js?v=96';
+import { hintForCode } from '../core/error-hints.js?v=96';
 import {
   h, clear, toast, loadingBlock, confirmDialog, field, select, emptyState, formatDateTime, modal,
-} from '../core/ui.js?v=95';
+} from '../core/ui.js?v=96';
 
 export const meta = {
   title: '远程管理',
@@ -311,7 +312,25 @@ async function loadCommandHistory(deviceId, outEl) {
       c.exitCode ? h('span.cmd-kind', `退出码 ${c.exitCode}`) : null,
     ),
     h('pre.cmd-output', c.output && c.output.length > 0 ? c.output : '等待执行…'),
+    failureHint(c),
   ))));
+}
+
+/**
+ * 失败指令的「怎么办」（#81）。
+ * <para>教室端上报了结构化错误码时才有建议；老版本插件不带这个字段 → 返回 null，
+ * 界面上就只剩原文（与改之前一样），不会硬编一句可能不对的建议。</para>
+ */
+function failureHint(command) {
+  const hint = hintForCode(command.errorCode);
+  if (!hint) {
+    return null;
+  }
+
+  return h('div.cmd-hint',
+    `怎么办：${hint}`,
+    // 码本身也留一份：截图给别人排查时，光凭中文描述很难定位。
+    h('span.cmd-code', command.errorCode));
 }
 
 /** 下发后自动查看数次结果，省掉手动点「查看历史」。 */

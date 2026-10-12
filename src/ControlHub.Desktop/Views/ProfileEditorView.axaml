@@ -180,7 +180,7 @@
                         <Border CornerRadius="10" Padding="14" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
                             <StackPanel Spacing="6">
                                 <TextBlock Text="下发公告" FontWeight="SemiBold" />
-                                <TextBox Text="{Binding Announcement}" Watermark="例如：本周起执行夏季作息，请注意作息变化。" AcceptsReturn="True" MinHeight="70" />
+                                <TextBox Text="{Binding Announcement}" PlaceholderText="例如：本周起执行夏季作息，请注意作息变化。" AcceptsReturn="True" MinHeight="70" />
                             </StackPanel>
                         </Border>
 
@@ -199,8 +199,8 @@
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:KeyValueEntryViewModel">
                                             <Grid ColumnDefinitions="1*,2*,Auto" Margin="0,4">
-                                                <TextBox Grid.Column="0" Text="{Binding Key}" Watermark="键名，例如 播报.启用" Margin="0,0,6,0" />
-                                                <TextBox Grid.Column="1" Text="{Binding Value}" Watermark="值" Margin="0,0,6,0" />
+                                                <TextBox Grid.Column="0" Text="{Binding Key}" PlaceholderText="键名，例如 播报.启用" Margin="0,0,6,0" />
+                                                <TextBox Grid.Column="1" Text="{Binding Value}" PlaceholderText="值" Margin="0,0,6,0" />
                                                 <Button Grid.Column="2" Content="✕" Padding="8,4"
                                                         Command="{Binding $parent[UserControl].DataContext.RemoveCustomValueCommand}"
                                                         CommandParameter="{Binding}" />

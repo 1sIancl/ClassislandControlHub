@@ -85,13 +85,13 @@ public sealed class RemoteCommandExecutor(
                 RemoteCommandKinds.LessonSwap => RunLessonSwap(command),
                 RemoteCommandKinds.LessonAdjust => RunLessonAdjust(command),
                 RemoteCommandKinds.LessonCatalog => await ReportLessonCatalogAsync(command),
-                _ => Fail(command, $"不支持的指令类型：{command.Kind}"),
+                _ => Fail(command, CommandErrorCodes.Unsupported, $"不支持的指令类型：{command.Kind}"),
             };
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "执行远程指令失败：{Kind}", command.Kind);
-            return Fail(command, ex.Message);
+            return Fail(command, CommandErrorCodes.ExecutionFailed, ex.Message);
         }
     }
 
@@ -102,7 +102,7 @@ public sealed class RemoteCommandExecutor(
         var text = ResolveShellText(command, out var error);
         if (text is null)
         {
-            return Fail(command, error!);
+            return Fail(command, CommandErrorCodes.PayloadInvalid, error!);
         }
 
         var isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
@@ -121,7 +121,7 @@ public sealed class RemoteCommandExecutor(
         using var process = Process.Start(psi);
         if (process is null)
         {
-            return Fail(command, "无法启动进程。");
+            return Fail(command, CommandErrorCodes.ExecutionFailed, "无法启动进程。");
         }
 
         var stdout = await process.StandardOutput.ReadToEndAsync();
@@ -141,6 +141,9 @@ public sealed class RemoteCommandExecutor(
             Output = output,
             ExitCode = process.ExitCode,
             Error = process.ExitCode == 0 ? null : stderr,
+            // 刻意**不设 ErrorCode**：shell 的「失败」是被调起的那个进程的退出码，
+            // 不是教室端自身的问题（例如老师跑 `net use X:` 失败）。管理员要看的是退出码 + stderr，
+            // 硬塞一个「教室端执行失败」反而会误导成插件出问题。
         };
     }
 
@@ -202,13 +205,13 @@ public sealed class RemoteCommandExecutor(
         var req = HubJson.Deserialize<NotifyRequestDto>(command.Payload) ?? new NotifyRequestDto();
         if (string.IsNullOrWhiteSpace(req.Title) && string.IsNullOrWhiteSpace(req.Message))
         {
-            return Fail(command, "提醒内容为空。");
+            return Fail(command, CommandErrorCodes.PayloadInvalid, "提醒内容为空。");
         }
 
         var provider = HubNotificationProviderHolder.Current;
         if (provider is null)
         {
-            return Fail(command, "提醒提供方尚未就绪，请稍后重试。");
+            return Fail(command, CommandErrorCodes.HostApiUnavailable, "提醒提供方尚未就绪，请稍后重试。");
         }
 
         TimeSpan? duration = req.DurationSeconds > 0 ? TimeSpan.FromSeconds(req.DurationSeconds) : null;
@@ -337,13 +340,13 @@ public sealed class RemoteCommandExecutor(
         var payload = HubJson.Deserialize<PluginTogglePayload>(command.Payload);
         if (payload is null || string.IsNullOrWhiteSpace(payload.PluginId))
         {
-            return Fail(command, "缺少插件 ID。");
+            return Fail(command, CommandErrorCodes.PayloadInvalid, "缺少插件 ID。");
         }
 
         var dir = FindPluginDir(payload.PluginId);
         if (dir is null)
         {
-            return Fail(command, $"未找到插件目录：{payload.PluginId}");
+            return Fail(command, CommandErrorCodes.TargetNotFound, $"未找到插件目录：{payload.PluginId}");
         }
 
         var marker = Path.Combine(dir, DisabledMarker);
@@ -368,18 +371,18 @@ public sealed class RemoteCommandExecutor(
         var payload = HubJson.Deserialize<PluginTogglePayload>(command.Payload);
         if (payload is null || string.IsNullOrWhiteSpace(payload.PluginId))
         {
-            return Fail(command, "缺少插件 ID。");
+            return Fail(command, CommandErrorCodes.PayloadInvalid, "缺少插件 ID。");
         }
 
         var dir = FindPluginDir(payload.PluginId);
         if (dir is null)
         {
-            return Fail(command, $"未找到插件目录：{payload.PluginId}");
+            return Fail(command, CommandErrorCodes.TargetNotFound, $"未找到插件目录：{payload.PluginId}");
         }
 
         if (string.Equals(Path.GetFileName(dir), "ControlHub.Plugin", StringComparison.OrdinalIgnoreCase))
         {
-            return Fail(command, "不允许卸载集控插件本身。");
+            return Fail(command, CommandErrorCodes.DisabledByPolicy, "不允许卸载集控插件本身。");
         }
 
         try
@@ -388,7 +391,7 @@ public sealed class RemoteCommandExecutor(
         }
         catch (Exception ex)
         {
-            return Fail(command, "卸载失败：" + ex.Message);
+            return Fail(command, CommandErrorCodes.ExecutionFailed, "卸载失败：" + ex.Message);
         }
 
         return Ok(command, $"插件 {Path.GetFileName(dir)} 已卸载，需重启 ClassIsland 生效。");
@@ -491,7 +494,7 @@ public sealed class RemoteCommandExecutor(
         var cfg = HubJson.Deserialize<AppearanceConfigDto>(command.Payload);
         if (cfg is null)
         {
-            return Fail(command, "外观配置为空。");
+            return Fail(command, CommandErrorCodes.PayloadInvalid, "外观配置为空。");
         }
 
         // 走 ClassIsland 自己的设置服务，而不是 IThemeService.SetTheme：
@@ -501,7 +504,7 @@ public sealed class RemoteCommandExecutor(
         var settings = IAppHost.TryGetService<SettingsService>();
         if (settings is null)
         {
-            return Fail(command, "无法获取 ClassIsland 设置服务（IAppHost 未就绪）。");
+            return Fail(command, CommandErrorCodes.HostApiUnavailable, "无法获取 ClassIsland 设置服务（IAppHost 未就绪）。");
         }
 
         var s = settings.Settings;
@@ -693,9 +696,11 @@ public sealed class RemoteCommandExecutor(
 
         if (applied.Count == 0)
         {
-            return Fail(command, "没有应用任何外观：" + (skipped.Count > 0
-                ? string.Join("；", skipped)
-                : "配置里没有可应用的项。"));
+            // 两种原因要分开报码：载荷里根本没东西可应用（管理端配错了）与教室端不支持这些项
+            // （插件 / 宿主版本低）——管理员要做的事完全不同，混成一个码等于没说。
+            return skipped.Count > 0
+                ? Fail(command, CommandErrorCodes.Unsupported, "没有应用任何外观：" + string.Join("；", skipped))
+                : Fail(command, CommandErrorCodes.PayloadInvalid, "没有应用任何外观：配置里没有可应用的项。");
         }
 
         // 属性变更已触发宿主自动保存；这里再显式保存一次作为双保险（幂等）。
@@ -785,7 +790,7 @@ public sealed class RemoteCommandExecutor(
             var exe = Environment.ProcessPath;
             if (string.IsNullOrEmpty(exe))
             {
-                return Fail(command, "无法确定可执行文件路径。");
+                return Fail(command, CommandErrorCodes.ExecutionFailed, "无法确定可执行文件路径。");
             }
 
             Process.Start(new ProcessStartInfo
@@ -798,7 +803,7 @@ public sealed class RemoteCommandExecutor(
         }
         catch (Exception ex)
         {
-            return Fail(command, "重启失败：" + ex.Message);
+            return Fail(command, CommandErrorCodes.ExecutionFailed, "重启失败：" + ex.Message);
         }
     }
 
@@ -809,7 +814,7 @@ public sealed class RemoteCommandExecutor(
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            return Fail(command, "电源管理仅支持 Windows 终端。");
+            return Fail(command, CommandErrorCodes.PlatformUnsupported, "电源管理仅支持 Windows 终端。");
         }
 
         try
@@ -825,7 +830,7 @@ public sealed class RemoteCommandExecutor(
         }
         catch (Exception ex)
         {
-            return Fail(command, "电源指令执行失败：" + ex.Message);
+            return Fail(command, CommandErrorCodes.ExecutionFailed, "电源指令执行失败：" + ex.Message);
         }
     }
 
@@ -834,18 +839,18 @@ public sealed class RemoteCommandExecutor(
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            return Fail(command, "电源管理仅支持 Windows 终端。");
+            return Fail(command, CommandErrorCodes.PlatformUnsupported, "电源管理仅支持 Windows 终端。");
         }
 
         try
         {
             // bHibernate=false 即睡眠；bForce=false 允许应用程序否决（避免强断未保存的板书/文档）。
             var ok = SetSuspendState(false, false, false);
-            return ok ? Ok(command, "正在进入睡眠。") : Fail(command, "睡眠请求被系统拒绝。");
+            return ok ? Ok(command, "正在进入睡眠。") : Fail(command, CommandErrorCodes.ExecutionFailed, "睡眠请求被系统拒绝。");
         }
         catch (Exception ex)
         {
-            return Fail(command, "睡眠失败：" + ex.Message);
+            return Fail(command, CommandErrorCodes.ExecutionFailed, "睡眠失败：" + ex.Message);
         }
     }
 
@@ -866,7 +871,7 @@ public sealed class RemoteCommandExecutor(
             var service = ResolveAutomationService();
             if (service is null)
             {
-                return Fail(command, "当前 ClassIsland 未提供自动化服务，无法远程触发自动化。");
+                return Fail(command, CommandErrorCodes.HostApiUnavailable, "当前 ClassIsland 未提供自动化服务，无法远程触发自动化。");
             }
 
             var signals = new List<string>();
@@ -902,7 +907,7 @@ public sealed class RemoteCommandExecutor(
         }
         catch (Exception ex)
         {
-            return Fail(command, "读取自动化配置失败：" + ex.Message);
+            return Fail(command, CommandErrorCodes.ExecutionFailed, "读取自动化配置失败：" + ex.Message);
         }
     }
 
@@ -913,7 +918,7 @@ public sealed class RemoteCommandExecutor(
         var signal = (request.Signal ?? string.Empty).Trim();
         if (signal.Length == 0)
         {
-            return Fail(command, "载荷缺少 signal 字段。");
+            return Fail(command, CommandErrorCodes.PayloadInvalid, "载荷缺少 signal 字段。");
         }
 
         var handlerType = Type.GetType(
@@ -921,13 +926,13 @@ public sealed class RemoteCommandExecutor(
         var handler = handlerType is null ? null : IAppHost.Host?.Services.GetService(handlerType);
         if (handler is null)
         {
-            return Fail(command, "当前 ClassIsland 未提供信号触发器服务，无法远程触发自动化。");
+            return Fail(command, CommandErrorCodes.HostApiUnavailable, "当前 ClassIsland 未提供信号触发器服务，无法远程触发自动化。");
         }
 
         var method = handlerType!.GetMethod("EmitSignal", [typeof(string), typeof(bool)]);
         if (method is null)
         {
-            return Fail(command, "信号触发器服务的接口与预期不符（EmitSignal 不存在）。");
+            return Fail(command, CommandErrorCodes.HostApiUnavailable, "信号触发器服务的接口与预期不符（EmitSignal 不存在）。");
         }
 
         method.Invoke(handler, [signal, false]);
@@ -967,18 +972,18 @@ public sealed class RemoteCommandExecutor(
         // 教室端可在插件设置里关闭远程截图：关闭后直接拒绝并说明原因，不做「偷偷截图」。
         if (!settings.Load().AllowRemoteScreenshot)
         {
-            return Fail(command, "教室端已关闭远程截图（可在 ClassIsland 的插件设置「远程协助与隐私」中开启）。");
+            return Fail(command, CommandErrorCodes.DisabledByPolicy, "教室端已关闭远程截图（可在 ClassIsland 的插件设置「远程协助与隐私」中开启）。");
         }
 
         var png = DiagnosticsCollector.CaptureScreen(out var note);
         if (png is null)
         {
-            return Fail(command, note);
+            return Fail(command, CommandErrorCodes.ExecutionFailed, note);
         }
 
         if (OnDiagnosticUploaded is null)
         {
-            return Fail(command, "诊断上传通道不可用（插件尚未完成初始化）。");
+            return Fail(command, CommandErrorCodes.HostApiUnavailable, "诊断上传通道不可用（插件尚未完成初始化）。");
         }
 
         await OnDiagnosticUploaded(new DiagnosticUploadRequest
@@ -1050,13 +1055,13 @@ public sealed class RemoteCommandExecutor(
             // Bridge 用「…失败：原因」表达**业务失败**（例如教室端没有这个科目）：
             // 它不是异常，但也绝不能回报成功——否则管理端显示「已生效」而教室端毫无变化。
             return message.Contains("失败", StringComparison.Ordinal)
-                ? Fail(command, message)
+                ? Fail(command, CommandErrorCodes.ExecutionFailed, message)
                 : Ok(command, message);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "执行临时换课失败。");
-            return Fail(command, "换课失败：" + ex.Message);
+            return Fail(command, CommandErrorCodes.ExecutionFailed, "换课失败：" + ex.Message);
         }
     }
 
@@ -1068,13 +1073,13 @@ public sealed class RemoteCommandExecutor(
             var request = HubJson.DeserializeOrDefault(command.Payload, new LessonAdjustRequestDto());
             var message = lessonBridge.Adjust(request);
             return message.Contains("失败", StringComparison.Ordinal)
-                ? Fail(command, message)
+                ? Fail(command, CommandErrorCodes.ExecutionFailed, message)
                 : Ok(command, message);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "执行调休失败。");
-            return Fail(command, "调休失败：" + ex.Message);
+            return Fail(command, CommandErrorCodes.ExecutionFailed, "调休失败：" + ex.Message);
         }
     }
 
@@ -1097,7 +1102,7 @@ public sealed class RemoteCommandExecutor(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "读取课表目录失败。");
-            return Fail(command, "读取课表目录失败：" + ex.Message);
+            return Fail(command, CommandErrorCodes.ExecutionFailed, "读取课表目录失败：" + ex.Message);
         }
     }
 
@@ -1111,13 +1116,23 @@ public sealed class RemoteCommandExecutor(
         ExitCode = 0,
     };
 
-    private static CommandReportRequest Fail(RemoteCommandDto command, string error) => new()
+    /// <summary>
+    /// 构造一条失败回报。
+    /// </summary>
+    /// <param name="command">被执行的指令。</param>
+    /// <param name="errorCode">
+    /// 失败原因分类，取值见 <see cref="CommandErrorCodes"/>。**刻意设为必填**：管理端靠它给出中文「怎么办」，
+    /// 只带上自由文本的话，界面上就只能把宿主的原文（常常是英文异常）丢给老师看。
+    /// </param>
+    /// <param name="error">给人看的原文，保留细节（例如宿主抛出的异常信息）。</param>
+    private static CommandReportRequest Fail(RemoteCommandDto command, string errorCode, string error) => new()
     {
         CommandId = command.Id,
         Success = false,
         Output = string.Empty,
         ExitCode = -1,
         Error = error,
+        ErrorCode = errorCode,
     };
 }
 

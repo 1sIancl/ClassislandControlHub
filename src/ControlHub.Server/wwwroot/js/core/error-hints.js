@@ -47,6 +47,24 @@ const ERROR_HINTS = {
   NETWORK: '连不上服务器。确认服务端进程还在运行、网络可达；恢复后重试即可。',
   BAD_RESPONSE:
     '服务器返回了无法识别的响应，通常是版本不匹配或反向代理配置问题。可查看服务端日志，必要时重启服务。',
+
+  // ── 教室端执行远程指令失败（#81，取值见 HubProtocol.CommandErrorCodes）──
+  // 与上面那批的区别：这些**不是**「接口拒绝了请求」，而是「教室端为什么没做成」，
+  // 所以措辞一律落到「到那台教室机上做什么」，而不是「改你的输入」。
+  COMMAND_UNSUPPORTED:
+    '教室端不认识这条指令，或其中的某项配置它不支持——多半是那台机器的插件 / ClassIsland 版本低于管理端。在教室机的插件市场里把接收端插件升到最新版，再下发一次。',
+  COMMAND_PAYLOAD_INVALID:
+    '发给教室端的内容不完整（缺了必需字段）。重新填一遍再下发；如果总是这样，先确认两端版本配套（管理端升级后插件要同步升级）。',
+  COMMAND_TARGET_NOT_FOUND:
+    '指令要操作的对象在教室机上不存在（插件可能已被卸载或改过名）。先点「刷新插件列表」看那边的实际情况，再重新选择。',
+  HOST_API_UNAVAILABLE:
+    '教室端的 ClassIsland 没提供这项能力：宿主版本偏低、接口签名不符，或服务还没就绪（插件刚启动）。确认那台机器的 ClassIsland 已升级并重启，过一会儿再试。',
+  PLATFORM_UNSUPPORTED:
+    '这台教室端的系统不支持该操作（例如电源管理只在 Windows 上可用）。改用受支持的操作，或到那台设备上手动处理。',
+  COMMAND_DISABLED_BY_POLICY:
+    '教室端自己关掉了这项能力（插件设置里的「远程协助与隐私」关了截图，或禁止卸载集控插件本身）。需要到那台教室机上把对应开关打开。',
+  COMMAND_EXECUTION_FAILED:
+    '教室端执行时报错了，具体原因见上面的原文。若原文是英文异常，多半出在那台机器的 ClassIsland 或系统环境上，按原文到教室里排查。',
 };
 
 /** 没有错误码时按 HTTP 状态兜底（例如反向代理直接返回的响应）。 */
@@ -95,4 +113,15 @@ export function formatErrorText(err, fallback = '请稍后重试。') {
 /** 是否带有「怎么办」建议（调用方据此决定提示停留时长）。 */
 export function hasErrorHint(err) {
   return describeError(err).hint.length > 0;
+}
+
+/**
+ * 按**裸错误码**取「怎么办」。
+ * <para>给不是 `ApiError` 的场景用：教室端上报的**指令错误码**（`CommandErrorCodes`）只有
+ * 一个码 + 一段原文，没有 HTTP 状态。没有对应条目时返回空串，调用方按「没有建议」处理，
+ * 不要凭空编一句。</para>
+ * @param {string} code 错误码。
+ */
+export function hintForCode(code) {
+  return (typeof code === 'string' && ERROR_HINTS[code]) || '';
 }

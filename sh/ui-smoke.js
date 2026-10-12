@@ -2001,6 +2001,81 @@ function check(name, ok, extra = '') {
     lessonsPage.targetTexts.some((t) => t.includes('全部设备')),
     JSON.stringify(lessonsPage.targetTexts.slice(0, 6)));
 
+  // 30) 远程指令失败的「怎么办」（#81）：教室端上报结构化错误码后，指令历史里要出现
+  //     对应的中文建议——只丢一段原文（常常是英文异常）给管理员，等于没给下一步。
+  const seeded = await page.evaluate(async () => {
+    const token = localStorage.getItem('controlhub.admin.token');
+    const api = async (path, body, method = 'POST') => {
+      const r = await fetch('/api/v1' + path, {
+        method,
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || j?.ok === false) throw new Error(path + ' → ' + r.status);
+      return j?.data;
+    };
+
+    const deviceId = 'e2e-uicmd-' + Date.now();
+    const code = await api('/admin/enroll-codes', { note: 'e2e 界面指令码', maxUses: 1 });
+    const enrol = await api('/client/enroll', {
+      enrollCode: code.code || code.Code, deviceId, deviceName: 'E2E 界面指令码教室',
+    });
+    const deviceCall = async (path, body) => fetch('/api/v1' + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'HubDevice ' + enrol.deviceToken },
+      body: JSON.stringify(body),
+    });
+
+    await deviceCall('/client/heartbeat', { state: 'idle' });
+    const sent = await api(`/admin/devices/${deviceId}/command`, { kind: 'appearance.apply', payload: '{}' });
+    await fetch('/api/v1/client/commands', { headers: { Authorization: 'HubDevice ' + enrol.deviceToken } });
+    await deviceCall('/client/commands/report', {
+      commandId: sent.id, success: false, output: '', exitCode: -1,
+      error: '无法获取 ClassIsland 设置服务（IAppHost 未就绪）。',
+      errorCode: 'HOST_API_UNAVAILABLE',
+    });
+    return { deviceId, commandId: sent.id };
+  });
+
+  await page.goto(`${BASE}/#/remote`, { waitUntil: 'networkidle2' });
+  await sleep(1800);
+  const cmdDevicePicked = await page.evaluate((deviceId) => {
+    const sel = [...document.querySelectorAll('#content select')]
+      .find((s) => [...s.options].some((o) => o.value === deviceId));
+    if (!sel) return false;
+    sel.value = deviceId;
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  }, seeded.deviceId);
+  const clicked = await page.evaluate(() => {
+    const btn = [...document.querySelectorAll('#content button')].find((b) => b.textContent.trim() === '查看历史');
+    if (!btn) return false;
+    btn.click();
+    return true;
+  });
+  await sleep(1500);
+  const cmdHint = await page.evaluate(() => {
+    const el = document.querySelector('#content .cmd-hint');
+    return el
+      ? { text: el.textContent.trim(), code: el.querySelector('.cmd-code')?.textContent.trim() ?? '' }
+      : null;
+  });
+  check('指令历史里显示了「怎么办」建议与错误码（#81）',
+    cmdDevicePicked && clicked && !!cmdHint && cmdHint.text.includes('怎么办：') && cmdHint.code === 'HOST_API_UNAVAILABLE',
+    `选中=${cmdDevicePicked} 点击=${clicked} ${JSON.stringify(cmdHint)}`);
+  check('建议文案指向教室端该做的动作（不是复述问题）',
+    !!cmdHint && cmdHint.text.includes('ClassIsland 没提供这项能力'),
+    cmdHint ? cmdHint.text.slice(0, 46) : '(没有提示块)');
+
+  // 清掉这条断言造的设备与指令（绝不留在库里）
+  await page.evaluate(async (deviceId) => {
+    const token = localStorage.getItem('controlhub.admin.token');
+    await fetch('/api/v1/admin/devices/' + deviceId, {
+      method: 'DELETE', headers: { Authorization: 'Bearer ' + token },
+    });
+  }, seeded.deviceId);
+
   await page.setViewport({ width: 1600, height: 1000 });
   await sleep(700);
 

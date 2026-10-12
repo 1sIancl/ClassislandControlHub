@@ -525,14 +525,17 @@ public static class ClientEndpoints
         }
 
         var updated = await store.CompleteCommandAsync(device.Id, request.CommandId, request.Success,
-            request.Output ?? string.Empty, request.ExitCode, request.Error, cancellationToken);
+            request.Output ?? string.Empty, request.ExitCode, request.Error, request.ErrorCode,
+            cancellationToken);
         if (!updated)
         {
             throw HubException.NotFound("指令不存在，或不属于当前设备。");
         }
 
         await store.AddAuditAsync(device.Name, "device.command.result", device.Name,
-            $"指令 {request.CommandId} 执行{(request.Success ? "成功" : "失败")}。",
+            $"指令 {request.CommandId} 执行{(request.Success
+                ? "成功"
+                : $"失败（{request.ErrorCode ?? "未分类"}）")}。",
             http.GetClientIpAddress(), cancellationToken);
 
         // 指令失败时推 Webhook：教室那边出问题，管理员不该只能靠翻日志发现。
@@ -547,6 +550,9 @@ public static class ClientEndpoints
                     ["deviceName"] = device.Name,
                     ["commandId"] = request.CommandId,
                     ["exitCode"] = request.ExitCode,
+                    // 分类一并推出去：接 Webhook 的脚本能据此分流（例如「宿主接口不可用」才告警，
+                    // 「参数不对」只是管理员配错了），不必去正则匹配中文文案。
+                    ["errorCode"] = request.ErrorCode,
                 }, cancellationToken);
         }
 

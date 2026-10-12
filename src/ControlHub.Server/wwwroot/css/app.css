@@ -2455,6 +2455,26 @@ input.pcell-name:focus {
   white-space: pre-wrap;
   word-break: break-all;
 }
+/* #81：失败指令的「怎么办」。刻意**不用**告警红：教室端的失败多半是「插件没升」「开关没开」，
+   管理员照建议处理即可，标红只会让人以为系统坏了。左侧强调色竖条 + 弱底色与上面的原文区分开。 */
+.cmd-hint {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 10px;
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+.cmd-code {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
 
 /* ────────────────────────── 日志视图 ────────────────────────── */
 .log-list {

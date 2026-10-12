@@ -31,11 +31,11 @@
 
                 <StackPanel Spacing="4">
                     <TextBlock Text="服务器地址" FontSize="12" Opacity="0.7" />
-                    <TextBox Text="{Binding ServerUrl}" Watermark="http://127.0.0.1:29800" />
+                    <TextBox Text="{Binding ServerUrl}" PlaceholderText="http://127.0.0.1:29800" />
                 </StackPanel>
                 <StackPanel Spacing="4">
                     <TextBlock Text="用户名" FontSize="12" Opacity="0.7" />
-                    <TextBox Text="{Binding Username}" Watermark="admin" />
+                    <TextBox Text="{Binding Username}" PlaceholderText="admin" />
                 </StackPanel>
                 <StackPanel Spacing="4">
                     <TextBlock Text="密码" FontSize="12" Opacity="0.7" />

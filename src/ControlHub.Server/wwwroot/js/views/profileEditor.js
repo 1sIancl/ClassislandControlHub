@@ -3,13 +3,13 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=95';
-import { toastError } from '../core/errors.js?v=95';
+import { api } from '../core/api.js?v=96';
+import { toastError } from '../core/errors.js?v=96';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, icon, select,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=95';
-import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=95';
+} from '../core/ui.js?v=96';
+import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=96';
 
 export const meta = {
   title: '编辑配置档案',

@@ -146,8 +146,15 @@ public sealed class CommandReportRequest
     /// <summary>进程退出码（非 shell 类指令可留 0）。</summary>
     public int ExitCode { get; set; }
 
-    /// <summary>错误信息（失败时）。</summary>
+    /// <summary>错误信息（失败时）。给人看的原文，不参与分支判断。</summary>
     public string? Error { get; set; }
+
+    /// <summary>
+    /// 失败原因的**结构化分类**，取值见 <see cref="CommandErrorCodes"/>（成功时为空）。
+    /// <para>管理端据此给出中文「怎么办」，不必解析 <see cref="Error"/> 的自由文本。
+    /// 老版本插件不上报该字段时为空，管理端按「无分类」处理并展示原文。</para>
+    /// </summary>
+    public string? ErrorCode { get; set; }
 
     /// <summary>完成时间（UTC）。</summary>
     public DateTimeOffset FinishedAt { get; set; } = DateTimeOffset.UtcNow;
@@ -405,6 +412,12 @@ public sealed class DeviceCommandDto
 
     /// <summary>退出码。</summary>
     public int ExitCode { get; set; }
+
+    /// <summary>
+    /// 失败原因分类，取值见 <see cref="CommandErrorCodes"/>（成功 / 未上报时为空）。
+    /// 前端据此显示中文「怎么办」；为空则只显示 <see cref="Output"/>。
+    /// </summary>
+    public string? ErrorCode { get; set; }
 
     /// <summary>下发时间。</summary>
     public DateTimeOffset IssuedAt { get; set; }

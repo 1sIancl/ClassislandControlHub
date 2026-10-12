@@ -16,8 +16,10 @@ public sealed partial class ConnectViewModel : ViewModelBase
     [ObservableProperty]
     private string username;
 
+    // 密码刻意**不从磁盘回填**（`AppState` 只存服务器地址与账号），所以这里必须是空串初值——
+    // 否则退出构造函数时字段为 null，编译器按可空引用类型报 CS8618。
     [ObservableProperty]
-    private string password;
+    private string password = string.Empty;
 
     [ObservableProperty]
     private string statusText = "输入服务器地址与账号后登录。";

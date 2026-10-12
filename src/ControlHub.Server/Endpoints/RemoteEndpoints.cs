@@ -436,6 +436,7 @@ public static class RemoteEndpoints
         Status = row.Status,
         Output = row.Output,
         ExitCode = row.ExitCode,
+        ErrorCode = string.IsNullOrEmpty(row.ErrorCode) ? null : row.ErrorCode,
         IssuedAt = row.IssuedAt,
         FinishedAt = row.FinishedAt,
         IssuedBy = row.IssuedBy,

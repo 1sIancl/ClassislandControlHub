@@ -3,13 +3,13 @@
  * 档案是集控下发的最小单元：一个档案 = 一套时间表 + 课表 + 科目 + 自定义设置。
  */
 
-import { api } from '../core/api.js?v=95';
-import { toastError, errorBlock } from '../core/errors.js?v=95';
-import { openAuditTimeline } from '../core/audit-timeline.js?v=95';
+import { api } from '../core/api.js?v=96';
+import { toastError, errorBlock } from '../core/errors.js?v=96';
+import { openAuditTimeline } from '../core/audit-timeline.js?v=96';
 import {
   h, clear, formatDateTime, toast, loadingBlock, modal, confirmDialog,
   emptyState, field, select,
-} from '../core/ui.js?v=95';
+} from '../core/ui.js?v=96';
 
 export const meta = {
   title: '配置档案',

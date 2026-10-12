@@ -128,8 +128,8 @@
 | 78 | 核心逻辑单元测试 | ✅ | 新增 `tests/ControlHub.Tests`（xunit）：**11 个用例全部通过**，集中在最容易静默出错的两块——①下发差异预览（无基线 / 同版本 / 改版用快照对比 / 内容实质相同 / 换档案 / 同名项修改）②协议约束（校验和稳定性、令牌 URL 安全、权限去重、版本号格式、心跳与长轮询区间）。测试项目同样 `TreatWarningsAsErrors`，并启用 xUnit 分析器 |
 | 79 | 集成测试（注册 → 下发 → 同步） | ⬜ | 有手工回归脚本，未固化为测试 |
 | 80 | 性能基准测试 | 🔨 | 提供 `src/ControlHub.LoadTest` 模拟客户端，可手工压测 |
-| 81 | 错误码体系 | 🔨 | `HubErrorCodes` 已覆盖鉴权 / 注册码 / 校验等；远程指令失败原因仍是自由文本 |
-| 82 | 代码静态分析 | 🔨 | 主工程构建 0 警告 + CA1416 等分析器生效，测试项目 `TreatWarningsAsErrors` 且启用 xUnit 分析器（实测：`Assert.False(Any(...))` 被分析器拦下并要求改用 `DoesNotContain`）；**未接 SonarQube / CodeQL 这类全量扫描** |
+| 81 | 错误码体系 | ✅ | 两套码分工明确（`docs/api.md` 各有完整三列表）：`HubErrorCodes` 管**管理端接口**为什么拒绝（映射 HTTP 状态），`CommandErrorCodes`（2026-10-12 新增）管**教室端**为什么没做成——7 个分类：不支持该指令 / 载荷不完整 / 目标不存在 / 宿主接口不可用 / 平台不支持 / 教室端策略关闭 / 执行失败。教室端 35 处失败点全部带码上报（`Fail()` 的分类参数**设为必填**，编译器保证不漏），管理端在指令历史里给中文「怎么办」并保留原文，分类同时进审计与 `command.failed` Webhook。老插件不带该字段时按「无分类」处理。实测：`_shot/verify-command-codes.js` 端到端 11 项 + `ui-smoke` 新增 2 项（共 127 项全通过） |
+| 82 | 代码静态分析 | 🔨 | 主工程**全量重建** 0 警告 0 错误 + CA1416 等分析器生效，测试项目 `TreatWarningsAsErrors` 且启用 xUnit 分析器（实测：`Assert.False(Any(...))` 被分析器拦下并要求改用 `DoesNotContain`）。2026-10-12 清掉既有的 11 个警告（Avalonia XAML 废弃属性 `Watermark` / `SystemDecorations` 共 10 处、`ConnectViewModel.password` 的 CS8618）——**此前「0 警告」只在增量构建时成立**，全量重建会冒出来。**未接 SonarQube / CodeQL 这类全量扫描** |
 | 83 | 依赖更新自动化 | ✅ | 与 #38 同一机制：`.github/dependabot.yml` 每周一提 PR（NuGet 小版本合并、主版本单独提；Actions 单独一组），只提不自动合并 |
 | 84 | 日志结构化（JSON） | ✅ | `LogJson=true` 切到 JSON 控制台日志（含作用域）；默认保留文本日志，现场排查更可读 |
 | 85 | 追踪 ID | ✅ | 每个响应回写 `X-Request-Id`（沿用调用方带来的，便于与前端报错对齐），并写入访问日志的作用域，可直接用它在日志里定位某一次请求 |

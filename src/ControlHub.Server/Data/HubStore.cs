@@ -94,6 +94,9 @@ public sealed partial class HubStore
 
         // 迁移：指令的「最早可派发时间」，用于给关机等不可逆操作留出撤销窗口。
         await EnsureColumnAsync(connection, "device_commands", "not_before", "TEXT", cancellationToken);
+        // #81：指令失败原因的**结构化分类**（取值见 CommandErrorCodes）。老库补列；新库在建表语句里已有。
+        // 默认空串 = 「没有分类」——老版本插件不带这个字段，界面按无分类处理（只显示原文，不硬猜）。
+        await EnsureColumnAsync(connection, "device_commands", "error_code", "TEXT NOT NULL DEFAULT ''", cancellationToken);
 
         // 迁移：账号两步验证（TOTP）。密钥在启用前只是「待绑定」，不会影响登录。
         await EnsureColumnAsync(connection, "users", "totp_secret", "TEXT NOT NULL DEFAULT ''", cancellationToken);
@@ -528,6 +531,7 @@ public sealed partial class HubStore
             status        TEXT NOT NULL DEFAULT 'pending',
             output        TEXT NOT NULL DEFAULT '',
             exit_code     INTEGER NOT NULL DEFAULT 0,
+            error_code    TEXT NOT NULL DEFAULT '',
             issued_at     TEXT NOT NULL,
             finished_at   TEXT,
             issued_by     TEXT NOT NULL DEFAULT '',
