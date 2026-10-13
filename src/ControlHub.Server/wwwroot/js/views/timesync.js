@@ -9,10 +9,10 @@
  * 不是随导航走的），所以这一页只对有系统设置权限的账号出现。</para>
  */
 
-import { api, hasPermission } from '../core/api.js?v=103';
+import { api, hasPermission } from '../core/api.js?v=104';
 import {
   h, clear, formatDateTime, toast, loadingBlock, field, kvRow,
-} from '../core/ui.js?v=103';
+} from '../core/ui.js?v=104';
 
 export const meta = {
   title: '时间偏移',

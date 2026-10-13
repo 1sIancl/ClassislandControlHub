@@ -14,7 +14,7 @@
  *   node sh/ui-smoke.js
  *   SMOKE_BASE=http://127.0.0.1:29800 SMOKE_BROWSER="C:\\...\\msedge.exe" node sh/ui-smoke.js
  *
- * 覆盖的断言（147 项，分组见文件内的 `// n)` 注释）：
+ * 覆盖的断言（151 项，分组见文件内的 `// n)` 注释）：
  *   1) 起点归零：清空账号偏好与本机布局缓存 → 仪表盘回到默认布局
  *   2) 「自定义仪表盘」面板能打开，含「统计卡片 + 页面模块」两组、共 10 项
  *   3) 面板里关掉「最近事件」→ 页面立即不再渲染该模块
@@ -43,6 +43,7 @@
  *      选开机提示网络唤醒的前提
  *  26) 通知页有「全屏强调」开关（#22）；改密要求来自服务端策略、账号列表显示密码已用天数（#28）
  *  27) 390px 手机宽下关键页面不横向溢出、课表栅格已压缩（#45）；插件列表渲染图标/首字母头像
+ *  28) 无障碍（#49）：没有「纯图标又没无障碍名」的按钮、密码眼睛可 Tab、弹窗焦点陷阱与 Esc 归还焦点
  *
  * 注意：脚本会改动演示账号的界面偏好（跑完停在「最近事件 / 最近心跳」隐藏的状态），
  *       可在「自定义仪表盘 / 列设置」里勾回来。
@@ -2538,6 +2539,79 @@ function check(name, ok, extra = '') {
   check('插件列表渲染出图标或首字母头像（图标经 A 端代理，不直连 GitHub）',
     iconState.total > 0 && iconState.images + iconState.letters === iconState.total,
     JSON.stringify(iconState));
+
+  // ── 无障碍（#49）：无障碍名、焦点陷阱、焦点归还、密码眼睛按钮可 Tab 到 ──
+  const noName = await page.evaluate(() => {
+    const offenders = [];
+    for (const btn of document.querySelectorAll('button')) {
+      if (btn.offsetParent === null) {
+        continue;
+      }
+
+      const text = (btn.textContent || '').trim();
+      const label = btn.getAttribute('aria-label') || btn.getAttribute('title') || '';
+      if (text.length === 0 && label.trim().length === 0) {
+        offenders.push((btn.className || 'button').toString().slice(0, 40));
+      }
+    }
+
+    const pwToggle = document.querySelector('.pw-toggle');
+    return {
+      offenders,
+      pwTabIndex: pwToggle ? pwToggle.getAttribute('tabindex') : 'missing',
+    };
+  });
+
+  check('页面上没有「纯图标又没有无障碍名」的按钮（#49）',
+    noName.offenders.length === 0, noName.offenders.slice(0, 4).join(' | ') || '全部有名字');
+  check('密码眼睛按钮不再是 tabindex="-1"（键盘能 Tab 到，#49）',
+    noName.pwTabIndex === null, `tabindex=${noName.pwTabIndex}`);
+
+  // 焦点陷阱与归还：用账号页的「修改密码」弹窗验（它是最常用的弹窗之一）。
+  await page.evaluate(() => { window.location.hash = '#/accounts'; });
+  await sleep(2200);
+  const focusFlow = await page.evaluate(async () => {
+    const trigger = [...document.querySelectorAll('#content button')]
+      .find((b) => b.textContent.trim() === '修改密码');
+    if (!trigger) {
+      return { ok: false, why: '找不到「修改密码」按钮' };
+    }
+
+    trigger.focus();
+    trigger.click();
+    await new Promise((r) => setTimeout(r, 400));
+
+    const dialog = document.querySelector('[role="dialog"]');
+    if (!dialog) {
+      return { ok: false, why: '弹窗没有 role=dialog' };
+    }
+
+    const inside = () => dialog.contains(document.activeElement);
+    const startInside = inside();
+
+    // 连按 Tab：焦点应当一直在弹窗里循环，不会跑到背景页面上。
+    for (let i = 0; i < 8; i++) {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+      await new Promise((r) => setTimeout(r, 30));
+    }
+
+    const stayedInside = inside();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await new Promise((r) => setTimeout(r, 300));
+
+    return {
+      ok: startInside && stayedInside,
+      startInside,
+      stayedInside,
+      restored: document.activeElement === trigger,
+      closed: !document.querySelector('[role="dialog"]'),
+    };
+  });
+
+  check('弹窗把焦点收进去、Tab 不会跑到背景页面（#49）',
+    focusFlow.ok === true, JSON.stringify(focusFlow));
+  check('Esc 关掉弹窗后焦点回到触发它的按钮（#49）',
+    focusFlow.closed === true && focusFlow.restored === true, JSON.stringify(focusFlow));
 
   await page.setViewport({ width: 1600, height: 1000 });
   await sleep(700);

@@ -670,6 +670,132 @@ table.data td.actions {
   font-family: var(--mono);
 }
 
+/* 插件名做成按钮（#121 后续）：它现在是「点开详情」的入口，所以既要有可点的观感，
+   也要能 Tab 到（用 button 而不是给 span 挂 click）。 */
+.plugin-name {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.plugin-name:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* 插件详情的元信息表（标签 + 值两列，值可能很长）。 */
+.plugin-meta {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 12px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel-2);
+  font-size: 12.5px;
+}
+
+.plugin-meta-key {
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.plugin-meta-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.md-section h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.md-holder {
+  max-height: 46vh;
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+}
+
+/* 渲染后的 Markdown（core/markdown.js）：只做一点点版式，不引入第二套色板。 */
+.md-body {
+  font-size: 13px;
+  line-height: 1.75;
+}
+
+.md-body h3,
+.md-body h4,
+.md-body h5,
+.md-body h6 {
+  margin: 14px 0 6px;
+  font-size: 14px;
+}
+
+.md-body h3:first-child,
+.md-body h4:first-child {
+  margin-top: 0;
+}
+
+.md-body p {
+  margin: 8px 0;
+}
+
+.md-body ul,
+.md-body ol {
+  margin: 8px 0;
+  padding-left: 22px;
+}
+
+.md-body li {
+  margin: 2px 0;
+}
+
+.md-body code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-panel-2);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.md-body pre {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel-2);
+  overflow-x: auto;
+}
+
+.md-body pre code {
+  padding: 0;
+  background: none;
+}
+
+.md-body blockquote {
+  margin: 8px 0;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--border);
+  color: var(--text-dim);
+}
+
+.md-body hr {
+  margin: 14px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.md-body a {
+  color: var(--accent);
+}
+
 /* 表格行内的操作按钮组（#45）：此前**没有任何样式**——按钮会一个贴一个排在一起，
    窄屏尤其难按（看上去像一个长条）。这里给统一间距与右对齐。 */
 .row-actions {

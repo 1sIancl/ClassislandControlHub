@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
+using System.Text;
 using ControlHub.Protocol;
 using ControlHub.Protocol.Dtos;
 using ControlHub.Server.Data;
@@ -15,6 +16,9 @@ public sealed class PluginPackageCacheService
 {
     /// <summary>单个插件包的大小上限。论坛里流通的插件都在几 MB 量级，挡住异常的大包。</summary>
     private const long MaxPackageBytes = 512L * 1024 * 1024;
+
+    /// <summary>自述文件的大小上限（1 MB）。README 不该这么大，超了多半是取到了别的东西。</summary>
+    private const long MaxReadmeBytes = 1024 * 1024;
 
     private readonly HubStore _store;
     private readonly IHttpClientFactory _httpFactory;
@@ -59,14 +63,152 @@ public sealed class PluginPackageCacheService
     /// </summary>
     public string ResolveIconPath(string fileName)
     {
-        var full = Path.GetFullPath(Path.Combine(IconDirectory, Path.GetFileName(fileName)));
-        var root = Path.GetFullPath(IconDirectory);
+        return ResolveInDirectory(IconDirectory, fileName, "图标文件名不合法。");
+    }
+
+    /// <summary>
+    /// 插件自述文件（Markdown）的缓存目录。与图标同理：地址指向 GitHub raw，
+    /// 让管理端浏览器直连多半打不开，A 端取一次更稳。
+    /// </summary>
+    public string ReadmeDirectory
+    {
+        get
+        {
+            var dataDir = Path.GetDirectoryName(_store.DatabasePath);
+            return Path.Combine(string.IsNullOrEmpty(dataDir) ? "." : dataDir, "plugin-readmes");
+        }
+    }
+
+    /// <summary>解析自述文件路径，并限定在自述目录之内。</summary>
+    public string ResolveReadmePath(string fileName)
+    {
+        return ResolveInDirectory(ReadmeDirectory, fileName, "自述文件名不合法。");
+    }
+
+    private static string ResolveInDirectory(string directory, string fileName, string error)
+    {
+        var root = Path.GetFullPath(directory);
+        var full = Path.GetFullPath(Path.Combine(root, Path.GetFileName(fileName)));
         if (!full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
         {
-            throw HubException.Validation("图标文件名不合法。");
+            throw HubException.Validation(error);
         }
 
         return full;
+    }
+
+    /// <summary>
+    /// 取一个插件的自述文件，缓存命中直接返回本地路径，否则**按需下载**（#121 后续）。
+    /// <para>为什么按需而不是跟着索引同步一起下：自述文件比图标大、地址多指向 GitHub raw、
+    /// 失败率也高（实测图标 69 张就要 55 秒）。管理员点开某个插件详情时才值得为它付一次网络成本。</para>
+    /// <para>只按索引里登记的 <c>readme_path</c> 取，不接受调用方给任意地址——否则这个免鉴权接口
+    /// 就变成了一个开放的抓取代理。</para>
+    /// </summary>
+    /// <returns>本地文件绝对路径；索引里没有自述文件或取不到时返回 <c>null</c>。</returns>
+    public async Task<string?> EnsureReadmeAsync(string pluginId, CancellationToken cancellationToken = default)
+    {
+        var item = await _store.GetMarketItemAsync(pluginId, cancellationToken);
+        if (item is null || item.ReadmePath.Length == 0)
+        {
+            return null;
+        }
+
+        // 已经缓存过：文件还在就直接用（索引换地址时会换文件名，见 ReadmeFileName）。
+        if (item.ReadmeFile.Length > 0)
+        {
+            var cached = ResolveReadmePath(item.ReadmeFile);
+            if (File.Exists(cached) && new FileInfo(cached).Length > 0)
+            {
+                return cached;
+            }
+        }
+
+        var mirrors = await LoadMirrorsAsync(cancellationToken);
+        var preferred = await _store.GetSettingAsync(PluginMarketSyncService.PreferredMirrorKey, string.Empty,
+            cancellationToken);
+        var ordered = PluginMirrorResolver.Order(mirrors, preferred ?? string.Empty);
+        var errors = new List<string>();
+
+        foreach (var mirror in ordered)
+        {
+            var url = PluginMirrorResolver.Expand(item.ReadmePath, mirror.Root);
+            try
+            {
+                var http = _httpFactory.CreateClient();
+                http.Timeout = TimeSpan.FromSeconds(20);
+
+                using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead,
+                    cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    errors.Add($"{mirror.Name}: HTTP {(int)response.StatusCode}");
+                    continue;
+                }
+
+                if (response.Content.Headers.ContentLength is > MaxReadmeBytes)
+                {
+                    errors.Add($"{mirror.Name}: 文件超过 {MaxReadmeBytes / 1024} KB");
+                    continue;
+                }
+
+                var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+                if (bytes.Length == 0 || bytes.Length > MaxReadmeBytes)
+                {
+                    errors.Add($"{mirror.Name}: 内容为空或过大");
+                    continue;
+                }
+
+                var directory = ReadmeDirectory;
+                Directory.CreateDirectory(directory);
+                var fileName = ReadmeFileName(pluginId, url);
+                var target = ResolveReadmePath(fileName);
+                await File.WriteAllBytesAsync(target, bytes, cancellationToken);
+
+                // 换过一次地址就换一个文件名：清掉这个插件此前留下的旧文件。
+                foreach (var stale in Directory.EnumerateFiles(directory, $"{pluginId}.*"))
+                {
+                    if (!string.Equals(Path.GetFileName(stale), fileName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        TryDelete(stale);
+                    }
+                }
+
+                await _store.SetMarketReadmeFileAsync(pluginId, fileName, cancellationToken);
+                return target;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                errors.Add($"{mirror.Name}: {ex.Message}");
+            }
+        }
+
+        _logger.LogDebug("插件 {Id} 的自述文件取回失败：{Errors}", pluginId, string.Join("；", errors));
+        return null;
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (IOException)
+        {
+            // 被占用就留着，下次取的时候再清。
+        }
+    }
+
+    /// <summary>
+    /// 自述文件名：<c>&lt;插件 ID&gt;.&lt;地址哈希前 8 位&gt;.md</c>。
+    /// <para>与图标同一套思路：带地址哈希，上游换文件就换名（浏览器 / 我们自己都不会拿旧的）。</para>
+    /// </summary>
+    public static string ReadmeFileName(string pluginId, string url)
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(url)))[..8].ToLowerInvariant();
+        var safeId = new string(pluginId
+            .Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch)
+            .ToArray()).Trim('.', '_');
+        return safeId.Length == 0 ? $"{hash}.md" : $"{safeId}.{hash}.md";
     }
 
     /// <summary>

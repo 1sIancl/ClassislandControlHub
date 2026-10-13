@@ -10,13 +10,14 @@
  * 每一步都写明「要不要重启」，卸载 / 启停也复用同一套下发与进度。</para>
  */
 
-import { api, hasPermission } from '../core/api.js?v=103';
-import { toastError, errorBlock } from '../core/errors.js?v=103';
-import { hintForCode } from '../core/error-hints.js?v=103';
+import { api, hasPermission } from '../core/api.js?v=104';
+import { toastError, errorBlock } from '../core/errors.js?v=104';
+import { hintForCode } from '../core/error-hints.js?v=104';
+import { renderMarkdown } from '../core/markdown.js?v=104';
 import {
   h, clear, toast, loadingBlock, field, select, confirmDialog, emptyState,
   formatDateTime, relativeTime, hintIcon,
-} from '../core/ui.js?v=103';
+} from '../core/ui.js?v=104';
 
 export const meta = {
   title: '插件管理',
@@ -39,7 +40,12 @@ const state = {
   deployments: [],
   query: '',
   expanded: new Set(),
+  // 默认只列与本校教室端**兼容**的插件：不兼容的装了也跑不起来（教室端会拒绝），
+  // 平铺在列表里只会挤占视线。折叠数量与开关见 renderMarketCard。
+  compatOnly: true,
 };
+
+
 
 /** 页面容器（局部刷新时重画它，避免整页 reload 丢滚动位置）。 */
 let host = null;
@@ -155,9 +161,20 @@ async function refresh() {
 
 function renderMarketCard() {
   const keyword = state.query.trim().toLowerCase();
+  const baseline = hostBaseline();
+  const incompatible = state.items.filter((i) => !compatInfo(i, baseline).ok);
+  const visible = state.compatOnly ? state.items.filter((i) => compatInfo(i, baseline).ok) : state.items;
   const items = keyword
-    ? state.items.filter((i) => `${i.name} ${i.id} ${i.author}`.toLowerCase().includes(keyword))
-    : state.items;
+    ? visible.filter((i) => `${i.name} ${i.id} ${i.author}`.toLowerCase().includes(keyword))
+    : visible;
+
+  const repaintRows = () => {
+    const body = document.getElementById('marketBody');
+    if (body) {
+      clear(body);
+      body.appendChild(renderMarketRows(items));
+    }
+  };
 
   const search = h('input', {
     type: 'search',
@@ -165,22 +182,36 @@ function renderMarketCard() {
     value: state.query,
     onInput: (e) => {
       state.query = e.target.value;
-      const body = document.getElementById('marketBody');
-      if (body) {
-        clear(body);
-        body.appendChild(renderMarketRows(items));
-      }
+      repaintRows();
     },
+  });
+
+  const compatBox = h('input', { type: 'checkbox' });
+  compatBox.checked = state.compatOnly;
+  compatBox.addEventListener('change', () => {
+    state.compatOnly = compatBox.checked;
+    paint();   // 只重画，不重新请求（数据都在 state 里）
   });
 
   return h('div.card',
     h('div.card-head',
       h('div',
         h('h3', '插件市场'),
-        h('p.card-desc', `索引里共 ${state.items.length} 个插件；「缓存」是把 .cipx 取到 A 端本地，`
-          + '教室端安装时只从 A 端下载，不需要外网。'),
+        h('p.card-desc', `索引里共 ${state.items.length} 个插件`
+          + (incompatible.length > 0
+            ? `，其中 ${incompatible.length} 个要求的 API 高于教室端最低版本（${baseline.text}）`
+            : '')
+          + '；「缓存」是把 .cipx 取到 A 端本地，教室端安装时只从 A 端下载，不需要外网。'),
       ),
-      h('div.card-actions', h('div', { style: { width: '240px' } }, search)),
+      h('div.card-actions',
+        h('div', { style: { width: '220px' } }, search),
+        incompatible.length > 0
+          ? h('label.checkbox-field', compatBox,
+            h('span', '只看兼容的',
+              hintIcon('兼容＝插件要求的宿主 API 下限 ≤ 教室里**最低**的那台 ClassIsland 版本。'
+                + '教室端装的时候还会再校验一次（版本不够会直接拒绝），这里只是提前把装不了的挑出来。')))
+          : null,
+      ),
     ),
     h('div#marketBody', renderMarketRows(items)),
     h('div.notice.notice-info',
@@ -220,7 +251,12 @@ function renderMarketRows(items) {
         h('div.plugin-cell',
           renderPluginIcon(item),
           h('div.plugin-cell-body',
-            h('div', { style: { fontWeight: '600' } }, item.name),
+            // 名称可点开详情（role/tabindex 是为了键盘也能用——列表里的可点文字必须能 Tab 到）。
+            h('button.plugin-name', {
+              type: 'button',
+              title: '查看详情与自述文件',
+              onClick: () => openDetailDialog(item),
+            }, item.name),
             h('div', { style: { fontSize: '12px', color: 'var(--text-dim)' } }, item.id),
             item.description
               ? h('div.plugin-desc', item.description)
@@ -228,12 +264,20 @@ function renderMarketRows(items) {
           ),
         ),
       ),
-      h('td', item.version || '—'),
-      h('td', item.apiVersion || '—'),
+      h('td', h('div',
+        h('div', item.version || '—'),
+        renderUpgradeBadge(item),
+      )),
+      h('td', renderApiCell(item)),
       h('td', item.author || '—'),
       h('td', item.downloadCount ? String(item.downloadCount) : '—'),
       h('td', renderCacheCell(item)),
       h('td', h('div.row-actions',
+        h('button.btn.btn-sm', {
+          type: 'button',
+          title: '看元信息与作者的自述文件',
+          onClick: () => openDetailDialog(item),
+        }, '详情'),
         canWrite()
           ? h('button.btn.btn-sm', {
             type: 'button',
@@ -247,7 +291,7 @@ function renderMarketRows(items) {
             disabled: !item.cached,
             title: item.cached ? '下发安装到教室端' : '先缓存，再下发',
             onClick: () => openDeployDialog(item),
-          }, '下发安装')
+          }, '安装到教室')
           : null,
       )),
     ))),
@@ -277,6 +321,129 @@ function renderPluginIcon(item) {
   return img;
 }
 
+/** 解析 `1.2.3` / `1.2.3.4` 形式的版本号；解析不了返回 null（不猜）。 */
+function parseVersion(text) {
+  const match = /^(\d+)\.(\d+)(?:\.(\d+))?(?:\.(\d+))?$/.exec((text ?? '').trim());
+  return match ? [1, 2, 3, 4].map((i) => Number(match[i] ?? 0)) : null;
+}
+
+/** a < b ？两个版本号里只要有一个解析不了就返回 null（表示「无法比较」）。 */
+function compareVersions(a, b) {
+  const left = parseVersion(a);
+  const right = parseVersion(b);
+  if (!left || !right) {
+    return null;
+  }
+
+  for (let i = 0; i < 4; i++) {
+    if (left[i] !== right[i]) {
+      return left[i] < right[i];
+    }
+  }
+
+  return false;
+}
+
+/**
+ * 兼容性基线（#121 后续）：取教室里**最低**的那台 ClassIsland 版本。
+ * <para>为什么用最低而不是某一台：同一批插件要发给多台设备，只要有一台版本不够，
+ * 那台就会装不上（教室端自己会拒绝）。宁可提前告诉管理员「这插件在你这儿是装不全的」。</para>
+ * <para>没有任何设备上报过版本时，退回 README 里写明的真实下限 2.1.1.1。</para>
+ */
+function hostBaseline() {
+  const versions = (state.inventory ?? [])
+    .filter((d) => !d.revoked)
+    .map((d) => d.classislandVersion)
+    .filter((v) => parseVersion(v));
+
+  if (versions.length === 0) {
+    return { version: '2.1.1.1', text: '2.1.1.1（文档下限，暂无设备上报）' };
+  }
+
+  const lowest = versions.reduce((min, v) => (compareVersions(v, min) === true ? v : min), versions[0]);
+  return { version: lowest, text: lowest };
+}
+
+/** 某插件与基线是否兼容；不兼容给出人话原因。 */
+function compatInfo(item, baseline) {
+  if (!item.apiVersion) {
+    return { ok: true };
+  }
+
+  const older = compareVersions(item.apiVersion, baseline.version);
+  // null = 有一边不是标准版本号（比如预览版写了 -beta），不武断判定，放行。
+  if (older === null) {
+    return { ok: true };
+  }
+
+  return older
+    ? { ok: false, reason: `要求 API ${item.apiVersion}，高于教室端最低版本 ${baseline.text}` }
+    : { ok: true };
+}
+
+/** 「要求 API」那一格：不兼容时标红并写明原因。 */
+function renderApiCell(item) {
+  const info = compatInfo(item, hostBaseline());
+  if (info.ok) {
+    return h('div', item.apiVersion || '—');
+  }
+
+  return h('div',
+    h('span.badge.badge-warn', item.apiVersion),
+    h('div', { style: { fontSize: '11.5px', color: 'var(--warn)', marginTop: '2px' } }, '不兼容本机教室端'),
+    h('div', { style: { fontSize: '11px', color: 'var(--text-dim)' } }, info.reason),
+  );
+}
+
+/** 教室端已装的版本 → 装了它的设备名列表。没上报过就是空 Map。 */
+function installedVersions(pluginId) {
+  const versions = new Map();
+  for (const device of state.inventory ?? []) {
+    for (const plugin of device.plugins ?? []) {
+      if (plugin.id !== pluginId) {
+        continue;
+      }
+
+      const list = versions.get(plugin.version) ?? [];
+      list.push(device.deviceName || device.deviceId);
+      versions.set(plugin.version, list);
+    }
+  }
+
+  return versions;
+}
+
+/**
+ * 升级提示：教室端已装的版本里有**不是市场最新版**的，就值得标出来。
+ * <para>数据全是页面上已有的（市场列表 + 已装清单），不必再请求一次接口。</para>
+ */
+function upgradeInfo(item) {
+  const versions = installedVersions(item.id);
+  if (versions.size === 0) {
+    return null;
+  }
+
+  const outdated = [...versions.entries()].filter(([version]) => version !== item.version);
+  if (outdated.length === 0) {
+    return null;
+  }
+
+  return {
+    devices: outdated.reduce((sum, [, names]) => sum + names.length, 0),
+    detail: outdated.map(([version, names]) => `${version}（${names.length} 台）`).join('、'),
+  };
+}
+
+function renderUpgradeBadge(item) {
+  const info = upgradeInfo(item);
+  if (!info) {
+    return null;
+  }
+
+  return h('div', { style: { marginTop: '2px' } },
+    h('span.badge.badge-warn', { title: `已装 ${info.detail}` }, `可升级 ${info.devices} 台`));
+}
+
 function renderCacheCell(item) {
   if (!item.cached) {
     // 索引里这一版没缓存，但可能缓存过别的版本——这正说明「有新版本可用」。
@@ -298,6 +465,90 @@ function renderCacheCell(item) {
     h('div', { style: { fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'var(--mono)' } },
       (item.sha256 ?? '').slice(0, 16) + '…'),
   );
+}
+
+/**
+ * 插件详情（#121 后续）：元信息 + 作者的自述文件 + 与缓存 / 安装打通。
+ *
+ * <para>自述文件由 A 端代理（`readmeLocalUrl`，免鉴权）：索引里的地址指向 GitHub raw，
+ * 管理端浏览器直连多半打不开。**首次点开会触发 A 端去取一次**（可能几秒），之后走本地缓存。</para>
+ */
+function openDetailDialog(item) {
+  const readmeBox = h('div.md-holder',
+    h('div', { style: { color: 'var(--text-dim)', fontSize: '12.5px' } }, '正在取作者的自述文件…'));
+
+  const metaRow = (label, value) => h('div.plugin-meta-row',
+    h('span.plugin-meta-key', label),
+    h('span.plugin-meta-value', value));
+
+  const compat = compatInfo(item, hostBaseline());
+  const upgrade = upgradeInfo(item);
+
+  const links = [];
+  if (item.repositoryUrl) {
+    links.push(h('a', {
+      href: item.repositoryUrl, target: '_blank', rel: 'noopener noreferrer',
+    }, '源码仓库'));
+  }
+
+  if (item.readmeLocalUrl) {
+    // 自述文件是 Markdown 原文，交给 core/markdown.js 渲染（先转义再套结构，第三方内容不会变 XSS）。
+    fetch(item.readmeLocalUrl)
+      .then((res) => (res.ok ? res.text() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((text) => {
+        clear(readmeBox);
+        readmeBox.appendChild(renderMarkdown(text));
+      })
+      .catch((err) => {
+        clear(readmeBox);
+        readmeBox.appendChild(h('div.notice.notice-warn',
+          h('span.notice-icon', '!'),
+          h('div', `取不到自述文件（${err.message}）——多半是 A 端访问不了外网。`,
+            item.repositoryUrl
+              ? h('a', {
+                href: item.repositoryUrl, target: '_blank', rel: 'noopener noreferrer',
+                style: { marginLeft: '4px' },
+              }, '去仓库看 →')
+              : null)));
+      });
+  } else {
+    clear(readmeBox);
+    readmeBox.appendChild(h('div', { style: { color: 'var(--text-dim)', fontSize: '12.5px' } },
+      '索引里这个插件没有登记自述文件。'));
+  }
+
+  modal({
+    title: `${item.name} ${item.version || ''}`.trim(),
+    width: 'xwide',
+    body: h('div',
+      h('div.plugin-meta',
+        metaRow('插件 ID', h('code', item.id)),
+        metaRow('版本', item.version || '—'),
+        metaRow('要求 API', compat.ok
+          ? (item.apiVersion || '—')
+          : h('span', { style: { color: 'var(--warn)' } }, `${item.apiVersion}（${compat.reason}）`)),
+        metaRow('作者', item.author || '—'),
+        metaRow('下载量 / 星标', `${item.downloadCount ?? 0} / ${item.starsCount ?? 0}`),
+        metaRow('支持平台',
+          (item.supportedOSPlatforms ?? []).length > 0 ? item.supportedOSPlatforms.join(' / ') : '未声明'),
+        metaRow('本地缓存', item.cached
+          ? `已缓存 ${(item.sizeBytes / 1024).toFixed(0)} KB，SHA256 ${(item.sha256 ?? '').slice(0, 16)}…`
+          : (item.cachedVersions ?? []).length > 0
+            ? `未缓存当前版本（本地有 ${item.cachedVersions.join(' / ')}）`
+            : '未缓存'),
+        upgrade
+          ? metaRow('教室端', h('span', { style: { color: 'var(--warn)' } },
+            `有 ${upgrade.devices} 台装的不是当前版本（${upgrade.detail}）`))
+          : null,
+        links.length > 0 ? metaRow('相关链接', h('div', ...links)) : null,
+      ),
+      h('div.md-section',
+        h('h4', '自述文件'),
+        readmeBox),
+    ),
+    confirmText: '关闭',
+    onConfirm: () => true,
+  });
 }
 
 async function cachePackage(item, button) {

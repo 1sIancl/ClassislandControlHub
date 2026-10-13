@@ -3,13 +3,13 @@
  * 数据来自 A 端 /admin/devices、/admin/backups 等接口。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=103';
-import { toastError } from '../core/errors.js?v=103';
-import { hintForCode } from '../core/error-hints.js?v=103';
+import { api, fetchBlob } from '../core/api.js?v=104';
+import { toastError } from '../core/errors.js?v=104';
+import { hintForCode } from '../core/error-hints.js?v=104';
 import {
   h, clear, toast, loadingBlock, confirmDialog, field, select, emptyState, formatDateTime, modal,
   hintIcon,
-} from '../core/ui.js?v=103';
+} from '../core/ui.js?v=104';
 
 export const meta = {
   title: '远程管理',
@@ -1193,6 +1193,18 @@ function screenshotCard(item) {
     });
 
   wrap.addEventListener('click', () => openScreenshot(item));
+
+  // 无障碍（#49）：这张可点缩略图要能 Tab 到、回车/空格打开——
+  // 纯 div 上挂 click，键盘用户根本够不着。
+  wrap.tabIndex = 0;
+  wrap.setAttribute('role', 'button');
+  wrap.setAttribute('aria-label', `查看截图 ${formatDateTime(item.capturedAt)}`);
+  wrap.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openScreenshot(item);
+    }
+  });
 
   return h('div.shot-card',
     h('div.shot-head',

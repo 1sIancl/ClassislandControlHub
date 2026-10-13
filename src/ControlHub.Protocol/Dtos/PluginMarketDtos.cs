@@ -41,8 +41,15 @@ public sealed class PluginMarketItemDto
     /// </summary>
     public string IconLocalUrl { get; set; } = string.Empty;
 
-    /// <summary>自述文件地址（已展开 <c>{root}</c>）。</summary>
+    /// <summary>自述文件地址（已展开 <c>{root}</c>，指向上游）。界面**不要**直接用，用
+    /// <see cref="ReadmeLocalUrl"/>。</summary>
     public string ReadmeUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// A 端代理的自述文件地址（免鉴权，返回 Markdown 原文）；**空**表示索引里这个插件没有自述文件。
+    /// <para>首次访问会让 A 端去取一次（可能几秒），之后走本地缓存。</para>
+    /// </summary>
+    public string ReadmeLocalUrl { get; set; } = string.Empty;
 
     /// <summary>插件仓库地址。</summary>
     public string RepositoryUrl { get; set; } = string.Empty;

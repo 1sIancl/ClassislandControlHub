@@ -3,13 +3,13 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=103';
-import { toastError } from '../core/errors.js?v=103';
+import { api } from '../core/api.js?v=104';
+import { toastError } from '../core/errors.js?v=104';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, icon, select,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=103';
-import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=103';
+} from '../core/ui.js?v=104';
+import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=104';
 
 export const meta = {
   title: '编辑配置档案',
@@ -385,6 +385,7 @@ function periodCell(layout, item, index) {
       h('button.pcell-del', {
         type: 'button',
         title: '删除该时间点',
+        'aria-label': '删除该时间点',
         onClick: () => {
           layout.items.splice(index, 1);
           markDirtyValues();
@@ -1218,6 +1219,9 @@ function renderSubjects() {
     })),
     h('td', h('button.btn.btn-ghost.btn-sm', {
       type: 'button',
+      // 纯图标按钮必须有无障碍名（#49）：屏幕阅读器念的是 aria-label，不是那个 ✕。
+      title: '删除该科目',
+      'aria-label': '删除该科目',
       onClick: () => {
         state.content.subjects.splice(index, 1);
         markDirtyValues();
@@ -1324,6 +1328,8 @@ function renderSettings() {
     }),
     h('button.btn.btn-ghost.btn-sm', {
       type: 'button',
+      title: '删除该设置项',
+      'aria-label': '删除该设置项',
       onClick: () => {
         delete settings.values[key];
         markDirtyValues();

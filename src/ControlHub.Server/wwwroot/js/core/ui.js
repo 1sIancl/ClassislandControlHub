@@ -1,7 +1,7 @@
 /** 轻量 DOM 构建与通用交互组件，无框架依赖。 */
 
 // 只引「错误码 → 怎么办」的纯映射（#51）：本文件是最底层模块，不能反过来依赖 errors.js。
-import { formatErrorText, hasErrorHint } from './error-hints.js?v=103';
+import { formatErrorText, hasErrorHint } from './error-hints.js?v=104';
 
 /**
  * 创建元素。
@@ -236,10 +236,22 @@ export function modal(options) {
   const bodyEl = h('div.modal-body');
   append(bodyEl, [options.body || []]);
 
+  // 焦点管理（#49）：记住触发弹窗的元素，关掉之后把焦点还回去。
+  // 不做这件事的话，键盘用户一关弹窗焦点就「掉」到页面开头，得重新 Tab 一路找回来。
+  const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+
   const close = () => {
     host.hidden = true;
     clear(host);
     document.removeEventListener('keydown', onKey);
+    if (opener && document.contains(opener)) {
+      try {
+        opener.focus();
+      } catch {
+        // 触发元素已经不在 DOM 里（例如点了删除）——忽略即可。
+      }
+    }
+
     try {
       options.onClose?.();
     } catch {
@@ -248,7 +260,37 @@ export function modal(options) {
   };
 
   const onKey = (e) => {
-    if (e.key === 'Escape') close();
+    if (e.key === 'Escape') {
+      close();
+      return;
+    }
+
+    if (e.key !== 'Tab') {
+      return;
+    }
+
+    // 焦点陷阱：Tab 只在弹窗内循环，不会跑到背后的页面上（视觉上「弹窗盖住了页面，
+    // 键盘却能点到底下的按钮」是最典型的无障碍缺陷）。
+    const focusables = [...modalEl.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+      .filter((el) => !el.disabled && el.offsetParent !== null);
+
+    if (focusables.length === 0) {
+      return;
+    }
+
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement;
+    const inside = modalEl.contains(active);
+
+    if (e.shiftKey && (active === first || !inside)) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (active === last || !inside)) {
+      e.preventDefault();
+      first.focus();
+    }
   };
 
   const confirmBtn = h(`button.btn.${options.danger ? 'btn-danger' : 'btn-primary'}`,
@@ -276,9 +318,17 @@ export function modal(options) {
   });
 
   const modalEl = h(`div.modal${options.width ? '.' + options.width : ''}`,
+    {
+      role: 'dialog',
+      'aria-modal': 'true',
+      'aria-label': options.title || '对话框',
+    },
     h('div.modal-head',
       h('h3', options.title || ''),
-      h('button.btn.btn-ghost.btn-sm', { type: 'button', title: '关闭', onClick: close }, icon('close', 15)),
+      // 纯图标按钮必须有无障碍名（#49）：屏幕阅读器读的是 aria-label，不是里面的 SVG。
+      h('button.btn.btn-ghost.btn-sm', {
+        type: 'button', title: '关闭', 'aria-label': '关闭', onClick: close,
+      }, icon('close', 15)),
     ),
     bodyEl,
     options.hideFooter
@@ -297,8 +347,10 @@ export function modal(options) {
   };
   document.addEventListener('keydown', onKey);
 
+  // 打开时把焦点送进弹窗：有输入框就进输入框，纯文本确认框则给「确定」按钮
+  // （否则焦点留在触发按钮上，Tab 会先跑到背景页面去）。
   const firstInput = bodyEl.querySelector('input, select, textarea');
-  if (firstInput) setTimeout(() => firstInput.focus(), 60);
+  setTimeout(() => (firstInput ?? confirmBtn).focus(), 60);
 
   return { close, el: modalEl, bodyEl };
 }

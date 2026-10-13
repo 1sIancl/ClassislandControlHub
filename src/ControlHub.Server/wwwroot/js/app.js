@@ -2,20 +2,20 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=103';
-import { toastError } from './core/errors.js?v=103';
-import { h, clear, toast, icon } from './core/ui.js?v=103';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=104';
+import { toastError } from './core/errors.js?v=104';
+import { h, clear, toast, icon } from './core/ui.js?v=104';
 import {
   initTheme,
   getSidebarCollapsed, setSidebarCollapsed,
   applyDensity,
   applyAppearance, setBrandingAccent,
   applyRemotePrefs, applySchedScale,
-} from './core/prefs.js?v=103';
-import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=103';
-import { initGlassHighlight } from './core/glass.js?v=103';
-import { initTopbar } from './topbar.js?v=103';
-import { openSearch } from './core/search.js?v=103';
+} from './core/prefs.js?v=104';
+import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=104';
+import { initGlassHighlight } from './core/glass.js?v=104';
+import { initTopbar } from './topbar.js?v=104';
+import { openSearch } from './core/search.js?v=104';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -117,26 +117,26 @@ const ROUTE_ALIASES = {
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=103'),
-  devices: () => import('./views/devices.js?v=103'),
+  dashboard: () => import('./views/dashboard.js?v=104'),
+  devices: () => import('./views/devices.js?v=104'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=103'),
-  profiles: () => import('./views/profiles.js?v=103'),
-  profileEditor: () => import('./views/profileEditor.js?v=103'),
-  deploy: () => import('./views/deploy.js?v=103'),
-  remote: () => import('./views/remote.js?v=103'),
-  reminders: () => import('./views/reminders.js?v=103'),
-  audit: () => import('./views/audit.js?v=103'),
-  reports: () => import('./views/reports.js?v=103'),
-  appearance: () => import('./views/appearance.js?v=103'),
+  groups: () => import('./views/devices.js?v=104'),
+  profiles: () => import('./views/profiles.js?v=104'),
+  profileEditor: () => import('./views/profileEditor.js?v=104'),
+  deploy: () => import('./views/deploy.js?v=104'),
+  remote: () => import('./views/remote.js?v=104'),
+  reminders: () => import('./views/reminders.js?v=104'),
+  audit: () => import('./views/audit.js?v=104'),
+  reports: () => import('./views/reports.js?v=104'),
+  appearance: () => import('./views/appearance.js?v=104'),
   // 「系统设置」拆成四页（原 settings.js 已按此拆分，见各文件头部说明）。
-  accounts: () => import('./views/accounts.js?v=103'),
-  server: () => import('./views/server.js?v=103'),
-  integrations: () => import('./views/integrations.js?v=103'),
-  maintenance: () => import('./views/maintenance.js?v=103'),
-  timesync: () => import('./views/timesync.js?v=103'),
-  lessons: () => import('./views/lessons.js?v=103'),
-  plugins: () => import('./views/pluginMarket.js?v=103'),
+  accounts: () => import('./views/accounts.js?v=104'),
+  server: () => import('./views/server.js?v=104'),
+  integrations: () => import('./views/integrations.js?v=104'),
+  maintenance: () => import('./views/maintenance.js?v=104'),
+  timesync: () => import('./views/timesync.js?v=104'),
+  lessons: () => import('./views/lessons.js?v=104'),
+  plugins: () => import('./views/pluginMarket.js?v=104'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -680,7 +680,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=103');
+    const { startTour } = await import('./core/tour.js?v=104');
     startTour({
       onFinish: async (skipped) => {
         try {

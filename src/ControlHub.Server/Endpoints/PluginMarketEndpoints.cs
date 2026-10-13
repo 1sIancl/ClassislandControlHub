@@ -45,6 +45,27 @@ public static class PluginMarketEndpoints
         // 公开的官方索引内容（插件 ID 也公开）。免鉴权才能让浏览器按 URL 缓存它们：
         // 一屏几十个图标，每次都由前端带鉴权 fetch 再转 blob 是没必要的负担。
         app.MapGet("/api/v1/plugin-icons/{id}", GetIconAsync).AllowAnonymous();
+
+        // 插件自述文件（#121 后续）：同样免鉴权。**首次访问会触发 A 端按需下载**（缓存命中即直出），
+        // 地址只取索引里登记的 readme_path，不接受任意 URL——否则这就成了开放的抓取代理。
+        app.MapGet("/api/v1/plugin-readmes/{id}", GetReadmeAsync).AllowAnonymous();
+    }
+
+    /// <summary>
+    /// 取一个插件的自述文件（Markdown 原文）。取不到返回 404，前端据此显示「去仓库看」而不是空白。
+    /// </summary>
+    private static async Task<IResult> GetReadmeAsync(string id, HttpContext http,
+        PluginPackageCacheService cache, CancellationToken cancellationToken)
+    {
+        var path = await cache.EnsureReadmeAsync(id, cancellationToken);
+        if (path is null || !File.Exists(path))
+        {
+            return Results.NotFound();
+        }
+
+        // 文件名带地址哈希 ⇒ 内容变了 URL 才会变，可以长期缓存。
+        http.Response.Headers.CacheControl = "public, max-age=604800";
+        return Results.File(path, "text/markdown; charset=utf-8");
     }
 
     /// <summary>
@@ -564,6 +585,11 @@ public static class PluginMarketEndpoints
                 // 前端显示首字母头像。
                 IconLocalUrl = row.IconFile.Length > 0
                     ? "/api/v1/plugin-icons/" + Uri.EscapeDataString(row.PluginId)
+                    : string.Empty,
+                // 自述文件是**按需取**的，所以这里恒给出地址（空表示索引里没有自述文件）：
+                // 点开详情时前端请求它，服务端那时才去下载。
+                ReadmeLocalUrl = row.ReadmePath.Length > 0
+                    ? "/api/v1/plugin-readmes/" + Uri.EscapeDataString(row.PluginId)
                     : string.Empty,
                 ReadmeUrl = PluginMirrorResolver.Expand(row.ReadmePath, root),
                 RepositoryUrl = row.RepoUrl,

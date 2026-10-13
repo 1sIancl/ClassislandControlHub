@@ -4,17 +4,17 @@
  * 并可切换到列表视图查看完整状态明细。注册码管理一并放在本页。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=103';
-import { toastError, errorBlock } from '../core/errors.js?v=103';
+import { api, fetchBlob } from '../core/api.js?v=104';
+import { toastError, errorBlock } from '../core/errors.js?v=104';
 import {
   h, clear, formatDateTime, relativeTime, toast, loadingBlock, skeletonRows,
   modal, confirmDialog, deviceStateBadge, syncBadge,
   emptyState, field, select, copyText, append, undoBar,
-} from '../core/ui.js?v=103';
-import { showContextMenu } from '../core/contextmenu.js?v=103';
-import { getLayout, saveLayout } from '../core/prefs.js?v=103';
-import { auditTimelineSection } from '../core/audit-timeline.js?v=103';
-import { selectionSummary } from '../core/batch-summary.js?v=103';
+} from '../core/ui.js?v=104';
+import { showContextMenu } from '../core/contextmenu.js?v=104';
+import { getLayout, saveLayout } from '../core/prefs.js?v=104';
+import { auditTimelineSection } from '../core/audit-timeline.js?v=104';
+import { selectionSummary } from '../core/batch-summary.js?v=104';
 
 export const meta = {
   title: '设备管理',
@@ -705,6 +705,18 @@ function deviceChip(device) {
     draggable: 'true',
     // 带上 id：右键菜单、Ctrl+A 全选、Shift 范围选择都按它认设备。
     dataset: { deviceId: device.id },
+    // 无障碍（#49）：这张卡是「可选中」的，就得能 Tab 到、回车/空格能选。
+    // 没有 role/tabindex 的 div 对屏幕阅读器和键盘用户等于不存在。
+    role: 'button',
+    tabindex: '0',
+    'aria-pressed': picked ? 'true' : 'false',
+    'aria-label': `${device.name || device.id}，${STATE_LABEL[state]}`,
+    onKeyDown: (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        chip.click();
+      }
+    },
     title: `${device.name}\n${STATE_LABEL[state]}`
       + (group ? `\n${group.name}` : '\n未分组')
       + (device.machineName ? `\n${device.machineName}` : '')
