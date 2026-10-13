@@ -187,6 +187,19 @@ curl -s "$BASE/admin/devices" -H "Authorization: Bearer $TOKEN" \
 > 调用方必须「先 GET 读回 → 合并要改的字段 → 整份 PUT」（前端 `saveBranding()` 就是这么做的），
 > 否则会把没展示的字段（例如登录页壁纸、主题色）清成默认。
 
+**Webhook 事件名（`events` 字段的取值，9 个）**
+
+`device.offline`（设备掉线）· `device.online`（恢复上线）· `device.error`（配置应用失败 / 部分失败）·
+`command.failed`（远程指令失败）· `admin.login.failed`（登录失败 / 账号锁定）·
+`reminder.fired`（定时提醒到点执行，失败时同事件但标题带「执行失败」）·
+`sync.retry`（配置下发自动重试，第 N/M 次）· `plugin.deployed`（插件已下发）·
+`backup.completed`（自动备份完成）。
+
+- 投递体统一是 `{ event, title, message, time, detail }`；`detail` 的键会按
+  `WebhookService.DetailLabels` 翻成中文（群消息里显示「设备」「配置版本」等）。
+- ⚠️ 服务端保存与回显都按 `WebhookEvents.All` 过滤：**事件名不在这个列表里会被静默丢弃**
+  （勾得上也发不出去）。前端的事件清单是硬编码的，新增事件要两边同时加。
+
 ### 课表（快捷换课）
 
 直接操作教室端 ClassIsland 的**临时层课表与日期预定**，效果与在教室大屏上手动换课等价。
@@ -230,6 +243,17 @@ A 端把 ClassIsland 官方插件市场的索引与插件包**代理缓存到本
 > ⚠️ **版本与平台在 A 端预校验**：插件声明的 `apiVersion` 高于教室端 ClassIsland 版本、插件不支持
 > Windows、已装着同一版本——这三种被**跳过**并在 `skips[].reason` 写明原因。卸载 / 启停刻意不做
 > 「是否已安装」判断：清单是上一次上报的快照，拿它拦人会把「刚装好还没上报」的设备误拦。
+
+**插件图标（免鉴权）**
+
+| 方法 | 路径 | 鉴权 | 说明 |
+|---|---|---|---|
+| GET | `/api/v1/plugin-icons/{pluginId}` | **免鉴权** | 返回该插件已缓存的图标（`image/png` 等），`Cache-Control: public, max-age=604800`；没缓存则 404 |
+
+- 为什么要免鉴权：`<img src>` **带不了 bearer 令牌**；图标本身是公开的官方索引内容
+  （插件 ID 也公开），免鉴权才能让浏览器按 URL 缓存它们。
+- 市场列表里每个条目的 `iconLocalUrl` 就是它；为空表示图标还没缓存到本地
+  （界面显示首字母头像）。**不要**用 `iconUrl`（那是上游地址，指向 GitHub）。
 
 ### 教室端（设备侧）
 

@@ -20,6 +20,7 @@ public sealed class ReminderService(
     HubStore store,
     ServerTimeService serverTime,
     SyncService sync,
+    WebhookService webhooks,
     ILogger<ReminderService> logger)
 {
     /// <summary>提醒指令的有效期。提醒讲时效，过期就不该再打扰教室。</summary>
@@ -245,6 +246,26 @@ public sealed class ReminderService(
         {
             logger.LogInformation("提醒「{Title}」执行完成（{Action}）：{Detail}。", row.Title, action, detail);
         }
+
+        // 外部通知（#75）：定时提醒是「没人盯着也要按点发生」的事，出没出、发到几台、
+        // 有没有迟到或失败，都该能流到群里，而不是只在管理端里翻历史。
+        // 失败用不同的标题，避免被 WebhookService 的「同标题抑制窗口」把成功那条吞掉。
+        await webhooks.NotifyAsync(WebhookEvents.ReminderFired,
+            failed ? $"提醒执行失败：{row.Title}" : $"提醒已触发：{row.Title}",
+            failed
+                ? $"「{row.Title}」到点执行失败：{detail}"
+                : $"「{row.Title}」已按计划执行（{action}），影响 {affected} 台、跳过 {skipped} 台"
+                  + (late ? "（迟到补发）" : string.Empty) + "。",
+            new Dictionary<string, object?>
+            {
+                ["reminderId"] = row.Id,
+                ["reminderTitle"] = row.Title,
+                ["action"] = action,
+                ["affected"] = affected,
+                ["skipped"] = skipped,
+                ["late"] = late,
+                ["failed"] = failed,
+            }, cancellationToken);
 
         if (next is null)
         {

@@ -18,9 +18,29 @@ public static class WebhookEvents
     /// <summary>管理员登录失败（连续失败会触发账号锁定，可用于安全预警）。</summary>
     public const string LoginFailed = "admin.login.failed";
 
-    /// <summary>全部事件（前端渲染勾选框用）。</summary>
+    /// <summary>
+    /// 定时提醒到点执行（成功与失败都会推；失败时标题里带「执行失败」，与成功分开计数不被抑制窗口吞掉）。
+    /// </summary>
+    public const string ReminderFired = "reminder.fired";
+
+    /// <summary>配置下发自动重试（#17）：服务端对「回报过失败且在线」的设备定向重推时触发。</summary>
+    public const string SyncRetry = "sync.retry";
+
+    /// <summary>插件批量下发已发出（#121）：安装 / 卸载 / 启停，含目标台数与跳过台数。</summary>
+    public const string PluginDeployed = "plugin.deployed";
+
+    /// <summary>自动备份完成（含备份文件数与大小时长）。</summary>
+    public const string BackupCompleted = "backup.completed";
+
+    /// <summary>
+    /// 全部事件（前端渲染勾选框用）。
+    /// <para>⚠️ 新增事件**必须**同时加进这里：服务端保存订阅与回显都按这个列表过滤，
+    /// 漏了就是「前端勾不上、后台发了也不出去」的静默失效。前端那份清单
+    /// （<c>views/integrations.js</c> 的 <c>WEBHOOK_EVENTS</c>）也要一起加。</para>
+    /// </summary>
     public static readonly string[] All =
-        [DeviceOffline, DeviceOnline, DeviceError, CommandFailed, LoginFailed];
+        [DeviceOffline, DeviceOnline, DeviceError, CommandFailed, LoginFailed,
+            ReminderFired, SyncRetry, PluginDeployed, BackupCompleted];
 }
 
 /// <summary>Webhook 接收端类型：决定推送的报文格式。</summary>

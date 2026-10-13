@@ -330,6 +330,21 @@ public sealed class WebhookService(
         ["kind"] = "指令类型",
         ["username"] = "账号",
         ["attempts"] = "失败次数",
+        // 定时提醒（reminder.fired）
+        ["reminderId"] = "提醒 ID",
+        ["reminderTitle"] = "提醒",
+        ["action"] = "动作",
+        ["affected"] = "影响台数",
+        ["skipped"] = "跳过台数",
+        ["late"] = "迟到补发",
+        ["failed"] = "执行失败",
+        // 插件下发（plugin.deployed）与自动备份（backup.completed）
+        ["pluginId"] = "插件 ID",
+        ["pluginName"] = "插件",
+        ["version"] = "版本",
+        ["backupId"] = "备份 ID",
+        ["fileCount"] = "文件数",
+        ["sizeBytes"] = "大小(字节)",
     };
 
     /// <summary>

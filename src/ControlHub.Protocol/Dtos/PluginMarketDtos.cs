@@ -31,8 +31,15 @@ public sealed class PluginMarketItemDto
     /// <summary>索引给出的包 MD5（上游完整性校验用）。</summary>
     public string DownloadMd5 { get; set; } = string.Empty;
 
-    /// <summary>图标地址（已展开 <c>{root}</c>）。</summary>
+    /// <summary>图标地址（已展开 <c>{root}</c>，指向上游）。界面**不要**直接用：那个地址指向 GitHub，
+    /// 管理端浏览器在国内学校网络里多半加载不出来——用 <see cref="IconLocalUrl"/>。</summary>
     public string IconUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// A 端代理的图标地址（免鉴权，可直接喂给 <c>&lt;img src&gt;</c>）；**空**表示这个插件的图标
+    /// 还没缓存到本地，界面应退化成首字母头像。
+    /// </summary>
+    public string IconLocalUrl { get; set; } = string.Empty;
 
     /// <summary>自述文件地址（已展开 <c>{root}</c>）。</summary>
     public string ReadmeUrl { get; set; } = string.Empty;

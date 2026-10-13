@@ -1,10 +1,10 @@
 /** 通知与集成视图（系统设置拆分而来）：Webhook 外部通知与 AI 辅助导入配置。 */
 
-import { api, hasPermission } from '../core/api.js?v=102';
-import { toastError } from '../core/errors.js?v=102';
+import { api, hasPermission } from '../core/api.js?v=103';
+import { toastError } from '../core/errors.js?v=103';
 import {
-  h, clear, toast, modal, confirmDialog, field, select, guard, loadingBlock,
-} from '../core/ui.js?v=102';
+  h, clear, toast, modal, confirmDialog, field, select, guard, loadingBlock, hintIcon,
+} from '../core/ui.js?v=103';
 
 export const meta = {
   title: '通知与集成',
@@ -18,12 +18,19 @@ const WEBHOOK_KINDS = [
   { value: 'generic', label: '自定义端点（JSON）' },
 ];
 
+// ⚠️ 这份清单是硬编码的（没有接口下发）。新增事件时要与
+// `ControlHub.Protocol/Dtos/WebhookDtos.cs` 的 `WebhookEvents.All` **同时**加：
+// 只在一边加 = 前端勾不上、或服务端保存时被过滤掉，都是静默失效。
 const WEBHOOK_EVENTS = [
   { value: 'device.offline', label: '设备掉线' },
   { value: 'device.online', label: '设备恢复上线' },
   { value: 'device.error', label: '配置应用失败' },
   { value: 'command.failed', label: '远程指令失败' },
   { value: 'admin.login.failed', label: '登录失败（安全预警）' },
+  { value: 'reminder.fired', label: '定时提醒已触发' },
+  { value: 'sync.retry', label: '配置下发自动重试' },
+  { value: 'plugin.deployed', label: '插件已下发' },
+  { value: 'backup.completed', label: '自动备份完成' },
 ];
 
 
@@ -281,7 +288,13 @@ function openWebhookDialogInner(container, hook) {
       ),
       field('Webhook 地址', urlInput),
       field('加签密钥（可选）', secretInput, '只有钉钉机器人在加签模式下需要。'),
-      field('订阅事件', h('div.weekday-row', ...eventBoxes.map((e) => e.el)), '至少选一个。'),
+      field(h('span', '订阅事件', hintIcon(
+        '勾选要推到这个机器人的事件：掉线与恢复上线看在线状态；配置应用失败与「自动重试」看下发结果；'
+        + '定时提醒已触发＝到点真的执行了（失败会另发一条，标题带「执行失败」）；'
+        + '插件已下发＝改了教室机上跑什么代码；自动备份完成＝确认备份没落下。'
+        + '注意：同一事件 + 同一标题在 3 分钟内只推一条（防止刷屏）。')), eventBoxes.length
+        ? h('div.weekday-row', ...eventBoxes.map((e) => e.el))
+        : h('span', { style: { color: 'var(--text-faint)' } }, '正在载入事件清单…')),
       h('div.form-row',
         field('单次超时（秒）', timeoutInput, '1 ~ 60'),
         field('失败重试次数', retryInput, '0 ~ 3（间隔 1 / 5 / 15 秒）'),

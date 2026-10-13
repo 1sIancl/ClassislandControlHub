@@ -14,7 +14,7 @@
  *   node sh/ui-smoke.js
  *   SMOKE_BASE=http://127.0.0.1:29800 SMOKE_BROWSER="C:\\...\\msedge.exe" node sh/ui-smoke.js
  *
- * 覆盖的断言（144 项，分组见文件内的 `// n)` 注释）：
+ * 覆盖的断言（147 项，分组见文件内的 `// n)` 注释）：
  *   1) 起点归零：清空账号偏好与本机布局缓存 → 仪表盘回到默认布局
  *   2) 「自定义仪表盘」面板能打开，含「统计卡片 + 页面模块」两组、共 10 项
  *   3) 面板里关掉「最近事件」→ 页面立即不再渲染该模块
@@ -42,6 +42,7 @@
  *  25) 定时提醒的「到时做什么」（#20）：三个动作齐备；选关机给出风险提示且收起内容字段；
  *      选开机提示网络唤醒的前提
  *  26) 通知页有「全屏强调」开关（#22）；改密要求来自服务端策略、账号列表显示密码已用天数（#28）
+ *  27) 390px 手机宽下关键页面不横向溢出、课表栅格已压缩（#45）；插件列表渲染图标/首字母头像
  *
  * 注意：脚本会改动演示账号的界面偏好（跑完停在「最近事件 / 最近心跳」隐藏的状态），
  *       可在「自定义仪表盘 / 列设置」里勾回来。
@@ -2484,6 +2485,59 @@ function check(name, ok, extra = '') {
   await sleep(600);
   const ageShown = await page.evaluate(() => /密码已用 \d+ 天/.test(document.getElementById('content')?.textContent ?? ''));
   check('账号列表显示「密码已用 N 天」（#28：到期提醒不只在登录时弹一次）', ageShown);
+
+  // ── 手机宽度（390px ＝ iPhone 14 的 CSS 宽度）：关键页面不横向溢出（#45）──
+  await page.setViewport({ width: 390, height: 844 });
+  await sleep(800);
+
+  const mobilePages = [
+    ['设备列表', '#/devices'],
+    ['插件管理', '#/plugins'],
+    ['账号与权限', '#/accounts'],
+    ['远程管理', '#/remote'],
+  ];
+  const mobileOverflow = [];
+  for (const [label, hash] of mobilePages) {
+    await page.evaluate((h) => { window.location.hash = h; }, hash);
+    await sleep(2200);
+    const info = await page.evaluate(() => ({
+      docWidth: document.documentElement.scrollWidth,
+      viewWidth: window.innerWidth,
+    }));
+    if (info.docWidth > info.viewWidth + 1) {
+      mobileOverflow.push(`${label}(${info.docWidth}>${info.viewWidth})`);
+    }
+  }
+
+  check('390px 宽下四个关键页面都没有横向溢出（#45）',
+    mobileOverflow.length === 0, mobileOverflow.join(' ') || '全部无溢出');
+
+  // 课表栅格：手机上应当压缩（原来写死 760px，要横滑大半屏才看得到周五之后）。
+  // 不去真开档案编辑器（要现建档案），直接量同一个类的计算样式。
+  const schedMin = await page.evaluate(() => {
+    const probe = document.createElement('div');
+    probe.className = 'sched-grid';
+    document.body.appendChild(probe);
+    const value = parseFloat(getComputedStyle(probe).minWidth) || 0;
+    probe.remove();
+    return value;
+  });
+  check('390px 下课表栅格已压缩（min-width ≤ 500px）', schedMin > 0 && schedMin <= 500, `min-width=${schedMin}px`);
+
+  // 插件市场的图标：要么是 A 端代理的 <img>、要么是首字母头像，**不能是碎图**
+  await page.evaluate(() => { window.location.hash = '#/plugins'; });
+  await sleep(2400);
+  const iconState = await page.evaluate(() => {
+    const nodes = [...document.querySelectorAll('#content .plugin-icon')];
+    return {
+      total: nodes.length,
+      images: nodes.filter((el) => el.tagName === 'IMG' && el.complete && el.naturalWidth > 0).length,
+      letters: nodes.filter((el) => el.classList.contains('plugin-icon-letter')).length,
+    };
+  });
+  check('插件列表渲染出图标或首字母头像（图标经 A 端代理，不直连 GitHub）',
+    iconState.total > 0 && iconState.images + iconState.letters === iconState.total,
+    JSON.stringify(iconState));
 
   await page.setViewport({ width: 1600, height: 1000 });
   await sleep(700);

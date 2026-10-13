@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text.Json;
+using ControlHub.Protocol;
 using ControlHub.Protocol.Dtos;
 using ControlHub.Server.Options;
 using Microsoft.Extensions.Options;
@@ -303,6 +304,7 @@ public sealed class BackupService(
 /// <summary>自动备份后台服务（默认每 7 天一次，参照 ClassIsland）。</summary>
 public sealed class AutoBackupService(
     BackupService backups,
+    WebhookService webhooks,
     IOptions<ServerOptions> options,
     ILogger<AutoBackupService> logger) : BackgroundService
 {
@@ -323,7 +325,16 @@ public sealed class AutoBackupService(
             try
             {
                 await Task.Delay(interval, stoppingToken);
-                backups.CreateBackup("auto", "自动备份");
+                var entry = backups.CreateBackup("auto", "自动备份");
+
+                // 外部通知（#75）：备份是「出事了才发现没做」的典型，做完就报一声最省心。
+                await webhooks.NotifyAsync(WebhookEvents.BackupCompleted, "自动备份完成",
+                    $"已生成自动备份（{entry.SizeBytes / 1024.0 / 1024.0:0.0} MB，文件名含时间戳）。",
+                    new Dictionary<string, object?>
+                    {
+                        ["backupId"] = entry.Id,
+                        ["sizeBytes"] = entry.SizeBytes,
+                    }, stoppingToken);
             }
             catch (OperationCanceledException)
             {

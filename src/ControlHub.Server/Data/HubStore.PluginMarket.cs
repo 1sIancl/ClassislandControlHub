@@ -15,7 +15,7 @@ public sealed partial class HubStore
     /// <summary>索引条目的字段清单。</summary>
     private const string MarketColumns =
         "plugin_id, name, version, api_version, author, description, download_url, download_md5, "
-        + "icon_path, readme_path, repo_url, supported_os, download_count, stars_count, synced_at";
+        + "icon_path, icon_file, readme_path, repo_url, supported_os, download_count, stars_count, synced_at";
 
     /// <summary>包缓存的字段清单。</summary>
     private const string PackageColumns =
@@ -32,6 +32,7 @@ public sealed partial class HubStore
         DownloadUrl = GetString(reader, "download_url"),
         DownloadMd5 = GetString(reader, "download_md5"),
         IconPath = GetString(reader, "icon_path"),
+        IconFile = GetString(reader, "icon_file"),
         ReadmePath = GetString(reader, "readme_path"),
         RepoUrl = GetString(reader, "repo_url"),
         SupportedOs = GetString(reader, "supported_os"),
@@ -71,6 +72,7 @@ public sealed partial class HubStore
                     download_url   TEXT NOT NULL DEFAULT '',
                     download_md5   TEXT NOT NULL DEFAULT '',
                     icon_path      TEXT NOT NULL DEFAULT '',
+                    icon_file      TEXT NOT NULL DEFAULT '',
                     readme_path    TEXT NOT NULL DEFAULT '',
                     repo_url       TEXT NOT NULL DEFAULT '',
                     supported_os   TEXT NOT NULL DEFAULT '[]',
@@ -126,6 +128,8 @@ public sealed partial class HubStore
 
         // 归属列：老库补上（新库这里也走一次，EnsureColumnAsync 幂等）。
         await EnsureColumnAsync(connection, "device_commands", "deployment_id", "TEXT", cancellationToken);
+        // 图标缓存文件名：老库补列（值为空表示这个插件的图标还没缓存到本地）。
+        await EnsureColumnAsync(connection, "plugin_market_index", "icon_file", "TEXT", cancellationToken);
         await using (var index = connection.CreateCommand())
         {
             index.CommandText =
@@ -162,7 +166,7 @@ public sealed partial class HubStore
             insert.CommandText = $"""
                 INSERT INTO plugin_market_index ({MarketColumns})
                 VALUES ($pluginId, $name, $version, $apiVersion, $author, $description, $downloadUrl,
-                        $downloadMd5, $iconPath, $readmePath, $repoUrl, $supportedOs, $downloadCount,
+                        $downloadMd5, $iconPath, $iconFile, $readmePath, $repoUrl, $supportedOs, $downloadCount,
                         $starsCount, $syncedAt);
                 """;
             AddParameters(insert,
@@ -175,6 +179,7 @@ public sealed partial class HubStore
                 ("$downloadUrl", row.DownloadUrl),
                 ("$downloadMd5", row.DownloadMd5),
                 ("$iconPath", row.IconPath),
+                ("$iconFile", row.IconFile),
                 ("$readmePath", row.ReadmePath),
                 ("$repoUrl", row.RepoUrl),
                 ("$supportedOs", row.SupportedOs),
@@ -202,6 +207,33 @@ public sealed partial class HubStore
         }
 
         return rows;
+    }
+
+    /// <summary>
+    /// 批量登记图标缓存文件名（一次同步落一次库，避免逐条写）。
+    /// <para>键 = 插件 ID，值 = 图标文件名；不在表里的条目保持原值不动。</para>
+    /// </summary>
+    public async Task SetMarketIconFilesAsync(IReadOnlyDictionary<string, string> files,
+        CancellationToken cancellationToken = default)
+    {
+        if (files.Count == 0)
+        {
+            return;
+        }
+
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        foreach (var (pluginId, file) in files)
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText = "UPDATE plugin_market_index SET icon_file = $file WHERE plugin_id = $id;";
+            command.Parameters.AddWithValue("$file", file);
+            command.Parameters.AddWithValue("$id", pluginId);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
     }
 
     /// <summary>读取单个索引条目。</summary>
@@ -446,6 +478,12 @@ public sealed class PluginMarketRow
 
     /// <summary>图标路径模板（含 <c>{root}</c>）。</summary>
     public string IconPath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 已缓存到本地的图标**文件名**（空 = 还没缓存，管理端显示首字母头像）。
+    /// <para>存文件名而不是绝对路径：缓存目录随数据目录走，换机器 / 搬迁数据目录后仍能用。</para>
+    /// </summary>
+    public string IconFile { get; set; } = string.Empty;
 
     /// <summary>自述文件路径模板（含 <c>{root}</c>）。</summary>
     public string ReadmePath { get; set; } = string.Empty;

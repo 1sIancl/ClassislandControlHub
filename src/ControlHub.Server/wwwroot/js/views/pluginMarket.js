@@ -10,13 +10,13 @@
  * 每一步都写明「要不要重启」，卸载 / 启停也复用同一套下发与进度。</para>
  */
 
-import { api, hasPermission } from '../core/api.js?v=102';
-import { toastError, errorBlock } from '../core/errors.js?v=102';
-import { hintForCode } from '../core/error-hints.js?v=102';
+import { api, hasPermission } from '../core/api.js?v=103';
+import { toastError, errorBlock } from '../core/errors.js?v=103';
+import { hintForCode } from '../core/error-hints.js?v=103';
 import {
   h, clear, toast, loadingBlock, field, select, confirmDialog, emptyState,
-  formatDateTime, relativeTime,
-} from '../core/ui.js?v=102';
+  formatDateTime, relativeTime, hintIcon,
+} from '../core/ui.js?v=103';
 
 export const meta = {
   title: '插件管理',
@@ -215,12 +215,18 @@ function renderMarketRows(items) {
     )),
     h('tbody', ...items.map((item) => h('tr',
       h('td',
-        h('div', { style: { fontWeight: '600' } }, item.name),
-        h('div', { style: { fontSize: '12px', color: 'var(--text-dim)' } }, item.id),
-        item.description
-          ? h('div', { style: { fontSize: '12px', color: 'var(--text-dim)', marginTop: '2px' } },
-            item.description)
-          : null,
+        // 图标 + 名称 + ID + 简介：图标让列表能一眼扫出「是不是那个插件」，
+        // 简介则说明它到底干什么（索引里的说明往往就一两句话，正是列表最该露出的信息）。
+        h('div.plugin-cell',
+          renderPluginIcon(item),
+          h('div.plugin-cell-body',
+            h('div', { style: { fontWeight: '600' } }, item.name),
+            h('div', { style: { fontSize: '12px', color: 'var(--text-dim)' } }, item.id),
+            item.description
+              ? h('div.plugin-desc', item.description)
+              : null,
+          ),
+        ),
       ),
       h('td', item.version || '—'),
       h('td', item.apiVersion || '—'),
@@ -246,6 +252,29 @@ function renderMarketRows(items) {
       )),
     ))),
   ));
+}
+
+/**
+ * 插件图标（#122 后续）。
+ * <para>A 端已经把索引里的图标代理到本地（`iconLocalUrl`）；拿不到就退化成首字母头像——
+ * 与其留一张碎图，不如给一个稳定的视觉锚点。</para>
+ */
+function renderPluginIcon(item) {
+  const letter = (item.name || item.id || '?').trim().charAt(0).toUpperCase() || '?';
+  const fallback = h('span.plugin-icon.plugin-icon-letter', letter);
+
+  if (!item.iconLocalUrl) {
+    return fallback;
+  }
+
+  const img = h('img.plugin-icon', {
+    src: item.iconLocalUrl,
+    alt: '',
+    loading: 'lazy',
+    // 图标文件被清掉 / 换机器只搬了库时会 404：就地换成头像，不显示碎图。
+    onError: () => img.replaceWith(fallback),
+  });
+  return img;
 }
 
 function renderCacheCell(item) {
@@ -348,7 +377,10 @@ function openDeployDialog(item) {
         )),
 
       field('包含离线设备', includeOffline, '离线设备会把指令排队，等它上线后再执行。'),
-      field('安装后顺带重启', restartAfter, '不勾的话需要你自己挑时间重启教室端，插件才会生效。'),
+      field(h('span', '安装后顺带重启', hintIcon(
+      'ClassIsland 只在**启动时**扫描待安装目录里的 .cipx——不重启，插件就只是「躺在那里」。'
+      + '勾上＝下发完紧跟一条重启指令（会打断正在进行的课，建议排到课间）；'
+      + '不勾＝你自己挑时间批量重启。')), restartAfter),
       field('指定设备', targetList),
     ),
     onConfirm: async () => {
@@ -684,7 +716,10 @@ function renderSettingsCard() {
 
     field('索引地址', indexInput, '含 {time} 占位符会自动替换成时间戳（用于穿透 CDN 缓存）；'
       + '留空不改，填 - 恢复官方默认。'),
-    field('首选镜像', mirrorSelect, '下载 .cipx 时优先使用哪一个镜像根地址（取自索引）。'),
+    field(h('span', '首选镜像', hintIcon(
+      '插件包与图标都从镜像根地址取（索引里给的几个：GitHub 直连、ghproxy、moeyy 等）。'
+      + '选「自动」时按上面的顺序试探，某个镜像返回错误页会自动换下一个——所以坏包不会留在本地。'
+      + '国内校园网通常保持「自动」即可。')), mirrorSelect),
 
     canWrite()
       ? h('div.card-actions',

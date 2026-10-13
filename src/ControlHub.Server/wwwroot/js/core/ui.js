@@ -1,7 +1,7 @@
 /** 轻量 DOM 构建与通用交互组件，无框架依赖。 */
 
 // 只引「错误码 → 怎么办」的纯映射（#51）：本文件是最底层模块，不能反过来依赖 errors.js。
-import { formatErrorText, hasErrorHint } from './error-hints.js?v=102';
+import { formatErrorText, hasErrorHint } from './error-hints.js?v=103';
 
 /**
  * 创建元素。
@@ -557,6 +557,45 @@ export function field(label, control, hint) {
     control,
     hint ? h('span.hint', hint) : null,
   );
+}
+
+/**
+ * 字段标签旁的「?」帮助图标（#50）。
+ *
+ * <para>**为什么不能只靠 `title`**：鼠标悬停看得到，手机上没有悬停——所以点击（或键盘回车）
+ * 也会把同一段说明完整弹出来。用途是「较长的说明」：与其在表单里堆一行灰字，
+ * 不如收起成图标，需要时再看（短说明继续走 `field()` 的第三个参数）。</para>
+ *
+ * <para>用法：<c>field(h('span', '字段名', hintIcon('说明')), 控件)</c>——不必改 `field()` 本身，
+ * 全站 160 多处调用点因此不受影响。</para>
+ */
+export function hintIcon(text) {
+  if (!text) {
+    return null;
+  }
+
+  const open = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    modal({
+      title: '说明',
+      confirmText: '知道了',
+      body: h('div', { style: { lineHeight: '1.75', fontSize: '13px' } }, text),
+    });
+  };
+
+  return h('span.field-help', {
+    role: 'img',
+    'aria-label': `帮助：${text}`,
+    title: text,
+    tabIndex: '0',
+    onClick: open,
+    onKeyDown: (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        open(event);
+      }
+    },
+  }, '?');
 }
 
 /**

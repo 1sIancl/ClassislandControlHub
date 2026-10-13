@@ -40,7 +40,49 @@ public static class PluginMarketEndpoints
         group.MapGet("/plugin-deployments", ListDeploymentsAsync).RequirePermission(PermissionKeys.PluginsRead);
         group.MapGet("/plugin-deployments/{id}", GetDeploymentAsync).RequirePermission(PermissionKeys.PluginsRead);
         group.MapPost("/plugin-deployments", CreateDeploymentAsync).RequirePermission(PermissionKeys.PluginsWrite);
+
+        // 插件图标（#122 后续）：**刻意免鉴权**——<img> 标签带不了 bearer 令牌，而图标本身就是
+        // 公开的官方索引内容（插件 ID 也公开）。免鉴权才能让浏览器按 URL 缓存它们：
+        // 一屏几十个图标，每次都由前端带鉴权 fetch 再转 blob 是没必要的负担。
+        app.MapGet("/api/v1/plugin-icons/{id}", GetIconAsync).AllowAnonymous();
     }
+
+    /// <summary>
+    /// 取一个已缓存到本地的插件图标。
+    /// <para>没缓存（或缓存文件被清掉，例如只搬了数据库换机器）就回 404——管理端据此退化成
+    /// 首字母头像，而不是留一张碎图。</para>
+    /// </summary>
+    private static async Task<IResult> GetIconAsync(string id, HttpContext http, HubStore store,
+        PluginPackageCacheService cache, CancellationToken cancellationToken)
+    {
+        var row = await store.GetMarketItemAsync(id, cancellationToken);
+        if (row is null || row.IconFile.Length == 0)
+        {
+            return Results.NotFound();
+        }
+
+        var path = cache.ResolveIconPath(row.IconFile);
+        if (!File.Exists(path))
+        {
+            return Results.NotFound();
+        }
+
+        // 文件名里带地址哈希 ⇒ URL 变了内容才可能变，可以放心让浏览器长期缓存。
+        http.Response.Headers.CacheControl = "public, max-age=604800";
+        return Results.File(path, IconContentType(row.IconFile));
+    }
+
+    /// <summary>按扩展名给出图标的 MIME 类型。</summary>
+    private static string IconContentType(string fileName) =>
+        Path.GetExtension(fileName).ToLowerInvariant() switch
+        {
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".gif" => "image/gif",
+            ".webp" => "image/webp",
+            ".svg" => "image/svg+xml",
+            ".bmp" => "image/bmp",
+            _ => "image/png",
+        };
 
     // ────────────────────────────── 市场与缓存 ──────────────────────────────
 
@@ -229,7 +271,7 @@ public static class PluginMarketEndpoints
     /// </summary>
     private static async Task<ApiResult<PluginDeployResultDto>> CreateDeploymentAsync(
         PluginDeployRequest request, HttpContext http, HubStore store, SyncService sync,
-        CancellationToken cancellationToken)
+        WebhookService webhooks, CancellationToken cancellationToken)
     {
         var session = http.RequireAdminSession();
         var pluginId = (request.PluginId ?? string.Empty).Trim();
@@ -348,6 +390,22 @@ public static class PluginMarketEndpoints
             + (request.RestartAfter && action == PluginDeployActions.Install ? "（含重启）" : string.Empty)
             + (skips.Count > 0 ? $"，跳过 {skips.Count} 台。" : "。"),
             http.GetClientIpAddress(), cancellationToken);
+
+        // 外部通知（#75）：插件下发是「改了教室机上跑什么代码」的动作，订阅方要能看见。
+        // 这里报的是**已发出**（逐台安装结果要等教室端回报，管理端在进度面板里看）。
+        await webhooks.NotifyAsync(WebhookEvents.PluginDeployed,
+            $"插件已下发：{deployment.PluginName ?? pluginId}",
+            $"「{deployment.PluginName ?? pluginId}」{version} 已下发到 {final.Count} 台设备"
+            + (skips.Count > 0 ? $"，跳过 {skips.Count} 台" : string.Empty) + "。",
+            new Dictionary<string, object?>
+            {
+                ["pluginId"] = pluginId,
+                ["pluginName"] = deployment.PluginName ?? pluginId,
+                ["version"] = version,
+                ["action"] = action,
+                ["affected"] = final.Count,
+                ["skipped"] = skips.Count,
+            }, cancellationToken);
 
         return ApiResult<PluginDeployResultDto>.Success(result);
     }
@@ -502,6 +560,11 @@ public static class PluginMarketEndpoints
                 DownloadUrl = PluginMirrorResolver.Expand(row.DownloadUrl, root),
                 DownloadMd5 = row.DownloadMd5,
                 IconUrl = PluginMirrorResolver.Expand(row.IconPath, root),
+                // 界面用的图标地址（A 端代理，避免浏览器直连 GitHub）；空 = 还没缓存到本地，
+                // 前端显示首字母头像。
+                IconLocalUrl = row.IconFile.Length > 0
+                    ? "/api/v1/plugin-icons/" + Uri.EscapeDataString(row.PluginId)
+                    : string.Empty,
                 ReadmeUrl = PluginMirrorResolver.Expand(row.ReadmePath, root),
                 RepositoryUrl = row.RepoUrl,
                 SupportedOSPlatforms = HubJson.DeserializeOrDefault(row.SupportedOs, new List<string>()),

@@ -23,6 +23,7 @@ namespace ControlHub.Server.Services;
 public sealed class SyncRetryService(
     HubStore store,
     SyncService sync,
+    WebhookService webhooks,
     IOptions<ServerOptions> options,
     ILogger<SyncRetryService> logger) : BackgroundService
 {
@@ -132,6 +133,19 @@ public sealed class SyncRetryService(
             await store.AddAuditAsync("系统", "device.sync.retry", device.Name,
                 $"配置下发失败自动重推（第 {attempt.Count}/{maxAttempts} 次，影响 {result.Affected} 台）。",
                 null, cancellationToken);
+
+            // 外部通知（#75）：自动重试是「系统自己动过手」，订阅方要能看见——
+            // 标题带设备名，避免多台设备同时重试时被同标题抑制窗口合并成一条。
+            await webhooks.NotifyAsync(WebhookEvents.SyncRetry,
+                $"配置下发自动重试：{device.Name}",
+                $"「{device.Name}」上次应用配置失败，已自动重推（第 {attempt.Count}/{maxAttempts} 次）。",
+                new Dictionary<string, object?>
+                {
+                    ["deviceId"] = device.Id,
+                    ["deviceName"] = device.Name,
+                    ["attempts"] = attempt.Count,
+                    ["maxAttempts"] = maxAttempts,
+                }, cancellationToken);
 
             logger.LogInformation("设备「{Name}」上次应用配置失败，已自动重推（第 {Count}/{Max} 次）。",
                 device.Name, attempt.Count, maxAttempts);

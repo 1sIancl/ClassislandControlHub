@@ -40,6 +40,36 @@ public sealed class PluginPackageCacheService
     }
 
     /// <summary>
+    /// 插件图标的缓存目录（#122 后续）。
+    /// <para>图标同样是「A 端取一次、其余人都从 A 端拿」：索引里的图标地址指向 GitHub，
+    /// 管理端浏览器在国内学校网络里直连经常加载不出来，整张市场列表会变成一排碎图。</para>
+    /// </summary>
+    public string IconDirectory
+    {
+        get
+        {
+            var dataDir = Path.GetDirectoryName(_store.DatabasePath);
+            return Path.Combine(string.IsNullOrEmpty(dataDir) ? "." : dataDir, "plugin-icons");
+        }
+    }
+
+    /// <summary>
+    /// 把图标文件名解析成绝对路径，并**限定在图标目录之内**（与 <see cref="ResolvePath"/> 同理：
+    /// 文件名来自数据库，万一被改过也不能变成任意文件读取）。
+    /// </summary>
+    public string ResolveIconPath(string fileName)
+    {
+        var full = Path.GetFullPath(Path.Combine(IconDirectory, Path.GetFileName(fileName)));
+        var root = Path.GetFullPath(IconDirectory);
+        if (!full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            throw HubException.Validation("图标文件名不合法。");
+        }
+
+        return full;
+    }
+
+    /// <summary>
     /// 下载并缓存某个版本（<paramref name="version"/> 为空 = 索引里的最新版）。
     /// <para>镜像按「首选 → 其余」依次尝试；每一个都要过 MD5 与包内 manifest 校验，
     /// 因此某个镜像返回了错误页 / 半截文件时会自动换下一个，而不是把坏包留在缓存里。</para>

@@ -3,12 +3,13 @@
  * 数据来自 A 端 /admin/devices、/admin/backups 等接口。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=102';
-import { toastError } from '../core/errors.js?v=102';
-import { hintForCode } from '../core/error-hints.js?v=102';
+import { api, fetchBlob } from '../core/api.js?v=103';
+import { toastError } from '../core/errors.js?v=103';
+import { hintForCode } from '../core/error-hints.js?v=103';
 import {
   h, clear, toast, loadingBlock, confirmDialog, field, select, emptyState, formatDateTime, modal,
-} from '../core/ui.js?v=102';
+  hintIcon,
+} from '../core/ui.js?v=103';
 
 export const meta = {
   title: '远程管理',
@@ -903,7 +904,10 @@ function renderNotify(container) {
     field('内容', msgInput),
     h('label.checkbox-field', speakChk, h('span', '语音播报提醒内容')),
     h('label.checkbox-field', emphasizeChk,
-      h('span', '全屏强调（关掉则只出角落滚动条，不打断课堂）')),
+      h('span', '全屏强调',
+        hintIcon('全屏强调＝教室大屏整屏遮挡 + 提示音，适合紧急通知（临时调课、停电通知）；'
+          + '取消勾选＝只出角落滚动条，内容照样看得到但不挡讲台——「明天记得带实验报告」这类用它更合适。'
+          + '教室端关掉了提醒总开关时，两种都不会显示。'))),
     offline.el,
     h('div', { style: { marginTop: '12px' } }, sendBtn),
   );

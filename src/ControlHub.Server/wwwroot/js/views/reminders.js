@@ -3,11 +3,11 @@
  * 提醒按账号隔离：这里只会看到、也只能改到自己创建的提醒；到点由服务端调度器推送到教室大屏。
  */
 
-import { api } from '../core/api.js?v=102';
+import { api } from '../core/api.js?v=103';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, select,
-  emptyState, formatDateTime, relativeTime,
-} from '../core/ui.js?v=102';
+  emptyState, formatDateTime, relativeTime, hintIcon,
+} from '../core/ui.js?v=103';
 
 export const meta = {
   title: '定时提醒',
@@ -468,7 +468,9 @@ function openEditor(container, reminder) {
     title: isEdit ? `编辑提醒 · ${reminder.title}` : '新建定时提醒',
     width: 'wide',
     body: h('div',
-      field('到时做什么', actionSelect, '排程与动作是两件事：同一条提醒可以发通知，也可以在到点关掉 / 唤醒教室机。'),
+      field(h('span', '到时做什么', hintIcon(
+      '排程（什么时候）与动作（做什么）是两件事：同一条提醒可以只发通知，也可以在到点关机 / 唤醒教室机。'
+      + '关机走系统电源；唤醒走网卡魔术包，需要那台教室机在 BIOS / 网卡里开了网络唤醒。')), actionSelect),
       actionHint,
       field('标题', titleInput, '教室大屏上会以醒目方式显示标题；关机 / 开机类提醒留空会自动填「定时关机 / 定时开机」。'),
       contentField,

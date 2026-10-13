@@ -670,6 +670,82 @@ table.data td.actions {
   font-family: var(--mono);
 }
 
+/* 表格行内的操作按钮组（#45）：此前**没有任何样式**——按钮会一个贴一个排在一起，
+   窄屏尤其难按（看上去像一个长条）。这里给统一间距与右对齐。 */
+.row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* 插件市场的「图标 + 名称 + 简介」单元格（#122 后续）。
+   图标由 A 端代理提供（浏览器不直连 GitHub），取不到时退化成首字母头像。 */
+/* 字段旁的「?」帮助图标（#50）：悬停给 title，点击/回车弹出完整说明（手机上也能看）。 */
+.field-help {
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  margin-left: 4px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: help;
+  user-select: none;
+  vertical-align: middle;
+}
+
+.field-help:hover,
+.field-help:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
+  outline: none;
+}
+
+.plugin-cell {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 220px;
+}
+
+.plugin-icon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: 9px;
+  object-fit: cover;
+  background: var(--bg-panel);
+}
+
+.plugin-icon-letter {
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+
+.plugin-cell-body {
+  min-width: 0;
+}
+
+.plugin-desc {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-dim);
+  /* 简介最多两行：列表要能扫，不能一条占掉半屏（完整说明在仓库 / 自述文件里）。 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 /* ────────────────────────── 徽标 ────────────────────────── */
 .badge {
   display: inline-flex;
@@ -3336,6 +3412,40 @@ input.pcell-name:focus {
   .form-row {
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
+  }
+
+  /* 课表编辑栅格（#45）：手机上横滑躲不掉（一周 7 列塞不进 390px），但可以把滚动距离压短——
+     原来写死 760px 宽、列宽 88px，手机上要横滑大半屏才看得到周五之后。
+     注意 `body.sched-compact`（紧凑档，默认就开着）那条的优先级更高，必须一起覆盖，
+     否则手机上量到的还是紧凑档的 620px。 */
+  .sched-grid,
+  body.sched-compact .sched-grid {
+    grid-template-columns: 64px repeat(7, minmax(58px, 1fr));
+    gap: 4px;
+    min-width: 460px;
+  }
+
+  /* 楼栋视图（#45）：`.board-stack` 是 grid，格子里放的是 `.bblock`。
+     grid 子项默认 `min-width: auto`＝「不能比自己内容的 min-content 更窄」，
+     于是「标题 + 芯片 + 右侧三个按钮」一挤就把整页顶出屏幕（实测 390px 视口下文档宽 418）。
+     放开最小宽度 + 允许头部换行即可。 */
+  .bblock {
+    min-width: 0;
+  }
+  .bblock-head,
+  .gcard-actions {
+    flex-wrap: wrap;
+  }
+
+  /* 批量操作条（#45）：窄屏上从「居中小胶囊」改成整行铺开——390px 宽的居中胶囊里
+     按钮会挤成一团，换行后还容易压住表格最后一行。 */
+  .bulk-bar {
+    left: var(--space-2);
+    right: var(--space-2);
+    bottom: var(--space-2);
+    max-width: none;
+    transform: none;
+    justify-content: flex-start;
   }
 
   /* 卡片头与操作按钮允许换行 */
