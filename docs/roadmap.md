@@ -178,7 +178,7 @@
 | 118 | 标准协议支持 | ⬜ |
 | 119 | ClassIsland 2.2 适配 | 🔨（**技术栈同源**：编译所依赖的 ClassIsland 2.1.1.1 与 PluginSdk 2.1.1.1 就是 2.2 同期的 Avalonia 12 / .NET 10 技术栈，预期可直接使用；剩余工作 = 在 2.2 预览版上实测。`manifest.yml` 的 `apiVersion` 自 1.3.8 起已与编译所用的 PluginSdk 对齐为 `2.1.1.1`） |
 | 120 | B 端跨平台（Linux / macOS 教室端） | ⬜ |
-| 121 | 插件市场代理缓存与批量下发（「模式 A」） | ✅ | 1.3.10.0（未发布）：A 端同步 ClassIsland 官方插件索引（`index.zip` → `index.v2.json`，含镜像表）并把 `.cipx` 缓存到本地（`data/plugin-cache/`），**教室端只从 A 端下载**（下发的是相对路径 + 设备令牌），因此教室机不需要外网。两条完整性校验：A 端核对索引给的 MD5 并记录 SHA256，教室端核对 SHA256（不一致回 `COMMAND_INTEGRITY_FAILED`，提示重新缓存）；两端都读包内 `manifest.yml` 核对 id / 版本 / `apiVersion` / 支持平台。镜像可回退（索引里的 `DownloadMirrors`，代理镜像优先于 GitHub 直连）；下发前在 A 端预校验（宿主版本过低 / 平台不符 / 已装同版本）并写明跳过原因。权限模块 `plugins.read` / `plugins.write`（新账号默认不勾）+ 四个审计动作。**安装落点是宿主待安装目录，重启 ClassIsland 才生效**（宿主没有「装这个文件」的公开 API），可选顺带下发 `restart`。验证：验证台 103 项、端到端 29 项（自带夹具、不依赖外网）、单元测试 62 项、界面冒烟 138 项 |
+| 121 | 插件市场代理缓存与批量下发（「模式 A」） | ✅ | 自 1.4.0.0 起：A 端同步 ClassIsland 官方插件索引（`index.zip` → `index.v2.json`，含镜像表）并把 `.cipx` 缓存到本地（`data/plugin-cache/`），**教室端只从 A 端下载**（下发的是相对路径 + 设备令牌），因此教室机不需要外网。两条完整性校验：A 端核对索引给的 MD5 并记录 SHA256，教室端核对 SHA256（不一致回 `COMMAND_INTEGRITY_FAILED`，提示重新缓存）；两端都读包内 `manifest.yml` 核对 id / 版本 / `apiVersion` / 支持平台。镜像可回退（索引里的 `DownloadMirrors`，代理镜像优先于 GitHub 直连）；下发前在 A 端预校验（宿主版本过低 / 平台不符 / 已装同版本）并写明跳过原因。权限模块 `plugins.read` / `plugins.write`（新账号默认不勾）+ 四个审计动作。**安装落点是宿主待安装目录，重启 ClassIsland 才生效**（宿主没有「装这个文件」的公开 API），可选顺带下发 `restart`。验证：验证台 103 项、端到端 29 项（自带夹具、不依赖外网）、单元测试 62 项、界面冒烟 138 项 |
 
 ---
 

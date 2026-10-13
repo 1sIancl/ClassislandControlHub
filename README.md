@@ -159,7 +159,7 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 
 ## 最近更新
 
-- **`1.3.10.0`**（A 端 `1.3.10` / 插件 `1.3.10.0`，**尚未发版**）：
+- **发布 `1.4.0.0`**（A 端 `1.4.0` / 插件 `1.4.0.0`）：
   - **A 端代理缓存插件市场，批量装到教室端**（「插件管理」页，在「设备」分组下）：
     A 端同步 ClassIsland 官方插件索引并把 `.cipx` 缓存到本地，教室端安装时**只从 A 端下载**
     ——教室机没有外网也能装插件。支持批量安装 / 卸载 / 启停、逐台进度、按设备与按插件的已装清单，
@@ -343,8 +343,8 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 
 | 集控版本 | 插件包 | 支持的 ClassIsland | 插件市场 | 状态 |
 |---|---|---|---|---|
-| A 端 `1.3.10` / 插件 `1.3.10.0` | `ControlHub.Plugin.cipx` `1.3.10.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | 🕓 未发布 | 🕓 **尚未发布**（插件市场代理缓存 / 批量装插件 / 完整性校验） |
-| A 端 `1.3.9` / 插件 `1.3.9.0` | `ControlHub.Plugin.cipx` `1.3.9.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ✅ **当前已发布版本**（远程指令错误码 / 教室端音量与亮度 / 远程唤醒 / 清掉既有构建警告） |
+| A 端 `1.4.0` / 插件 `1.4.0.0` | `ControlHub.Plugin.cipx` `1.4.0.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ✅ **当前已发布版本**（插件市场代理缓存 / 批量装插件 / 完整性校验） |
+| A 端 `1.3.9` / 插件 `1.3.9.0` | `ControlHub.Plugin.cipx` `1.3.9.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（远程指令错误码 / 教室端音量与亮度 / 远程唤醒 / 清掉既有构建警告） |
 | A 端 `1.3.8` / 插件 `1.3.8.0` | `ControlHub.Plugin.cipx` `1.3.8.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（快捷换课 / 品牌图片上传 / 登录页预览） |
 | A 端 `1.3.7` / 插件 `1.3.7.0` | `ControlHub.Plugin.cipx` `1.3.7.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（两级导航 / 设置拆页 / 多选快捷键） |
 | A 端 `1.3.6` / 插件 `1.3.6.0` | `ControlHub.Plugin.cipx` `1.3.6.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（导航仍是单层侧栏、品牌图片外链不显示） |
