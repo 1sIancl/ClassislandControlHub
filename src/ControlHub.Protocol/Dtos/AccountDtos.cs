@@ -15,6 +15,12 @@ public sealed class AccountDto
     /// <summary>角色：<c>admin</c>（超级管理员，全部权限）/ <c>custom</c>（按权限勾选）。</summary>
     public string Role { get; set; } = PermissionKeys.CustomRole;
 
+    /// <summary>
+    /// 密码最后修改时间（#28）；为空表示老库升级上来的账号（以创建时间兜底）。
+    /// <para>管理端据此显示「上次改密多久了」，到期提醒不用只靠登录时那一次 toast。</para>
+    /// </summary>
+    public DateTimeOffset? PasswordChangedAt { get; set; }
+
     /// <summary>已授予的权限键集合。超级管理员此项为空但实际拥有全部权限。</summary>
     public List<string> Permissions { get; set; } = [];
 

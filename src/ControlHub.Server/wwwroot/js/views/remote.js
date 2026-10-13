@@ -3,12 +3,12 @@
  * 数据来自 A 端 /admin/devices、/admin/backups 等接口。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=101';
-import { toastError } from '../core/errors.js?v=101';
-import { hintForCode } from '../core/error-hints.js?v=101';
+import { api, fetchBlob } from '../core/api.js?v=102';
+import { toastError } from '../core/errors.js?v=102';
+import { hintForCode } from '../core/error-hints.js?v=102';
 import {
   h, clear, toast, loadingBlock, confirmDialog, field, select, emptyState, formatDateTime, modal,
-} from '../core/ui.js?v=101';
+} from '../core/ui.js?v=102';
 
 export const meta = {
   title: '远程管理',
@@ -731,6 +731,10 @@ function renderNotify(container) {
   const titleInput = h('input', { type: 'text', placeholder: '例如：紧急通知' });
   const msgInput = h('textarea', { placeholder: '提醒内容…', style: { minHeight: '90px' } });
   const speakChk = h('input', { type: 'checkbox' });
+  // #22：默认「全屏强调」——与这个勾选框出现之前的行为一致（以前一律全屏）。
+  // 取消勾选则是「温和通知」：只出角落滚动条，不挡讲台。
+  const emphasizeChk = h('input', { type: 'checkbox' });
+  emphasizeChk.checked = true;
   const offline = offlineOption();
 
   // 多选目标：选「多选设备…」后弹窗勾选，确定后显示已选台数
@@ -855,7 +859,9 @@ function renderNotify(container) {
       const message = msgInput.value.trim();
       if (!title && !message) { toast('warn', '请填写提醒内容'); return; }
 
-      const payload = JSON.stringify({ title, message, speak: speakChk.checked });
+      const payload = JSON.stringify({
+        title, message, speak: speakChk.checked, emphasize: emphasizeChk.checked,
+      });
       try {
         if (targetSelect.value === '__pick__') {
           if (picked.length === 0) { toast('warn', '请先选择目标设备'); return; }
@@ -873,9 +879,10 @@ function renderNotify(container) {
         } else {
           await api(`/admin/devices/${targetSelect.value}/notify`, {
             method: 'POST',
-            body: { title, message, speak: speakChk.checked },
-          });
-          toast('ok', '已发送', `提醒已下发${speakChk.checked ? '，并会语音播报' : ''}。`);
+            body: { title, message, speak: speakChk.checked, emphasize: emphasizeChk.checked },
+            });
+            toast('ok', '已发送',
+            `提醒已下发${emphasizeChk.checked ? '（全屏强调）' : '（角落提示，不挡讲台）'}${speakChk.checked ? '，并会语音播报' : ''}。`);
         }
       } catch (e) {
         toastError(e, '发送失败');
@@ -895,6 +902,8 @@ function renderNotify(container) {
     field('标题', titleInput),
     field('内容', msgInput),
     h('label.checkbox-field', speakChk, h('span', '语音播报提醒内容')),
+    h('label.checkbox-field', emphasizeChk,
+      h('span', '全屏强调（关掉则只出角落滚动条，不打断课堂）')),
     offline.el,
     h('div', { style: { marginTop: '12px' } }, sendBtn),
   );

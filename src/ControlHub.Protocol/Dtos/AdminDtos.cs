@@ -76,6 +76,24 @@ public sealed class ChangePasswordRequest
 }
 
 /// <summary>
+/// 密码策略（#28）：前端据此显示要求与到期提示，避免把「至少 8 位」写死在前端。
+/// </summary>
+public sealed class PasswordPolicyDto
+{
+    /// <summary>最小长度；0 表示不限制。</summary>
+    public int MinLength { get; set; }
+
+    /// <summary>是否要求同时包含字母与数字。</summary>
+    public bool RequireMixedChars { get; set; }
+
+    /// <summary>密码有效期天数；0 表示不提醒。</summary>
+    public int ExpiryDays { get; set; }
+
+    /// <summary>到期前多少天开始提醒。</summary>
+    public int ExpiryWarnDays { get; set; }
+}
+
+/// <summary>
 /// 服务器基础信息，供 Web 端与客户端展示。
 /// </summary>
 public sealed class ServerInfoDto

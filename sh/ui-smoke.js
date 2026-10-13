@@ -14,7 +14,7 @@
  *   node sh/ui-smoke.js
  *   SMOKE_BASE=http://127.0.0.1:29800 SMOKE_BROWSER="C:\\...\\msedge.exe" node sh/ui-smoke.js
  *
- * 覆盖的断言（141 项，分组见文件内的 `// n)` 注释）：
+ * 覆盖的断言（144 项，分组见文件内的 `// n)` 注释）：
  *   1) 起点归零：清空账号偏好与本机布局缓存 → 仪表盘回到默认布局
  *   2) 「自定义仪表盘」面板能打开，含「统计卡片 + 页面模块」两组、共 10 项
  *   3) 面板里关掉「最近事件」→ 页面立即不再渲染该模块
@@ -41,6 +41,7 @@
  *  24) 插件管理页（#121）：页面能打开、四个标签齐全、市场卡片渲染、市场设置能真的存进去
  *  25) 定时提醒的「到时做什么」（#20）：三个动作齐备；选关机给出风险提示且收起内容字段；
  *      选开机提示网络唤醒的前提
+ *  26) 通知页有「全屏强调」开关（#22）；改密要求来自服务端策略、账号列表显示密码已用天数（#28）
  *
  * 注意：脚本会改动演示账号的界面偏好（跑完停在「最近事件 / 最近心跳」隐藏的状态），
  *       可在「自定义仪表盘 / 列设置」里勾回来。
@@ -2425,6 +2426,64 @@ function check(name, ok, extra = '') {
 
   await page.keyboard.press('Escape');
   await sleep(500);
+
+  // ── 通知的「全屏强调」（#22）：关掉它就是温和通知，不打断课堂 ──
+  await page.goto(`${BASE}/#/dashboard`, { waitUntil: 'networkidle2' });
+  await page.goto(`${BASE}/#/remote`, { waitUntil: 'networkidle2' });
+  await page.reload({ waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => document.getElementById('pageTitle')?.textContent?.trim() === '远程管理',
+    { timeout: 20000 }).catch(() => {});
+  await sleep(1500);
+
+  const contentText = () => page.evaluate(() => document.getElementById('content')?.textContent ?? '');
+  let notifyText = await contentText();
+  if (!notifyText.includes('全屏强调')) {
+    // 通知表单可能在某个标签页里：逐个点过去找（这样以后调整标签顺序也不用改这里）。
+    const tabs = await page.evaluate(() => [...document.querySelectorAll('#content .tabs .tab')]
+      .map((b) => b.textContent.trim()));
+    for (const label of tabs) {
+      await page.evaluate((text) => {
+        [...document.querySelectorAll('#content .tabs .tab')]
+          .find((b) => b.textContent.trim() === text)?.click();
+      }, label);
+      await sleep(600);
+      notifyText = await contentText();
+      if (notifyText.includes('全屏强调')) {
+        break;
+      }
+    }
+  }
+
+  check('通知表单里有「全屏强调」开关（#22：关掉则只出角落滚动条）',
+    notifyText.includes('全屏强调'), `标签=${notifyText.includes('全屏强调') ? '命中' : '未命中'}`);
+
+  // ── 密码策略（#28）：改密提示跟着服务端策略，列表显示密码已用天数 ──
+  await page.goto(`${BASE}/#/dashboard`, { waitUntil: 'networkidle2' });
+  await page.goto(`${BASE}/#/accounts`, { waitUntil: 'networkidle2' });
+  await page.reload({ waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => document.getElementById('pageTitle')?.textContent?.trim() === '账号与权限',
+    { timeout: 20000 }).catch(() => {});
+  await sleep(1800);
+
+  const policyHint = await page.evaluate(async () => {
+    const button = [...document.querySelectorAll('#content button')]
+      .find((b) => b.textContent.trim() === '修改密码');
+    button?.click();
+    await new Promise((r) => setTimeout(r, 800));
+    const host = document.getElementById('modalHost');
+    const text = host?.textContent ?? '';
+    const dialogOpen = host?.hidden === false;
+    // 关掉弹窗，别影响后面的断言。
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    return { clicked: !!button, dialogOpen, hint: /至少 \d+ 位/.test(text), mixed: /字母与数字/.test(text) };
+  });
+  check('改密码弹窗的要求来自服务端策略（#28，而不是前端写死）',
+    policyHint.clicked && policyHint.dialogOpen && policyHint.hint && policyHint.mixed,
+    JSON.stringify(policyHint));
+
+  await sleep(600);
+  const ageShown = await page.evaluate(() => /密码已用 \d+ 天/.test(document.getElementById('content')?.textContent ?? ''));
+  check('账号列表显示「密码已用 N 天」（#28：到期提醒不只在登录时弹一次）', ageShown);
 
   await page.setViewport({ width: 1600, height: 1000 });
   await sleep(700);

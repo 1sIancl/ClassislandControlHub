@@ -2,7 +2,9 @@ using ControlHub.Protocol;
 using ControlHub.Protocol.Dtos;
 using ControlHub.Server.Data;
 using ControlHub.Server.Http;
+using ControlHub.Server.Options;
 using ControlHub.Server.Services;
+using Microsoft.Extensions.Options;
 
 namespace ControlHub.Server.Endpoints;
 
@@ -65,6 +67,7 @@ public static class RegistrationEndpoints
         RegisterRequestSubmit request,
         HttpContext http,
         HubStore store,
+        IOptions<ServerOptions> options,
         CancellationToken cancellationToken)
     {
         if (!await IsApprovalEnabledAsync(store, cancellationToken))
@@ -74,7 +77,8 @@ public static class RegistrationEndpoints
 
         var username = AdminEndpoints.NormalizeUsername(request.Username);
         var password = request.Password ?? string.Empty;
-        var strengthError = PasswordHasher.ValidateStrength(password);
+        var strengthError = PasswordHasher.ValidateStrength(password,
+            options.Value.PasswordMinLength, options.Value.PasswordRequireMixedChars);
         if (!string.IsNullOrEmpty(strengthError))
         {
             throw HubException.Validation(strengthError);

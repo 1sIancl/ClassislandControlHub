@@ -72,6 +72,13 @@ const VERB_LABELS = {
   'market.sync': '同步市场索引',
   'market.settings': '修改市场设置',
   'inventory.refresh': '刷新已装清单',
+  // 配置同步（#17 / #79）。这些码一直存在（`device.sync.success` 等），但此前没登记，
+  // 审计页显示的是「设备 · sync.success」这种半英文。
+  'sync.pull': '拉取配置',
+  'sync.success': '应用配置',
+  'sync.partial': '应用配置（部分成功）',
+  'sync.failed': '应用配置失败',
+  'sync.retry': '自动重推配置',
 };
 
 /**

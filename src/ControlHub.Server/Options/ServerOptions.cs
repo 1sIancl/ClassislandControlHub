@@ -178,6 +178,37 @@ public sealed class ServerOptions
     public int PasswordExpiryWarnDays { get; set; } = 14;
 
     /// <summary>
+    /// 配置下发失败自动重试（#17），默认开启。
+    /// <para>教室端回报失败后由服务端定向重推——多数失败是一时性的（目录被占用、磁盘临时不可写），
+    /// 让管理员自己去发现再手点一次并不划算。重试策略见下面三项。</para>
+    /// </summary>
+    public bool SyncRetryEnabled { get; set; } = true;
+
+    /// <summary>失败重试的扫描间隔（秒），默认 60。</summary>
+    public int SyncRetryIntervalSeconds { get; set; } = 60;
+
+    /// <summary>同一台设备的两次重试之间至少间隔多少分钟（默认 5，防止重推风暴）。</summary>
+    public int SyncRetryCooldownMinutes { get; set; } = 5;
+
+    /// <summary>同一台设备最多自动重试几次（默认 3），超过后交给人工处理。</summary>
+    public int SyncRetryMaxAttempts { get; set; } = 3;
+
+    /// <summary>
+    /// 密码最小长度（#28）。默认 8。
+    /// <para>与上面两项「只提醒不拦截」不同，这是**硬校验**：建号 / 改密 / 重置 / 自助注册四条入口
+    /// 共用同一套规则——否则会出现「管理员建的号比自助注册的号还弱」这种说不通的事。
+    /// 设为 0 表示不限制长度（不建议，留作特殊场景的逃生口）。</para>
+    /// </summary>
+    public int PasswordMinLength { get; set; } = 8;
+
+    /// <summary>
+    /// 是否要求密码同时包含字母与数字（#28，默认要求）。
+    /// <para>只做这两类字符的要求：更复杂的规则（大小写 / 符号 / 不得重复）在实际使用中
+    /// 只会把人逼去写 <c>Password1</c> 这类口令，收益是负的。</para>
+    /// </summary>
+    public bool PasswordRequireMixedChars { get; set; } = true;
+
+    /// <summary>
     /// 静态敏感数据加密的密钥文件路径（#36，见 <c>docs/adr/0005</c>）。
     /// <para>留空 = 数据目录下的 <c>secrets.key</c>。建议指到数据库目录之外（例如宿主机受控目录），
     /// 并**确保它不会被一起打包进外发的备份**——否则加密就失去意义。</para>

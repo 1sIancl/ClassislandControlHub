@@ -421,8 +421,14 @@ public sealed class NotifyRequestDto
     /// <summary>是否语音播报。</summary>
     public bool Speak { get; set; }
 
-    /// <summary>是否播放强调特效（全屏）。</summary>
-    public bool Emphasize { get; set; }
+    /// <summary>
+    /// 是否**强调展示**（#22）：全屏遮罩 + 提示音。
+    /// <para>默认 <c>true</c> 是为了保持既有行为——这个字段以前是空摆设，教室端一律全屏。
+    /// 显式给 <c>false</c> 才是「温和通知」：只出角落滚动条（语音仍按 <see cref="Speak"/>），
+    /// 适合「明天记得带实验报告」这类不必打断课堂的内容。</para>
+    /// <para>教室端仍会尊重宿主的总开关：关掉提醒就什么都不显示。</para>
+    /// </summary>
+    public bool Emphasize { get; set; } = true;
 
     /// <summary>显示时长（秒），0 表示使用默认。</summary>
     public int DurationSeconds { get; set; }

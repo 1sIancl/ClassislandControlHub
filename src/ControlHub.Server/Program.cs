@@ -167,6 +167,8 @@ builder.Services.AddHttpClient("webhook");
 builder.Services.AddSingleton<WebhookService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<WebhookService>());
 builder.Services.AddHostedService<DeviceWatchService>();
+// 配置下发失败自动重试（#17）：只重推「回报过失败且在线」的设备，有冷却与次数上限。
+builder.Services.AddHostedService<SyncRetryService>();
 // 在线率采样（#63）：last_seen_at 是瞬时值，不做采样就没有「上周在线率」这种数据。
 builder.Services.AddHostedService<StatsService>();
 // ServerTimeService 同时是「可被端点注入的单例」与「后台授时服务」，用工厂引用同一实例。

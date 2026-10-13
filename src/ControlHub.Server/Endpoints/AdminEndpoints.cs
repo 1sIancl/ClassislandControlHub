@@ -63,6 +63,8 @@ public static class AdminEndpoints
         authed.MapGet("/audit/export", AuditExportAsync).RequirePermission(PermissionKeys.AuditRead);
 
         // ── 账号与权限 ──
+        // 密码策略（#28）：任何登录账号都读得到——改自己的密码要用它。
+        authed.MapGet("/password-policy", PasswordPolicyAsync).RequirePermission(PermissionKeys.Authenticated);
         authed.MapGet("/permissions", PermissionsAsync).RequirePermission(PermissionKeys.AccountsRead);
         authed.MapGet("/permission-presets", PermissionPresetsAsync).RequirePermission(PermissionKeys.AccountsRead);
         authed.MapGet("/accounts", AccountsAsync).RequirePermission(PermissionKeys.AccountsRead);
@@ -932,6 +934,7 @@ public static class AdminEndpoints
             ? PermissionKeys.Grantable
             : PermissionKeys.Normalize(user.Permissions),
         MustChangePassword = user.MustChangePassword,
+        PasswordChangedAt = user.PasswordChangedAt,
         CreatedAt = user.CreatedAt,
     };
 
@@ -1011,14 +1014,34 @@ public static class AdminEndpoints
         return value;
     }
 
-    /// <summary>校验密码强度，不通过时抛出可读的业务异常。</summary>
-    private static void EnsurePasswordStrength(string password)
+    /// <summary>校验密码强度，不通过时抛出可读的业务异常（规则来自配置，#28）。</summary>
+    private static void EnsurePasswordStrength(string password, ServerOptions options)
     {
-        var error = PasswordHasher.ValidateStrength(password);
+        var error = PasswordHasher.ValidateStrength(password,
+            options.PasswordMinLength, options.PasswordRequireMixedChars);
         if (!string.IsNullOrEmpty(error))
         {
             throw HubException.Validation(error);
         }
+    }
+
+    /// <summary>
+    /// 密码策略（#28）：改密弹窗与建号表单据此显示要求，不必把「至少 8 位」这类文案写死在前端
+    /// （写死的话，改了配置前端还在说旧规则）。
+    /// </summary>
+    private static ApiResult<PasswordPolicyDto> PasswordPolicyAsync(HttpContext http,
+        IOptions<ServerOptions> options)
+    {
+        // 只要是登录账号就得能读到：每个人都要改自己的密码。
+        http.RequireAdminSession();
+        var value = options.Value;
+        return ApiResult<PasswordPolicyDto>.Success(new PasswordPolicyDto
+        {
+            MinLength = Math.Max(0, value.PasswordMinLength),
+            RequireMixedChars = value.PasswordRequireMixedChars,
+            ExpiryDays = Math.Max(0, value.PasswordExpiryDays),
+            ExpiryWarnDays = Math.Max(0, value.PasswordExpiryWarnDays),
+        });
     }
 
     /// <summary>权限目录：账号界面据此渲染「查看 / 修改」勾选表。</summary>
@@ -1040,6 +1063,7 @@ public static class AdminEndpoints
         AccountUpsertRequest request,
         HttpContext http,
         HubStore store,
+        IOptions<ServerOptions> options,
         CancellationToken cancellationToken)
     {
         var session = http.RequireAdminSession();
@@ -1058,7 +1082,7 @@ public static class AdminEndpoints
 
         var generated = string.IsNullOrWhiteSpace(request.Password);
         var password = generated ? HubChecksum.NewEnrollCode(12).ToLowerInvariant() + "A1" : request.Password!;
-        EnsurePasswordStrength(password);
+        EnsurePasswordStrength(password, options.Value);
 
         var user = new UserRow
         {
@@ -1296,6 +1320,7 @@ public static class AdminEndpoints
         RegisterRequest request,
         HttpContext http,
         HubStore store,
+        IOptions<ServerOptions> options,
         AdminAuthService auth,
         CancellationToken cancellationToken)
     {
@@ -1305,7 +1330,7 @@ public static class AdminEndpoints
         }
 
         var username = NormalizeUsername(request.Username);
-        EnsurePasswordStrength(request.Password ?? string.Empty);
+        EnsurePasswordStrength(request.Password ?? string.Empty, options.Value);
 
         // 自助注册必须输入邀请码明文：显式拒绝管理端专用的指纹引用格式（ref:xxxxxxxx，#36）。
         if ((request.Code ?? string.Empty).Trim()

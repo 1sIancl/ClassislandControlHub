@@ -57,17 +57,30 @@ public static class PasswordHasher
         return CryptographicOperations.FixedTimeEquals(actual, expected);
     }
 
-    /// <summary>校验密码强度。返回 <c>null</c> 表示通过，否则返回不通过原因。</summary>
-    public static string? ValidateStrength(string password)
+    /// <summary>
+    /// 校验密码强度。返回 <c>null</c> 表示通过，否则返回不通过原因。
+    /// <para>规则由调用方从 <c>ServerOptions</c> 传入（#28）：长度与字符要求只有一份，
+    /// 建号 / 改密 / 重置 / 自助注册四条入口传的是同一份配置，文案里的数字也跟着配置走
+    /// （否则改了配置界面还在说「至少 8 位」）。</para>
+    /// </summary>
+    /// <param name="password">待校验的明文密码。</param>
+    /// <param name="minLength">最小长度；≤ 0 表示不限制。</param>
+    /// <param name="requireMixedChars">是否要求同时含字母与数字。</param>
+    public static string? ValidateStrength(string password, int minLength = 8, bool requireMixedChars = true)
     {
         if (string.IsNullOrWhiteSpace(password))
         {
             return "密码不能为空。";
         }
 
-        if (password.Length < 8)
+        if (minLength > 0 && password.Length < minLength)
         {
-            return "密码长度至少为 8 位。";
+            return $"密码长度至少为 {minLength} 位。";
+        }
+
+        if (!requireMixedChars)
+        {
+            return null;
         }
 
         var hasLetter = password.Any(char.IsLetter);

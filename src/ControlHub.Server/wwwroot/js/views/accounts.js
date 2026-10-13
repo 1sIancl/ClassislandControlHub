@@ -6,12 +6,12 @@
  * 而不是抽成公共组件（那样就得给每张卡传一个「刷新回调」，反而更绕）。</para>
  */
 
-import { api, session, hasPermission } from '../core/api.js?v=101';
-import { toastError } from '../core/errors.js?v=101';
+import { api, session, hasPermission } from '../core/api.js?v=102';
+import { toastError } from '../core/errors.js?v=102';
 import {
   h, clear, formatDateTime, toast, loadingBlock, field, modal, copyText,
   confirmDialog, kvRow,
-} from '../core/ui.js?v=101';
+} from '../core/ui.js?v=102';
 
 export const meta = {
   title: '账号与权限',
@@ -56,7 +56,7 @@ export async function render(container) {
   // 按权限取数：没有权限的接口干脆不请求，否则整页会被 403 打断。
   const canAccounts = hasPermission('accounts.read');
 
-  const [me, accounts, permissions, permissionPresets, registerCodes, registerRequests, registration, apiKeys] =
+  const [me, accounts, permissions, permissionPresets, registerCodes, registerRequests, registration, apiKeys, policy] =
     await Promise.all([
       api('/admin/me'),
       canAccounts ? api('/admin/accounts') : Promise.resolve([]),
@@ -66,6 +66,8 @@ export async function render(container) {
       canAccounts ? api('/admin/register-requests') : Promise.resolve([]),
       api('/admin/registration', { auth: false }).catch(() => ({ enabled: false })),
       canAccounts ? api('/admin/api-keys') : Promise.resolve([]),
+      // 密码策略（#28）：强度要求与有效期都从服务端读，别在前端写死「至少 8 位」。
+      api('/admin/password-policy').catch(() => null),
     ]);
 
   session.me = me;
@@ -78,8 +80,8 @@ export async function render(container) {
       h('span.notice-icon', '!'),
       h('div', '当前账号仍在使用初始密码，请立即在下方「账号安全」中修改。'))
       : null,
-    renderAccountCard(me),
-    canAccounts ? renderAccountsCard(container, accounts, me, permissions, permissionPresets) : null,
+    renderAccountCard(me, policy),
+    canAccounts ? renderAccountsCard(container, accounts, me, permissions, permissionPresets, policy) : null,
     canAccounts ? renderRegisterCodesCard(container, registerCodes, registration) : null,
     canAccounts ? renderRegisterRequestsCard(container, registerRequests, registration) : null,
     canAccounts ? renderApiKeysCard(container, apiKeys) : null,
@@ -89,7 +91,48 @@ export async function render(container) {
   ));
 }
 
-function renderAccountCard(me) {
+/**
+ * 密码强度要求文案（#28）：按服务端策略拼，改了配置前端自动跟着变。
+ */
+function strengthHint(policy) {
+  const min = policy?.minLength ?? 8;
+  const parts = [];
+  if (min > 0) {
+    parts.push(`至少 ${min} 位`);
+  }
+
+  if (policy?.requireMixedChars !== false) {
+    parts.push('同时包含字母与数字');
+  }
+
+  return parts.length ? `${parts.join('，')}。` : '长度不限，但仍建议足够复杂。';
+}
+
+/** 密码已用天数；<c>null</c> 表示账号没有改密时间（老库升级上来的，以创建时间兜底）。 */
+function passwordAgeDays(account) {
+  const baseline = account?.passwordChangedAt || account?.createdAt;
+  if (!baseline) {
+    return null;
+  }
+
+  const days = Math.floor((Date.now() - new Date(baseline).getTime()) / 86400000);
+  return Number.isFinite(days) ? Math.max(0, days) : null;
+}
+
+/** 账号列表里「密码已用 N 天」那一行；超过有效期用警告色（#28）。 */
+function passwordAgeLine(account, policy) {
+  const days = passwordAgeDays(account);
+  if (days === null) {
+    return null;
+  }
+
+  const expiry = policy?.expiryDays ?? 0;
+  const overdue = expiry > 0 && days >= expiry;
+  return h('div.cell-sub', overdue ? { style: { color: 'var(--warn)' } } : null,
+    overdue ? `密码已用 ${days} 天（超过建议的 ${expiry} 天）` : `密码已用 ${days} 天`);
+}
+
+function renderAccountCard(me, policy) {
   const isAdmin = me.role === 'admin';
   const granted = (me.permissions || []).length;
 
@@ -112,7 +155,7 @@ function renderAccountCard(me) {
     h('div.card-actions',
       h('button.btn.btn-primary.btn-sm', {
         type: 'button',
-        onClick: () => openChangePasswordDialog(),
+        onClick: () => openChangePasswordDialog(policy),
       }, '修改密码'),
       h('button.btn.btn-sm', {
         type: 'button',
@@ -143,7 +186,7 @@ async function replayOnboarding() {
     return;
   }
 
-  const { startTour } = await import('../core/tour.js?v=101');
+  const { startTour } = await import('../core/tour.js?v=102');
   startTour({
     onFinish: async (skipped) => {
       if (!skipped) {
@@ -219,7 +262,7 @@ function openTotpDialog(me) {
   }).catch((err) => toastError(err, '生成密钥失败'));
 }
 
-function openChangePasswordDialog() {
+function openChangePasswordDialog(policy) {
   const current = h('input', { type: 'password', autocomplete: 'current-password' });
   const next = h('input', { type: 'password', autocomplete: 'new-password' });
   const confirm = h('input', { type: 'password', autocomplete: 'new-password' });
@@ -229,7 +272,7 @@ function openChangePasswordDialog() {
     width: 'wide',
     body: h('div',
       field('原密码', current),
-      field('新密码', next, '至少 8 位，需同时包含字母与数字。'),
+      field('新密码', next, strengthHint(policy)),
       field('确认新密码', confirm),
       h('div.notice.notice-warn',
         h('span.notice-icon', '!'),
@@ -254,7 +297,7 @@ function openChangePasswordDialog() {
   });
 }
 
-function renderAccountsCard(container, accounts, me, permissions, presets) {
+function renderAccountsCard(container, accounts, me, permissions, presets, policy) {
   return h('div.card', { style: { marginTop: '16px' } },
     h('div.card-head',
       h('div',
@@ -283,7 +326,7 @@ function renderAccountsCard(container, accounts, me, permissions, presets) {
             h('div.cell-sub', account.displayName || '—'),
             account.mustChangePassword
               ? h('div.cell-sub', { style: { color: 'var(--warn)' } }, '仍使用初始密码')
-              : null,
+              : passwordAgeLine(account, policy),
           ),
           h('td', account.role === 'admin'
             ? h('span.badge.badge-accent', '超级管理员')
@@ -300,7 +343,7 @@ function renderAccountsCard(container, accounts, me, permissions, presets) {
             ' ',
             h('button.btn.btn-sm', {
               type: 'button',
-              onClick: () => openResetPasswordDialog(account),
+              onClick: () => openResetPasswordDialog(account, policy),
             }, '重置密码'),
             ' ',
             account.id === me.id
@@ -894,14 +937,14 @@ function openCreateRegisterCodeDialog(container) {
   });
 }
 
-function openResetPasswordDialog(account) {
+function openResetPasswordDialog(account, policy) {
   const next = h('input', { type: 'password', autocomplete: 'new-password' });
 
   modal({
     title: `重置密码 · ${account.username}`,
     width: 'wide',
     body: h('div',
-      field('新密码', next, '至少 8 位，需同时包含字母与数字。'),
+      field('新密码', next, strengthHint(policy)),
       h('div.notice.notice-info',
         h('span.notice-icon', 'i'),
         h('div', '重置后该账号的所有登录状态会失效，下次登录时会被要求修改密码。')),

@@ -282,7 +282,8 @@ public sealed class AdminAuthService(
             throw HubException.Validation("原密码不正确。");
         }
 
-        var strengthIssue = PasswordHasher.ValidateStrength(newPassword);
+        var strengthIssue = PasswordHasher.ValidateStrength(newPassword,
+            _options.PasswordMinLength, _options.PasswordRequireMixedChars);
         if (strengthIssue is not null)
         {
             throw HubException.Validation(strengthIssue);
@@ -303,7 +304,8 @@ public sealed class AdminAuthService(
     public async Task ResetPasswordAsync(string targetUserId, string newPassword,
         string actor, string? ipAddress, CancellationToken cancellationToken = default)
     {
-        var strengthIssue = PasswordHasher.ValidateStrength(newPassword);
+        var strengthIssue = PasswordHasher.ValidateStrength(newPassword,
+            _options.PasswordMinLength, _options.PasswordRequireMixedChars);
         if (strengthIssue is not null)
         {
             throw HubException.Validation(strengthIssue);

@@ -227,7 +227,7 @@ public sealed class RemoteCommandExecutor(
         }
 
         TimeSpan? duration = req.DurationSeconds > 0 ? TimeSpan.FromSeconds(req.DurationSeconds) : null;
-        var request = provider.Show(req.Title, req.Message, req.Speak, duration);
+        var request = provider.Show(req.Title, req.Message, req.Speak, duration, req.Emphasize);
 
         // 回执（#7）：Show 返回即「已交给通知系统」，记为 shown。
         // 这与下面返回的「指令成功」不是同一件事——指令回报说的是「我执行了」，
@@ -238,7 +238,10 @@ public sealed class RemoteCommandExecutor(
         // Completed 可能在任意线程触发，所以回调里**不碰 UI**，只发网络请求。
         request.Completed += (_, _) => ReportReceipt(command.Id, "closed");
 
-        return Ok(command, $"提醒已展示（语音播报：{(req.Speak ? "开" : "关")}）");
+        // 回报里写清是哪种展示：#22 之后「全屏强调」与「角落提示」是两件事，
+        // 管理员在指令原文里就能看出这次到底有没有打断课堂。
+        return Ok(command,
+            $"提醒已展示（{(req.Emphasize ? "全屏强调" : "角落提示")}，语音播报：{(req.Speak ? "开" : "关")}）");
     }
 
     /// <summary>
@@ -1137,10 +1140,12 @@ public sealed class RemoteCommandExecutor(
         });
 
         // 教室端给出一条可见提示：截图不是无声无息发生的。
+        // #22 之后 Show 多了一个「是否强调」参数：这条是**隐私提示**，必须让人看见，
+        // 所以保持全屏强调（与它出现以来一直的行为一致）。
         try
         {
             HubNotificationProviderHolder.Current?.Show("集控远程协助", "管理端抓取了本机画面用于排查问题", false,
-                TimeSpan.FromSeconds(6));
+                TimeSpan.FromSeconds(6), emphasize: true);
         }
         catch (Exception ex)
         {

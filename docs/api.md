@@ -164,6 +164,17 @@ curl -s "$BASE/admin/devices" -H "Authorization: Bearer $TOKEN" \
 > ⚠️ `/admin/reminders/{id}/run` 是**领取式**的：抢不到（刚被调度器或另一个实例执行过）返回 **409**，
 > 而不是重复执行一次。
 
+### 账号与密码策略（#28）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/admin/password-policy` | 任意登录账号 | 密码要求与有效期：`{minLength, requireMixedChars, expiryDays, expiryWarnDays}` |
+
+- 强度规则来自 `ServerOptions`（`PasswordMinLength` 默认 8、`PasswordRequireMixedChars` 默认 true），
+  **建号 / 改密 / 重置 / 自助注册四条入口用同一份**——改配置时四处的校验与界面文案一起变。
+- 有效期只提醒、不拦截：登录应答里带 `passwordWarning`；`AccountDto.passwordChangedAt`
+  用来在账号列表显示「密码已用 N 天」（超期标黄）。
+
 ### 系统设置与品牌
 
 | 方法 | 路径 | 权限 | 说明 |
