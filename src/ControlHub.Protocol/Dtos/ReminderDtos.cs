@@ -45,6 +45,40 @@ public static class ReminderChannels
     public static readonly string[] All = [Screen];
 }
 
+/// <summary>
+/// 提醒到点后**做什么**（#20 定时开关机）。
+/// <para>排程本身（哪天 / 几点 / 重复规则）与「做什么」正交，所以复用提醒的排程器：
+/// 同一套时间推算、同一套错过补发与触发历史，只是到点后分别下发通知 / 关机 / 唤醒。</para>
+/// </summary>
+public static class ReminderActions
+{
+    /// <summary>推送到教室大屏（默认；老数据的取值也是它）。</summary>
+    public const string Notify = "notify";
+
+    /// <summary>
+    /// 关闭教室机：下发 <c>power.shutdown</c> 指令，**只发给在线设备**——
+    /// 关机是不可逆的物理动作，离线设备排队到明天早上开机时再执行只会更糟。
+    /// </summary>
+    public const string PowerShutdown = "power.shutdown";
+
+    /// <summary>
+    /// 唤醒教室机：直接发 Wake-on-LAN 魔术包，**只发给非停用设备**（不看在线）。
+    /// <para>要唤醒的机器按定义就是关着的（离线）；要求在线等于这条功能永远不生效。
+    /// 没上报过网卡地址的设备会被跳过并如实说明。</para>
+    /// </summary>
+    public const string PowerWake = "power.wake";
+
+    /// <summary>全部取值。</summary>
+    public static readonly string[] All = [Notify, PowerShutdown, PowerWake];
+
+    /// <summary>是否是「对教室机做物理动作」的动作（迟到就不该再执行）。</summary>
+    public static bool IsPower(string? action) => action is PowerShutdown or PowerWake;
+
+    /// <summary>判断取值是否合法（空视为 <see cref="Notify"/>，兼容老客户端）。</summary>
+    public static bool IsValid(string? action) =>
+        string.IsNullOrWhiteSpace(action) || All.Contains(action);
+}
+
 /// <summary>定时提醒。</summary>
 public sealed class ReminderDto
 {
@@ -59,6 +93,9 @@ public sealed class ReminderDto
 
     /// <summary>投递方式，见 <see cref="ReminderChannels"/>。</summary>
     public string Channel { get; set; } = ReminderChannels.Screen;
+
+    /// <summary>到点执行的动作，见 <see cref="ReminderActions"/>。</summary>
+    public string Action { get; set; } = ReminderActions.Notify;
 
     /// <summary>目标类型，见 <see cref="ReminderTargets"/>。</summary>
     public string TargetType { get; set; } = ReminderTargets.All;
@@ -127,6 +164,9 @@ public sealed class ReminderUpsertRequest
     /// <summary>提醒内容。</summary>
     public string? Content { get; set; }
 
+    /// <summary>到点执行的动作，见 <see cref="ReminderActions"/>；留空 = 发通知。</summary>
+    public string? Action { get; set; }
+
     /// <summary>目标类型。</summary>
     public string? TargetType { get; set; }
 
@@ -172,6 +212,9 @@ public sealed class ReminderFireDto
 
     /// <summary>提醒标题（回填，便于历史列表直接显示）。</summary>
     public string ReminderTitle { get; set; } = string.Empty;
+
+    /// <summary>这次执行的动作，见 <see cref="ReminderActions"/>。</summary>
+    public string Action { get; set; } = ReminderActions.Notify;
 
     /// <summary>触发时间（UTC）。</summary>
     public DateTimeOffset FiredAt { get; set; }

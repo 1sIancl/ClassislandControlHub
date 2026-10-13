@@ -14,7 +14,7 @@
  *   node sh/ui-smoke.js
  *   SMOKE_BASE=http://127.0.0.1:29800 SMOKE_BROWSER="C:\\...\\msedge.exe" node sh/ui-smoke.js
  *
- * 覆盖的断言（138 项，分组见文件内的 `// n)` 注释）：
+ * 覆盖的断言（141 项，分组见文件内的 `// n)` 注释）：
  *   1) 起点归零：清空账号偏好与本机布局缓存 → 仪表盘回到默认布局
  *   2) 「自定义仪表盘」面板能打开，含「统计卡片 + 页面模块」两组、共 10 项
  *   3) 面板里关掉「最近事件」→ 页面立即不再渲染该模块
@@ -39,6 +39,8 @@
  *  22) 品牌外链图片真的加载成功（安全响应头的 CSP 曾把它整块拦掉）
  *  23) 顶栏在 8 档宽度（1600 → 760）下都不重叠、不横向溢出
  *  24) 插件管理页（#121）：页面能打开、四个标签齐全、市场卡片渲染、市场设置能真的存进去
+ *  25) 定时提醒的「到时做什么」（#20）：三个动作齐备；选关机给出风险提示且收起内容字段；
+ *      选开机提示网络唤醒的前提
  *
  * 注意：脚本会改动演示账号的界面偏好（跑完停在「最近事件 / 最近心跳」隐藏的状态），
  *       可在「自定义仪表盘 / 列设置」里勾回来。
@@ -2339,6 +2341,90 @@ function check(name, ok, extra = '') {
   });
   check('在市场设置里保存能真的写进服务端（并已还原默认）',
     (saved ?? '').includes('ui-smoke-index.zip'), String(saved));
+
+  // ── 定时提醒的「到时做什么」（#20 定时开关机）：危险动作要给前提，并收起内容字段 ──
+  await page.goto(`${BASE}/#/dashboard`, { waitUntil: 'networkidle2' });
+  await page.goto(`${BASE}/#/reminders`, { waitUntil: 'networkidle2' });
+  await page.reload({ waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => document.getElementById('pageTitle')?.textContent?.trim() === '定时提醒',
+    { timeout: 20000 }).catch(() => {});
+  await sleep(1500);
+
+  // 下面每一步都返回诊断信息（页面标题 / 弹窗是否打开 / 找到几个下拉）：
+  // 断言失败时要能从输出直接看出卡在哪一步，而不是只看到一句 undefined。
+  const reminderEditor = await page.evaluate(() => {
+    const title = document.getElementById('pageTitle')?.textContent?.trim() ?? '';
+    const button = [...document.querySelectorAll('#content button')]
+      .find((b) => b.textContent.trim() === '+ 新建提醒');
+    button?.click();
+    return {
+      title,
+      clicked: !!button,
+      modalOpen: document.getElementById('modalHost')?.hidden === false,
+    };
+  });
+  await sleep(1000);
+
+  const reminderActionOptions = await page.evaluate(() => {
+    const host = document.getElementById('modalHost');
+    const selects = host ? [...host.querySelectorAll('select')] : [];
+    const picker = selects.find((s) => [...s.options].some((o) => o.value === 'power.shutdown'));
+    return {
+      values: picker ? [...picker.options].map((o) => o.value) : [],
+      selectCount: selects.length,
+      text: (host?.textContent ?? '').replace(/\s+/g, ' ').slice(0, 100),
+    };
+  });
+  check('新建提醒时可以选「到时做什么」（发通知 / 定时关机 / 定时开机）',
+    reminderEditor.clicked && reminderEditor.modalOpen
+      && ['notify', 'power.shutdown', 'power.wake'].every((v) => reminderActionOptions.values.includes(v)),
+    JSON.stringify({ ...reminderEditor, ...reminderActionOptions }));
+
+  const reminderShutdownUi = await page.evaluate(async () => {
+    const host = document.getElementById('modalHost');
+    const picker = [...(host ? host.querySelectorAll('select') : [])]
+      .find((s) => [...s.options].some((o) => o.value === 'power.shutdown'));
+    if (!picker) {
+      return { missing: true };
+    }
+
+    picker.value = 'power.shutdown';
+    picker.dispatchEvent(new Event('change'));
+    await new Promise((r) => setTimeout(r, 300));
+
+    const area = document.querySelector('#modalHost textarea');
+    return {
+      warned: /真的关掉教室机/.test(host?.textContent ?? ''),
+      contentHidden: !area || area.offsetParent === null,
+    };
+  });
+  check('选「定时关机」后给出风险提示，并把内容字段收起（它不是消息）',
+    reminderShutdownUi.warned === true && reminderShutdownUi.contentHidden === true,
+    JSON.stringify(reminderShutdownUi));
+
+  const reminderWakeUi = await page.evaluate(async () => {
+    const host = document.getElementById('modalHost');
+    const picker = [...(host ? host.querySelectorAll('select') : [])]
+      .find((s) => [...s.options].some((o) => o.value === 'power.wake'));
+    if (!picker) {
+      return { missing: true };
+    }
+
+    picker.value = 'power.wake';
+    picker.dispatchEvent(new Event('change'));
+    await new Promise((r) => setTimeout(r, 300));
+    const text = host?.textContent ?? '';
+    return {
+      wakePrereq: /网络唤醒/.test(text) && /广播域/.test(text),
+      macNote: /网卡地址/.test(text),
+    };
+  });
+  check('选「定时开机」后提示前提（网络唤醒 / 同广播域）与「没上报网卡地址会被跳过」',
+    reminderWakeUi.wakePrereq === true && reminderWakeUi.macNote === true,
+    JSON.stringify(reminderWakeUi));
+
+  await page.keyboard.press('Escape');
+  await sleep(500);
 
   await page.setViewport({ width: 1600, height: 1000 });
   await sleep(700);

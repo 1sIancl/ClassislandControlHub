@@ -3,11 +3,11 @@
  * 提醒按账号隔离：这里只会看到、也只能改到自己创建的提醒；到点由服务端调度器推送到教室大屏。
  */
 
-import { api } from '../core/api.js?v=99';
+import { api } from '../core/api.js?v=101';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, select,
   emptyState, formatDateTime, relativeTime,
-} from '../core/ui.js?v=99';
+} from '../core/ui.js?v=101';
 
 export const meta = {
   title: '定时提醒',
@@ -30,6 +30,17 @@ const WEEKDAYS = [
   { value: 6, label: '六' },
   { value: 7, label: '日' },
 ];
+
+/** 到点做什么（与服务端 ReminderActions 一一对应）。 */
+const ACTIONS = [
+  { value: 'notify', label: '发通知（推送到教室大屏）' },
+  { value: 'power.shutdown', label: '定时关机（关闭教室机）' },
+  { value: 'power.wake', label: '定时开机（网络唤醒）' },
+];
+
+const ACTION_LABELS = { notify: '发通知', 'power.shutdown': '定时关机', 'power.wake': '定时开机' };
+const ACTION_BADGES = { 'power.shutdown': 'badge-warn', 'power.wake': 'badge-info' };
+const isPowerAction = (action) => action === 'power.shutdown' || action === 'power.wake';
 
 let cache = { reminders: [], summary: null, fires: [], devices: [], groups: [] };
 let tab = 'list';
@@ -133,8 +144,12 @@ function renderList(container) {
       )),
       h('tbody', ...cache.reminders.map((r) => h('tr',
         h('td',
-          h('div.cell-main', r.title || '（无标题）'),
-          h('div.cell-sub', r.content || '—')),
+          h('div.cell-main', r.title || '（无标题）',
+            isPowerAction(r.action)
+              ? h('span', { class: `badge ${ACTION_BADGES[r.action]}`, style: { marginLeft: '6px' } },
+                ACTION_LABELS[r.action])
+              : null),
+          h('div.cell-sub', r.content || (isPowerAction(r.action) ? '（动作型提醒，没有内容）' : '—'))),
         h('td',
           h('div.reminder-repeat', repeatText(r)),
           r.speak ? h('div.reminder-target', '含语音播报') : null),
@@ -151,9 +166,9 @@ function renderList(container) {
         h('td.actions',
           h('button.btn.btn-sm', {
             type: 'button',
-            title: '立即推送一次，用于验证配置',
+            title: isPowerAction(r.action) ? '立刻执行一次（会真的动手，用于验证配置）' : '立即推送一次，用于验证配置',
             onClick: () => runNow(container, r),
-          }, '立即触发'),
+          }, isPowerAction(r.action) ? '立即执行' : '立即触发'),
           ' ',
           h('button.btn.btn-sm', { type: 'button', onClick: () => openEditor(container, r) }, '编辑'),
           ' ',
@@ -209,7 +224,9 @@ function renderHistory() {
       )),
       h('tbody', ...cache.fires.map((f) => h('tr',
         h('td', h('div', formatDateTime(f.firedAt)), h('div.cell-sub', relativeTime(f.firedAt))),
-        h('td', f.reminderTitle || '（提醒已删除）'),
+        h('td',
+          h('div', f.reminderTitle || '（提醒已删除）'),
+          h('div.cell-sub', ACTION_LABELS[f.action] || '发通知')),
         h('td',
           h('span.badge.badge-ok', `推送 ${f.affected} 台`),
           f.skipped > 0
@@ -224,17 +241,25 @@ function renderHistory() {
 // ────────────────────────────── 操作 ──────────────────────────────
 
 async function runNow(container, reminder) {
-  if (!await confirmDialog('立即触发',
-    `将立刻把「${reminder.title}」推送到${reminder.targetName}。这不会改变原有重复计划。确定继续吗？`, '推送')) {
+  const power = isPowerAction(reminder.action);
+  const label = ACTION_LABELS[reminder.action] || '发通知';
+
+  // 动作型提醒会真的动手（关机不可撤销），确认框要说清这点并把按钮标红。
+  const message = power
+    ? `将立刻对「${reminder.targetName}」执行 ${label}——这会真的动手，关机不可撤销。`
+      + '这不会改变原有重复计划。确定继续吗？'
+    : `将立刻把「${reminder.title}」推送到${reminder.targetName}。这不会改变原有重复计划。确定继续吗？`;
+
+  if (!await confirmDialog(power ? `立即${label}` : '立即触发', message, power ? '执行' : '推送', power)) {
     return;
   }
 
   try {
     const result = await api(`/admin/reminders/${reminder.id}/run`, { method: 'POST' });
-    toast('ok', '已推送', `推送到 ${result.affected} 台在线设备${result.skipped ? `，跳过离线 ${result.skipped} 台` : ''}。`);
+    toast('ok', '已执行', result.detail || `${label}：影响 ${result.affected} 台。`);
     await reload(container);
   } catch (err) {
-    toastError(err, '推送失败');
+    toastError(err, '执行失败');
   }
 }
 
@@ -276,6 +301,7 @@ function toRequest(reminder) {
     fireTime: reminder.fireTime,
     startDate: reminder.startDate,
     endDate: reminder.endDate || '',
+    action: reminder.action || 'notify',
   };
 }
 
@@ -292,6 +318,7 @@ function openEditor(container, reminder) {
     repeatKind: reminder?.repeatKind || 'once',
     weekdays: [...(reminder?.repeatWeekdays || [])],
     targetType: reminder?.targetType || 'all',
+    action: reminder?.action || 'notify',
   };
 
   const titleInput = h('input', { type: 'text', value: reminder?.title || '', placeholder: '例如：开晨会提醒' });
@@ -336,6 +363,46 @@ function openEditor(container, reminder) {
   speakChk.checked = reminder?.speak ?? true;
   const enabledChk = h('input', { type: 'checkbox' });
   enabledChk.checked = reminder?.enabled ?? true;
+
+  // ── 「到时做什么」：排程（什么时候）与动作（做什么）正交，所以同一套时间控件配三种动作 ──
+  const actionSelect = select(ACTIONS, draft.action, (v) => {
+    draft.action = v;
+    repaintAction();
+  });
+  const actionHint = h('div');
+  const contentField = field('内容', contentInput);
+  const speakField = h('label.checkbox-field', speakChk, h('span', '同时语音播报提醒内容'));
+
+  function repaintAction() {
+    const power = isPowerAction(draft.action);
+
+    // 关机 / 开机不是「消息」：内容与语音播报没有意义，直接收起，免得管理员以为要填点什么。
+    contentField.hidden = power;
+    speakField.hidden = power;
+
+    clear(actionHint);
+    if (draft.action === 'power.shutdown') {
+      actionHint.appendChild(h('div.notice.notice-warn',
+        h('span.notice-icon', '!'),
+        h('div', '到点会真的关掉教室机（下发关机指令，不可撤销）。只发给在线设备：'
+          + '离线设备不排队——否则它第二天早上刚被打开时会被关掉。'
+          + '上课期间关机意味着大屏黑屏，请把时间排在放学之后。')));
+      return;
+    }
+
+    if (draft.action === 'power.wake') {
+      actionHint.appendChild(h('div.notice.notice-info',
+        h('span.notice-icon', 'i'),
+        h('div', '到点直接发 Wake-on-LAN 魔术包，关机状态也能开机（因此不按在线过滤）。'
+          + '前提：教室机在 BIOS / 网卡里启用了「网络唤醒」，且 A 端与教室在同一广播域'
+          + '（跨 VLAN 需要交换机开中继）。没上报过网卡地址的设备会被跳过，原因写在触发历史里。')));
+      return;
+    }
+
+    actionHint.appendChild(h('div.notice.notice-info',
+      h('span.notice-icon', 'i'),
+      h('div', '到点把标题与内容推送到教室大屏；只发给在线设备——提醒讲时效，离线教室不做补发。')));
+  }
 
   function repaintWeekdays() {
     weekdayPicker.replaceChildren(...WEEKDAYS.map((day) => h('button', {
@@ -395,13 +462,16 @@ function openEditor(container, reminder) {
 
   repaintRepeat();
   repaintTarget();
+  repaintAction();
 
   modal({
     title: isEdit ? `编辑提醒 · ${reminder.title}` : '新建定时提醒',
     width: 'wide',
     body: h('div',
-      field('标题', titleInput, '教室大屏上会以醒目方式显示标题。'),
-      field('内容', contentInput),
+      field('到时做什么', actionSelect, '排程与动作是两件事：同一条提醒可以发通知，也可以在到点关掉 / 唤醒教室机。'),
+      actionHint,
+      field('标题', titleInput, '教室大屏上会以醒目方式显示标题；关机 / 开机类提醒留空会自动填「定时关机 / 定时开机」。'),
+      contentField,
       h('div.form-row',
         field('重复规则', repeatSelect),
         everyField,
@@ -415,17 +485,19 @@ function openEditor(container, reminder) {
       field('结束日期', endDateInput, '留空表示长期有效。'),
       field('推送到', targetTypeSelect),
       targetHost,
-      h('label.checkbox-field', speakChk, h('span', '同时语音播报提醒内容')),
+      speakField,
       h('label.checkbox-field', enabledChk, h('span', '创建后立即启用')),
       h('div.notice.notice-info',
         h('span.notice-icon', 'i'),
-        h('div', '提醒由服务端按校正后的时间调度，误差通常在 15 秒内；每条提醒只属于你自己的账号，其它账号看不到。')),
+        h('div', '提醒由服务端按校正后的时间调度，误差通常在 15 秒内；每条提醒只属于你自己的账号，其它账号看不到。'
+          + '服务停机期间错过的时刻会补一次：通知补发无害，关机 / 开机这类动作迟到超过 10 分钟就只推进计划、不执行。')),
     ),
     confirmText: isEdit ? '保存' : '创建',
     onConfirm: async () => {
       const body = {
         title: titleInput.value.trim(),
         content: contentInput.value.trim(),
+        action: draft.action,
         targetType: draft.targetType,
         targetId: draft.targetId || '',
         speak: speakChk.checked,
@@ -439,7 +511,8 @@ function openEditor(container, reminder) {
         endDate: endDateInput.value || '',
       };
 
-      if (!body.title && !body.content) {
+      // 「标题与内容不能同时为空」只对通知成立：关机 / 开机不是消息（服务端也会再校验一次）。
+      if (draft.action === 'notify' && !body.title && !body.content) {
         toast('warn', '请填写标题或内容');
         return false;
       }
@@ -450,7 +523,11 @@ function openEditor(container, reminder) {
           toast('ok', '已保存');
         } else {
           await api('/admin/reminders', { method: 'POST', body });
-          toast('ok', '提醒已创建', body.enabled ? '到点会自动推送到教室大屏。' : '当前为停用状态。');
+          toast('ok', '提醒已创建', body.enabled
+            ? (isPowerAction(body.action)
+              ? `到点会自动执行「${ACTION_LABELS[body.action]}」。`
+              : '到点会自动推送到教室大屏。')
+            : '当前为停用状态。');
         }
       } catch (err) {
         toastError(err, '保存失败');

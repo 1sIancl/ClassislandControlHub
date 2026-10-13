@@ -125,7 +125,33 @@ public sealed class ReminderService(
 
     // ────────────────────────────── 触发与投递 ──────────────────────────────
 
-    /// <summary>把所有到点的提醒推送到教室大屏，返回本轮触发的条数。</summary>
+    /// <summary>关机指令的有效期：比通用指令短得多（30 分钟）。</summary>
+    /// <remarks>
+    /// 定时关机讲的是「到点就关」。通用指令的 2 小时 TTL 意味着设备离线一小时后上线仍会执行——
+    /// 那台教室机可能已经被老师重新开起来上课了，再被关掉就是事故。
+    /// </remarks>
+    private static readonly TimeSpan PowerCommandTtl = TimeSpan.FromMinutes(30);
+
+    /// <summary>
+    /// 物理动作（关机 / 唤醒）允许迟到多久。超过就只推进计划、不执行。
+    /// <para>排程器对错过的触发是**补发**（见 <see cref="FireDueRemindersAsync"/>）：服务停机期间
+    /// 过去的时点，重启后仍会被挑出来。通知补发一次无害，但「上周排的关机」在周一早上服务一启动
+    /// 就把整栋楼关掉是事故；「昨晚 22:00 的开机」在早上 8:00 补发也没意义（机器早有人开了）。
+    /// 跳过会在触发历史里留一条记录，不会静默消失。</para>
+    /// </summary>
+    private static readonly TimeSpan PowerActionGrace = TimeSpan.FromMinutes(10);
+
+    /// <summary>这次迟到的触发是否要跳过（只有物理动作会被跳过）。</summary>
+    public static bool ShouldSkipLateFire(string? action, DateTimeOffset? plannedAt, DateTimeOffset now) =>
+        ReminderActions.IsPower(action)
+        && plannedAt is { } planned
+        && now - planned > PowerActionGrace;
+
+    /// <summary>
+    /// 执行所有到点的提醒，返回本轮真正执行的条数（被别人领取走的不算）。
+    /// <para><b>错过的触发是补发</b>：服务停机期间过去的时点，重启后仍满足 <c>next_fire_at &lt;= now</c>，
+    /// 会在下一个 tick（15 秒内）执行一次，然后把计划推到未来。</para>
+    /// </summary>
     public async Task<int> FireDueRemindersAsync(CancellationToken cancellationToken = default)
     {
         var now = Now;
@@ -136,8 +162,10 @@ public sealed class ReminderService(
         {
             try
             {
-                await FireAsync(row, now, cancellationToken);
-                fired++;
+                if (await FireAsync(row, now, cancellationToken) is not null)
+                {
+                    fired++;
+                }
             }
             catch (Exception ex)
             {
@@ -149,13 +177,91 @@ public sealed class ReminderService(
     }
 
     /// <summary>
-    /// 触发一条提醒：下发通知指令 → 记录触发历史 → 推进到下次触发时间。
-    /// <para>只推给<b>在线</b>设备：定时提醒是时效性的，离线教室等上线后再收到「开晨会」反而是打扰。</para>
+    /// 执行一条提醒：**先原子领取**这次触发（把下次时间推进掉），再按 <c>action</c> 下发通知 / 关机 / 唤醒。
+    /// <para>返回 <c>null</c> 表示这次触发已被别处领取（另一个服务实例、或同一分钟的另一次调用）——
+    /// 调用方不要当成失败。领取式的好处是：推进失败 / 并发重复调用都不会导致同一次触发被执行两遍，
+    /// 而这在「定时关机」上就是「教室机被反复关掉」。</para>
+    /// <para>领取之后就不再重试，因此**执行失败也一定会留一条触发记录**（详情里带原因），
+    /// 让管理员在界面上看得到，而不是只沉在日志里。</para>
     /// </summary>
-    public async Task<ReminderFireRow> FireAsync(ReminderRow row, DateTimeOffset now,
+    public async Task<ReminderFireRow?> FireAsync(ReminderRow row, DateTimeOffset now,
         CancellationToken cancellationToken = default)
     {
-        var (targets, skipped, detail) = await ResolveTargetsAsync(row, cancellationToken);
+        var action = ReminderActions.All.Contains(row.Action) ? row.Action : ReminderActions.Notify;
+
+        // 迟到判定必须用「计划时刻」而不是「收到时刻」：停机补发时两者会差几小时。
+        var late = ShouldSkipLateFire(action, row.NextFireAt, now);
+        var next = ComputeNextFire(row, now);
+
+        if (!await store.TryClaimReminderFireAsync(row.Id, row.NextFireAt, next, now, cancellationToken))
+        {
+            logger.LogInformation("提醒「{Title}」的这次触发已被其它实例领取，跳过。", row.Title);
+            return null;
+        }
+
+        var affected = 0;
+        var skipped = 0;
+        var detail = string.Empty;
+        var failed = false;
+
+        try
+        {
+            if (late)
+            {
+                detail = $"迟到约 {FormatLateness(row.NextFireAt, now)}（计划 {LocalText(row.NextFireAt)}），"
+                         + "只推进计划、未执行物理动作";
+            }
+            else
+            {
+                (affected, skipped, detail) = action switch
+                {
+                    ReminderActions.PowerShutdown => await FireShutdownAsync(row, now, cancellationToken),
+                    ReminderActions.PowerWake => await FireWakeAsync(row, cancellationToken),
+                    _ => await FireNotifyAsync(row, now, cancellationToken),
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            failed = true;
+            detail = "执行失败：" + ex.Message;
+            logger.LogError(ex, "提醒「{Title}」执行失败（{Action}）。", row.Title, action);
+        }
+
+        var fire = new ReminderFireRow
+        {
+            Id = HubChecksum.NewId(),
+            ReminderId = row.Id,
+            UserId = row.UserId,
+            Action = action,
+            FiredAt = now,
+            Affected = affected,
+            Skipped = skipped,
+            Detail = detail,
+        };
+        await store.AddReminderFireAsync(fire, cancellationToken);
+
+        if (!failed && !late)
+        {
+            logger.LogInformation("提醒「{Title}」执行完成（{Action}）：{Detail}。", row.Title, action, detail);
+        }
+
+        if (next is null)
+        {
+            logger.LogInformation("提醒「{Title}」已走完重复计划，自动停用。", row.Title);
+        }
+
+        return fire;
+    }
+
+    /// <summary>
+    /// 发通知（<see cref="ReminderActions.Notify"/>）：只推给<b>在线</b>设备——定时提醒讲时效，
+    /// 离线教室等上线后再收到「开晨会」反而是打扰。
+    /// </summary>
+    private async Task<(int Affected, int Skipped, string Detail)> FireNotifyAsync(ReminderRow row,
+        DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var (targets, skipped, detail) = await ResolveTargetsAsync(row, onlineOnly: true, cancellationToken);
 
         foreach (var device in targets)
         {
@@ -177,35 +283,108 @@ public sealed class ReminderService(
             }, cancellationToken);
         }
 
-        var next = ComputeNextFire(row, now);
-        await store.RecordReminderFiredAsync(row.Id, now, next, cancellationToken);
-
-        var fire = new ReminderFireRow
+        if (targets.Count > 0)
         {
-            Id = HubChecksum.NewId(),
-            ReminderId = row.Id,
-            UserId = row.UserId,
-            FiredAt = now,
-            Affected = targets.Count,
-            Skipped = skipped,
-            Detail = detail,
-        };
-        await store.AddReminderFireAsync(fire, cancellationToken);
-
-        logger.LogInformation("提醒「{Title}」已触发：推送 {Affected} 台，跳过离线 {Skipped} 台（{Detail}）。",
-            row.Title, targets.Count, skipped, detail);
-
-        if (next is null)
-        {
-            logger.LogInformation("提醒「{Title}」已走完重复计划，自动停用。", row.Title);
+            // 让挂在长轮询上的教室端立刻取走：否则要等下一次心跳（默认 30 秒）才收到通知。
+            sync.PublishWakeUp();
         }
 
-        return fire;
+        return (targets.Count, skipped, $"{detail}；推送 {targets.Count} 台，跳过离线 {skipped} 台");
     }
 
-    /// <summary>解析提醒的投递目标，返回「在线目标设备 / 跳过数量 / 目标描述」。</summary>
+    /// <summary>
+    /// 定时关机（<see cref="ReminderActions.PowerShutdown"/>）：下发 <c>power.shutdown</c>，**只发给在线设备**。
+    /// <para>离线设备不排队：指令的 30 分钟 TTL 一过就作废，而排到队列里反而可能在第二天早上
+    /// 那台机器刚被打开时把它关掉——这正是「定时关机」最容易被骂的形态。</para>
+    /// </summary>
+    private async Task<(int Affected, int Skipped, string Detail)> FireShutdownAsync(ReminderRow row,
+        DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var (targets, skipped, detail) = await ResolveTargetsAsync(row, onlineOnly: true, cancellationToken);
+
+        foreach (var device in targets)
+        {
+            await store.CreateCommandAsync(new RemoteCommandRow
+            {
+                Id = HubChecksum.NewId(),
+                DeviceId = device.Id,
+                Kind = RemoteCommandKinds.PowerShutdown,
+                Payload = string.Empty,
+                Status = "pending",
+                IssuedAt = now,
+                IssuedBy = "reminder",
+                ExpiresAt = now.Add(PowerCommandTtl),
+            }, cancellationToken);
+        }
+
+        if (targets.Count > 0)
+        {
+            sync.PublishWakeUp();
+        }
+
+        var note = skipped > 0 ? $"，离线 {skipped} 台未排队（避免它们下次开机时被关掉）" : string.Empty;
+        return (targets.Count, skipped, $"{detail}；已下发关机指令 {targets.Count} 台{note}");
+    }
+
+    /// <summary>
+    /// 定时开机（<see cref="ReminderActions.PowerWake"/>）：直接发 Wake-on-LAN 魔术包。
+    /// <para><b>不按在线过滤</b>——要唤醒的机器按定义就是关着的；<b>不走指令队列</b>——机器关着时
+    /// 插件根本没在运行。没上报过网卡地址的设备跳过并写明原因。</para>
+    /// </summary>
+    private async Task<(int Affected, int Skipped, string Detail)> FireWakeAsync(ReminderRow row,
+        CancellationToken cancellationToken)
+    {
+        var (candidates, notAlive, detail) = await ResolveTargetsAsync(row, onlineOnly: false, cancellationToken);
+
+        var sent = 0;
+        var skipped = notAlive;
+        var reasons = new List<string>();
+
+        foreach (var device in candidates)
+        {
+            try
+            {
+                var error = await WakeOnLan.SendAsync(device.MacAddress, device.IpAddress, cancellationToken);
+                if (error is null)
+                {
+                    sent++;
+                    continue;
+                }
+
+                skipped++;
+                reasons.Add($"{device.Name}：{error}");
+            }
+            catch (Exception ex)
+            {
+                skipped++;
+                reasons.Add($"{device.Name}：{ex.Message}");
+            }
+        }
+
+        var note = reasons.Count > 0
+            ? "，跳过：" + string.Join("；", reasons.Take(5)) + (reasons.Count > 5 ? $" 等 {reasons.Count} 台" : string.Empty)
+            : string.Empty;
+        return (sent, skipped, $"{detail}；已发魔术包 {sent} 台{note}");
+    }
+
+    /// <summary>目标描述里的本地时间（管理员看的是墙上时钟，不是 UTC）。</summary>
+    private static string LocalText(DateTimeOffset? utc) => utc is null
+        ? "（无计划时间）"
+        : TimeZoneInfo.ConvertTime(utc.Value, TimeZoneInfo.Local).ToString("MM-dd HH:mm");
+
+    /// <summary>迟到时长的可读描述。</summary>
+    private static string FormatLateness(DateTimeOffset? planned, DateTimeOffset now) => planned is null
+        ? "未知"
+        : $"{(int)Math.Max(0, (now - planned.Value).TotalMinutes)} 分钟";
+
+    /// <summary>解析提醒的投递目标，返回「目标设备 / 跳过数量 / 目标描述」。</summary>
+    /// <param name="row">提醒行（决定目标类型与目标 ID）。</param>
+    /// <param name="onlineOnly">
+    /// 是否只取在线设备。通知与关机要在线（时效 / 不可逆），唤醒**不能**按在线过滤。
+    /// </param>
+    /// <param name="cancellationToken">取消令牌。</param>
     private async Task<(List<DeviceRow> Targets, int Skipped, string Detail)> ResolveTargetsAsync(
-        ReminderRow row, CancellationToken cancellationToken)
+        ReminderRow row, bool onlineOnly, CancellationToken cancellationToken)
     {
         var devices = await store.GetDevicesAsync(cancellationToken);
         var groups = await store.GetGroupsAsync(cancellationToken);
@@ -241,6 +420,12 @@ public sealed class ReminderService(
         }
 
         var alive = candidates.Where(d => !d.Revoked).ToList();
+        if (!onlineOnly)
+        {
+            // 唤醒用：离线也要发魔术包——要叫醒的机器本来就是关着的。
+            return (alive, 0, detail);
+        }
+
         var online = alive.Where(sync.IsOnline).ToList();
         return (online, alive.Count - online.Count, detail);
     }
@@ -285,6 +470,7 @@ public sealed class ReminderService(
             Title = row.Title,
             Content = row.Content,
             Channel = row.Channel,
+            Action = row.Action,
             TargetType = row.TargetType,
             TargetId = row.TargetId,
             TargetName = targetName,

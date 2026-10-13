@@ -100,6 +100,19 @@ table {
   scrollbar-color: var(--border-strong, rgba(120, 120, 140, 0.4)) transparent;
 }
 
+/*
+  `hidden` 属性必须真的隐藏元素。
+  <para>浏览器默认样式里的 `[hidden] { display: none }` 只是**一条普通规则**：任何显式声明
+  `display` 的类都会压过它（`.field { display: flex }`、`.row { display: flex }` 之类到处都是）。
+  症状是「代码里明明 `el.hidden = true`，界面上却还在」——项目此前是发现一处补一条
+  `.xxx[hidden] { display: none }`，补漏的概率和漏掉的类一样高。</para>
+  <para>放在基础层里一次兜住：`hidden` 是 HTML 的语义（「这个元素当前不适用」），
+  它优先于一切布局类的 `display`。</para>
+*/
+[hidden] {
+  display: none !important;
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

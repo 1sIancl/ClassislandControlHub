@@ -10,13 +10,13 @@
  * 每一步都写明「要不要重启」，卸载 / 启停也复用同一套下发与进度。</para>
  */
 
-import { api, hasPermission } from '../core/api.js?v=99';
-import { toastError, errorBlock } from '../core/errors.js?v=99';
-import { hintForCode } from '../core/error-hints.js?v=99';
+import { api, hasPermission } from '../core/api.js?v=101';
+import { toastError, errorBlock } from '../core/errors.js?v=101';
+import { hintForCode } from '../core/error-hints.js?v=101';
 import {
   h, clear, toast, loadingBlock, field, select, confirmDialog, emptyState,
   formatDateTime, relativeTime,
-} from '../core/ui.js?v=99';
+} from '../core/ui.js?v=101';
 
 export const meta = {
   title: '插件管理',
@@ -337,7 +337,7 @@ function openDeployDialog(item) {
     body: h('div',
       h('div.notice.notice-warn',
         h('span.notice-icon', '!'),
-        h('div', '安装会在教室机上放一份第三方代码，**重启 ClassIsland 后才真正生效**；'
+        h('div', '安装会在教室机上放一份第三方代码，重启 ClassIsland 后才真正生效；'
           + '上课期间重启会让大屏短暂黑屏，建议避开上课时间。')),
 
       field('范围',

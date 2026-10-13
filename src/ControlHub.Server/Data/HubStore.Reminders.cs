@@ -165,7 +165,7 @@ public sealed partial class HubStore
     // ────────────────────────────── 定时提醒 ──────────────────────────────
 
     private const string ReminderColumns =
-        "id, user_id, title, content, channel, target_type, target_id, speak, enabled, repeat_kind, "
+        "id, user_id, title, content, channel, action, target_type, target_id, speak, enabled, repeat_kind, "
         + "repeat_interval, repeat_weekdays, repeat_day_of_month, fire_time, start_date, end_date, "
         + "next_fire_at, last_fired_at, fire_count, created_at, updated_at";
 
@@ -176,6 +176,7 @@ public sealed partial class HubStore
         Title = GetString(reader, "title"),
         Content = GetString(reader, "content"),
         Channel = GetString(reader, "channel"),
+        Action = NormalizeAction(GetString(reader, "action")),
         TargetType = GetString(reader, "target_type"),
         TargetId = GetString(reader, "target_id"),
         Speak = GetBool(reader, "speak"),
@@ -233,7 +234,7 @@ public sealed partial class HubStore
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
             INSERT INTO reminders ({ReminderColumns})
-            VALUES ($id, $userId, $title, $content, $channel, $targetType, $targetId, $speak, $enabled,
+            VALUES ($id, $userId, $title, $content, $channel, $action, $targetType, $targetId, $speak, $enabled,
                     $repeatKind, $repeatInterval, $repeatWeekdays, $repeatDayOfMonth, $fireTime, $startDate,
                     $endDate, $nextFireAt, $lastFiredAt, $fireCount, $createdAt, $updatedAt);
             """;
@@ -248,7 +249,8 @@ public sealed partial class HubStore
         await using var command = connection.CreateCommand();
         command.CommandText = """
             UPDATE reminders SET
-                title = $title, content = $content, channel = $channel, target_type = $targetType,
+                title = $title, content = $content, channel = $channel, action = $action,
+                target_type = $targetType,
                 target_id = $targetId, speak = $speak, enabled = $enabled, repeat_kind = $repeatKind,
                 repeat_interval = $repeatInterval, repeat_weekdays = $repeatWeekdays,
                 repeat_day_of_month = $repeatDayOfMonth, fire_time = $fireTime, start_date = $startDate,
@@ -304,9 +306,17 @@ public sealed partial class HubStore
         return result;
     }
 
-    /// <summary>记录一次触发并推进到下次触发时间（<paramref name="nextFireAt"/> 为空表示不再重复）。</summary>
-    public async Task RecordReminderFiredAsync(string reminderId, DateTimeOffset firedAt,
-        DateTimeOffset? nextFireAt, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// 「领取」这一次触发：把 <c>next_fire_at</c> 推进到下一次（<paramref name="nextFireAt"/> 为空表示不再重复），
+    /// 返回 <c>true</c> 表示这次归本次调用执行。
+    /// <para><b>为什么要用 CAS 而不是先执行后推进</b>：原来的顺序是「先下发指令、再推进时间」，
+    /// 万一推进那步失败（或同一份库被两个实例各跑一个调度器），<c>next_fire_at</c> 不变，
+    /// 15 秒后同一分钟会**再下发一次**——通知重复一次还能忍，**关机重复下发就会把教室机反复关掉**。
+    /// 这里用 <c>next_fire_at IS $expected</c>（SQLite 的 IS 是 null 安全的等值比较）做原子领取：
+    /// 抢到的人才执行，抢不到的人直接跳过。</para>
+    /// </summary>
+    public async Task<bool> TryClaimReminderFireAsync(string reminderId, DateTimeOffset? expectedNextFireAt,
+        DateTimeOffset? nextFireAt, DateTimeOffset firedAt, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
@@ -314,14 +324,15 @@ public sealed partial class HubStore
             UPDATE reminders
             SET last_fired_at = $firedAt, next_fire_at = $nextFireAt, fire_count = fire_count + 1,
                 enabled = $enabled, updated_at = $firedAt
-            WHERE id = $id;
+            WHERE id = $id AND next_fire_at IS $expected;
             """;
         AddParameters(command,
             ("$firedAt", Ts(firedAt)),
             ("$nextFireAt", nextFireAt is null ? null : Ts(nextFireAt.Value)),
             ("$enabled", Bool(nextFireAt is not null)),
-            ("$id", reminderId));
-        await command.ExecuteNonQueryAsync(cancellationToken);
+            ("$id", reminderId),
+            ("$expected", expectedNextFireAt is null ? null : Ts(expectedNextFireAt.Value)));
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
     /// <summary>写入一条触发记录。</summary>
@@ -330,13 +341,14 @@ public sealed partial class HubStore
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO reminder_fires (id, reminder_id, user_id, fired_at, affected, skipped, detail)
-            VALUES ($id, $reminderId, $userId, $firedAt, $affected, $skipped, $detail);
+            INSERT INTO reminder_fires (id, reminder_id, user_id, action, fired_at, affected, skipped, detail)
+            VALUES ($id, $reminderId, $userId, $action, $firedAt, $affected, $skipped, $detail);
             """;
         AddParameters(command,
             ("$id", row.Id),
             ("$reminderId", row.ReminderId),
             ("$userId", row.UserId),
+            ("$action", NormalizeAction(row.Action)),
             ("$firedAt", Ts(row.FiredAt)),
             ("$affected", row.Affected),
             ("$skipped", row.Skipped),
@@ -369,6 +381,7 @@ public sealed partial class HubStore
                 Id = GetString(reader, "id"),
                 ReminderId = GetString(reader, "reminder_id"),
                 UserId = GetString(reader, "user_id"),
+                Action = NormalizeAction(GetString(reader, "action")),
                 FiredAt = GetTimestampOrNow(reader, "fired_at"),
                 Affected = GetInt32(reader, "affected"),
                 Skipped = GetInt32(reader, "skipped"),
@@ -380,7 +393,14 @@ public sealed partial class HubStore
     }
 
     private const string FireColumns =
-        "id, reminder_id, user_id, fired_at, affected, skipped, detail";
+        "id, reminder_id, user_id, action, fired_at, affected, skipped, detail";
+
+    /// <summary>
+    /// 动作取值的兜底：空串（老库刚补列的行）与认不出的值一律当「发通知」。
+    /// <para>数据库里出现过坏值时，宁可退回默认动作，也不要让排程器拿到 null 后走空分支。</para>
+    /// </summary>
+    private static string NormalizeAction(string? action) =>
+        ReminderActions.All.Contains(action ?? string.Empty) ? action! : ReminderActions.Notify;
 
     private static void AddReminderParameters(SqliteCommand command, ReminderRow row) =>
         AddParameters(command,
@@ -389,6 +409,7 @@ public sealed partial class HubStore
             ("$title", row.Title),
             ("$content", row.Content),
             ("$channel", row.Channel),
+            ("$action", NormalizeAction(row.Action)),
             ("$targetType", row.TargetType),
             ("$targetId", row.TargetId),
             ("$speak", Bool(row.Speak)),
@@ -442,6 +463,10 @@ public sealed class ReminderRow
     public string Title { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
     public string Channel { get; set; } = ReminderChannels.Screen;
+
+    /// <summary>到点执行的动作，见 <see cref="ReminderActions"/>。</summary>
+    public string Action { get; set; } = ReminderActions.Notify;
+
     public string TargetType { get; set; } = ReminderTargets.All;
     public string TargetId { get; set; } = string.Empty;
     public bool Speak { get; set; }
@@ -478,6 +503,10 @@ public sealed class ReminderFireRow
     public string Id { get; set; } = string.Empty;
     public string ReminderId { get; set; } = string.Empty;
     public string UserId { get; set; } = string.Empty;
+
+    /// <summary>这次执行的动作，见 <see cref="ReminderActions"/>。</summary>
+    public string Action { get; set; } = ReminderActions.Notify;
+
     public DateTimeOffset FiredAt { get; set; }
     public int Affected { get; set; }
     public int Skipped { get; set; }

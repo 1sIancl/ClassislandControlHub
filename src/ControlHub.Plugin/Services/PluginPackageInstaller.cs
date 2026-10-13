@@ -65,7 +65,7 @@ public static class PluginPackageInstaller
             var target = Path.Combine(directory, info.Id + ".cipx");
             File.WriteAllBytes(target, package);
             return new Outcome(true,
-                $"已下载并放入待安装目录（{target}），**重启 ClassIsland 后生效**。");
+                $"已下载并放入待安装目录（{target}），重启 ClassIsland 后生效。");
         }
         catch (Exception ex)
         {

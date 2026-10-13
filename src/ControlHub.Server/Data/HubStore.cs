@@ -89,6 +89,13 @@ public sealed partial class HubStore
         // 迁移：账号的按模块权限集合（JSON 数组文本）。
         await EnsureColumnAsync(connection, "users", "permissions", "TEXT NOT NULL DEFAULT ''", cancellationToken);
 
+        // 迁移：#20 定时开关机——提醒到点后「做什么」（notify / power.shutdown / power.wake）。
+        // 默认 notify 保证老库里的提醒语义不变；触发记录也带上动作，历史里能分清「那次是关机」。
+        await EnsureColumnAsync(connection, "reminders", "action", "TEXT NOT NULL DEFAULT 'notify'",
+            cancellationToken);
+        await EnsureColumnAsync(connection, "reminder_fires", "action", "TEXT NOT NULL DEFAULT 'notify'",
+            cancellationToken);
+
         // 迁移：设备备注（管理员自己标注，例如「三楼东侧」「班主任 张老师」）。
         await EnsureColumnAsync(connection, "devices", "remark", "TEXT NOT NULL DEFAULT ''", cancellationToken);
         // #20：主网卡 MAC（远程唤醒用）。空串 = 还没上报过；点「唤醒」前会先查这一列并明确报错。
@@ -414,6 +421,7 @@ public sealed partial class HubStore
             repeat_weekdays   TEXT NOT NULL DEFAULT '',
             repeat_day_of_month INTEGER NOT NULL DEFAULT 0,
             fire_time         TEXT NOT NULL DEFAULT '08:00',
+            action            TEXT NOT NULL DEFAULT 'notify',
             start_date        TEXT NOT NULL DEFAULT '',
             end_date          TEXT,
             next_fire_at      TEXT,
@@ -429,6 +437,7 @@ public sealed partial class HubStore
             id          TEXT PRIMARY KEY,
             reminder_id TEXT NOT NULL,
             user_id     TEXT NOT NULL,
+            action      TEXT NOT NULL DEFAULT 'notify',
             fired_at    TEXT NOT NULL,
             affected    INTEGER NOT NULL DEFAULT 0,
             skipped     INTEGER NOT NULL DEFAULT 0,

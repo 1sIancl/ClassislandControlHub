@@ -140,6 +140,30 @@ curl -s "$BASE/admin/devices" -H "Authorization: Bearer $TOKEN" \
 `diagnostic.screenshot` / `diagnostic.processes` / `diagnostic.bundle`。语义：**一次性派发**、
 **2 小时 TTL**、关机 / 重启有 **15 秒撤销窗口**。
 
+### 定时提醒（含定时开关机，#20）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/admin/reminders` | `reminders.read` | 自己的提醒列表（含 `action` 与下次触发时间） |
+| POST | `/admin/reminders` | `reminders.write` | 新建：`{title?, content?, action?, targetType, targetId, repeatKind, repeatInterval, repeatWeekdays[], repeatDayOfMonth, fireTime, startDate, endDate?, speak, enabled}` |
+| PUT | `/admin/reminders/{id}` | `reminders.write` | 修改（结构与新建一致） |
+| DELETE | `/admin/reminders/{id}` | `reminders.write` | 删除（连触发历史一起） |
+| POST | `/admin/reminders/{id}/run` | `reminders.write` | 立即执行一次，**不影响**原有重复计划 |
+| GET | `/admin/reminders/summary` | `reminders.read` | 概览：总数 / 启用中 / 近 24 小时触发 / 下次触发 |
+| GET | `/admin/reminders/fires?limit=` | `reminders.read` | 触发历史（含 `action` 与逐条说明：推送几台、跳过几台、是否因迟到而跳过） |
+
+`action` 取值：`notify`（默认，推送到教室大屏）、`power.shutdown`（关机，**只发在线设备**）、
+`power.wake`（网络唤醒，**不按在线过滤**）。`fireTime` 是**服务器本地时间**的 `HH:mm`；
+「仅一次」的触发日期由 `startDate` 决定。通知类必须给标题或内容，关机 / 开机类可以都留空
+（服务端会自动填「定时关机 / 定时开机」）。
+
+> ⚠️ **迟到的物理动作不会执行**：调度器对错过的触发是「补发」（停机期间过去的时点，重启后仍会挑出来），
+> 但 `power.*` 迟到超过 10 分钟就只推进计划、不执行，并在触发历史里留一条说明——
+> 免得停机补发把整栋楼在错误的时间关掉或唤醒。
+
+> ⚠️ `/admin/reminders/{id}/run` 是**领取式**的：抢不到（刚被调度器或另一个实例执行过）返回 **409**，
+> 而不是重复执行一次。
+
 ### 系统设置与品牌
 
 | 方法 | 路径 | 权限 | 说明 |

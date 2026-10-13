@@ -99,6 +99,7 @@ public static class ReminderEndpoints
             Id = f.Id,
             ReminderId = f.ReminderId,
             ReminderTitle = titles.GetValueOrDefault(f.ReminderId, "（提醒已删除）"),
+            Action = f.Action,
             FiredAt = f.FiredAt,
             Affected = f.Affected,
             Skipped = f.Skipped,
@@ -132,7 +133,7 @@ public static class ReminderEndpoints
 
         await store.CreateReminderAsync(row, cancellationToken);
         await store.AddAuditAsync(session.Username, "reminder.create", row.Title,
-            $"新建定时提醒（{DescribeRepeat(row)}，目标：{row.TargetType}）。",
+            $"新建提醒（{DescribeAction(row.Action)} · {DescribeRepeat(row)}，目标：{row.TargetType}）。",
             http.GetClientIpAddress(), cancellationToken);
 
         return ApiResult<ReminderDto>.Success(await reminders.ToDtoAsync(row, cancellationToken));
@@ -158,7 +159,8 @@ public static class ReminderEndpoints
 
         await store.UpdateReminderAsync(row, cancellationToken);
         await store.AddAuditAsync(session.Username, "reminder.update", row.Title,
-            $"修改定时提醒（{DescribeRepeat(row)}）。", http.GetClientIpAddress(), cancellationToken);
+            $"修改提醒（{DescribeAction(row.Action)} · {DescribeRepeat(row)}）。",
+            http.GetClientIpAddress(), cancellationToken);
 
         return ApiResult<ReminderDto>.Success(await reminders.ToDtoAsync(row, cancellationToken));
     }
@@ -191,9 +193,12 @@ public static class ReminderEndpoints
         var session = http.RequireAdminSession();
         var row = await RequireOwnAsync(store, session, id, cancellationToken);
 
-        var fire = await reminders.FireAsync(row, reminders.Now, cancellationToken);
+        // 触发是「领取式」的：抢不到说明这一轮刚被调度器（或另一个实例）执行过，如实告知而不是假装成功。
+        var fire = await reminders.FireAsync(row, reminders.Now, cancellationToken)
+                   ?? throw HubException.Conflict("这条提醒刚刚已被触发（可能由调度器或另一个实例执行），请刷新后重试。");
+
         await store.AddAuditAsync(session.Username, "reminder.run", row.Title,
-            $"手动触发提醒（推送 {fire.Affected} 台，跳过 {fire.Skipped} 台）。",
+            $"手动触发提醒（{DescribeAction(fire.Action)}，影响 {fire.Affected} 台，跳过 {fire.Skipped} 台）。",
             http.GetClientIpAddress(), cancellationToken);
 
         return ApiResult<ReminderFireDto>.Success(new ReminderFireDto
@@ -201,6 +206,7 @@ public static class ReminderEndpoints
             Id = fire.Id,
             ReminderId = fire.ReminderId,
             ReminderTitle = row.Title,
+            Action = fire.Action,
             FiredAt = fire.FiredAt,
             Affected = fire.Affected,
             Skipped = fire.Skipped,
@@ -209,6 +215,14 @@ public static class ReminderEndpoints
     }
 
     // ────────────────────────────── 校验与转换 ──────────────────────────────
+
+    /// <summary>动作的中文名（审计 / 列表 / 日志共用一份，别在多处各写一遍）。</summary>
+    private static string DescribeAction(string action) => action switch
+    {
+        ReminderActions.PowerShutdown => "定时关机",
+        ReminderActions.PowerWake => "定时开机",
+        _ => "发通知",
+    };
 
     /// <summary>取当前账号自己的提醒；别人的一律按「不存在」处理，实现数据隔离。</summary>
     private static async Task<ReminderRow> RequireOwnAsync(HubStore store, SessionRow session, string id,
@@ -226,15 +240,33 @@ public static class ReminderEndpoints
     /// <summary>把请求体归一化写入提醒行；不合法时抛出业务异常。</summary>
     private static void ApplyRequest(ReminderRow row, ReminderUpsertRequest request)
     {
+        // 动作留空 = 发通知（老客户端不带这个字段，语义必须保持不变）。
+        var action = (request.Action ?? string.Empty).Trim();
+        if (!ReminderActions.IsValid(action))
+        {
+            throw HubException.Validation(
+                $"动作不正确：只能是 {string.Join(" / ", ReminderActions.All)}。");
+        }
+
+        var normalized = action.Length == 0 ? ReminderActions.Notify : action;
         var title = (request.Title ?? string.Empty).Trim();
         var content = (request.Content ?? string.Empty).Trim();
-        if (title.Length == 0 && content.Length == 0)
+
+        // 「标题与内容不能同时为空」只对**通知**成立：定时开关机不是消息，内容本来就没意义。
+        if (normalized == ReminderActions.Notify && title.Length == 0 && content.Length == 0)
         {
             throw HubException.Validation("提醒标题与内容不能同时为空。");
         }
 
+        // 关机 / 开机的标题留空时给个默认名，列表里一眼能看出这条是什么。
+        if (normalized != ReminderActions.Notify && title.Length == 0)
+        {
+            title = DescribeAction(normalized);
+        }
+
         row.Title = title;
         row.Content = content;
+        row.Action = normalized;
         // 目前只实现「推送到教室大屏」一种投递方式；邮件/短信需要外部服务凭证。
         row.Channel = ReminderChannels.Screen;
         row.Speak = request.Speak;
