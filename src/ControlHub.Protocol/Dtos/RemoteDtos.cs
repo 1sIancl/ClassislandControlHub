@@ -87,6 +87,30 @@ public static class RemoteCommandKinds
     /// 只在明确知道现场情况时用。</para>
     /// </summary>
     public const string SetWindow = "window.set";
+
+    /// <summary>Ping 连通性（#107），载荷为 <see cref="NetProbePayload"/>；结果写进指令回报。</summary>
+    public const string Ping = "diagnostic.ping";
+
+    /// <summary>路由追踪（#107），载荷同上。耗时可能几十秒——只在排查跨网段问题时用。</summary>
+    public const string Traceroute = "diagnostic.traceroute";
+
+    /// <summary>磁盘空间（#107），无载荷：列出各固定分区的总量 / 可用 / 占用率。</summary>
+    public const string DiskSpace = "diagnostic.disks";
+}
+
+/// <summary>网络探测（Ping / 路由追踪，#107）的载荷。</summary>
+public sealed class NetProbePayload
+{
+    /// <summary>
+    /// 目标主机：IP 或域名。
+    /// <para>⚠️ 教室端会先用 <c>NetProbeParser.IsSafeHost</c> 校验字符集——这不是洁癖：
+    /// 这个值最终会成为系统命令的参数，虽然我们用 <c>ArgumentList</c>（不过 shell）传参，
+    /// 但多层校验才挡得住「参数注入」这类问题。</para>
+    /// </summary>
+    public string? Host { get; set; }
+
+    /// <summary>Ping 次数（1~10，默认 4）。路由追踪忽略它，跃点数上限固定 16。</summary>
+    public int? Count { get; set; }
 }
 
 /// <summary>音量指令（<see cref="RemoteCommandKinds.SetVolume"/>）的载荷。</summary>

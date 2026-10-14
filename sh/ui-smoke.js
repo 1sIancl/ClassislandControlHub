@@ -14,7 +14,7 @@
  *   node sh/ui-smoke.js
  *   SMOKE_BASE=http://127.0.0.1:29800 SMOKE_BROWSER="C:\\...\\msedge.exe" node sh/ui-smoke.js
  *
- * 覆盖的断言（154 项，分组见文件内的 `// n)` 注释）：
+ * 覆盖的断言（155 项，分组见文件内的 `// n)` 注释）：
  *   1) 起点归零：清空账号偏好与本机布局缓存 → 仪表盘回到默认布局
  *   2) 「自定义仪表盘」面板能打开，含「统计卡片 + 页面模块」两组、共 10 项
  *   3) 面板里关掉「最近事件」→ 页面立即不再渲染该模块
@@ -45,7 +45,7 @@
  *  27) 390px 手机宽下关键页面不横向溢出、课表栅格已压缩（#45）；插件列表渲染图标/首字母头像
  *  28) 无障碍（#49）：没有「纯图标又没无障碍名」的按钮、密码眼睛可 Tab、弹窗焦点陷阱与 Esc 归还焦点、
  *      顶栏分组下拉的方向键展开与 Esc 归还焦点（#49 收尾）
- *  29) 远程主界面显隐 / 全屏的四个按钮在（#57）
+ *  29) 远程主界面显隐 / 全屏的四个按钮在（#57）；Ping / 路由追踪 / 磁盘空间三个诊断入口在（#107）
  *
  * 注意：脚本会改动演示账号的界面偏好（跑完停在「最近事件 / 最近心跳」隐藏的状态），
  *       可在「自定义仪表盘 / 列设置」里勾回来。
@@ -2674,6 +2674,26 @@ function check(name, ok, extra = '') {
 
   check('远程管理里有「显示 / 隐藏主界面 / 全屏 / 退出全屏」四个按钮（#57）',
     remoteText.includes('隐藏主界面') && remoteText.includes('退出全屏'), '命中');
+
+  // ── 远程诊断扩展（#107）：Ping / 路由追踪 / 磁盘空间三个入口在 ──
+  if (!remoteText.includes('路由追踪')) {
+    const tabs2 = await page.evaluate(() => [...document.querySelectorAll('#content .tabs .tab')]
+      .map((b) => b.textContent.trim()));
+    for (const label of tabs2) {
+      await page.evaluate((text) => {
+        [...document.querySelectorAll('#content .tabs .tab')]
+          .find((b) => b.textContent.trim() === text)?.click();
+      }, label);
+      await sleep(600);
+      remoteText = await page.evaluate(() => document.getElementById('content')?.textContent ?? '');
+      if (remoteText.includes('路由追踪')) {
+        break;
+      }
+    }
+  }
+
+  check('远程管理里有「Ping / 路由追踪 / 磁盘空间」三个诊断入口（#107）',
+    remoteText.includes('路由追踪') && remoteText.includes('磁盘空间'), '命中');
 
   await page.setViewport({ width: 1600, height: 1000 });
   await sleep(700);

@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -33,6 +34,18 @@ public sealed class RemoteCommandExecutor(
 {
     /// <summary>单条指令回报的输出上限，避免超大输出占满上行链路。</summary>
     private const int MaxOutputLength = 24 * 1024;
+
+    /// <summary>Ping 默认次数（#107）：4 次够看出抖动与丢包，又不会让管理员等太久。</summary>
+    private const int DefaultPingCount = 4;
+
+    /// <summary>Ping 次数上限：再多也只是拖时间（一次 1 秒超时）。</summary>
+    private const int MaxPingCount = 10;
+
+    /// <summary>路由追踪的最大跃点数（与 Windows 默认的 30 相比收窄，避免跨网段排查时等太久）。</summary>
+    private const int MaxTraceHops = 16;
+
+    /// <summary>探测类输出在报告里保留的长度（原文用处是「看路径 / 看丢在哪一跳」）。</summary>
+    private const int MaxProbeOutputLength = 4000;
 
     /// <summary>ClassIsland 用插件目录下的这个文件标记「已禁用」。</summary>
     private const string DisabledMarker = ".disabled";
@@ -102,6 +115,10 @@ public sealed class RemoteCommandExecutor(
                 RemoteCommandKinds.SetBrightness => RunSetBrightness(command),
                 // 主界面显隐 / 全屏（#57）：改的是窗口与宿主设置，必须回 UI 线程。
                 RemoteCommandKinds.SetWindow => UiThread.Run(() => RunSetWindow(command)),
+                // 远程诊断扩展（#107）：ping / 路由追踪 / 磁盘空间，都是普通 IO，不切 UI 线程。
+                RemoteCommandKinds.Ping => await RunPingAsync(command),
+                RemoteCommandKinds.Traceroute => await RunTracerouteAsync(command),
+                RemoteCommandKinds.DiskSpace => RunDiskSpace(command),
                 _ => Fail(command, CommandErrorCodes.Unsupported, $"不支持的指令类型：{command.Kind}"),
             };
         }
@@ -1321,6 +1338,166 @@ public sealed class RemoteCommandExecutor(
     }
 
     // ────────────────────────────── helpers ──────────────────────────────
+
+    /// <summary>
+    /// Ping 目标主机（#107）：回答「这台教室机到某处通不通、延迟多少」。
+    /// <para>只解析**每行回复**里的耗时（中英文通吃），不依赖汇总行的措辞——见
+    /// <see cref="NetProbeParser.ParsePing"/>。原始输出也一并带回去：丢包时管理员要看是哪几条丢了。</para>
+    /// </summary>
+    private static async Task<CommandReportRequest> RunPingAsync(RemoteCommandDto command)
+    {
+        var payload = HubJson.Deserialize<NetProbePayload>(command.Payload);
+        if (payload is null || !NetProbeParser.IsSafeHost(payload.Host))
+        {
+            return Fail(command, CommandErrorCodes.PayloadInvalid,
+                "目标地址不合法：只接受 IP、域名或主机名（不含空格与特殊符号）。");
+        }
+
+        var host = payload.Host!.Trim();
+        var count = Math.Clamp(payload.Count ?? DefaultPingCount, 1, MaxPingCount);
+        var countText = count.ToString(CultureInfo.InvariantCulture);
+        var isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+
+        var result = isWindows
+            ? await RunToolAsync("ping", ["-n", countText, "-w", "1000", host])
+            : await RunToolAsync("ping", ["-c", countText, "-W", "1", host]);
+        if (result is null)
+        {
+            return Fail(command, CommandErrorCodes.ExecutionFailed,
+                "无法启动 ping：这台机器上没有可用的 ping 命令。");
+        }
+
+        var summary = NetProbeParser.ParsePing(result.Value.Output, count);
+        return Ok(command, $"{summary.Describe()}\n\n{TrimProbeOutput(result.Value.Output)}");
+    }
+
+    /// <summary>
+    /// 路由追踪（#107）：回答「不通是断在哪一跳」。
+    /// <para>刻意不解析每一跳的 IP：不同系统的输出格式差异大，而原文本来就够管理员看；
+    /// 这里只给出「走了多少跳」这个概览数字。</para>
+    /// </summary>
+    private static async Task<CommandReportRequest> RunTracerouteAsync(RemoteCommandDto command)
+    {
+        var payload = HubJson.Deserialize<NetProbePayload>(command.Payload);
+        if (payload is null || !NetProbeParser.IsSafeHost(payload.Host))
+        {
+            return Fail(command, CommandErrorCodes.PayloadInvalid,
+                "目标地址不合法：只接受 IP、域名或主机名（不含空格与特殊符号）。");
+        }
+
+        var host = payload.Host!.Trim();
+        var hopsText = MaxTraceHops.ToString(CultureInfo.InvariantCulture);
+        var isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+
+        var result = isWindows
+            ? await RunToolAsync("tracert", ["-d", "-h", hopsText, "-w", "1000", host])
+            : await RunToolAsync("traceroute", ["-n", "-m", hopsText, "-w", "1", host]);
+        if (result is null)
+        {
+            return Fail(command, CommandErrorCodes.ExecutionFailed,
+                "无法启动路由追踪：这台机器上没有可用的 tracert / traceroute 命令。");
+        }
+
+        var hops = NetProbeParser.CountTracerouteHops(result.Value.Output);
+        var head = hops == 0
+            ? "没能记录到任何一跳（目标可能被防火墙静默丢包，或地址无法解析）。"
+            : $"共记录到 {hops} 跳（上限 {MaxTraceHops}）——看得断在哪一跳就看下面的原文。";
+        return Ok(command, $"{head}\n\n{TrimProbeOutput(result.Value.Output)}");
+    }
+
+    /// <summary>
+    /// 磁盘空间（#107）：教室机最常见的隐形故障就是系统盘被日志 / 缓存塞满，
+    /// 而「不够用」在界面上往往只表现为各种奇怪的应用失败。
+    /// </summary>
+    private static CommandReportRequest RunDiskSpace(RemoteCommandDto command)
+    {
+        var lines = new List<string>();
+        foreach (var drive in DriveInfo.GetDrives())
+        {
+            try
+            {
+                if (!drive.IsReady
+                    || drive.DriveType is not (DriveType.Fixed or DriveType.Removable or DriveType.Network))
+                {
+                    continue;
+                }
+
+                var name = drive.Name.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                lines.Add(NetProbeParser.DescribeDisk($"{name}（{DescribeDriveType(drive.DriveType)}）",
+                    drive.TotalSize, drive.AvailableFreeSpace));
+            }
+            catch (IOException)
+            {
+                // 拔掉的 U 盘 / 断开的网络盘：跳过，不影响其它分区。
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // 没权限读的分区同样跳过。
+            }
+        }
+
+        return lines.Count == 0
+            ? Fail(command, CommandErrorCodes.ExecutionFailed, "没有读到任何可用的磁盘分区。")
+            : Ok(command, string.Join("\n", lines));
+    }
+
+    /// <summary>分区类型的可读名称（报告要给管理员看，不是给人看枚举名）。</summary>
+    private static string DescribeDriveType(DriveType type) => type switch
+    {
+        DriveType.Fixed => "本地磁盘",
+        DriveType.Removable => "可移动磁盘",
+        DriveType.Network => "网络磁盘",
+        _ => type.ToString(),
+    };
+
+    /// <summary>
+    /// 跑一个系统工具并取回输出。返回 <c>null</c> 表示进程**没能启动**（命令不存在 / 被策略拦住）。
+    /// <para>⚠️ 参数一律用 <c>ArgumentList</c> 逐个传，**绝不拼 shell 命令行**：目标地址是管理员
+    /// 输入的，拼串就等于把命令注入的口子开在教室机上。</para>
+    /// <para>刻意**不设** <c>StandardOutputEncoding</c>：让 .NET 用系统默认控制台编码
+    /// （中文 Windows 上是 GBK），否则 ping / tracert 输出里的中文会变成乱码。</para>
+    /// </summary>
+    private static async Task<(int ExitCode, string Output)?> RunToolAsync(string fileName, string[] args)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = fileName,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            foreach (var arg in args)
+            {
+                psi.ArgumentList.Add(arg);
+            }
+
+            using var process = Process.Start(psi);
+            if (process is null)
+            {
+                return null;
+            }
+
+            var stdout = await process.StandardOutput.ReadToEndAsync();
+            var stderr = await process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync();
+            var output = (stdout + (string.IsNullOrWhiteSpace(stderr) ? string.Empty : "\n" + stderr)).Trim();
+            return (process.ExitCode, output);
+        }
+        catch (Exception)
+        {
+            // 命令不存在、被组策略禁用等：都归为「起不来」，由调用方给出人话。
+            return null;
+        }
+    }
+
+    /// <summary>截断过长的探测输出（报告里只保留可读的一段）。</summary>
+    private static string TrimProbeOutput(string output) =>
+        output.Length <= MaxProbeOutputLength
+            ? output
+            : output[..MaxProbeOutputLength] + "\n…（输出过长，教室端已截断）";
 
     private static CommandReportRequest Ok(RemoteCommandDto command, string output) => new()
     {

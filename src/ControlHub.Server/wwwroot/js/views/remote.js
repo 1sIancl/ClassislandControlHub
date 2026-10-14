@@ -3,13 +3,13 @@
  * 数据来自 A 端 /admin/devices、/admin/backups 等接口。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=107';
-import { toastError } from '../core/errors.js?v=107';
-import { hintForCode } from '../core/error-hints.js?v=107';
+import { api, fetchBlob } from '../core/api.js?v=108';
+import { toastError } from '../core/errors.js?v=108';
+import { hintForCode } from '../core/error-hints.js?v=108';
 import {
   h, clear, toast, loadingBlock, confirmDialog, field, select, emptyState, formatDateTime, modal,
   hintIcon,
-} from '../core/ui.js?v=107';
+} from '../core/ui.js?v=108';
 
 export const meta = {
   title: '远程管理',
@@ -519,6 +519,14 @@ function renderDeviceControl(container) {
     { value: 'off', label: '取消静音' },
   ], '');
   const out = h('div');
+  // 网络探测（#107）用到的两个控件：目标地址与 Ping 次数（刻意用普通 input，
+  // 次数这种「填个数字」的输入不需要滑块那套外观）。
+  const hostInput = h('input', {
+    type: 'text', placeholder: '目标地址（IP / 域名）', style: { width: '200px' },
+  });
+  const probeCount = h('input', {
+    type: 'number', min: '1', max: '10', value: '4', style: { width: '64px' },
+  });
 
   /** 下发一条指令；只发给单台时把执行结果拉回来（复用命令行页那套历史）。 */
   const dispatch = async (kind, payload, title) => {
@@ -599,6 +607,42 @@ function renderDeviceControl(container) {
             onClick: () => dispatch('window.set', { fullscreen: false }, '已下发退出全屏'),
           }, '退出全屏'))),
     ),
+    h('div.form-row',
+      field(h('span', '网络探测',
+        hintIcon('排查「这台教室机为什么连不上」时可用的三件事：Ping 看通不通与延迟、'
+          + '路由追踪看断在哪一跳、磁盘空间看系统盘是不是被塞满了（教室机很多莫名其妙的故障'
+          + '其实是 C 盘满了）。目标可以是 IP、域名或主机名；结果会出现在下方的指令历史里。'
+          + '⚠️ 路由追踪可能要等十几秒（跨网段时更久）。')),
+        h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' } },
+          hostInput,
+          h('button.btn', {
+            type: 'button',
+            onClick: () => {
+              const host = hostInput.value.trim();
+              if (!host) {
+                toast('warn', '请填写目标地址');
+                return;
+              }
+
+              dispatch('diagnostic.ping', { host, count: Number(probeCount.value) || 4 }, '已下发 Ping');
+            },
+          }, 'Ping'),
+          h('button.btn', {
+            type: 'button',
+            onClick: () => {
+              const host = hostInput.value.trim();
+              if (!host) {
+                toast('warn', '请填写目标地址');
+                return;
+              }
+
+              dispatch('diagnostic.traceroute', { host }, '已下发路由追踪');
+            },
+          }, '路由追踪'),
+          h('button.btn', {
+            type: 'button',
+            onClick: () => dispatch('diagnostic.disks', {}, '已下发磁盘空间检查'),
+          }, '磁盘空间')))),   // 依次关掉：磁盘空间按钮 → 按钮组 → field() → form-row
     h('div', { style: { display: 'flex', gap: '8px', marginTop: '12px' } }, volumeBtn, brightnessBtn),
     offline.el,
     h('div', { style: { marginTop: '16px' } }, out),
