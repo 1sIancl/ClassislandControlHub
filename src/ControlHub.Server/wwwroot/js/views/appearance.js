@@ -16,15 +16,15 @@
  * 本页的「外观（本机）」。</para>
  */
 
-import { api } from '../core/api.js?v=112';
+import { api } from '../core/api.js?v=113';
 import {
   h, clear, field, select, loadingBlock, toast, confirmDialog,
-} from '../core/ui.js?v=112';
+} from '../core/ui.js?v=113';
 import {
   THEMES, DENSITIES, ACCENTS, FONTS, RADII,
   getTheme, applyTheme, getDensity, setDensity,
   getAccent, setAccent, getFont, setFont, getRadius, setRadius,
-} from '../core/prefs.js?v=112';
+} from '../core/prefs.js?v=113';
 
 export const meta = {
   title: '页面设置',

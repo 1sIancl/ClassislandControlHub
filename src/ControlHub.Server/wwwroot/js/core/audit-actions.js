@@ -29,6 +29,18 @@ const PREFIX_LABELS = {
   // 插件管理（#121）：同步索引 / 缓存包 / 批量下发。
   plugin: '插件',
   admin: '登录',
+  // 下面这些是「凑齐 104 个动作码、一个不漏」时补的：少了它们，审计页会出现
+  // 「exam.start」「device.enroll」这种整串英文（前缀认不出来就整串退回原文）。
+  exam: '考试模式',
+  'profile-slots': '走班制',
+  'register-code': '注册码',
+  update: '程序更新',
+  config: '配置',
+  database: '数据库',
+  branding: '品牌',
+  ai: 'AI',
+  lesson: '换课',
+  timeoffset: '授时',
 };
 
 /** 动作码其余部分 → 动词。多段动作（如 `command.broadcast`）整体作为键。 */
@@ -71,6 +83,47 @@ const VERB_LABELS = {
   deploy: '下发插件',
   'market.sync': '同步市场索引',
   'market.settings': '修改市场设置',
+  // ── 补齐剩下的动作码（`_shot/audit-labels-report.js` 会把「渲染后仍含英文」的全列出来）──
+  // 登录 / 密码（前缀 admin）
+  'login.failed': '登录失败',
+  'login.locked': '账号被锁定',
+  'login.totp': '两步验证登录',
+  'login.totp.failed': '两步验证失败',
+  'password.changed': '修改密码',
+  'password.expiring': '密码即将到期',
+  'password.reset': '重置密码',
+  seed: '初始化管理员',
+  // 自助注册 / 注册码
+  register: '注册',
+  'register.approve': '批准注册申请',
+  'register.reject': '拒绝注册申请',
+  'register.request': '提交注册申请',
+  'register.delete': '删除注册申请',
+  'register.failed': '注册失败',
+  'approval.switch': '开关变更',
+  // 设备
+  enroll: '注册接入',
+  wake: '网络唤醒',
+  'command.result': '指令执行结果',
+  'export.csv': '导出 CSV',
+  'import.csv': '导入 CSV',
+  // 档案 / 课表 / 模板
+  apply: '套用',
+  'ai-import': 'AI 导入',
+  'override.create': '新建临时换课',
+  'override.delete': '删除临时换课',
+  swap: '对调',
+  adjust: '微调',
+  // 其他
+  config: '配置',
+  start: '开启',
+  end: '结束',
+  updated: '修改',
+  check: '检查',
+  vacuum: '清理空间',
+  'image.upload': '上传图片',
+  disable: '关闭',
+  enable: '启用',
   'inventory.refresh': '刷新已装清单',
   // 考试模式（#21）：临时切档案 + 还原，事后要看得出「谁在什么时候开的、涉及哪些教室」。
   'exam.start': '开启考试模式',
