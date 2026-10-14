@@ -376,8 +376,8 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 
 | 集控版本 | 插件包 | 支持的 ClassIsland | 插件市场 | 状态 |
 |---|---|---|---|---|
-| A 端 `1.4.1` / 插件 `1.4.1.0` | `ControlHub.Plugin.cipx` `1.4.1.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | 🕓 未发布 | 🕓 **尚未发布**（定时开关机） |
-| A 端 `1.4.0` / 插件 `1.4.0.0` | `ControlHub.Plugin.cipx` `1.4.0.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ✅ **当前已发布版本**（插件市场代理缓存 / 批量装插件 / 完整性校验） |
+| A 端 `1.4.1` / 插件 `1.4.1.0` | `ControlHub.Plugin.cipx` `1.4.1.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ✅ **当前已发布版本**（考试模式 / 走班制按时段切档案 / 远程诊断扩展 / 提醒事件触发 / 通知强调可关 / 密码策略 / 提醒模板变量） |
+| A 端 `1.4.0` / 插件 `1.4.0.0` | `ControlHub.Plugin.cipx` `1.4.0.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（插件市场代理缓存 / 批量装插件 / 完整性校验） |
 | A 端 `1.3.9` / 插件 `1.3.9.0` | `ControlHub.Plugin.cipx` `1.3.9.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（远程指令错误码 / 教室端音量与亮度 / 远程唤醒 / 清掉既有构建警告） |
 | A 端 `1.3.8` / 插件 `1.3.8.0` | `ControlHub.Plugin.cipx` `1.3.8.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（快捷换课 / 品牌图片上传 / 登录页预览） |
 | A 端 `1.3.7` / 插件 `1.3.7.0` | `ControlHub.Plugin.cipx` `1.3.7.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.0.0`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（两级导航 / 设置拆页 / 多选快捷键） |
