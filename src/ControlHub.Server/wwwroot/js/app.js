@@ -2,20 +2,20 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=111';
-import { toastError } from './core/errors.js?v=111';
-import { h, clear, toast, icon } from './core/ui.js?v=111';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=112';
+import { toastError } from './core/errors.js?v=112';
+import { h, clear, toast, icon } from './core/ui.js?v=112';
 import {
   initTheme,
   getSidebarCollapsed, setSidebarCollapsed,
   applyDensity,
   applyAppearance, setBrandingAccent,
   applyRemotePrefs, applySchedScale,
-} from './core/prefs.js?v=111';
-import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=111';
-import { initGlassHighlight } from './core/glass.js?v=111';
-import { initTopbar } from './topbar.js?v=111';
-import { openSearch } from './core/search.js?v=111';
+} from './core/prefs.js?v=112';
+import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=112';
+import { initGlassHighlight } from './core/glass.js?v=112';
+import { initTopbar } from './topbar.js?v=112';
+import { openSearch } from './core/search.js?v=112';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -73,6 +73,8 @@ const NAV = [
       // 考试模式（#21）：一次性把选定教室切到考试档案，考完一键还原。
       // 权限沿用 devices.write——它做的正是「改一批设备的档案 + 下发」。
       { key: 'examMode', label: '考试模式', icon: 'bell', hash: '#/examMode', perm: 'devices.write' },
+      // 走班制（#25）：按节次自动切换教室档案。
+      { key: 'profileSlots', label: '走班制', icon: 'clock', hash: '#/profileSlots', perm: 'devices.write' },
       // 授时偏移调的是教室大屏的时钟，属于教学场景（原来挂在「系统维护」下，
       // 找它得先经过服务器维护，不合理）。接口权限仍是 settings.read。
       { key: 'timesync', label: '时间偏移', icon: 'clock', hash: '#/timesync', perm: 'settings.read' },
@@ -120,27 +122,28 @@ const ROUTE_ALIASES = {
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=111'),
-  devices: () => import('./views/devices.js?v=111'),
+  dashboard: () => import('./views/dashboard.js?v=112'),
+  devices: () => import('./views/devices.js?v=112'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=111'),
-  profiles: () => import('./views/profiles.js?v=111'),
-  profileEditor: () => import('./views/profileEditor.js?v=111'),
-  deploy: () => import('./views/deploy.js?v=111'),
-  remote: () => import('./views/remote.js?v=111'),
-  reminders: () => import('./views/reminders.js?v=111'),
-  examMode: () => import('./views/examMode.js?v=111'),
-  audit: () => import('./views/audit.js?v=111'),
-  reports: () => import('./views/reports.js?v=111'),
-  appearance: () => import('./views/appearance.js?v=111'),
+  groups: () => import('./views/devices.js?v=112'),
+  profiles: () => import('./views/profiles.js?v=112'),
+  profileEditor: () => import('./views/profileEditor.js?v=112'),
+  deploy: () => import('./views/deploy.js?v=112'),
+  remote: () => import('./views/remote.js?v=112'),
+  reminders: () => import('./views/reminders.js?v=112'),
+  examMode: () => import('./views/examMode.js?v=112'),
+  profileSlots: () => import('./views/profileSlots.js?v=112'),
+  audit: () => import('./views/audit.js?v=112'),
+  reports: () => import('./views/reports.js?v=112'),
+  appearance: () => import('./views/appearance.js?v=112'),
   // 「系统设置」拆成四页（原 settings.js 已按此拆分，见各文件头部说明）。
-  accounts: () => import('./views/accounts.js?v=111'),
-  server: () => import('./views/server.js?v=111'),
-  integrations: () => import('./views/integrations.js?v=111'),
-  maintenance: () => import('./views/maintenance.js?v=111'),
-  timesync: () => import('./views/timesync.js?v=111'),
-  lessons: () => import('./views/lessons.js?v=111'),
-  plugins: () => import('./views/pluginMarket.js?v=111'),
+  accounts: () => import('./views/accounts.js?v=112'),
+  server: () => import('./views/server.js?v=112'),
+  integrations: () => import('./views/integrations.js?v=112'),
+  maintenance: () => import('./views/maintenance.js?v=112'),
+  timesync: () => import('./views/timesync.js?v=112'),
+  lessons: () => import('./views/lessons.js?v=112'),
+  plugins: () => import('./views/pluginMarket.js?v=112'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -684,7 +687,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=111');
+    const { startTour } = await import('./core/tour.js?v=112');
     startTour({
       onFinish: async (skipped) => {
         try {

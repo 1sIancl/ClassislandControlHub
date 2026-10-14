@@ -14,7 +14,7 @@
  *   node sh/ui-smoke.js
  *   SMOKE_BASE=http://127.0.0.1:29800 SMOKE_BROWSER="C:\\...\\msedge.exe" node sh/ui-smoke.js
  *
- * 覆盖的断言（155 项，分组见文件内的 `// n)` 注释）：
+ * 覆盖的断言（156 项，分组见文件内的 `// n)` 注释）：
  *   1) 起点归零：清空账号偏好与本机布局缓存 → 仪表盘回到默认布局
  *   2) 「自定义仪表盘」面板能打开，含「统计卡片 + 页面模块」两组、共 10 项
  *   3) 面板里关掉「最近事件」→ 页面立即不再渲染该模块
@@ -2694,6 +2694,19 @@ function check(name, ok, extra = '') {
 
   check('远程管理里有「Ping / 路由追踪 / 磁盘空间」三个诊断入口（#107）',
     remoteText.includes('路由追踪') && remoteText.includes('磁盘空间'), '命中');
+
+  // ── 走班制规则页（#25）：页面能开、有配置入口与「立即对齐」 ──
+  await page.goto(`${BASE}/#/dashboard`, { waitUntil: 'networkidle2' });
+  await page.goto(`${BASE}/#/profileSlots`, { waitUntil: 'networkidle2' });
+  await page.reload({ waitUntil: 'networkidle2' });
+  await page.waitForFunction(() => document.getElementById('pageTitle')?.textContent?.trim() === '走班制',
+    { timeout: 20000 }).catch(() => {});
+  await sleep(1800);
+  const slotText = await page.evaluate(() => document.getElementById('content')?.textContent ?? '');
+  check('走班制页面能打开，且有「配置这台教室的规则」与「立即按当前时段对齐」（#25）',
+    slotText.includes('走班制时段规则') && slotText.includes('立即按当前时段对齐')
+      && slotText.includes('配置这台教室的规则'),
+    `标题命中=${slotText.includes('走班制时段规则')}`);
 
   await page.setViewport({ width: 1600, height: 1000 });
   await sleep(700);
