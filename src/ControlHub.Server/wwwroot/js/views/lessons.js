@@ -11,11 +11,11 @@
  * 效果与在教室大屏上手动换课一致，适合「现在就改这一节」。</para>
  */
 
-import { api } from '../core/api.js?v=109';
-import { errorBlock } from '../core/errors.js?v=109';
+import { api } from '../core/api.js?v=110';
+import { errorBlock } from '../core/errors.js?v=110';
 import {
   h, clear, toast, loadingBlock, field, select, confirmDialog,
-} from '../core/ui.js?v=109';
+} from '../core/ui.js?v=110';
 
 export const meta = {
   title: '快捷换课',

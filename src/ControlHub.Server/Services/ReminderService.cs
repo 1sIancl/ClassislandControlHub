@@ -372,6 +372,11 @@ public sealed class ReminderService(
     {
         var (targets, skipped, detail) = await ResolveTargetsAsync(row, onlineOnly: true, cancellationToken);
 
+        // 模板变量（#11 的一部分）：在**发送那一刻**渲染。保存时渲染会把第一次的值固化进数据库，
+        // 之后每次都发那个旧时间——「推送到哪」「这次几台」本来就每次可能不同。
+        var title = ReminderTemplate.Render(row.Title, now, detail, targets.Count);
+        var message = ReminderTemplate.Render(row.Content, now, detail, targets.Count);
+
         foreach (var device in targets)
         {
             await store.CreateCommandAsync(new RemoteCommandRow
@@ -381,8 +386,8 @@ public sealed class ReminderService(
                 Kind = RemoteCommandKinds.Notify,
                 Payload = HubJson.Serialize(new NotifyRequestDto
                 {
-                    Title = string.IsNullOrWhiteSpace(row.Title) ? "提醒" : row.Title,
-                    Message = row.Content,
+                    Title = string.IsNullOrWhiteSpace(title) ? "提醒" : title,
+                    Message = message,
                     Speak = row.Speak,
                 }),
                 Status = "pending",

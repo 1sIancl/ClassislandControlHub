@@ -3,11 +3,11 @@
  * 提醒按账号隔离：这里只会看到、也只能改到自己创建的提醒；到点由服务端调度器推送到教室大屏。
  */
 
-import { api } from '../core/api.js?v=109';
+import { api } from '../core/api.js?v=110';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, select,
   emptyState, formatDateTime, relativeTime, hintIcon,
-} from '../core/ui.js?v=109';
+} from '../core/ui.js?v=110';
 
 export const meta = {
   title: '定时提醒',
@@ -392,7 +392,10 @@ function openEditor(container, reminder) {
     repaintAction();
   });
   const actionHint = h('div');
-  const contentField = field('内容', contentInput);
+  // 模板变量（#11 的一部分）：提示写在这儿，比写进文档更容易被看到。
+  const contentField = field('内容', contentInput,
+    '可用变量：{time}（时刻）、{date}（日期）、{datetime}（日期时刻）、{targets}（推送到哪）、'
+    + '{count}（本次台数）——都在发送那一刻替换。');
 
   // 触发方式（#12）：按时间 / 设备上线 / 配置同步完成。
   draft.triggerKind = reminder?.triggerKind || 'time';
