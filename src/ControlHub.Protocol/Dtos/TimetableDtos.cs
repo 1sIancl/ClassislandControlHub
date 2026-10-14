@@ -40,6 +40,79 @@ public sealed class TimetableTemplateRequest
     public int PeriodCount { get; set; }
 }
 
+/// <summary>
+/// 走班制的一条时段规则（`#25`）：第 N 节时，这台教室用哪个档案。
+/// </summary>
+public sealed class DeviceProfileSlotDto
+{
+    /// <summary>节次序号（0 基，与课表节点序号、时间表里第 N 个「上课」时间点一致）。</summary>
+    public int PeriodIndex { get; set; }
+
+    /// <summary>该节要用的档案 ID。</summary>
+    public string ProfileId { get; set; } = string.Empty;
+
+    /// <summary>档案名（只读，便于界面直接显示）。</summary>
+    public string ProfileName { get; set; } = string.Empty;
+}
+
+/// <summary>一台教室的时段规则（含当前状态，供界面显示）。</summary>
+public sealed class DeviceProfileSlotsDto
+{
+    /// <summary>教室 ID。</summary>
+    public string DeviceId { get; set; } = string.Empty;
+
+    /// <summary>教室名。</summary>
+    public string DeviceName { get; set; } = string.Empty;
+
+    /// <summary>这台教室现在用的是哪个档案（当前生效值，不是规则）。</summary>
+    public string CurrentProfileId { get; set; } = string.Empty;
+
+    /// <summary>规则列表（按节次升序）。</summary>
+    public List<DeviceProfileSlotDto> Slots { get; set; } = [];
+
+    /// <summary>时间表里「上课」的节数（界面据此提示「第 5 节越界了」）。</summary>
+    public int PeriodCount { get; set; }
+
+    /// <summary>当前是第几节；不在上课时段时为 <c>null</c>。</summary>
+    public int? CurrentPeriodIndex { get; set; }
+}
+
+/// <summary>更新一台教室的时段规则（整体替换）。</summary>
+public sealed class DeviceProfileSlotsUpdateRequest
+{
+    /// <summary>新的规则列表；传空数组即清空这台教室的规则。</summary>
+    public List<DeviceProfileSlotDto> Slots { get; set; } = [];
+}
+
+/// <summary>按当前时段对齐一次的结果（逐台说明做了什么）。</summary>
+public sealed class ProfileSlotsApplyReportDto
+{
+    /// <summary>检查时间。</summary>
+    public DateTimeOffset CheckedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>带规则的教室台数。</summary>
+    public int DeviceCount { get; set; }
+
+    /// <summary>真的改了档案并下发的台数。</summary>
+    public int Changed { get; set; }
+
+    /// <summary>逐台说明（改了 / 没改的原因）。</summary>
+    public List<ProfileSlotApplyItemDto> Items { get; set; } = [];
+}
+
+/// <summary>单台教室的对齐结果。</summary>
+public sealed class ProfileSlotApplyItemDto
+{
+    /// <summary>教室名。</summary>
+    public string DeviceName { get; set; } = string.Empty;
+
+    /// <summary>结果：<c>applied</c> / <c>unchanged</c> / <c>out_of_period</c> / <c>skipped</c>。</summary>
+    public string Result { get; set; } = string.Empty;
+
+    /// <summary>人话说明（界面与脚本都直接显示它）。</summary>
+    public string Message { get; set; } = string.Empty;
+}
+
 /// <summary>把课表模板套用到某个档案的请求（#9 的「模板套用」）。</summary>
 public sealed class TimetableTemplateApplyRequest
 {

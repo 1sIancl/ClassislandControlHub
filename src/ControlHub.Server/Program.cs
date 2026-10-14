@@ -169,6 +169,12 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<WebhookService>())
 builder.Services.AddHostedService<DeviceWatchService>();
 // 配置下发失败自动重试（#17）：只重推「回报过失败且在线」的设备，有冷却与次数上限。
 builder.Services.AddHostedService<SyncRetryService>();
+// 走班制教室按时段切档案（#25）：只在「该换」的那一刻改档案并下发。
+// ⚠️ 同时注册成单例：管理端要通过它手动触发一次对齐，而 `AddHostedService<T>` 只把 T 注册为
+// `IHostedService`——端点里直接注入具体类型会解析失败，minimal API 于是把它当成**请求体参数**，
+// 报一个「400 且 body 为空」的怪错误（0ms 就返回，日志里连业务异常都没有）。
+builder.Services.AddSingleton<ProfileSlotService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ProfileSlotService>());
 // 在线率采样（#63）：last_seen_at 是瞬时值，不做采样就没有「上周在线率」这种数据。
 builder.Services.AddHostedService<StatsService>();
 // ServerTimeService 同时是「可被端点注入的单例」与「后台授时服务」，用工厂引用同一实例。
@@ -335,6 +341,8 @@ app.MapAiEndpoints();
 app.MapReminderEndpoints();
 // 考试模式（#21）：临时把选定教室切到考试档案，考完一键还原。
 app.MapExamModeEndpoints();
+// 走班制教室按时段切档案（#25）。
+app.MapProfileSlotEndpoints();
 app.MapRegistrationEndpoints();
 app.MapNoticeTemplateEndpoints();
 app.MapTimetableOverrideEndpoints();

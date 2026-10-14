@@ -186,6 +186,22 @@ curl -s "$BASE/admin/devices" -H "Authorization: Bearer $TOKEN" \
 > ⚠️ `/admin/reminders/{id}/run` 是**领取式**的：抢不到（刚被调度器或另一个实例执行过）返回 **409**，
 > 而不是重复执行一次。
 
+### 走班制时段规则（#25）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/admin/profile-slots` | `devices.read` | 带规则的教室 + `periodCount` / `currentPeriodIndex` / 当前档案 |
+| GET | `/admin/devices/{id}/profile-slots` | `devices.read` | 单台教室的规则（编辑器用） |
+| PUT | `/admin/devices/{id}/profile-slots` | `devices.write` | 整体替换：`{slots:[{periodIndex, profileId}]}`（空数组即清空） |
+| POST | `/admin/profile-slots/apply-now` | `devices.write` | 立即按当前时段对齐一次，返回逐台说明 |
+
+- 节次是 **0 基序号**（与课表节点、时间表里第 N 个「上课」时间点一致），不是时间——
+  作息表改了规则仍然成立。
+- 保存时校验：节次越界（超出这台教室当前作息的上课节数）、同一节重复、档案不存在 → 400。
+- 后台**每 30 秒**检查一次，只在「该换」时改档案并下发；**考试模式进行中不动**。
+- `apply-now` 的逐台结果取值：`applied` / `unchanged` / `out_of_period`（不在上课时段）/
+  `skipped`（例如档案里没有作息时间表、或规则指向的档案已删除）。
+
 ### 课表模板套用（#9）
 
 | 方法 | 路径 | 权限 | 说明 |

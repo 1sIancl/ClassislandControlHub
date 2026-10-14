@@ -178,6 +178,16 @@ public sealed class ServerOptions
     public int PasswordExpiryWarnDays { get; set; } = 14;
 
     /// <summary>
+    /// 走班制教室按时段切档案（#25），默认开启。
+    /// <para>带规则的教室会在每节课开始时自动切到该节对应的档案并下发。只在**真的需要换**时才动
+    /// （见 <see cref="Services.ProfileSlotService"/>），所以开着它并不会持续打扰教室端。</para>
+    /// </summary>
+    public bool ProfileSlotsEnabled { get; set; } = true;
+
+    /// <summary>走班规则的检查间隔（秒），默认 30。每节课开始后最多等这么久就会切过去。</summary>
+    public int ProfileSlotIntervalSeconds { get; set; } = 30;
+
+    /// <summary>
     /// 配置下发失败自动重试（#17），默认开启。
     /// <para>教室端回报失败后由服务端定向重推——多数失败是一时性的（目录被占用、磁盘临时不可写），
     /// 让管理员自己去发现再手点一次并不划算。重试策略见下面三项。</para>
