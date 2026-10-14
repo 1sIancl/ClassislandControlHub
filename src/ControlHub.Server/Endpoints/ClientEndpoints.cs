@@ -266,7 +266,8 @@ public static class ClientEndpoints
         {
             try
             {
-                await reminders.FireDeviceOnlineAsync(device, cancellationToken);
+                await reminders.FireDeviceEventAsync(device, ReminderTriggers.DeviceOnline, "设备上线",
+                    cancellationToken);
             }
             catch (Exception)
             {
@@ -369,6 +370,7 @@ public static class ClientEndpoints
         HubStore store,
         SyncService sync,
         WebhookService webhooks,
+        ReminderService reminders,
         CancellationToken cancellationToken)
     {
         var device = http.RequireDevice();
@@ -400,6 +402,22 @@ public static class ClientEndpoints
         // 以前 partial 被当成成功静默掉了，表现为「课表换了但时间表没换，管理端却毫无提示」。
         var fullyApplied = string.Equals(request.Result, ApplyResults.Success, StringComparison.OrdinalIgnoreCase);
         var partiallyApplied = string.Equals(request.Result, ApplyResults.Partial, StringComparison.OrdinalIgnoreCase);
+
+        // 事件触发的提醒（#12）：「配置同步完成」。**只有完全成功才触发**——部分应用意味着教室里
+        // 还有分区没应用上，说「同步完成」是误导（那种情况由上面的 device.error 负责通知）。
+        if (fullyApplied)
+        {
+            try
+            {
+                await reminders.FireDeviceEventAsync(device, ReminderTriggers.SyncCompleted, "配置同步完成",
+                    cancellationToken);
+            }
+            catch (Exception)
+            {
+                // 提醒内部已各自 try；这里再兜一层，保证回报接口照常返回
+                // （回报失败会让这台设备被标成异常，比少发一条提醒严重得多）。
+            }
+        }
         if (!fullyApplied)
         {
             await webhooks.NotifyAsync(WebhookEvents.DeviceError,

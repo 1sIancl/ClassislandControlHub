@@ -120,9 +120,13 @@ public sealed class ReminderScheduleTests
         Assert.True(ReminderTriggers.IsValid(string.Empty));
         Assert.True(ReminderTriggers.IsValid(ReminderTriggers.Time));
         Assert.True(ReminderTriggers.IsValid(ReminderTriggers.DeviceOnline));
+        Assert.True(ReminderTriggers.IsValid(ReminderTriggers.SyncCompleted));
         Assert.False(ReminderTriggers.IsValid("on_boot"));
 
+        // 两种事件触发都要被认成事件（漏一个的话，那类提醒会既没有 next_fire_at、又不被事件唤醒，
+        // 变成永远不会触发的孤儿——界面还看不出来）。
         Assert.True(ReminderTriggers.IsEvent(ReminderTriggers.DeviceOnline));
+        Assert.True(ReminderTriggers.IsEvent(ReminderTriggers.SyncCompleted));
         Assert.False(ReminderTriggers.IsEvent(ReminderTriggers.Time));
         Assert.False(ReminderTriggers.IsEvent(null));
 

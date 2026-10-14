@@ -124,8 +124,12 @@ public static class ReminderEndpoints
     }
 
     /// <summary>审计文案里的「什么时候触发」：事件触发不该显示成排程（会让人以为它按时触发）。</summary>
-    private static string DescribeTrigger(ReminderRow row) =>
-        ReminderTriggers.IsEvent(row.TriggerKind) ? "设备上线时触发" : DescribeRepeat(row);
+    private static string DescribeTrigger(ReminderRow row) => row.TriggerKind switch
+    {
+        ReminderTriggers.DeviceOnline => "设备上线时触发",
+        ReminderTriggers.SyncCompleted => "配置同步完成时触发",
+        _ => DescribeRepeat(row),
+    };
 
     /// <summary>新建提醒。</summary>
     private static async Task<ApiResult<ReminderDto>> CreateAsync(

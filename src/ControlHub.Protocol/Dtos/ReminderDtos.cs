@@ -93,15 +93,23 @@ public static class ReminderTriggers
     /// <summary>设备上线时触发：目标里的某台教室机从离线变为在线时执行一次。</summary>
     public const string DeviceOnline = "device_online";
 
+    /// <summary>
+    /// 配置同步完成时触发：目标里的某台教室机**成功应用**了新下发的配置时执行一次。
+    /// <para>只有「完全成功」算完成：部分应用（partial）意味着教室里还有分区没应用上，
+    /// 说「同步完成」是误导——那种情况另有 <c>device.error</c> 事件负责通知。</para>
+    /// </summary>
+    public const string SyncCompleted = "sync.completed";
+
     /// <summary>全部取值。</summary>
-    public static readonly string[] All = [Time, DeviceOnline];
+    public static readonly string[] All = [Time, DeviceOnline, SyncCompleted];
 
     /// <summary>取值是否合法（空视为按时间，兼容老客户端）。</summary>
     public static bool IsValid(string? value) => string.IsNullOrWhiteSpace(value) || All.Contains(value);
 
     /// <summary>是否属于「事件触发」（不听排程、不写 next_fire_at，靠事件发生执行）。</summary>
     public static bool IsEvent(string? value) =>
-        string.Equals(value, DeviceOnline, StringComparison.OrdinalIgnoreCase);
+        value is not null && (value.Equals(DeviceOnline, StringComparison.OrdinalIgnoreCase)
+            || value.Equals(SyncCompleted, StringComparison.OrdinalIgnoreCase));
 }
 
 /// <summary>定时提醒。</summary>

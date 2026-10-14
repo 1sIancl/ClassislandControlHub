@@ -214,18 +214,23 @@ public sealed class ReminderService(
     private static readonly TimeSpan EventCooldown = TimeSpan.FromMinutes(5);
 
     /// <summary>
-    /// 某台设备「离线 → 在线」时，执行所有以该事件为触发的提醒（#12）。
-    /// <para>只执行**目标覆盖这台设备**的提醒：事件触发的语义是「我关心的那台 / 那组上线了」，
-    /// 而不是「随便哪台设备上线都跑一遍」。目标为「全部教室」时跳过目标解析（这正是最常见的情形，
+    /// 某台设备发生了某个**事件**时，执行所有以该事件为触发的提醒（#12）。
+    /// <para>只执行**目标覆盖这台设备**的提醒：事件触发的语义是「我关心的那台 / 那组发生了这件事」，
+    /// 而不是「随便哪台设备发生都跑一遍」。目标为「全部教室」时跳过目标解析（这正是最常见的情形，
     /// 不值得为它每次都查一遍设备与分组）。</para>
-    /// <para>每条提醒单独 try：一条失败不该影响其它提醒，更不该把心跳拖出问题。</para>
+    /// <para>每条提醒单独 try：一条失败不该影响其它提醒，更不该把心跳 / 回报拖出问题。</para>
     /// </summary>
-    public async Task<int> FireDeviceOnlineAsync(DeviceRow device, CancellationToken cancellationToken = default)
+    /// <param name="device">发生事件的设备。</param>
+    /// <param name="triggerKind">事件类型，见 <see cref="ReminderTriggers"/>（只取这一类提醒）。</param>
+    /// <param name="source">写进触发记录与群消息的来源文案（「设备上线」/「配置同步完成」）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    public async Task<int> FireDeviceEventAsync(DeviceRow device, string triggerKind, string source,
+        CancellationToken cancellationToken = default)
     {
         var now = Now;
         var fired = 0;
 
-        foreach (var row in await store.GetEventRemindersAsync(ReminderTriggers.DeviceOnline, cancellationToken))
+        foreach (var row in await store.GetEventRemindersAsync(triggerKind, cancellationToken))
         {
             try
             {
@@ -238,14 +243,14 @@ public sealed class ReminderService(
                     }
                 }
 
-                if (await FireEventAsync(row, now, cancellationToken) is not null)
+                if (await FireEventAsync(row, now, source, cancellationToken) is not null)
                 {
                     fired++;
                 }
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "设备上线触发的提醒执行失败：{Id}（{Title}）", row.Id, row.Title);
+                logger.LogError(ex, "{Source}触发的提醒执行失败：{Id}（{Title}）", source, row.Id, row.Title);
             }
         }
 
@@ -257,19 +262,19 @@ public sealed class ReminderService(
     /// 不做迟到判定（事件没有「准时」的概念），也不推进排程——改用带冷却的领取，
     /// 冷却期内重复上线不会再执行（见 <see cref="EventCooldown"/>）。
     /// </summary>
-    private async Task<ReminderFireRow?> FireEventAsync(ReminderRow row, DateTimeOffset now,
+    private async Task<ReminderFireRow?> FireEventAsync(ReminderRow row, DateTimeOffset now, string source,
         CancellationToken cancellationToken)
     {
         var action = ReminderActions.All.Contains(row.Action) ? row.Action : ReminderActions.Notify;
 
         if (!await store.TryClaimEventFireAsync(row.Id, now, now - EventCooldown, cancellationToken))
         {
-            logger.LogInformation("提醒「{Title}」在 {Minutes} 分钟冷却期内，这次设备上线跳过。",
-                row.Title, EventCooldown.TotalMinutes);
+            logger.LogInformation("提醒「{Title}」在 {Minutes} 分钟冷却期内，这次{Source}跳过。",
+                row.Title, EventCooldown.TotalMinutes, source);
             return null;
         }
 
-        return await ExecuteOnceAsync(row, action, now, late: false, "设备上线", cancellationToken);
+        return await ExecuteOnceAsync(row, action, now, late: false, source, cancellationToken);
     }
 
     /// <summary>

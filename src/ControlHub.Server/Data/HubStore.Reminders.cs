@@ -338,11 +338,18 @@ public sealed partial class HubStore
     }
 
     /// <summary>
-    /// 把库里的触发方式收敛到合法取值：非 <c>device_online</c> 的一律按「按时间」处理
-    /// （老库、手改数据、将来新增取值时都不会把提醒变成一条永不触发的孤儿）。
+    /// 把库里的触发方式收敛到合法取值：**保留具体的那个事件**，不认识的取值一律按「按时间」。
+    /// <para>⚠️ 这里必须逐个保留取值，不能写成「是事件就归一到某一个事件」——我第一版就是这么写的，
+    /// 结果 `sync.completed` 存进去读出来变成了 `device_online`：提醒照建、界面照显示，
+    /// 但永远不会被它期待的事件唤醒（典型的静默失效）。</para>
     /// </summary>
-    private static string NormalizeTriggerKind(string? value) =>
-        ReminderTriggers.IsEvent(value) ? ReminderTriggers.DeviceOnline : ReminderTriggers.Time;
+    private static string NormalizeTriggerKind(string? value)
+    {
+        var normalized = value?.Trim().ToLowerInvariant();
+        return normalized is not null && ReminderTriggers.All.Contains(normalized)
+            ? normalized
+            : ReminderTriggers.Time;
+    }
 
     /// <summary>取某类**事件触发**的提醒（跨账号；供心跳里的「设备上线」用）。</summary>
     public async Task<List<ReminderRow>> GetEventRemindersAsync(string triggerKind,

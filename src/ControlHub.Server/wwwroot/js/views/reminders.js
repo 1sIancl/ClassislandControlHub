@@ -3,11 +3,11 @@
  * 提醒按账号隔离：这里只会看到、也只能改到自己创建的提醒；到点由服务端调度器推送到教室大屏。
  */
 
-import { api } from '../core/api.js?v=106';
+import { api } from '../core/api.js?v=107';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, select,
   emptyState, formatDateTime, relativeTime, hintIcon,
-} from '../core/ui.js?v=106';
+} from '../core/ui.js?v=107';
 
 export const meta = {
   title: '定时提醒',
@@ -44,7 +44,18 @@ const ACTION_LABELS = { notify: '发通知', 'power.shutdown': '定时关机', '
 const TRIGGERS = [
   { value: 'time', label: '按时间（到点执行）' },
   { value: 'device_online', label: '设备上线时（教室机重新上线就执行）' },
+  { value: 'sync.completed', label: '配置同步完成时（教室机成功应用新配置就执行）' },
 ];
+
+/** 事件触发的说明文案（选「按时间」时不显示）。 */
+const TRIGGER_NOTES = {
+  device_online: '这条提醒在「目标里的教室机重新上线」时执行一次（不看日期时间）。'
+    + '同一条提醒 5 分钟内最多执行一次，设备反复上下线不会刷屏；'
+    + '「推送到」建议选具体的教室或分组，选「全部教室」就是任意一台上线都会触发。',
+  'sync.completed': '这条提醒在「目标里的教室机成功应用了新下发的配置」时执行一次（不看日期时间）。'
+    + '只有「完全成功」才算：部分应用（有分区没应用上）不触发——那时另有「配置应用失败」的告警；'
+    + '同一条提醒 5 分钟内最多执行一次，避免批量下发时连推。',
+};
 const ACTION_BADGES = { 'power.shutdown': 'badge-warn', 'power.wake': 'badge-info' };
 const isPowerAction = (action) => action === 'power.shutdown' || action === 'power.wake';
 
@@ -378,7 +389,7 @@ function openEditor(container, reminder) {
   const actionHint = h('div');
   const contentField = field('内容', contentInput);
 
-  // 触发方式（#12）：按时间 / 设备上线。
+  // 触发方式（#12）：按时间 / 设备上线 / 配置同步完成。
   draft.triggerKind = reminder?.triggerKind || 'time';
   const triggerSelect = select(TRIGGERS, draft.triggerKind, (v) => {
     draft.triggerKind = v;
@@ -387,17 +398,13 @@ function openEditor(container, reminder) {
   const triggerHint = h('div');
 
   function repaintTrigger() {
-    const isEvent = draft.triggerKind === 'device_online';
-
-    // 事件触发没有「几点几分」的概念，排程整块收起——留在界面上只会让人以为两种触发同时在用。
-    scheduleBlock.hidden = isEvent;
+    // 除「按时间」之外都是事件触发：排程字段对它们没有意义，整块收起
+    // （留在界面上只会让人以为两种触发同时在用）。
+    const note = TRIGGER_NOTES[draft.triggerKind];
+    scheduleBlock.hidden = !!note;
     clear(triggerHint);
-    triggerHint.appendChild(isEvent
-      ? h('div.notice.notice-info',
-        h('span.notice-icon', 'i'),
-        h('div', '这条提醒在「目标里的教室机重新上线」时执行一次（不看日期时间）。'
-          + '同一条提醒 5 分钟内最多执行一次，设备反复上下线不会刷屏；'
-          + '「推送到」建议选具体的教室或分组，选「全部教室」就是任意一台上线都会触发。'))
+    triggerHint.appendChild(note
+      ? h('div.notice.notice-info', h('span.notice-icon', 'i'), h('div', note))
       : h('div'));
   }
   const speakField = h('label.checkbox-field', speakChk, h('span', '同时语音播报提醒内容'));

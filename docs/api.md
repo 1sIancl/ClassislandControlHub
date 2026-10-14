@@ -143,11 +143,14 @@ curl -s "$BASE/admin/devices" -H "Authorization: Bearer $TOKEN" \
 
 ### 定时提醒（含定时开关机，#20；事件触发 #12）
 
-提醒的 `triggerKind` 有两种取值：`time`（默认，按 `nextFireAt` 到点触发）与
-`device_online`（**设备上线时**触发，`nextFireAt` 恒为 `null`）。
+提醒的 `triggerKind` 有三种取值：`time`（默认，按 `nextFireAt` 到点触发）、
+`device_online`（**设备上线时**触发）与 `sync.completed`（**配置同步完成时**触发）；
+后两者的 `nextFireAt` 恒为 `null`。
 
 - `device_online` 的触发时机是「目标覆盖的教室机**从离线变回在线**」——
   即心跳里的边沿判定（`OnlineTimeoutSeconds` 默认 120 秒之外算离线）。
+- `sync.completed` 的触发时机是「目标覆盖的教室机**回报应用成功**」（`POST /client/report`
+  且 `result=success`）；`result=partial` **不算**（部分应用意味着有分区没应用上）。
 - 同一条提醒有 **5 分钟冷却**，冷却期内重复上线不会再执行；未启用（`enabled=false`）的不触发。
 - 事件触发的提醒不参与排程：`PUT/POST /admin/reminders` 时排程字段可留空，
   也不会因为「算不出下次触发时间」而被拒绝。
