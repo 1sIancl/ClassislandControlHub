@@ -111,4 +111,23 @@ public sealed class ReminderScheduleTests
         Assert.True(ReminderActions.IsPower(ReminderActions.PowerShutdown));
         Assert.False(ReminderActions.IsPower(ReminderActions.Notify));
     }
+
+    [Fact]
+    public void 触发方式取值校验与默认值()
+    {
+        // 空 / null = 老客户端不带这个字段，语义必须还是「按时间」——否则老提醒会变成永不触发。
+        Assert.True(ReminderTriggers.IsValid(null));
+        Assert.True(ReminderTriggers.IsValid(string.Empty));
+        Assert.True(ReminderTriggers.IsValid(ReminderTriggers.Time));
+        Assert.True(ReminderTriggers.IsValid(ReminderTriggers.DeviceOnline));
+        Assert.False(ReminderTriggers.IsValid("on_boot"));
+
+        Assert.True(ReminderTriggers.IsEvent(ReminderTriggers.DeviceOnline));
+        Assert.False(ReminderTriggers.IsEvent(ReminderTriggers.Time));
+        Assert.False(ReminderTriggers.IsEvent(null));
+
+        // 默认值同样是「按时间」：新增提醒与新建的行都不该默认成事件触发。
+        Assert.Equal(ReminderTriggers.Time, new ReminderRow().TriggerKind);
+        Assert.Equal(ReminderTriggers.Time, new ReminderDto().TriggerKind);
+    }
 }

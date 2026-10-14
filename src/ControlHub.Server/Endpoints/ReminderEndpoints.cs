@@ -107,6 +107,26 @@ public static class ReminderEndpoints
         }).ToList());
     }
 
+    /// <summary>
+    /// 把请求里的触发方式落到行上（#12）。非法取值**直接拒绝**，不静默改成按时间——
+    /// 管理员以为建了一条「设备上线就发」的提醒，结果它按 08:00 触发，这种错最难查。
+    /// </summary>
+    private static void ApplyTriggerKind(ReminderRow row, ReminderUpsertRequest request)
+    {
+        if (!ReminderTriggers.IsValid(request.TriggerKind))
+        {
+            throw HubException.Validation("触发方式只能是 time（按时间）或 device_online（设备上线）。");
+        }
+
+        row.TriggerKind = string.IsNullOrWhiteSpace(request.TriggerKind)
+            ? ReminderTriggers.Time
+            : request.TriggerKind.Trim();
+    }
+
+    /// <summary>审计文案里的「什么时候触发」：事件触发不该显示成排程（会让人以为它按时触发）。</summary>
+    private static string DescribeTrigger(ReminderRow row) =>
+        ReminderTriggers.IsEvent(row.TriggerKind) ? "设备上线时触发" : DescribeRepeat(row);
+
     /// <summary>新建提醒。</summary>
     private static async Task<ApiResult<ReminderDto>> CreateAsync(
         ReminderUpsertRequest request,
@@ -126,14 +146,23 @@ public static class ReminderEndpoints
             UpdatedAt = now,
         };
 
+        ApplyTriggerKind(row, request);
         ApplyRequest(row, request);
         await EnsureTargetExistsAsync(store, row, cancellationToken);
-        row.NextFireAt = row.Enabled ? ReminderService.ComputeNextFire(row, now) : null;
-        EnsureHaveNextFire(row);
+
+        // 事件触发（#12）不参与排程：next_fire_at 保持为空，调度器因此天然不会选中它
+        // （GetDueRemindersAsync 只取 next_fire_at 非空的），「必须有下次触发」这条校验也就不适用。
+        row.NextFireAt = ReminderTriggers.IsEvent(row.TriggerKind) || !row.Enabled
+            ? null
+            : ReminderService.ComputeNextFire(row, now);
+        if (!ReminderTriggers.IsEvent(row.TriggerKind))
+        {
+            EnsureHaveNextFire(row);
+        }
 
         await store.CreateReminderAsync(row, cancellationToken);
         await store.AddAuditAsync(session.Username, "reminder.create", row.Title,
-            $"新建提醒（{DescribeAction(row.Action)} · {DescribeRepeat(row)}，目标：{row.TargetType}）。",
+            $"新建提醒（{DescribeAction(row.Action)} · {DescribeTrigger(row)}，目标：{row.TargetType}）。",
             http.GetClientIpAddress(), cancellationToken);
 
         return ApiResult<ReminderDto>.Success(await reminders.ToDtoAsync(row, cancellationToken));
@@ -151,15 +180,23 @@ public static class ReminderEndpoints
         var session = http.RequireAdminSession();
         var row = await RequireOwnAsync(store, session, id, cancellationToken);
 
+        ApplyTriggerKind(row, request);
         ApplyRequest(row, request);
         await EnsureTargetExistsAsync(store, row, cancellationToken);
         row.UpdatedAt = reminders.Now;
-        row.NextFireAt = row.Enabled ? ReminderService.ComputeNextFire(row, reminders.Now) : null;
-        EnsureHaveNextFire(row);
+
+        // 同 CreateAsync：事件触发不写排程，也不走「必须有下次触发」的校验。
+        row.NextFireAt = ReminderTriggers.IsEvent(row.TriggerKind) || !row.Enabled
+            ? null
+            : ReminderService.ComputeNextFire(row, reminders.Now);
+        if (!ReminderTriggers.IsEvent(row.TriggerKind))
+        {
+            EnsureHaveNextFire(row);
+        }
 
         await store.UpdateReminderAsync(row, cancellationToken);
         await store.AddAuditAsync(session.Username, "reminder.update", row.Title,
-            $"修改提醒（{DescribeAction(row.Action)} · {DescribeRepeat(row)}）。",
+            $"修改提醒（{DescribeAction(row.Action)} · {DescribeTrigger(row)}）。",
             http.GetClientIpAddress(), cancellationToken);
 
         return ApiResult<ReminderDto>.Success(await reminders.ToDtoAsync(row, cancellationToken));

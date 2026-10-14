@@ -165,8 +165,8 @@ public sealed partial class HubStore
     // ────────────────────────────── 定时提醒 ──────────────────────────────
 
     private const string ReminderColumns =
-        "id, user_id, title, content, channel, action, target_type, target_id, speak, enabled, repeat_kind, "
-        + "repeat_interval, repeat_weekdays, repeat_day_of_month, fire_time, start_date, end_date, "
+        "id, user_id, title, content, channel, action, trigger_kind, target_type, target_id, speak, enabled, "
+        + "repeat_kind, repeat_interval, repeat_weekdays, repeat_day_of_month, fire_time, start_date, end_date, "
         + "next_fire_at, last_fired_at, fire_count, created_at, updated_at";
 
     private static ReminderRow ReadReminder(SqliteDataReader reader) => new()
@@ -177,6 +177,7 @@ public sealed partial class HubStore
         Content = GetString(reader, "content"),
         Channel = GetString(reader, "channel"),
         Action = NormalizeAction(GetString(reader, "action")),
+        TriggerKind = NormalizeTriggerKind(GetString(reader, "trigger_kind")),
         TargetType = GetString(reader, "target_type"),
         TargetId = GetString(reader, "target_id"),
         Speak = GetBool(reader, "speak"),
@@ -234,9 +235,9 @@ public sealed partial class HubStore
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
             INSERT INTO reminders ({ReminderColumns})
-            VALUES ($id, $userId, $title, $content, $channel, $action, $targetType, $targetId, $speak, $enabled,
-                    $repeatKind, $repeatInterval, $repeatWeekdays, $repeatDayOfMonth, $fireTime, $startDate,
-                    $endDate, $nextFireAt, $lastFiredAt, $fireCount, $createdAt, $updatedAt);
+            VALUES ($id, $userId, $title, $content, $channel, $action, $triggerKind, $targetType, $targetId, $speak,
+                    $enabled, $repeatKind, $repeatInterval, $repeatWeekdays, $repeatDayOfMonth, $fireTime,
+                    $startDate, $endDate, $nextFireAt, $lastFiredAt, $fireCount, $createdAt, $updatedAt);
             """;
         AddReminderParameters(command, row);
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -250,6 +251,7 @@ public sealed partial class HubStore
         command.CommandText = """
             UPDATE reminders SET
                 title = $title, content = $content, channel = $channel, action = $action,
+                trigger_kind = $triggerKind,
                 target_type = $targetType,
                 target_id = $targetId, speak = $speak, enabled = $enabled, repeat_kind = $repeatKind,
                 repeat_interval = $repeatInterval, repeat_weekdays = $repeatWeekdays,
@@ -335,6 +337,60 @@ public sealed partial class HubStore
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
+    /// <summary>
+    /// 把库里的触发方式收敛到合法取值：非 <c>device_online</c> 的一律按「按时间」处理
+    /// （老库、手改数据、将来新增取值时都不会把提醒变成一条永不触发的孤儿）。
+    /// </summary>
+    private static string NormalizeTriggerKind(string? value) =>
+        ReminderTriggers.IsEvent(value) ? ReminderTriggers.DeviceOnline : ReminderTriggers.Time;
+
+    /// <summary>取某类**事件触发**的提醒（跨账号；供心跳里的「设备上线」用）。</summary>
+    public async Task<List<ReminderRow>> GetEventRemindersAsync(string triggerKind,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT {ReminderColumns} FROM reminders
+            WHERE enabled = 1 AND trigger_kind = $kind
+            ORDER BY created_at;
+            """;
+        command.Parameters.AddWithValue("$kind", triggerKind);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var result = new List<ReminderRow>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result.Add(ReadReminder(reader));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// 「领取」一次**事件触发**（#12）：与 <see cref="TryClaimReminderFireAsync"/> 的区别是
+    /// **不碰排程**——不推进 <c>next_fire_at</c>、也不改 <c>enabled</c>（那是时间触发的语义），
+    /// 只落 <c>last_fired_at</c> / <c>fire_count</c>，并用冷却挡住「设备反复上下线」把提醒刷爆。
+    /// <para>冷却判定与写入在同一条 SQL 里（<c>last_fired_at IS NULL OR &lt;= $cutoff</c>），
+    /// 所以并发的两次上线只有一次能领到——与定时触发用 CAS 领取是同一个理由：
+    /// 「定时关机」重复执行是关机事故，「上线提醒」重复执行是刷屏事故。</para>
+    /// </summary>
+    public async Task<bool> TryClaimEventFireAsync(string reminderId, DateTimeOffset firedAt,
+        DateTimeOffset cutoff, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE reminders
+            SET last_fired_at = $firedAt, fire_count = fire_count + 1, updated_at = $firedAt
+            WHERE id = $id AND enabled = 1 AND (last_fired_at IS NULL OR last_fired_at <= $cutoff);
+            """;
+        AddParameters(command,
+            ("$firedAt", Ts(firedAt)),
+            ("$cutoff", Ts(cutoff)),
+            ("$id", reminderId));
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
     /// <summary>写入一条触发记录。</summary>
     public async Task AddReminderFireAsync(ReminderFireRow row, CancellationToken cancellationToken = default)
     {
@@ -410,6 +466,7 @@ public sealed partial class HubStore
             ("$content", row.Content),
             ("$channel", row.Channel),
             ("$action", NormalizeAction(row.Action)),
+            ("$triggerKind", NormalizeTriggerKind(row.TriggerKind)),
             ("$targetType", row.TargetType),
             ("$targetId", row.TargetId),
             ("$speak", Bool(row.Speak)),
@@ -466,6 +523,13 @@ public sealed class ReminderRow
 
     /// <summary>到点执行的动作，见 <see cref="ReminderActions"/>。</summary>
     public string Action { get; set; } = ReminderActions.Notify;
+
+    /// <summary>
+    /// 触发方式，见 <see cref="ReminderTriggers"/>（#12）。
+    /// <para>事件触发（device_online）时 <see cref="NextFireAt"/> 恒为空——这不是「停用」，
+    /// 而是「不听排程」。所以任何「next_fire_at 为空即停用」的判断都要先看这一列。</para>
+    /// </summary>
+    public string TriggerKind { get; set; } = ReminderTriggers.Time;
 
     public string TargetType { get; set; } = ReminderTargets.All;
     public string TargetId { get; set; } = string.Empty;

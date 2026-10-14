@@ -96,6 +96,11 @@ public sealed partial class HubStore
         await EnsureColumnAsync(connection, "reminder_fires", "action", "TEXT NOT NULL DEFAULT 'notify'",
             cancellationToken);
 
+        // 迁移：#12 事件触发——提醒也可以由「设备上线」这类事件触发（time / device_online）。
+        // 默认 time 保证老库里的提醒仍然是按时间触发的那套语义。
+        await EnsureColumnAsync(connection, "reminders", "trigger_kind", "TEXT NOT NULL DEFAULT 'time'",
+            cancellationToken);
+
         // 迁移：设备备注（管理员自己标注，例如「三楼东侧」「班主任 张老师」）。
         await EnsureColumnAsync(connection, "devices", "remark", "TEXT NOT NULL DEFAULT ''", cancellationToken);
         // #20：主网卡 MAC（远程唤醒用）。空串 = 还没上报过；点「唤醒」前会先查这一列并明确报错。
@@ -422,6 +427,7 @@ public sealed partial class HubStore
             repeat_day_of_month INTEGER NOT NULL DEFAULT 0,
             fire_time         TEXT NOT NULL DEFAULT '08:00',
             action            TEXT NOT NULL DEFAULT 'notify',
+            trigger_kind      TEXT NOT NULL DEFAULT 'time',
             start_date        TEXT NOT NULL DEFAULT '',
             end_date          TEXT,
             next_fire_at      TEXT,

@@ -1,10 +1,10 @@
 /** 系统维护视图（系统设置拆分而来）：自动更新、备份与数据库整理。 */
 
-import { api, hasPermission, fetchBlob } from '../core/api.js?v=105';
-import { toastError } from '../core/errors.js?v=105';
+import { api, hasPermission, fetchBlob } from '../core/api.js?v=106';
+import { toastError } from '../core/errors.js?v=106';
 import {
   h, clear, formatDateTime, toast, modal, confirmDialog, field, loadingBlock, kvRow,
-} from '../core/ui.js?v=105';
+} from '../core/ui.js?v=106';
 
 export const meta = {
   title: '系统维护',

@@ -141,7 +141,19 @@ curl -s "$BASE/admin/devices" -H "Authorization: Bearer $TOKEN" \
 `diagnostic.screenshot` / `diagnostic.processes` / `diagnostic.bundle`。语义：**一次性派发**、
 **2 小时 TTL**、关机 / 重启有 **15 秒撤销窗口**。
 
-### 定时提醒（含定时开关机，#20）
+### 定时提醒（含定时开关机，#20；事件触发 #12）
+
+提醒的 `triggerKind` 有两种取值：`time`（默认，按 `nextFireAt` 到点触发）与
+`device_online`（**设备上线时**触发，`nextFireAt` 恒为 `null`）。
+
+- `device_online` 的触发时机是「目标覆盖的教室机**从离线变回在线**」——
+  即心跳里的边沿判定（`OnlineTimeoutSeconds` 默认 120 秒之外算离线）。
+- 同一条提醒有 **5 分钟冷却**，冷却期内重复上线不会再执行；未启用（`enabled=false`）的不触发。
+- 事件触发的提醒不参与排程：`PUT/POST /admin/reminders` 时排程字段可留空，
+  也不会因为「算不出下次触发时间」而被拒绝。
+- 触发记录（`GET /admin/reminders/fires`）的 `detail` 里会写明「触发方式：设备上线 / 按计划」。
+
+
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|

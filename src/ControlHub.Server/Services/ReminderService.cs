@@ -200,6 +200,92 @@ public sealed class ReminderService(
             return null;
         }
 
+        var fire = await ExecuteOnceAsync(row, action, now, late, "按计划", cancellationToken);
+
+        if (next is null)
+        {
+            logger.LogInformation("提醒「{Title}」已走完重复计划，自动停用。", row.Title);
+        }
+
+        return fire;
+    }
+
+    /// <summary>事件触发（#12）的冷却时间：设备反复上下线、或全校同时来电时，同一条提醒最多这么频繁。</summary>
+    private static readonly TimeSpan EventCooldown = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// 某台设备「离线 → 在线」时，执行所有以该事件为触发的提醒（#12）。
+    /// <para>只执行**目标覆盖这台设备**的提醒：事件触发的语义是「我关心的那台 / 那组上线了」，
+    /// 而不是「随便哪台设备上线都跑一遍」。目标为「全部教室」时跳过目标解析（这正是最常见的情形，
+    /// 不值得为它每次都查一遍设备与分组）。</para>
+    /// <para>每条提醒单独 try：一条失败不该影响其它提醒，更不该把心跳拖出问题。</para>
+    /// </summary>
+    public async Task<int> FireDeviceOnlineAsync(DeviceRow device, CancellationToken cancellationToken = default)
+    {
+        var now = Now;
+        var fired = 0;
+
+        foreach (var row in await store.GetEventRemindersAsync(ReminderTriggers.DeviceOnline, cancellationToken))
+        {
+            try
+            {
+                if (row.TargetType != ReminderTargets.All)
+                {
+                    var (targets, _, _) = await ResolveTargetsAsync(row, onlineOnly: false, cancellationToken);
+                    if (!targets.Any(t => string.Equals(t.Id, device.Id, StringComparison.Ordinal)))
+                    {
+                        continue;
+                    }
+                }
+
+                if (await FireEventAsync(row, now, cancellationToken) is not null)
+                {
+                    fired++;
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "设备上线触发的提醒执行失败：{Id}（{Title}）", row.Id, row.Title);
+            }
+        }
+
+        return fired;
+    }
+
+    /// <summary>
+    /// 执行一条**事件触发**的提醒（#12）。与 <see cref="FireAsync"/> 的两点不同：
+    /// 不做迟到判定（事件没有「准时」的概念），也不推进排程——改用带冷却的领取，
+    /// 冷却期内重复上线不会再执行（见 <see cref="EventCooldown"/>）。
+    /// </summary>
+    private async Task<ReminderFireRow?> FireEventAsync(ReminderRow row, DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var action = ReminderActions.All.Contains(row.Action) ? row.Action : ReminderActions.Notify;
+
+        if (!await store.TryClaimEventFireAsync(row.Id, now, now - EventCooldown, cancellationToken))
+        {
+            logger.LogInformation("提醒「{Title}」在 {Minutes} 分钟冷却期内，这次设备上线跳过。",
+                row.Title, EventCooldown.TotalMinutes);
+            return null;
+        }
+
+        return await ExecuteOnceAsync(row, action, now, late: false, "设备上线", cancellationToken);
+    }
+
+    /// <summary>
+    /// 「执行一次」的共同部分：按动作下发 → 写触发记录 → 记日志 → 发 Webhook。
+    /// <para>时间触发与事件触发只差在**怎么领到这次执行权**（CAS 推进排程 / 带冷却领取），
+    /// 领到之后就完全一样，所以拆出来共用一份——否则两条路径的触发记录与外部通知很容易走偏。</para>
+    /// </summary>
+    /// <param name="row">要执行的提醒。</param>
+    /// <param name="action">执行的动作（已归一化）。</param>
+    /// <param name="now">本次执行的时刻（用于触发记录与指令签发时间）。</param>
+    /// <param name="late">是否属于「迟到补发」：迟到只推进计划、不执行物理动作。</param>
+    /// <param name="source">触发来源的文案（「按计划」/「设备上线」），用于日志、记录与群消息。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    private async Task<ReminderFireRow> ExecuteOnceAsync(ReminderRow row, string action, DateTimeOffset now,
+        bool late, string source, CancellationToken cancellationToken)
+    {
         var affected = 0;
         var skipped = 0;
         var detail = string.Empty;
@@ -238,13 +324,14 @@ public sealed class ReminderService(
             FiredAt = now,
             Affected = affected,
             Skipped = skipped,
-            Detail = detail,
+            Detail = $"{detail}（触发方式：{source}）",
         };
         await store.AddReminderFireAsync(fire, cancellationToken);
 
         if (!failed && !late)
         {
-            logger.LogInformation("提醒「{Title}」执行完成（{Action}）：{Detail}。", row.Title, action, detail);
+            logger.LogInformation("提醒「{Title}」执行完成（{Action}，{Source}）：{Detail}。",
+                row.Title, action, source, detail);
         }
 
         // 外部通知（#75）：定时提醒是「没人盯着也要按点发生」的事，出没出、发到几台、
@@ -253,8 +340,8 @@ public sealed class ReminderService(
         await webhooks.NotifyAsync(WebhookEvents.ReminderFired,
             failed ? $"提醒执行失败：{row.Title}" : $"提醒已触发：{row.Title}",
             failed
-                ? $"「{row.Title}」到点执行失败：{detail}"
-                : $"「{row.Title}」已按计划执行（{action}），影响 {affected} 台、跳过 {skipped} 台"
+                ? $"「{row.Title}」执行失败（{source}）：{detail}"
+                : $"「{row.Title}」已执行（{action}，{source}），影响 {affected} 台、跳过 {skipped} 台"
                   + (late ? "（迟到补发）" : string.Empty) + "。",
             new Dictionary<string, object?>
             {
@@ -265,12 +352,8 @@ public sealed class ReminderService(
                 ["skipped"] = skipped,
                 ["late"] = late,
                 ["failed"] = failed,
+                ["source"] = source,
             }, cancellationToken);
-
-        if (next is null)
-        {
-            logger.LogInformation("提醒「{Title}」已走完重复计划，自动停用。", row.Title);
-        }
 
         return fire;
     }
@@ -492,6 +575,7 @@ public sealed class ReminderService(
             Content = row.Content,
             Channel = row.Channel,
             Action = row.Action,
+            TriggerKind = row.TriggerKind,
             TargetType = row.TargetType,
             TargetId = row.TargetId,
             TargetName = targetName,

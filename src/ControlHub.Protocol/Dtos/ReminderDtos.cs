@@ -79,6 +79,31 @@ public static class ReminderActions
         string.IsNullOrWhiteSpace(action) || All.Contains(action);
 }
 
+/// <summary>
+/// 提醒的**触发方式**（#12）。
+/// <para>「按时间」是默认（老数据的取值），由调度器按 <c>next_fire_at</c> 触发；
+/// 「设备上线」由心跳里「离线 → 在线」的边沿触发——它的 <c>next_fire_at</c> 始终为空，
+/// 因此天然不会被调度器选中（<c>GetDueRemindersAsync</c> 只取非空的）。</para>
+/// </summary>
+public static class ReminderTriggers
+{
+    /// <summary>按时间触发（默认）。</summary>
+    public const string Time = "time";
+
+    /// <summary>设备上线时触发：目标里的某台教室机从离线变为在线时执行一次。</summary>
+    public const string DeviceOnline = "device_online";
+
+    /// <summary>全部取值。</summary>
+    public static readonly string[] All = [Time, DeviceOnline];
+
+    /// <summary>取值是否合法（空视为按时间，兼容老客户端）。</summary>
+    public static bool IsValid(string? value) => string.IsNullOrWhiteSpace(value) || All.Contains(value);
+
+    /// <summary>是否属于「事件触发」（不听排程、不写 next_fire_at，靠事件发生执行）。</summary>
+    public static bool IsEvent(string? value) =>
+        string.Equals(value, DeviceOnline, StringComparison.OrdinalIgnoreCase);
+}
+
 /// <summary>定时提醒。</summary>
 public sealed class ReminderDto
 {
@@ -96,6 +121,9 @@ public sealed class ReminderDto
 
     /// <summary>到点执行的动作，见 <see cref="ReminderActions"/>。</summary>
     public string Action { get; set; } = ReminderActions.Notify;
+
+    /// <summary>触发方式，见 <see cref="ReminderTriggers"/>。</summary>
+    public string TriggerKind { get; set; } = ReminderTriggers.Time;
 
     /// <summary>目标类型，见 <see cref="ReminderTargets"/>。</summary>
     public string TargetType { get; set; } = ReminderTargets.All;
@@ -166,6 +194,12 @@ public sealed class ReminderUpsertRequest
 
     /// <summary>到点执行的动作，见 <see cref="ReminderActions"/>；留空 = 发通知。</summary>
     public string? Action { get; set; }
+
+    /// <summary>
+    /// 触发方式，见 <see cref="ReminderTriggers"/>；留空 = 按时间。
+    /// <para>选「设备上线」时，排程相关字段（重复规则 / 日期 / 时间）会被忽略——它们对事件触发的提醒没有意义。</para>
+    /// </summary>
+    public string? TriggerKind { get; set; }
 
     /// <summary>目标类型。</summary>
     public string? TargetType { get; set; }

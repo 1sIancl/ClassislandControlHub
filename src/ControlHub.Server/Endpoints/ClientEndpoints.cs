@@ -229,11 +229,16 @@ public static class ClientEndpoints
         HttpContext http,
         HubStore store,
         SyncService sync,
+        ReminderService reminders,
         IOptions<ServerOptions> options,
         CancellationToken cancellationToken)
     {
         var device = http.RequireDevice();
         var revision = await store.GetRevisionAsync(cancellationToken);
+
+        // 「离线 → 在线」的边沿（#12）：RequireDevice 给的是**本次心跳更新之前**的那一行，
+        // 所以这里问出来的正是「这次心跳之前它是不是离线」——不必额外查库。
+        var wasOffline = !sync.IsOnline(device);
 
         await store.UpdateHeartbeatAsync(
             device.Id,
@@ -254,8 +259,23 @@ public static class ClientEndpoints
             await store.UpsertLessonStateAsync(device.Id, request.Lesson, cancellationToken);
         }
 
+        // 事件触发的提醒（#12）：这台教室机刚从离线变回在线时执行一次。
+        // 每条提醒内部已各自 try，这里再兜一层只是不让意外冒泡成「心跳 500」——
+        // 心跳失败会让设备被判离线，那比少发一条提醒严重得多。
+        if (wasOffline)
+        {
+            try
+            {
+                await reminders.FireDeviceOnlineAsync(device, cancellationToken);
+            }
+            catch (Exception)
+            {
+                // 记不了日志也无所谓：提醒内部的失败已经各自记过，这里只保证心跳照常返回。
+            }
+        }
+
         var shouldSync = request.AppliedRevision < revision
-                         || request.AppliedPushEpoch < device.PushEpoch;
+                           || request.AppliedPushEpoch < device.PushEpoch;
 
         return ApiResult<HeartbeatResponse>.Success(new HeartbeatResponse
         {

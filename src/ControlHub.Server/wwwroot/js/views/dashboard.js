@@ -5,14 +5,14 @@
  * 同时同步到账号（见 core/prefs.js），换台电脑登录后布局保持一致。
  */
 
-import { api, session } from '../core/api.js?v=105';
+import { api, session } from '../core/api.js?v=106';
 import {
   h, clear, formatDateTime, formatDuration, relativeTime,
   loadingBlock, modal, append, icon, toast, guard,
-} from '../core/ui.js?v=105';
+} from '../core/ui.js?v=106';
 import {
   getLayout, saveLayout, getLayoutSyncState, onLayoutSyncChange,
-} from '../core/prefs.js?v=105';
+} from '../core/prefs.js?v=106';
 
 export const meta = {
   title: '仪表盘',

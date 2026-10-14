@@ -3,11 +3,11 @@
  * 提醒按账号隔离：这里只会看到、也只能改到自己创建的提醒；到点由服务端调度器推送到教室大屏。
  */
 
-import { api } from '../core/api.js?v=105';
+import { api } from '../core/api.js?v=106';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, select,
   emptyState, formatDateTime, relativeTime, hintIcon,
-} from '../core/ui.js?v=105';
+} from '../core/ui.js?v=106';
 
 export const meta = {
   title: '定时提醒',
@@ -39,6 +39,12 @@ const ACTIONS = [
 ];
 
 const ACTION_LABELS = { notify: '发通知', 'power.shutdown': '定时关机', 'power.wake': '定时开机' };
+
+/** 触发方式（与服务端 ReminderTriggers 一一对应，#12）。 */
+const TRIGGERS = [
+  { value: 'time', label: '按时间（到点执行）' },
+  { value: 'device_online', label: '设备上线时（教室机重新上线就执行）' },
+];
 const ACTION_BADGES = { 'power.shutdown': 'badge-warn', 'power.wake': 'badge-info' };
 const isPowerAction = (action) => action === 'power.shutdown' || action === 'power.wake';
 
@@ -371,6 +377,29 @@ function openEditor(container, reminder) {
   });
   const actionHint = h('div');
   const contentField = field('内容', contentInput);
+
+  // 触发方式（#12）：按时间 / 设备上线。
+  draft.triggerKind = reminder?.triggerKind || 'time';
+  const triggerSelect = select(TRIGGERS, draft.triggerKind, (v) => {
+    draft.triggerKind = v;
+    repaintTrigger();
+  });
+  const triggerHint = h('div');
+
+  function repaintTrigger() {
+    const isEvent = draft.triggerKind === 'device_online';
+
+    // 事件触发没有「几点几分」的概念，排程整块收起——留在界面上只会让人以为两种触发同时在用。
+    scheduleBlock.hidden = isEvent;
+    clear(triggerHint);
+    triggerHint.appendChild(isEvent
+      ? h('div.notice.notice-info',
+        h('span.notice-icon', 'i'),
+        h('div', '这条提醒在「目标里的教室机重新上线」时执行一次（不看日期时间）。'
+          + '同一条提醒 5 分钟内最多执行一次，设备反复上下线不会刷屏；'
+          + '「推送到」建议选具体的教室或分组，选「全部教室」就是任意一台上线都会触发。'))
+      : h('div'));
+  }
   const speakField = h('label.checkbox-field', speakChk, h('span', '同时语音播报提醒内容'));
 
   function repaintAction() {
@@ -460,35 +489,46 @@ function openEditor(container, reminder) {
     draft.targetId = reminder?.targetId || options[0]?.value || '';
   }
 
+  // 排程相关的字段打包成一个块：触发方式选「设备上线」时整块收起。
+  const scheduleBlock = h('div',
+    h('div.form-row',
+      field('重复规则', repeatSelect),
+      everyField,
+    ),
+    h('div.form-row',
+      field('日期', dateInput, '「仅一次」时这是触发日期；重复规则下这是生效起始日期。'),
+      field('时间', timeInput, '服务器本地时间，精确到分钟。'),
+    ),
+    weekdaysField,
+    monthDayField,
+    field('结束日期', endDateInput, '留空表示长期有效。'),
+  );
+
   repaintRepeat();
   repaintTarget();
   repaintAction();
+  repaintTrigger();
 
   modal({
     title: isEdit ? `编辑提醒 · ${reminder.title}` : '新建定时提醒',
     width: 'wide',
     body: h('div',
+      field(h('span', '触发方式', hintIcon(
+        '「按时间」＝到点执行（传统的定时提醒）；「设备上线时」＝目标里的教室机从**离线变回在线**时执行一次'
+        + '（例如早上第一节课前那台机器一开机就自动弹提示）。事件触发不看日期时间，'
+        + '同一条提醒 5 分钟内最多执行一次，避免设备反复上下线刷屏。')), triggerSelect),
+      scheduleBlock,
       field(h('span', '到时做什么', hintIcon(
       '排程（什么时候）与动作（做什么）是两件事：同一条提醒可以只发通知，也可以在到点关机 / 唤醒教室机。'
       + '关机走系统电源；唤醒走网卡魔术包，需要那台教室机在 BIOS / 网卡里开了网络唤醒。')), actionSelect),
       actionHint,
       field('标题', titleInput, '教室大屏上会以醒目方式显示标题；关机 / 开机类提醒留空会自动填「定时关机 / 定时开机」。'),
       contentField,
-      h('div.form-row',
-        field('重复规则', repeatSelect),
-        everyField,
-      ),
-      h('div.form-row',
-        field('日期', dateInput, '「仅一次」时这是触发日期；重复规则下这是生效起始日期。'),
-        field('时间', timeInput, '服务器本地时间，精确到分钟。'),
-      ),
-      weekdaysField,
-      monthDayField,
-      field('结束日期', endDateInput, '留空表示长期有效。'),
       field('推送到', targetTypeSelect),
       targetHost,
       speakField,
       h('label.checkbox-field', enabledChk, h('span', '创建后立即启用')),
+      triggerHint,
       h('div.notice.notice-info',
         h('span.notice-icon', 'i'),
         h('div', '提醒由服务端按校正后的时间调度，误差通常在 15 秒内；每条提醒只属于你自己的账号，其它账号看不到。'
@@ -500,6 +540,7 @@ function openEditor(container, reminder) {
         title: titleInput.value.trim(),
         content: contentInput.value.trim(),
         action: draft.action,
+        triggerKind: draft.triggerKind,
         targetType: draft.targetType,
         targetId: draft.targetId || '',
         speak: speakChk.checked,
