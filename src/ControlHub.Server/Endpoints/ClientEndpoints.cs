@@ -560,6 +560,7 @@ public static class ClientEndpoints
         HttpContext http,
         HubStore store,
         WebhookService webhooks,
+        ReminderService reminders,
         CancellationToken cancellationToken)
     {
         var device = http.RequireDevice();
@@ -581,6 +582,27 @@ public static class ClientEndpoints
                 ? "成功"
                 : $"失败（{request.ErrorCode ?? "未分类"}）")}。",
             http.GetClientIpAddress(), cancellationToken);
+
+        // 事件触发的提醒（#12）：「自动化被触发」——教室端**成功执行**了 automation.trigger，
+        // 说明那条自动化真的跑起来了。要按 ID 精确取回这条指令才知道它是不是自动化指令。
+        if (request.Success)
+        {
+            try
+            {
+                var reported = await store.GetCommandAsync(device.Id, request.CommandId, cancellationToken);
+                if (string.Equals(reported?.Kind, RemoteCommandKinds.AutomationTrigger,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    await reminders.FireDeviceEventAsync(device, ReminderTriggers.Automation,
+                        "自动化被触发", cancellationToken);
+                }
+            }
+            catch (Exception)
+            {
+                // 提醒内部已各自 try；这里再兜一层，保证回报接口照常返回
+                // （回报失败会让指令看起来一直没执行完，比少发一条提醒严重）。
+            }
+        }
 
         // 指令失败时推 Webhook：教室那边出问题，管理员不该只能靠翻日志发现。
         if (!request.Success)

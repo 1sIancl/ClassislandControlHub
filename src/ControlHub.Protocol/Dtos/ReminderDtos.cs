@@ -100,16 +100,22 @@ public static class ReminderTriggers
     /// </summary>
     public const string SyncCompleted = "sync.completed";
 
+    /// <summary>
+    /// 自动化被触发时触发：目标教室机**成功执行**了一条 <c>automation.trigger</c> 指令时执行一次。
+    /// <para>典型用法：管理员手动触发某条自动化（例如「放学铃」）时，顺手给相关教室推一条说明。
+    /// 语义是「**A 端下发的自动化**真的跑起来了」——不是宿主自己按规则触发的自动化
+    /// （那需要宿主主动上报，宿主目前没有这类事件）。</para>
+    /// </summary>
+    public const string Automation = "automation.fired";
+
     /// <summary>全部取值。</summary>
-    public static readonly string[] All = [Time, DeviceOnline, SyncCompleted];
+    public static readonly string[] All = [Time, DeviceOnline, SyncCompleted, Automation];
 
     /// <summary>取值是否合法（空视为按时间，兼容老客户端）。</summary>
     public static bool IsValid(string? value) => string.IsNullOrWhiteSpace(value) || All.Contains(value);
 
     /// <summary>是否属于「事件触发」（不听排程、不写 next_fire_at，靠事件发生执行）。</summary>
-    public static bool IsEvent(string? value) =>
-        value is not null && (value.Equals(DeviceOnline, StringComparison.OrdinalIgnoreCase)
-            || value.Equals(SyncCompleted, StringComparison.OrdinalIgnoreCase));
+    public static bool IsEvent(string? value) => value is not null && All.Contains(value) && value != Time;
 }
 
 /// <summary>定时提醒。</summary>

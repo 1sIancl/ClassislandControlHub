@@ -127,6 +127,25 @@ public sealed partial class HubStore
         return result;
     }
 
+    /// <summary>
+    /// 按 ID 取一条指令（限定属于这台设备）。
+    /// <para>指令**回报**要用它拿到类型：「完成了一条自动化指令」与「完成了一条音量指令」
+    /// 对事件触发的提醒意义完全不同（#12 的第三种事件靠这个区分）。刻意不写成「在最近 50 条里找」——
+    /// 那种写法在指令多的时候会静默漏掉，而静默失效正是这一版踩过的最痛的坑。</para>
+    /// </summary>
+    public async Task<RemoteCommandRow?> GetCommandAsync(string deviceId, string commandId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT {CommandColumns} FROM device_commands WHERE device_id = $device AND id = $id LIMIT 1;";
+        command.Parameters.AddWithValue("$device", deviceId);
+        command.Parameters.AddWithValue("$id", commandId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadCommand(reader) : null;
+    }
+
     /// <summary>查询某设备的指令历史（倒序）。</summary>
     public async Task<List<RemoteCommandRow>> GetCommandsAsync(string deviceId, int limit = 50,
         CancellationToken cancellationToken = default)

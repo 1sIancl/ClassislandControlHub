@@ -3,11 +3,11 @@
  * 提醒按账号隔离：这里只会看到、也只能改到自己创建的提醒；到点由服务端调度器推送到教室大屏。
  */
 
-import { api } from '../core/api.js?v=108';
+import { api } from '../core/api.js?v=109';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, select,
   emptyState, formatDateTime, relativeTime, hintIcon,
-} from '../core/ui.js?v=108';
+} from '../core/ui.js?v=109';
 
 export const meta = {
   title: '定时提醒',
@@ -45,6 +45,7 @@ const TRIGGERS = [
   { value: 'time', label: '按时间（到点执行）' },
   { value: 'device_online', label: '设备上线时（教室机重新上线就执行）' },
   { value: 'sync.completed', label: '配置同步完成时（教室机成功应用新配置就执行）' },
+  { value: 'automation.fired', label: '自动化被触发时（下发的自动化真的跑起来了）' },
 ];
 
 /** 事件触发的说明文案（选「按时间」时不显示）。 */
@@ -55,6 +56,10 @@ const TRIGGER_NOTES = {
   'sync.completed': '这条提醒在「目标里的教室机成功应用了新下发的配置」时执行一次（不看日期时间）。'
     + '只有「完全成功」才算：部分应用（有分区没应用上）不触发——那时另有「配置应用失败」的告警；'
     + '同一条提醒 5 分钟内最多执行一次，避免批量下发时连推。',
+  'automation.fired': '这条提醒在「管理端下发的自动化真的执行成功」时执行一次（不看日期时间）。'
+    + '语义是「你触发的那条自动化跑起来了」，不是宿主自己按规则触发的自动化——'
+    + '如果你要的是「自动化规则到点自动跑」，用「按时间」触发更合适；'
+    + '同一条提醒 5 分钟内最多执行一次。',
 };
 const ACTION_BADGES = { 'power.shutdown': 'badge-warn', 'power.wake': 'badge-info' };
 const isPowerAction = (action) => action === 'power.shutdown' || action === 'power.wake';
