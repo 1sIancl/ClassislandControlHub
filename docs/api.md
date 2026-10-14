@@ -186,6 +186,19 @@ curl -s "$BASE/admin/devices" -H "Authorization: Bearer $TOKEN" \
 > ⚠️ `/admin/reminders/{id}/run` 是**领取式**的：抢不到（刚被调度器或另一个实例执行过）返回 **409**，
 > 而不是重复执行一次。
 
+### 考试模式（#21）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/admin/exam-mode` | `devices.read` | 当前状态：`{active, profileId, profileName, message, startedAt, startedBy, targetCount, targets[]}` |
+| POST | `/admin/exam-mode/start` | `devices.write` | 开启：`{profileId, scope, targetIds, message?, notify?}`（`scope` 同推送：`all`/`group`/`device`） |
+| POST | `/admin/exam-mode/end` | `devices.write` | 结束并**按各自原值**还原档案 |
+
+- 开启时按范围把设备的 `profile_id` 改成考试档案并**下发一次**；同时记录每台设备**原来的** `profile_id`
+  （可能是空 = 跟随分组），结束时按记录写回——**不是**写回某个默认档案。
+- 进行中再次开启返回校验错误（否则原档案会被覆盖，导致无法还原）。
+- 目标里的每个设备都会排一条通知指令（`notify=false` 可关）。
+
 ### 账号与密码策略（#28）
 
 | 方法 | 路径 | 权限 | 说明 |

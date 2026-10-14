@@ -72,6 +72,9 @@ const VERB_LABELS = {
   'market.sync': '同步市场索引',
   'market.settings': '修改市场设置',
   'inventory.refresh': '刷新已装清单',
+  // 考试模式（#21）：临时切档案 + 还原，事后要看得出「谁在什么时候开的、涉及哪些教室」。
+  'exam.start': '开启考试模式',
+  'exam.end': '结束考试模式',
   // 配置同步（#17 / #79）。这些码一直存在（`device.sync.success` 等），但此前没登记，
   // 审计页显示的是「设备 · sync.success」这种半英文。
   'sync.pull': '拉取配置',

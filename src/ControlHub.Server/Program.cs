@@ -333,6 +333,8 @@ app.MapRemoteEndpoints();
 app.MapBackupEndpoints();
 app.MapAiEndpoints();
 app.MapReminderEndpoints();
+// 考试模式（#21）：临时把选定教室切到考试档案，考完一键还原。
+app.MapExamModeEndpoints();
 app.MapRegistrationEndpoints();
 app.MapNoticeTemplateEndpoints();
 app.MapTimetableOverrideEndpoints();
