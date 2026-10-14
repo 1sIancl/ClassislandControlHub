@@ -14,7 +14,7 @@
  *   node sh/ui-smoke.js
  *   SMOKE_BASE=http://127.0.0.1:29800 SMOKE_BROWSER="C:\\...\\msedge.exe" node sh/ui-smoke.js
  *
- * 覆盖的断言（151 项，分组见文件内的 `// n)` 注释）：
+ * 覆盖的断言（154 项，分组见文件内的 `// n)` 注释）：
  *   1) 起点归零：清空账号偏好与本机布局缓存 → 仪表盘回到默认布局
  *   2) 「自定义仪表盘」面板能打开，含「统计卡片 + 页面模块」两组、共 10 项
  *   3) 面板里关掉「最近事件」→ 页面立即不再渲染该模块
@@ -43,7 +43,9 @@
  *      选开机提示网络唤醒的前提
  *  26) 通知页有「全屏强调」开关（#22）；改密要求来自服务端策略、账号列表显示密码已用天数（#28）
  *  27) 390px 手机宽下关键页面不横向溢出、课表栅格已压缩（#45）；插件列表渲染图标/首字母头像
- *  28) 无障碍（#49）：没有「纯图标又没无障碍名」的按钮、密码眼睛可 Tab、弹窗焦点陷阱与 Esc 归还焦点
+ *  28) 无障碍（#49）：没有「纯图标又没无障碍名」的按钮、密码眼睛可 Tab、弹窗焦点陷阱与 Esc 归还焦点、
+ *      顶栏分组下拉的方向键展开与 Esc 归还焦点（#49 收尾）
+ *  29) 远程主界面显隐 / 全屏的四个按钮在（#57）
  *
  * 注意：脚本会改动演示账号的界面偏好（跑完停在「最近事件 / 最近心跳」隐藏的状态），
  *       可在「自定义仪表盘 / 列设置」里勾回来。
@@ -2612,6 +2614,66 @@ function check(name, ok, extra = '') {
     focusFlow.ok === true, JSON.stringify(focusFlow));
   check('Esc 关掉弹窗后焦点回到触发它的按钮（#49）',
     focusFlow.closed === true && focusFlow.restored === true, JSON.stringify(focusFlow));
+
+  // ── 顶栏分组下拉的键盘导航（#49 收尾）──
+  await page.setViewport({ width: 1600, height: 1000 });
+  await page.evaluate(() => { window.location.hash = '#/dashboard'; });
+  await sleep(2200);
+
+  const navKeys = await page.evaluate(async () => {
+    const trigger = [...document.querySelectorAll('.nav-trigger')].find((b) => b.offsetParent !== null);
+    if (!trigger) {
+      return { ok: false, why: '没有可见的分组触发器' };
+    }
+
+    trigger.focus();
+    trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    await new Promise((r) => setTimeout(r, 300));
+    const opened = !!document.querySelector('.nav-group.open');
+    const itemCount = opened ? document.querySelectorAll('.nav-group.open .nav-item').length : 0;
+    const active = document.activeElement;
+    const focusedIsItem = !!active?.classList?.contains('nav-item');
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await new Promise((r) => setTimeout(r, 200));
+
+    return {
+      ok: opened && focusedIsItem,
+      opened,
+      itemCount,
+      focused: `${active?.tagName ?? '?'}.${(active?.className ?? '').toString().slice(0, 30)}`,
+      focusedIsItem,
+      closed: !document.querySelector('.nav-group.open'),
+      backToTrigger: document.activeElement === trigger,
+    };
+  });
+  check('顶栏分组下拉：方向键展开并进入菜单项（#49 收尾）',
+    navKeys.ok === true, JSON.stringify(navKeys));
+  check('顶栏分组下拉：Esc 收起并把焦点还给触发器（#49 收尾）',
+    navKeys.closed === true && navKeys.backToTrigger === true, JSON.stringify(navKeys));
+
+  // ── 远程主界面显隐 / 全屏（#57）：设备控制区里有这四个按钮 ──
+  await page.evaluate(() => { window.location.hash = '#/remote'; });
+  await sleep(2400);
+  let remoteText = await page.evaluate(() => document.getElementById('content')?.textContent ?? '');
+  if (!remoteText.includes('隐藏主界面')) {
+    const tabs = await page.evaluate(() => [...document.querySelectorAll('#content .tabs .tab')]
+      .map((b) => b.textContent.trim()));
+    for (const label of tabs) {
+      await page.evaluate((text) => {
+        [...document.querySelectorAll('#content .tabs .tab')]
+          .find((b) => b.textContent.trim() === text)?.click();
+      }, label);
+      await sleep(600);
+      remoteText = await page.evaluate(() => document.getElementById('content')?.textContent ?? '');
+      if (remoteText.includes('隐藏主界面')) {
+        break;
+      }
+    }
+  }
+
+  check('远程管理里有「显示 / 隐藏主界面 / 全屏 / 退出全屏」四个按钮（#57）',
+    remoteText.includes('隐藏主界面') && remoteText.includes('退出全屏'), '命中');
 
   await page.setViewport({ width: 1600, height: 1000 });
   await sleep(700);

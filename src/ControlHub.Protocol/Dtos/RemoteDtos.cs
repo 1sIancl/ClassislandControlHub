@@ -80,6 +80,13 @@ public static class RemoteCommandKinds
     /// 回 <c>COMMAND_PLATFORM_UNSUPPORTED</c> 并说明原因，而不是假装成功。</para>
     /// </summary>
     public const string SetBrightness = "brightness.set";
+
+    /// <summary>
+    /// 设置教室端**主界面的显示状态**，载荷为 <see cref="WindowSetPayload"/>（#57）。
+    /// <para>这等于远程动讲台那台屏幕：隐藏用于「锁住讲台不让乱点」，全屏用于把课表 / 通知铺满整屏。
+    /// 只在明确知道现场情况时用。</para>
+    /// </summary>
+    public const string SetWindow = "window.set";
 }
 
 /// <summary>音量指令（<see cref="RemoteCommandKinds.SetVolume"/>）的载荷。</summary>
@@ -104,6 +111,26 @@ public sealed class BrightnessPayload
     /// </summary>
     /// <remarks>刻意用可空类型：漏传时应当报「载荷不完整」，而不是把亮度默默设成 0。</remarks>
     public int? Percent { get; set; }
+}
+
+/// <summary>主界面显示状态指令（<see cref="RemoteCommandKinds.SetWindow"/>）的载荷（#57）。</summary>
+/// <remarks>
+/// <para>两个字段都可选（只隐藏不动全屏、只切全屏…都是常见需求），但**不能都为 null**——
+/// 那样等于什么都没要求，教室端会按「载荷不完整」拒绝。</para>
+/// <para>显隐走宿主自己的开关 <c>Settings.IsMainWindowVisible</c>：与托盘菜单里那一项是同一处，
+/// 直接对窗口 Hide() 会让宿主的设置与窗口状态对不上，下一次刷新又把它弹回来。</para>
+/// </remarks>
+public sealed class WindowSetPayload
+{
+    /// <summary><c>true</c> 显示主界面 / <c>false</c> 隐藏；<c>null</c> 表示不改动。</summary>
+    public bool? Visible { get; set; }
+
+    /// <summary>
+    /// <c>true</c> 全屏 / <c>false</c> 退出全屏；<c>null</c> 表示不改动。
+    /// <para><b>尽力而为</b>：宿主在窗口位置变化 / 档案刷新等时机可能把窗口状态拉回普通模式，
+    /// 插件侧拦不住（所以不进「失败」，只在回报文案里说明）。</para>
+    /// </summary>
+    public bool? Fullscreen { get; set; }
 }
 
 /// <summary>触发自动化信号的载荷。</summary>

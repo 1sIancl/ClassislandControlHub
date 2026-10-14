@@ -2,20 +2,20 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=104';
-import { toastError } from './core/errors.js?v=104';
-import { h, clear, toast, icon } from './core/ui.js?v=104';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=105';
+import { toastError } from './core/errors.js?v=105';
+import { h, clear, toast, icon } from './core/ui.js?v=105';
 import {
   initTheme,
   getSidebarCollapsed, setSidebarCollapsed,
   applyDensity,
   applyAppearance, setBrandingAccent,
   applyRemotePrefs, applySchedScale,
-} from './core/prefs.js?v=104';
-import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=104';
-import { initGlassHighlight } from './core/glass.js?v=104';
-import { initTopbar } from './topbar.js?v=104';
-import { openSearch } from './core/search.js?v=104';
+} from './core/prefs.js?v=105';
+import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=105';
+import { initGlassHighlight } from './core/glass.js?v=105';
+import { initTopbar } from './topbar.js?v=105';
+import { openSearch } from './core/search.js?v=105';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -117,26 +117,26 @@ const ROUTE_ALIASES = {
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=104'),
-  devices: () => import('./views/devices.js?v=104'),
+  dashboard: () => import('./views/dashboard.js?v=105'),
+  devices: () => import('./views/devices.js?v=105'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=104'),
-  profiles: () => import('./views/profiles.js?v=104'),
-  profileEditor: () => import('./views/profileEditor.js?v=104'),
-  deploy: () => import('./views/deploy.js?v=104'),
-  remote: () => import('./views/remote.js?v=104'),
-  reminders: () => import('./views/reminders.js?v=104'),
-  audit: () => import('./views/audit.js?v=104'),
-  reports: () => import('./views/reports.js?v=104'),
-  appearance: () => import('./views/appearance.js?v=104'),
+  groups: () => import('./views/devices.js?v=105'),
+  profiles: () => import('./views/profiles.js?v=105'),
+  profileEditor: () => import('./views/profileEditor.js?v=105'),
+  deploy: () => import('./views/deploy.js?v=105'),
+  remote: () => import('./views/remote.js?v=105'),
+  reminders: () => import('./views/reminders.js?v=105'),
+  audit: () => import('./views/audit.js?v=105'),
+  reports: () => import('./views/reports.js?v=105'),
+  appearance: () => import('./views/appearance.js?v=105'),
   // 「系统设置」拆成四页（原 settings.js 已按此拆分，见各文件头部说明）。
-  accounts: () => import('./views/accounts.js?v=104'),
-  server: () => import('./views/server.js?v=104'),
-  integrations: () => import('./views/integrations.js?v=104'),
-  maintenance: () => import('./views/maintenance.js?v=104'),
-  timesync: () => import('./views/timesync.js?v=104'),
-  lessons: () => import('./views/lessons.js?v=104'),
-  plugins: () => import('./views/pluginMarket.js?v=104'),
+  accounts: () => import('./views/accounts.js?v=105'),
+  server: () => import('./views/server.js?v=105'),
+  integrations: () => import('./views/integrations.js?v=105'),
+  maintenance: () => import('./views/maintenance.js?v=105'),
+  timesync: () => import('./views/timesync.js?v=105'),
+  lessons: () => import('./views/lessons.js?v=105'),
+  plugins: () => import('./views/pluginMarket.js?v=105'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -680,7 +680,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=104');
+    const { startTour } = await import('./core/tour.js?v=105');
     startTour({
       onFinish: async (skipped) => {
         try {
@@ -754,6 +754,39 @@ function renderNav() {
       onClick: (event) => {
         event.stopPropagation();
         toggleNavDropdown(trigger.closest('.nav-group'));
+      },
+      // 键盘（#49 收尾）：下拉里的项是普通 button，能 Tab 进去；但「用方向键展开并进去」
+      // 是菜单类控件的常规预期，没它键盘用户只能 Tab 一路绕过去。
+      onKeyDown: (event) => {
+        if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') {
+          return;
+        }
+
+        event.preventDefault();
+        const group = trigger.closest('.nav-group');
+        closeNavDropdowns();
+        group.classList.add('open');
+        // 下拉是**过渡显示**的：刚加上 .open 时里面的项还没进入可聚焦状态，focus() 会被静默丢掉。
+        // 所以等一帧后试，没成功再退避重试几次（约半秒，覆盖过渡时长）。
+        const focusWithRetry = (el, attempts) => {
+          if (!el) {
+            return;
+          }
+
+          el.focus();
+          if (document.activeElement === el || attempts <= 0) {
+            return;
+          }
+
+          setTimeout(() => focusWithRetry(el, attempts - 1), 60);
+        };
+
+        requestAnimationFrame(() => {
+          const items = [...group.querySelectorAll('.nav-item')];
+          if (items.length > 0) {
+            focusWithRetry(event.key === 'ArrowDown' ? items[0] : items[items.length - 1], 8);
+          }
+        });
       },
     }, group.label, chevron);
 
@@ -890,6 +923,39 @@ function navPagesForPalette() {
 function closeNavDropdowns() {
   document.querySelectorAll('.nav-group.open').forEach((el) => el.classList.remove('open'));
 }
+
+// 分组下拉的键盘导航（#49 收尾）：Esc 收起并把焦点还给触发器；方向键在项之间移动。
+// 用一个全局监听就够了——同一时刻最多只有一个分组是展开的（toggleNavDropdown 保证）。
+document.addEventListener('keydown', (event) => {
+  const open = document.querySelector('.nav-group.open');
+  if (!open) {
+    return;
+  }
+
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    const trigger = open.querySelector('.nav-trigger');
+    closeNavDropdowns();
+    trigger?.focus();
+    return;
+  }
+
+  if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') {
+    return;
+  }
+
+  const items = [...open.querySelectorAll('.nav-item')];
+  if (items.length === 0) {
+    return;
+  }
+
+  event.preventDefault();
+  const current = items.indexOf(document.activeElement);
+  const next = event.key === 'ArrowDown'
+    ? (current < 0 ? 0 : (current + 1) % items.length)
+    : (current <= 0 ? items.length - 1 : current - 1);
+  items[next].focus();
+});
 
 /** 切换某个分组的下拉：自己开着就收，开着别的就换成自己（同时只开一个）。 */
 function toggleNavDropdown(group) {

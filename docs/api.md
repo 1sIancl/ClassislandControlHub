@@ -136,6 +136,7 @@ curl -s "$BASE/admin/devices" -H "Authorization: Bearer $TOKEN" \
 
 指令类型（`kind`）：`shell`、`plugin.*`、`appearance.*`、`notify`、`power.*`、`automation.*`、
 `volume.set` / `brightness.set`（教室端系统音量 / 屏幕亮度）、
+`window.set`（教室端主界面显示 / 隐藏 / 全屏，载荷 `{visible?, fullscreen?}`，两者至少给一个）、
 `lesson.swap` / `lesson.adjust` / `lesson.catalog`、
 `diagnostic.screenshot` / `diagnostic.processes` / `diagnostic.bundle`。语义：**一次性派发**、
 **2 小时 TTL**、关机 / 重启有 **15 秒撤销窗口**。

@@ -3,13 +3,13 @@
  * 数据来自 A 端 /admin/devices、/admin/backups 等接口。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=104';
-import { toastError } from '../core/errors.js?v=104';
-import { hintForCode } from '../core/error-hints.js?v=104';
+import { api, fetchBlob } from '../core/api.js?v=105';
+import { toastError } from '../core/errors.js?v=105';
+import { hintForCode } from '../core/error-hints.js?v=105';
 import {
   h, clear, toast, loadingBlock, confirmDialog, field, select, emptyState, formatDateTime, modal,
   hintIcon,
-} from '../core/ui.js?v=104';
+} from '../core/ui.js?v=105';
 
 export const meta = {
   title: '远程管理',
@@ -574,6 +574,30 @@ function renderDeviceControl(container) {
       field('音量', h('div.slider-row', volume.range, volume.label), '0~100。'),
       field('亮度', h('div.slider-row', brightness.range, brightness.label),
         '0~100；建议别用 0——屏幕全黑后现场只能靠显示器本身的按键恢复。'),
+    ),
+    h('div.form-row',
+      field(h('span', '主界面',
+        hintIcon('远程控制教室机上那台 ClassIsland 主界面：隐藏＝把讲台屏上的主界面收起来'
+          + '（现场点不到它），显示＝叫回来；全屏适合把课表或大通知铺满整屏。'
+          + '⚠️ 全屏是「尽力而为」——教室端在档案刷新或窗口位置变化时可能自己退出全屏；'
+          + '另外主界面被隐藏时，「抓取屏幕截图」拿不到窗口内容（那条指令会如实报错）。')),
+        h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
+          h('button.btn', {
+            type: 'button',
+            onClick: () => dispatch('window.set', { visible: true }, '已下发展示主界面'),
+          }, '显示主界面'),
+          h('button.btn.btn-danger', {
+            type: 'button',
+            onClick: () => dispatch('window.set', { visible: false }, '已下发隐藏主界面'),
+          }, '隐藏主界面'),
+          h('button.btn', {
+            type: 'button',
+            onClick: () => dispatch('window.set', { fullscreen: true }, '已下发全屏'),
+          }, '全屏'),
+          h('button.btn', {
+            type: 'button',
+            onClick: () => dispatch('window.set', { fullscreen: false }, '已下发退出全屏'),
+          }, '退出全屏'))),
     ),
     h('div', { style: { display: 'flex', gap: '8px', marginTop: '12px' } }, volumeBtn, brightnessBtn),
     offline.el,

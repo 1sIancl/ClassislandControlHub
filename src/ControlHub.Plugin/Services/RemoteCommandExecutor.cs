@@ -3,7 +3,10 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Media;
+using ClassIsland.Core;
 using ClassIsland.Core.Abstractions.Services;
 using ClassIsland.Services;
 using ClassIsland.Shared;
@@ -97,6 +100,8 @@ public sealed class RemoteCommandExecutor(
                 // COM 与显示器接口都可能阻塞几百毫秒，放 UI 线程会把教室大屏卡住。
                 RemoteCommandKinds.SetVolume => RunSetVolume(command),
                 RemoteCommandKinds.SetBrightness => RunSetBrightness(command),
+                // 主界面显隐 / 全屏（#57）：改的是窗口与宿主设置，必须回 UI 线程。
+                RemoteCommandKinds.SetWindow => UiThread.Run(() => RunSetWindow(command)),
                 _ => Fail(command, CommandErrorCodes.Unsupported, $"不支持的指令类型：{command.Kind}"),
             };
         }
@@ -953,6 +958,70 @@ public sealed class RemoteCommandExecutor(
     }
 
     /// <summary>设置屏幕亮度（#24）。</summary>
+    /// <summary>
+    /// 远程设置教室端主界面的显示状态（#57）。
+    /// <para><b>显隐</b>走宿主自己的开关 <c>Settings.IsMainWindowVisible</c>——托盘菜单里那项
+    /// 「显示 / 隐藏主界面」用的就是它；如果只对窗口 Hide()，宿主设置与窗口状态会对不上，
+    /// 下一次刷新又把它弹回来。拿到窗口时再顺手 Show/Hide 一次兜底。</para>
+    /// <para><b>全屏</b>是尽力而为：宿主在窗口位置变化 / 档案刷新等时机会把 WindowState 拉回普通，
+    /// 插件侧拦不住，所以成功回报里写明这一点，而不是承诺一直保持。</para>
+    /// </summary>
+    private static CommandReportRequest RunSetWindow(RemoteCommandDto command)
+    {
+        var payload = HubJson.Deserialize<WindowSetPayload>(command.Payload);
+        if (payload is null || (payload.Visible is null && payload.Fullscreen is null))
+        {
+            return Fail(command, CommandErrorCodes.PayloadInvalid,
+                "载荷里既没有 visible 也没有 fullscreen，不知道要改什么。");
+        }
+
+        var window = (Application.Current as AppBase)?.MainWindow;
+        var applied = new List<string>();
+
+        if (payload.Visible is { } visible)
+        {
+            var settings = IAppHost.TryGetService<SettingsService>();
+            if (settings is null)
+            {
+                return Fail(command, CommandErrorCodes.HostApiUnavailable,
+                    "拿不到宿主的设置服务，无法改主界面显示状态。");
+            }
+
+            settings.Settings.IsMainWindowVisible = visible;
+            applied.Add(visible ? "显示" : "隐藏");
+
+            // 设置变更由宿主自己应用；窗口已经建好时再兜一下（避免设置生效慢半拍）。
+            if (window is not null)
+            {
+                if (visible)
+                {
+                    window.Show();
+                }
+                else
+                {
+                    window.Hide();
+                }
+            }
+        }
+
+        if (payload.Fullscreen is { } fullscreen)
+        {
+            if (window is null)
+            {
+                return Fail(command, CommandErrorCodes.HostApiUnavailable,
+                    "宿主的窗口还没创建，切换不了全屏。");
+            }
+
+            window.WindowState = fullscreen ? WindowState.FullScreen : WindowState.Normal;
+            applied.Add(fullscreen ? "全屏" : "退出全屏");
+        }
+
+        var note = payload.Fullscreen is true
+            ? "（全屏由宿主窗口状态决定，档案刷新或窗口位置变化可能会退出全屏）"
+            : string.Empty;
+        return Ok(command, $"主界面已{string.Join("、", applied)}{note}");
+    }
+
     private static CommandReportRequest RunSetBrightness(RemoteCommandDto command)
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
