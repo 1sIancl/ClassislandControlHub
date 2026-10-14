@@ -186,6 +186,18 @@ curl -s "$BASE/admin/devices" -H "Authorization: Bearer $TOKEN" \
 > ⚠️ `/admin/reminders/{id}/run` 是**领取式**的：抢不到（刚被调度器或另一个实例执行过）返回 **409**，
 > 而不是重复执行一次。
 
+### 课表模板套用（#9）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| POST | `/admin/timetable-templates/{id}/apply` | `profiles.write` | 把模板套到档案：`{profileId}` |
+
+- 按**科目名称**匹配（科目 ID 跨档案不同）；没有同名科目的节次**保留原科目**并在
+  `missingSubjects` 里回报。
+- 一张课表覆盖多天而模板里这几天不一致 → **拒绝套用**（`conflictedPlans`），提示把课表按天拆开。
+- 模板没覆盖到的节次保持原样；节数不一致写进 `periodMismatches`。
+- 套用会推进档案版本号（+1），但**不自动下发**。
+
 ### 考试模式（#21）
 
 | 方法 | 路径 | 权限 | 说明 |

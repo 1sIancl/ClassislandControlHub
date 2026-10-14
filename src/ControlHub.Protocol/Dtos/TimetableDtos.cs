@@ -39,3 +39,41 @@ public sealed class TimetableTemplateRequest
     /// <summary>节次数。</summary>
     public int PeriodCount { get; set; }
 }
+
+/// <summary>把课表模板套用到某个档案的请求（#9 的「模板套用」）。</summary>
+public sealed class TimetableTemplateApplyRequest
+{
+    /// <summary>目标档案 ID。</summary>
+    public string ProfileId { get; set; } = string.Empty;
+}
+
+/// <summary>套用结果（界面据此告诉管理员「改了什么、什么没套上、为什么」）。</summary>
+public sealed class TimetableTemplateApplyResultDto
+{
+    /// <summary>目标档案 ID。</summary>
+    public string ProfileId { get; set; } = string.Empty;
+
+    /// <summary>目标档案名。</summary>
+    public string ProfileName { get; set; } = string.Empty;
+
+    /// <summary>套用后的新版本号（档案内容变了就会 +1）。</summary>
+    public long Revision { get; set; }
+
+    /// <summary>被改写的课表名。</summary>
+    public List<string> UpdatedPlans { get; set; } = [];
+
+    /// <summary>被套用的天（0=周日 … 6=周六）。</summary>
+    public List<int> UpdatedDays { get; set; } = [];
+
+    /// <summary>因「一张课表覆盖多天、而模板里这几天不一致」被跳过的课表名。</summary>
+    public List<string> ConflictedPlans { get; set; } = [];
+
+    /// <summary>模板里有、但目标档案没有同名科目的名称（这几节**保留原科目**）。</summary>
+    public List<string> MissingSubjects { get; set; } = [];
+
+    /// <summary>模板里有课、但没有课表覆盖的天。</summary>
+    public List<int> UncoveredDays { get; set; } = [];
+
+    /// <summary>节数不一致的提示。</summary>
+    public List<string> PeriodMismatches { get; set; } = [];
+}
