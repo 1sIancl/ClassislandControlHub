@@ -18,8 +18,9 @@ public sealed partial class HubStore
         command.CommandText = """
             INSERT INTO device_lesson_states (
                 device_id, state, lesson_date, class_plan_name, current_subject, next_subject,
-                next_start_at, next_end_at, left_seconds, is_adjusted, reported_at)
-            VALUES ($device, $state, $date, $plan, $current, $next, $start, $end, $left, $adjusted, $now)
+                next_start_at, next_end_at, left_seconds, is_adjusted, rotation_weeks, rotation_week, reported_at)
+            VALUES ($device, $state, $date, $plan, $current, $next, $start, $end, $left, $adjusted,
+                    $weeks, $week, $now)
             ON CONFLICT(device_id) DO UPDATE SET
                 state           = excluded.state,
                 lesson_date     = excluded.lesson_date,
@@ -30,6 +31,8 @@ public sealed partial class HubStore
                 next_end_at     = excluded.next_end_at,
                 left_seconds    = excluded.left_seconds,
                 is_adjusted     = excluded.is_adjusted,
+                rotation_weeks  = excluded.rotation_weeks,
+                rotation_week   = excluded.rotation_week,
                 reported_at     = excluded.reported_at;
             """;
         AddParameters(command,
@@ -43,6 +46,8 @@ public sealed partial class HubStore
             ("$end", TextOrNull(lesson.NextEndAt)),
             ("$left", Math.Max(0, lesson.LeftSeconds)),
             ("$adjusted", lesson.IsAdjusted ? 1 : 0),
+            ("$weeks", lesson.RotationWeeks >= 2 ? lesson.RotationWeeks : 1),
+            ("$week", Math.Max(0, lesson.RotationWeek)),
             ("$now", Ts(DateTimeOffset.UtcNow)));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -77,7 +82,7 @@ public sealed partial class HubStore
         command.CommandText = """
             SELECT device_id, state, lesson_date, class_plan_name, current_subject, next_subject,
                    next_start_at, next_end_at, left_seconds, is_adjusted, reported_at,
-                   catalog, catalog_at
+                   catalog, catalog_at, rotation_weeks, rotation_week
               FROM device_lesson_states;
             """;
 
@@ -99,6 +104,8 @@ public sealed partial class HubStore
                 ReportedAt = ParseTs(reader.GetString(10)),
                 Catalog = reader.IsDBNull(11) ? null : reader.GetString(11),
                 CatalogAt = reader.IsDBNull(12) ? null : ParseTs(reader.GetString(12)),
+                RotationWeeks = reader.GetInt32(13),
+                RotationWeek = reader.GetInt32(14),
             };
             result[row.DeviceId] = row;
         }
@@ -162,6 +169,12 @@ public sealed class LessonStateRow
 
     /// <summary>当天是否处于换课 / 调休状态。</summary>
     public bool IsAdjusted { get; init; }
+
+    /// <summary>轮换周期（周）；1 = 不轮换。</summary>
+    public int RotationWeeks { get; init; } = 1;
+
+    /// <summary>当前处于轮换周期的第几周（1 起）；0 = 不轮换 / 未知。</summary>
+    public int RotationWeek { get; init; }
 
     /// <summary>最近一次上报时间。</summary>
     public DateTimeOffset ReportedAt { get; init; }

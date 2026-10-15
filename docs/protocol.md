@@ -284,6 +284,7 @@ ClassIsland「精确时间」（ExactTimeServer 指向 A 端，IsExactTimeEnable
   "timeLayouts": [ /* TimeLayoutDto[] */ ],
   "classPlans":  [ /* ClassPlanDto[]   */ ],
   "subjects":    [ /* SubjectDto[]     */ ],
+  "rotation":    { "weeks": 1, "semesterStartDate": null, "offset": 0 },
   "settings":    { "values": {}, "lockLocalEditing": false, "announcement": null }
 }
 ```
@@ -311,6 +312,20 @@ ClassIsland「精确时间」（ExactTimeServer 指向 A 端，IsExactTimeEnable
 
 - `slots[index]` 与时间表中第 `index` 个「上课」时间点一一对应，是两端对齐课表的核心字段。
 - `daysOfWeek`：`0=周日 .. 6=周六`；`weekInterval`/`weekOffset` 用于单双周等轮换（`weekInterval=2, weekOffset=0` 即「单周」）。
+
+**多周轮换 `RotationSettingsDto`**
+
+```jsonc
+{ "weeks": 2, "semesterStartDate": "2026-09-06", "offset": 0 }
+```
+
+- `weeks`：轮换周期（`1~9`），`1` 表示不做多周轮换；课表自己的 `weekInterval` 由它派生。
+- `semesterStartDate`：轮换起点（第 1 周的第一天，`yyyy-MM-dd`）。留空表示不干预，由教室端本地的
+  「周次轮换起点」决定。**它是「哪一周算第 1 周」的唯一依据**，不同步就会「课表全对、日子全错」。
+- `offset`：手动偏移（`-9~9` 周），临时把全校的轮换进度整体平移（运动会占掉一周之类）。
+- 客户端侧：插件把这三项写进 ClassIsland 的 `SingleWeekStartTime` / `MultiWeekRotationOffset` /
+  `MultiWeekRotationMaxCycle`（**最大周期必须抬到实际用得上的周数**，否则周期比它长的课表被宿主直接判为不生效）。
+  写入走反射，老版本宿主上不会崩，只在回报里说明「该版本不支持」。
 
 **科目 `SubjectDto`**
 

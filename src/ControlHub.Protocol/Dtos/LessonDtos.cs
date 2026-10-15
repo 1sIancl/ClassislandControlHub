@@ -60,6 +60,15 @@ public sealed class LessonStateDto
     /// <summary>是否处于换课状态（当天有临时层 / 临时调休）。</summary>
     public bool IsAdjusted { get; set; }
 
+    /// <summary>
+    /// 教室端当前课表的轮换周期（周）；1 表示不做多周轮换。
+    /// <para>只有教室端算得准（它按宿主的「轮换起点 / 手动偏移」算），所以由它上报、管理端只负责显示。</para>
+    /// </summary>
+    public int RotationWeeks { get; set; } = 1;
+
+    /// <summary>当前处于轮换周期的第几周（1 起）；0 表示不轮换或教室端判断不出来。</summary>
+    public int RotationWeek { get; set; }
+
     /// <summary>教室端上报时刻（UTC）。</summary>
     public DateTimeOffset ReportedAt { get; set; } = DateTimeOffset.UtcNow;
 }

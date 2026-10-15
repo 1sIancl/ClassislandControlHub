@@ -81,7 +81,36 @@ public sealed class LessonBridge(
         };
 
         state.IsAdjusted = IsAdjusted(now.Date);
+
+        // 多周轮换：课表只写「我是周期里的第几周」，**哪一周算第 1 周**由宿主的轮换起点与手动偏移决定，
+        // 那些设置可能被人在教室机上改过，所以「现在是第几周」只有教室端自己算得准——由它上报，
+        // 管理端直接显示，不再拿服务端的档案去推算（推算结果与实际大屏可能不是同一周）。
+        var (rotationWeek, rotationWeeks) = HostRotationSettings.ReadCurrentWeek(
+            MaxRotationWeeks(profile), DateOnly.FromDateTime(now));
+        state.RotationWeek = rotationWeek;
+        state.RotationWeeks = rotationWeeks;
+
         return state;
+    }
+
+    /// <summary>当前档案实际用到的最大轮换周期（没有多周课表时返回 1）。</summary>
+    private static int MaxRotationWeeks(Profile? profile)
+    {
+        if (profile is null)
+        {
+            return 1;
+        }
+
+        var max = 0;
+        foreach (var plan in profile.ClassPlans.Values)
+        {
+            if (plan.TimeRule.WeekCountDiv > 0 && plan.TimeRule.WeekCountDivTotal >= 2)
+            {
+                max = Math.Max(max, plan.TimeRule.WeekCountDivTotal);
+            }
+        }
+
+        return max >= 2 ? max : 1;
     }
 
     private LessonCatalogDto ReadCatalogCore()

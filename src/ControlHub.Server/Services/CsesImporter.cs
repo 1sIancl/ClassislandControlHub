@@ -10,7 +10,8 @@ namespace ControlHub.Server.Services;
 /// <c>version</c> / <c>subjects[name, simplified_name, teacher, room]</c> /
 /// <c>schedules[name, enable_day, weeks, classes[subject, start_time, end_time]]</c>。</para>
 /// <para>导入范围：科目、按作息去重后的时间表，以及按 <c>enable_day</c> 生成的逐格课表。
-/// 集控的课表模型不区分周次，因此同一作息的单双周 schedule 会合并到同一天（先出现的先占位）。</para>
+/// <c>weeks</c> 为 <c>odd</c> / <c>even</c> 时按**单双周轮换**导入（同一天生成两张课表，档案的轮换周期自动设为 2）；
+/// 其它写法（如「1,3,5」这种具体周次）集控表达不了，按每周处理并记在 <c>cses.weeksUnmapped</c> 里。</para>
 /// </summary>
 public static class CsesImporter
 {
@@ -407,26 +408,48 @@ public static class CsesImporter
     }
 
     /// <summary>
-    /// 同一作息下每天生成一张课表。集控的课表模型不区分周次，
-    /// 因此同一天的多个 schedule（如单双周）按顺序填入，先出现的先占位。
+    /// 同一作息下每天生成一张课表；同一天出现多个 schedule 时**按 CSES 的 <c>weeks</c> 分成单双周**，
+    /// 而不是像以前那样「先出现的先占位」（那会把单双周的两张课表并成一张，课堂表整个错掉）。
     /// </summary>
     private static void BuildClassPlans(ContentBundleDto content, Dictionary<string, SubjectDto> subjectByName,
         string layoutId, List<TimetableBuilder.Slot> slots, LayoutGroup group)
     {
-        var plansByDay = new Dictionary<int, ClassPlanDto>();
+        // 键 = 星期 + 周次（周期 / 周期内第几周）：weekly 与单周 / 双周是**不同的课表**，必须各占一份。
+        var plans = new Dictionary<string, ClassPlanDto>(StringComparer.Ordinal);
+        var unmappedWeeks = new List<string>();
 
         for (var i = 0; i < group.Schedules.Count; i++)
         {
             var day = group.Days[i];
-            if (!plansByDay.TryGetValue(day, out var plan))
+            var (interval, offset) = ParseWeeks(group.Schedules[i].Weeks);
+            if (interval < 0)
+            {
+                // 认不出来的写法（例如 "1,3,5" 这种具体周次列表）无法表达：按每周处理，但要留痕，
+                // 不能让人以为已经按周次导进来了。
+                unmappedWeeks.Add($"{TimetableBuilder.DayLabel(day)}（{group.Schedules[i].Weeks}）");
+                interval = 0;
+                offset = 0;
+            }
+
+            if (interval >= 2 && content.Rotation.Weeks < interval)
+            {
+                content.Rotation.Weeks = interval;
+            }
+
+            var key = $"{day}|{interval}|{offset}";
+            if (!plans.TryGetValue(key, out var plan))
             {
                 plan = new ClassPlanDto
                 {
                     Id = Guid.NewGuid().ToString("D"),
-                    Name = $"{TimetableBuilder.DayLabel(day)}课表",
+                    Name = interval >= 2
+                        ? $"{TimetableBuilder.DayLabel(day)}课表（第 {offset + 1} 周）"
+                        : $"{TimetableBuilder.DayLabel(day)}课表",
                     TimeLayoutId = layoutId,
                     IsEnabled = true,
                     DaysOfWeek = [day],
+                    WeekInterval = interval,
+                    WeekOffset = offset,
                 };
 
                 for (var index = 0; index < slots.Count; index++)
@@ -434,7 +457,7 @@ public static class CsesImporter
                     plan.Slots.Add(new ClassPlanSlotDto { Index = index, StartTime = slots[index].Start });
                 }
 
-                plansByDay[day] = plan;
+                plans[key] = plan;
                 content.ClassPlans.Add(plan);
             }
 
@@ -453,7 +476,29 @@ public static class CsesImporter
                 }
             }
         }
+
+        if (unmappedWeeks.Count > 0)
+        {
+            content.Settings.Values["cses.weeksUnmapped"] = string.Join("、", unmappedWeeks);
+        }
     }
+
+    /// <summary>
+    /// CSES 的 <c>weeks</c> → 集控的周次。
+    /// <list type="bullet">
+    /// <item><c>all</c>（或没写）→ 每周生效（0, 0）；</item>
+    /// <item><c>odd</c> → 2 周轮换的第 1 周；<c>even</c> → 第 2 周；</item>
+    /// <item>其它写法（如「1,3,5」这种具体周次列表）→ 返回 (-1, -1)，由调用方按每周处理并留痕。</item>
+    /// </list>
+    /// </summary>
+    private static (int Interval, int Offset) ParseWeeks(string? weeks) =>
+        (weeks ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            "" or "all" => (0, 0),
+            "odd" => (2, 0),
+            "even" => (2, 1),
+            _ => (-1, -1),
+        };
 
     /// <summary>共享同一张作息时间表的 schedule 集合。</summary>
     private sealed class LayoutGroup(List<CsesClass> classes)

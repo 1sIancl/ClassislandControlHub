@@ -215,6 +215,13 @@ internal static class Program
         // 课表桥接（教室端档案语义）：这一层没有 HTTP 接口可验，只能在这里跑。
         LessonBridgeChecks.Run(Check);
 
+        // 多周轮换的宿主设置下发（轮换起点 / 最大周期 / 偏移）：同样只有教室端成立。
+        RotationSettingsChecks.Run(Check);
+
+        // 用真实发行版的 ClassIsland.dll 再验一遍反射契约（属性名 / 类型 / 写回）；
+        // 没装宿主时这一段会自己跳过，不影响其它检查。
+        HostAssemblyChecks.Run(Check);
+
         // 教室端设备控制（音量 / 亮度）：这一层同样没有 HTTP 接口可验，只能在这里真调实现。
         await DeviceControlChecks.RunAsync(Check);
 

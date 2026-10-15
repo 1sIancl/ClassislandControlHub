@@ -530,6 +530,65 @@ public sealed class CidataImporterTests
         Assert.Empty(entry.Warnings);
     }
 
+    // ── 多周轮换（轮换起点 / 手动偏移来自包内的 Settings.json）──
+
+    [Fact]
+    public void 多周课表会连轮换起点与手动偏移一起导入()
+    {
+        using var cidata = BuildCidata(
+            ("Settings.json", """
+            {
+              "SingleWeekStartTime": "2026-09-06T00:00:00",
+              "MultiWeekRotationOffset": [-1, -1, 1, 0, 0],
+              "Theme": 2
+            }
+            """),
+            ("Profiles/Default.json", WithRotation(div: 1, total: 2)));
+
+        var archive = CidataImporter.Inspect(cidata);
+        var entry = archive.Profiles.Single();
+
+        Assert.True(archive.HasSettings);
+        Assert.NotNull(archive.HostRotation);
+        Assert.Equal(2, entry.Content.Rotation.Weeks);
+        Assert.Equal("2026-09-06", entry.Content.Rotation.SemesterStartDate);
+        // 下标 = 周期长度：2 周这一档是 1（临时调过一周）。
+        Assert.Equal(1, entry.Content.Rotation.Offset);
+
+        // 起点必须提示核对：宿主机没设置过的话，那只是「导出那天所在周的周日」，照它算会整学期错位。
+        Assert.Contains(entry.Warnings, w => w.Contains("轮换起点") && w.Contains("2026-09-06"));
+        Assert.Contains(entry.Warnings, w => w.Contains("手动偏移"));
+    }
+
+    [Fact]
+    public void 没有多周课表时不动档案的轮换设置()
+    {
+        using var cidata = BuildCidata(
+            ("Settings.json", """{ "SingleWeekStartTime": "2026-10-11T00:00:00" }"""),
+            ("Profiles/Default.json", RichProfileJson()));
+
+        var entry = CidataImporter.Inspect(cidata).Profiles.Single();
+
+        Assert.Equal(1, entry.Content.Rotation.Weeks);
+        Assert.Null(entry.Content.Rotation.SemesterStartDate);
+    }
+
+    [Fact]
+    public void 设置文件坏掉也不影响课表导入()
+    {
+        using var cidata = BuildCidata(
+            ("Settings.json", "{ 这不是 JSON"),
+            ("Profiles/Default.json", WithRotation(div: 2, total: 2)));
+
+        var archive = CidataImporter.Inspect(cidata);
+        var entry = archive.Profiles.Single();
+
+        Assert.Null(archive.HostRotation);
+        Assert.Single(entry.Content.ClassPlans);
+        Assert.Equal(2, entry.Content.Rotation.Weeks);
+        Assert.Null(entry.Content.Rotation.SemesterStartDate);
+    }
+
     /// <summary>把夹具改成指定周次轮换 / 触发规则类型。</summary>
     private static string WithRotation(int div, int total, int ruleType = 0) =>
         RichProfileJson()

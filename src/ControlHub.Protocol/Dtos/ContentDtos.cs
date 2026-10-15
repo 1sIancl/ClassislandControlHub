@@ -184,6 +184,37 @@ public sealed class ProfileSettingsDto
 }
 
 /// <summary>
+/// 档案级的「多周轮换」设置。
+///
+/// <para>
+/// ClassIsland 原生就支持多周轮换：每张课表自己带「轮换周期 + 本表是周期里的第几周」
+/// （对应 <see cref="ClassPlanDto.WeekInterval"/> / <see cref="ClassPlanDto.WeekOffset"/>），
+/// 具体哪一周生效还要用到宿主的两个设置——**轮换起点**（开学日期）与**多周轮换偏移**。
+/// 集控不重新实现轮换，只负责把这两件「从课表推不出来」的信息随档案一起下发，
+/// 否则「哪一周算第 1 周」只能靠教室端本地设置，一个学校几十间教室就会各算各的。
+/// </para>
+/// </summary>
+public sealed class RotationSettingsDto
+{
+    /// <summary>
+    /// 轮换周期（周），取值 <c>1~9</c>。<c>1</c> 表示不做多周轮换（所有课表每周生效）。
+    /// </summary>
+    public int Weeks { get; set; } = 1;
+
+    /// <summary>
+    /// 轮换起点（一般填开学第一周的周日），格式 <c>yyyy-MM-dd</c>。
+    /// 为空表示不干预——由教室端本地的「周次轮换起点」决定（这也是宿主默认行为）。
+    /// </summary>
+    public string? SemesterStartDate { get; set; }
+
+    /// <summary>
+    /// 手动偏移（周），取值 <c>-9~9</c>：临时把全校的轮换进度整体平移，
+    /// 用于「因为运动会打乱了一周」这类情况。正数表示轮换**提前**。
+    /// </summary>
+    public int Offset { get; set; }
+}
+
+/// <summary>
 /// 一次同步下发的完整内容包。
 /// </summary>
 public sealed class ContentBundleDto
@@ -196,6 +227,9 @@ public sealed class ContentBundleDto
 
     /// <summary>科目集合。</summary>
     public List<SubjectDto> Subjects { get; set; } = [];
+
+    /// <summary>多周轮换设置（周期 / 轮换起点 / 手动偏移）。</summary>
+    public RotationSettingsDto Rotation { get; set; } = new();
 
     /// <summary>自定义设置。</summary>
     public ProfileSettingsDto Settings { get; set; } = new();

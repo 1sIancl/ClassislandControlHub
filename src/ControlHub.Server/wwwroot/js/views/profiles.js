@@ -3,13 +3,13 @@
  * 档案是集控下发的最小单元：一个档案 = 一套时间表 + 课表 + 科目 + 自定义设置。
  */
 
-import { api } from '../core/api.js?v=115';
-import { toastError, errorBlock } from '../core/errors.js?v=115';
-import { openAuditTimeline } from '../core/audit-timeline.js?v=115';
+import { api } from '../core/api.js?v=116';
+import { toastError, errorBlock } from '../core/errors.js?v=116';
+import { openAuditTimeline } from '../core/audit-timeline.js?v=116';
 import {
   h, clear, formatDateTime, toast, loadingBlock, modal, confirmDialog,
   emptyState, field, select,
-} from '../core/ui.js?v=115';
+} from '../core/ui.js?v=116';
 
 export const meta = {
   title: '配置档案',
@@ -713,6 +713,11 @@ function renderCidataPreview(parsed) {
         `档案「${profile.profileName}」`),
       h('div', { style: { display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '13px' } },
         ...counts.map(([label, value]) => h('span', `${label} ${value}`)),
+        (profile.rotationWeeks || 1) >= 2
+          ? h('span', { style: { color: 'var(--accent)' } },
+            `多周轮换 ${profile.rotationWeeks} 周一轮`
+            + (profile.semesterStartDate ? `（起点 ${profile.semesterStartDate}）` : '（起点按教室端设置）'))
+          : null,
         profile.orderedSchedules > 0 ? h('span', { style: { color: 'var(--warn)' } }, `日历调休 ${profile.orderedSchedules}（不导入）`) : null,
         profile.overlayPlans > 0 ? h('span', { style: { color: 'var(--warn)' } }, `临时层课表 ${profile.overlayPlans}（不导入）`) : null),
       (profile.classPlanNames || []).length > 0

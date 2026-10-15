@@ -101,6 +101,13 @@ public sealed partial class HubStore
         await EnsureColumnAsync(connection, "reminders", "trigger_kind", "TEXT NOT NULL DEFAULT 'time'",
             cancellationToken);
 
+        // 迁移：多周轮换的「教室端当前在第几周」（随课表实时状态上报，设备详情直接显示）。
+        // 默认 1 / 0 与「没上报」一致：1 = 不轮换，0 = 不知道是第几周（老插件不带这两个字段）。
+        await EnsureColumnAsync(connection, "device_lesson_states", "rotation_weeks",
+            "INTEGER NOT NULL DEFAULT 1", cancellationToken);
+        await EnsureColumnAsync(connection, "device_lesson_states", "rotation_week",
+            "INTEGER NOT NULL DEFAULT 0", cancellationToken);
+
         // 迁移：设备备注（管理员自己标注，例如「三楼东侧」「班主任 张老师」）。
         await EnsureColumnAsync(connection, "devices", "remark", "TEXT NOT NULL DEFAULT ''", cancellationToken);
         // #20：主网卡 MAC（远程唤醒用）。空串 = 还没上报过；点「唤醒」前会先查这一列并明确报错。
@@ -371,6 +378,8 @@ public sealed partial class HubStore
             next_end_at     TEXT,
             left_seconds    INTEGER NOT NULL DEFAULT 0,
             is_adjusted     INTEGER NOT NULL DEFAULT 0,
+            rotation_weeks  INTEGER NOT NULL DEFAULT 1,
+            rotation_week   INTEGER NOT NULL DEFAULT 0,
             reported_at     TEXT NOT NULL,
             catalog         TEXT,
             catalog_at      TEXT

@@ -6,7 +6,8 @@ namespace ControlHub.Server.Services;
 /// 把导入得到的内容包合并进档案已有内容。
 /// <para>
 /// 合并规则：科目按名称去重（已存在但简称/教师为空时用导入值补全）；时间表按作息时间序列去重；
-/// 课表按「时间表 + 星期」去重，命中则就地替换，否则新增。
+/// 课表按「时间表 + 星期 + 周次」去重（**周次不能省**：单双周本来就是同一天的两张课表），
+/// 命中则就地替换，否则新增；多周轮换设置取更长的周期、起点与偏移以导入的包为准。
 /// </para>
 /// </summary>
 public static class ContentMerger
@@ -120,8 +121,11 @@ public static class ContentMerger
                 }
             }
 
+            // 去重键必须带上**周次**：单双周的两张课表同属一天、时间表也相同，
+            // 只按「时间表 + 星期」去重会把它们并成一张——轮换直接失效，而且看不出哪里错了。
             var existing = target.ClassPlans.FirstOrDefault(p =>
-                p.TimeLayoutId == plan.TimeLayoutId && SameDays(p.DaysOfWeek, plan.DaysOfWeek));
+                p.TimeLayoutId == plan.TimeLayoutId && SameDays(p.DaysOfWeek, plan.DaysOfWeek)
+                && p.WeekInterval == plan.WeekInterval && p.WeekOffset == plan.WeekOffset);
             if (existing is null)
             {
                 target.ClassPlans.Add(plan);
@@ -135,8 +139,50 @@ public static class ContentMerger
             result.UpdatedClassPlans++;
         }
 
+        MergeRotation(target, incoming);
         MergeSettings(target, incoming);
         return result;
+    }
+
+    /// <summary>
+    /// 合并「多周轮换」设置。
+    /// <para>
+    /// 周期取两者中更长的：导入进来的包带着多周课表，档案这边的周期不跟上，那些课表就永远不生效。
+    /// 轮换起点与手动偏移以**导入的包**为准（那是某个真实学期在用的值），导入侧为空时保留原设置。
+    /// </para>
+    /// </summary>
+    private static void MergeRotation(ContentBundleDto target, ContentBundleDto incoming)
+    {
+        // 周期同时看「导入包声明的周期」与「包里课表实际用的周期」：调用方漏设声明值时，
+        // 也不能让带多周课表的包进来之后档案周期还是 1——保存时的规范化会把课表周次清掉。
+        var incomingWeeks = Math.Max(
+            incoming.Rotation?.Weeks ?? 1,
+            incoming.ClassPlans
+                .Where(p => p.WeekInterval >= 2)
+                .Select(p => p.WeekInterval)
+                .DefaultIfEmpty(0)
+                .Max());
+
+        target.Rotation ??= new RotationSettingsDto();
+        if (incomingWeeks > target.Rotation.Weeks)
+        {
+            target.Rotation.Weeks = incomingWeeks;
+        }
+
+        if (incoming.Rotation is null)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(incoming.Rotation.SemesterStartDate))
+        {
+            target.Rotation.SemesterStartDate = incoming.Rotation.SemesterStartDate;
+        }
+
+        if (incoming.Rotation.Offset != 0)
+        {
+            target.Rotation.Offset = incoming.Rotation.Offset;
+        }
     }
 
     private static void MergeSettings(ContentBundleDto target, ContentBundleDto incoming)

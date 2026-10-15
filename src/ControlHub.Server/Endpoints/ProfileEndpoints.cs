@@ -597,6 +597,8 @@ public static class ProfileEndpoints
         Groups = entry.Groups,
         OrderedSchedules = entry.SkippedOrderedSchedules,
         OverlayPlans = entry.SkippedOverlayPlans,
+        RotationWeeks = entry.Content.Rotation.Weeks,
+        SemesterStartDate = entry.Content.Rotation.SemesterStartDate,
         Warnings = [.. entry.Warnings],
     };
 
@@ -865,6 +867,12 @@ public sealed class CidataProfilePreview
 
     /// <summary>包内按日期调休 / 换课的条数（未导入）。</summary>
     public int OrderedSchedules { get; set; }
+
+    /// <summary>这份档案的轮换周期（周）；1 表示不做多周轮换。</summary>
+    public int RotationWeeks { get; set; } = 1;
+
+    /// <summary>轮换起点（<c>yyyy-MM-dd</c>）；为空表示按教室端本地设置。</summary>
+    public string? SemesterStartDate { get; set; }
 
     /// <summary>包内临时层课表的张数（未导入）。</summary>
     public int OverlayPlans { get; set; }

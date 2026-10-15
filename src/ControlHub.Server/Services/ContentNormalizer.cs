@@ -1,3 +1,4 @@
+using System.Globalization;
 using ControlHub.Protocol;
 using ControlHub.Protocol.Dtos;
 using ControlHub.Server.Data;
@@ -31,10 +32,122 @@ public static class ContentNormalizer
         NormalizeSubjects(content, notes, autoFix);
         NormalizeTimeLayouts(content, notes, autoFix);
         NormalizeClassPlans(content, notes, autoFix);
+        NormalizeRotation(content, notes, autoFix);
 
         content.Settings ??= new ProfileSettingsDto();
         content.Settings.Values ??= [];
         return notes;
+    }
+
+    /// <summary>轮换周期上限（周）。与 ClassIsland 宿主的「最大轮换周期」一致。</summary>
+    public const int MaxRotationWeeks = 9;
+
+    /// <summary>手动偏移的允许范围（周）。</summary>
+    public const int MaxRotationOffset = 9;
+
+    /// <summary>
+    /// 校验并规范化「多周轮换」：周期范围、轮换起点格式、手动偏移范围，
+    /// 以及**课表周次与档案周期的一致性**。
+    ///
+    /// <para>
+    /// 最后一条是这里最要紧的：档案说「3 周轮换」而某张课表写着「第 5 周」，或课表标了周次
+    /// 但档案没启用轮换——两种都会让教室端某一天空堂（课表文件都在、配置也下发成功，
+    /// 只是那张课表永远不满足触发条件），属于本项目最怕的**静默失效**。
+    /// </para>
+    /// </summary>
+    private static void NormalizeRotation(ContentBundleDto content, List<string> notes, bool autoFix)
+    {
+        content.Rotation ??= new RotationSettingsDto();
+        var rotation = content.Rotation;
+
+        if (rotation.Weeks is < 1 or > MaxRotationWeeks)
+        {
+            if (!autoFix)
+            {
+                throw HubException.Validation($"轮换周期必须在 1~{MaxRotationWeeks} 周之间（收到 {rotation.Weeks}）。");
+            }
+
+            var fixedWeeks = Math.Clamp(rotation.Weeks, 1, MaxRotationWeeks);
+            notes.Add($"轮换周期 {rotation.Weeks} 周超出 1~{MaxRotationWeeks} 的范围，已按 {fixedWeeks} 周处理。");
+            rotation.Weeks = fixedWeeks;
+        }
+
+        if (rotation.Offset is < -MaxRotationOffset or > MaxRotationOffset)
+        {
+            if (!autoFix)
+            {
+                throw HubException.Validation($"轮换偏移必须在 -{MaxRotationOffset}~{MaxRotationOffset} 周之间（收到 {rotation.Offset}）。");
+            }
+
+            var fixedOffset = Math.Clamp(rotation.Offset, -MaxRotationOffset, MaxRotationOffset);
+            notes.Add($"轮换偏移 {rotation.Offset} 周超出 ±{MaxRotationOffset} 周的范围，已按 {fixedOffset} 周处理。");
+            rotation.Offset = fixedOffset;
+        }
+
+        var rawStart = rotation.SemesterStartDate?.Trim();
+        if (string.IsNullOrEmpty(rawStart))
+        {
+            rotation.SemesterStartDate = null;
+        }
+        else if (DateOnly.TryParse(rawStart, CultureInfo.InvariantCulture, out var startDate))
+        {
+            rotation.SemesterStartDate = startDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        }
+        else
+        {
+            if (!autoFix)
+            {
+                throw HubException.Validation($"轮换起点「{rawStart}」无法识别，请填写 yyyy-MM-dd（例如 2026-09-06）。");
+            }
+
+            rotation.SemesterStartDate = null;
+            notes.Add($"轮换起点「{rawStart}」无法识别，已改为由教室端本地设置决定（请填 yyyy-MM-dd）。");
+        }
+
+        if (rotation.Weeks <= 1)
+        {
+            var cleared = 0;
+            foreach (var plan in content.ClassPlans)
+            {
+                if (plan.WeekInterval == 0 && plan.WeekOffset == 0)
+                {
+                    continue;
+                }
+
+                plan.WeekInterval = 0;
+                plan.WeekOffset = 0;
+                cleared++;
+            }
+
+            if (cleared > 0)
+            {
+                notes.Add($"档案没有启用多周轮换，已清除 {cleared} 张课表的周次设置（它们改回每周生效）。");
+            }
+
+            return;
+        }
+
+        foreach (var plan in content.ClassPlans)
+        {
+            // WeekInterval = 0 表示「这张课表每周都生效」——轮换档案里也允许（例如只有周二单双周不同）。
+            if (plan.WeekInterval == 0 && plan.WeekOffset == 0)
+            {
+                continue;
+            }
+
+            if (plan.WeekInterval != rotation.Weeks)
+            {
+                notes.Add($"课表「{plan.Name}」的轮换周期（{plan.WeekInterval} 周）与档案的 {rotation.Weeks} 周不一致，已按档案周期调整。");
+                plan.WeekInterval = rotation.Weeks;
+            }
+
+            if (plan.WeekOffset < 0 || plan.WeekOffset >= rotation.Weeks)
+            {
+                var fixedPlanOffset = Math.Clamp(plan.WeekOffset, 0, rotation.Weeks - 1);
+                notes.Add($"课表「{plan.Name}」的周次超出第 1~{rotation.Weeks} 周的范围，已改为第 {fixedPlanOffset + 1} 周。");
+                plan.WeekOffset = fixedPlanOffset;
+            }
+        }
     }
 
     private static void NormalizeSubjects(ContentBundleDto content, List<string> notes, bool autoFix)

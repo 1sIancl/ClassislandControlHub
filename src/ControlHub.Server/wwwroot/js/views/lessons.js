@@ -11,11 +11,11 @@
  * 效果与在教室大屏上手动换课一致，适合「现在就改这一节」。</para>
  */
 
-import { api } from '../core/api.js?v=115';
-import { errorBlock } from '../core/errors.js?v=115';
+import { api } from '../core/api.js?v=116';
+import { errorBlock } from '../core/errors.js?v=116';
 import {
   h, clear, toast, loadingBlock, field, select, confirmDialog,
-} from '../core/ui.js?v=115';
+} from '../core/ui.js?v=116';
 
 export const meta = {
   title: '快捷换课',
@@ -144,6 +144,11 @@ function renderDeviceRows() {
         h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } },
           lesson
             ? `${stateLabel(lesson)}${lesson.classPlanName ? ` · ${lesson.classPlanName}` : ''}`
+              // 多周轮换的「现在第几周」只有教室端算得准（它按宿主的轮换起点 / 偏移算），
+              // 这里照它上报的原样显示，不做二次推算。
+              + (lesson.rotationWeeks >= 2 && lesson.rotationWeek >= 1
+                ? ` · 第 ${lesson.rotationWeek} 周（${lesson.rotationWeeks} 周一轮）`
+                : '')
             : '还没有上报课表信息（需要教室端插件更新到 1.3.8+）'),
       ),
       h('span', { style: { marginLeft: 'auto', flex: 'none', display: 'flex', alignItems: 'center', gap: '14px' } },

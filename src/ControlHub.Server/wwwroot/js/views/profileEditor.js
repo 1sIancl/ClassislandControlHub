@@ -3,13 +3,13 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=115';
-import { toastError } from '../core/errors.js?v=115';
+import { api } from '../core/api.js?v=116';
+import { toastError } from '../core/errors.js?v=116';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, icon, select,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=115';
-import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=115';
+} from '../core/ui.js?v=116';
+import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=116';
 
 export const meta = {
   title: '编辑配置档案',
@@ -82,6 +82,7 @@ export async function render(container, params) {
     selectedLayoutId: profile.content?.timeLayouts?.[0]?.id || null,
     selectedPlanId: profile.content?.classPlans?.[0]?.id || null,
     classPlanLayoutId: state.classPlanLayoutId || profile.content?.timeLayouts?.[0]?.id || null,
+    rotationWeek: 1,
     scheduleSelection: null,
     armedSubjectId: null,
     dirty: false,
@@ -96,6 +97,11 @@ function normalizeContent(content) {
     timeLayouts: c.timeLayouts || [],
     classPlans: c.classPlans || [],
     subjects: c.subjects || [],
+    rotation: {
+      weeks: normalizeWeeks(c.rotation?.weeks),
+      semesterStartDate: c.rotation?.semesterStartDate || '',
+      offset: Number(c.rotation?.offset) || 0,
+    },
     settings: {
       values: c.settings?.values || {},
       lockLocalEditing: !!c.settings?.lockLocalEditing,
@@ -104,12 +110,267 @@ function normalizeContent(content) {
   };
 }
 
+// ── 多周轮换 ──────────────────────────────────────────────────────────
+//
+// ClassIsland 原生就支持多周轮换（每张课表带「周期 + 周期内第几周」，宿主用「轮换起点 + 偏移」
+// 算今天该用哪张）。集控这边**不重新实现轮换**，只做两件事：让管理员能逐周排课、
+// 把这些从课表推不出来的信息（起点 / 偏移）随档案下发。
+//
+// 界面上「周」的归属只由课表自己的 weekInterval / weekOffset 决定——不另存一份，
+// 避免出现「档案说 2 周、课表说第 3 周」这种两边打架的静默失效。
+
+/** 轮换周期上限（周），与 ClassIsland 宿主的「最大轮换周期」一致。 */
+const MAX_ROTATION_WEEKS = 9;
+
+/** 周期取值归一：只有 2~9 才算轮换，其余一律视为「不轮换」。 */
+function normalizeWeeks(value) {
+  const n = Math.floor(Number(value) || 0);
+  return n >= 2 && n <= MAX_ROTATION_WEEKS ? n : 1;
+}
+
+/** 本档案的轮换设置（保证存在，便于就地改）。 */
+function profileRotation() {
+  if (!state.content.rotation) {
+    state.content.rotation = { weeks: 1, semesterStartDate: '', offset: 0 };
+  }
+
+  return state.content.rotation;
+}
+
+/** 课表属于第几周（1..N）；「每周生效」返回 0。 */
+function planWeek(plan) {
+  const interval = Number(plan.weekInterval) || 0;
+  return interval < 2 ? 0 : (Number(plan.weekOffset) || 0) + 1;
+}
+
+/** 当前正在编辑的轮换周（1..周期）。 */
+function currentWeek() {
+  const weeks = profileRotation().weeks;
+  const week = Number(state.rotationWeek) || 1;
+  return week >= 1 && week <= weeks ? week : 1;
+}
+
+/** 某一周里已排课的天数（「每周生效」的课表算作第 1 周）。 */
+function weekDayCount(layout, week) {
+  const days = new Set();
+  for (const plan of state.content.classPlans) {
+    if (plan.timeLayoutId !== layout.id || (plan.daysOfWeek || []).length !== 1) {
+      continue;
+    }
+
+    if ((planWeek(plan) || 1) === week) {
+      days.add(plan.daysOfWeek[0]);
+    }
+  }
+
+  return days.size;
+}
+
+/** 去掉课表名里的「（第 N 周）」后缀，便于按周复制时重建名字。 */
+function stripWeekSuffix(name) {
+  return String(name || '').replace(/（第\s*\d+\s*周）$/, '').trim();
+}
+
+/** 复制一份课表到指定周（新 id、新名字、深拷贝课程格子）。 */
+function clonePlanForWeek(plan, week, weeks) {
+  return {
+    ...plan,
+    id: genId(),
+    name: `${stripWeekSuffix(plan.name) || '课表'}（第 ${week} 周）`,
+    weekInterval: weeks,
+    weekOffset: week - 1,
+    slots: (plan.slots || []).map((s) => ({ ...s })),
+  };
+}
+
+/**
+ * 调整轮换周期。
+ *
+ * 两条安全线：
+ * ① **新周期里每天都必须有课表**——只把第 1 周标成第 1 周、留着第 2 周空着，
+ *    那一周的教室大屏就是空的，而且要等到那周上课才会被发现，所以自动从第 1 周补齐；
+ * ② **缩短周期会删课表**（第 3 周的内容没有立足之地），删除前必须确认，并把要删的数量讲清楚。
+ */
+function setRotationWeeks(weeks) {
+  const rotation = profileRotation();
+  if (weeks === rotation.weeks) {
+    return;
+  }
+
+  /** 取某一周里「按天」的课表（每周生效的算作第 1 周）。 */
+  const dayPlansOfWeek = (week) => state.content.classPlans.filter((p) => {
+    const w = planWeek(p) || 1;
+    return w === week && (p.daysOfWeek || []).length === 1;
+  });
+
+  if (weeks < 2) {
+    const doomed = state.content.classPlans.filter((p) => (planWeek(p) || 1) > 1);
+    const run = () => {
+      for (const plan of state.content.classPlans) {
+        plan.weekInterval = 0;
+        plan.weekOffset = 0;
+      }
+
+      if (doomed.length > 0) {
+        const drop = new Set(doomed);
+        state.content.classPlans = state.content.classPlans.filter((p) => !drop.has(p));
+      }
+
+      rotation.weeks = 1;
+      state.rotationWeek = 1;
+      markDirty();
+      repaintTab();
+      toast('ok', '已关闭多周轮换', doomed.length > 0
+        ? `第 2 周及以后的 ${doomed.length} 张课表已删除，剩下的改为「每周生效」。`
+        : '所有课表改为「每周生效」。');
+    };
+
+    if (doomed.length === 0) {
+      run();
+      return;
+    }
+
+    confirmDialog('关闭多周轮换',
+      `第 2 周及以后还有 ${doomed.length} 张课表。关掉轮换后同一天会变成两份课表，它们将被删除；`
+      + '第 1 周的课表保留下来、改为「每周生效」。确定继续吗？',
+      '删除并关闭', true).then((ok) => { if (ok) run(); });
+    return;
+  }
+
+  const dropped = state.content.classPlans.filter((p) => (planWeek(p) || 1) > weeks).length;
+  const run = () => {
+    const template = new Map();
+    for (const plan of dayPlansOfWeek(1)) {
+      template.set(plan.daysOfWeek[0], plan);
+    }
+
+    const keep = [];
+    const others = [];
+    for (const plan of state.content.classPlans) {
+      const week = planWeek(plan) || 1;
+      if (week === 1) {
+        keep.push(plan);
+      } else if (week <= weeks) {
+        others.push(plan);
+      }
+      // week > 新周期：直接丢弃（第 1 周里已有同名同天的课表，删除前已确认过）。
+    }
+
+    let copied = 0;
+    for (let week = 2; week <= weeks; week++) {
+      const existing = new Set(others
+        .filter((p) => planWeek(p) === week)
+        .map((p) => p.daysOfWeek[0]));
+      for (const [day, plan] of template) {
+        if (existing.has(day)) {
+          continue;
+        }
+
+        others.push(clonePlanForWeek(plan, week, weeks));
+        copied++;
+      }
+    }
+
+    for (const plan of keep) {
+      plan.weekInterval = weeks;
+      plan.weekOffset = 0;
+    }
+
+    // 一定要把重建后的清单写回去：`others` 里是本次新造的各周副本，
+    // 只 push 到临时数组而不赋值，表现就是「切换周次后新周仍然是空的」。
+    state.content.classPlans = [...keep, ...others];
+
+    rotation.weeks = weeks;
+    if ((Number(state.rotationWeek) || 1) > weeks) {
+      state.rotationWeek = 1;
+    }
+
+    markDirty();
+    repaintTab();
+    toast('ok', `已按 ${weeks} 周轮换`,
+      copied > 0
+        ? `从第 1 周补齐了 ${copied} 张课表，接着切换周次、只改需要轮换的那几周即可。`
+        : '切换周次逐周核对一遍再保存。');
+  };
+
+  if (dropped > 0) {
+    confirmDialog('缩短轮换周期',
+      `第 ${weeks + 1} 周及以后还有 ${dropped} 张课表，会被删除（它们对应的天在第 1 周里已有课表）。确定继续吗？`,
+      '删除并继续', true).then((ok) => { if (ok) run(); });
+    return;
+  }
+
+  run();
+}
+
+/** 顶部「多周轮换」设置条。 */
+function renderRotationBar() {
+  const rotation = profileRotation();
+  const weeks = rotation.weeks;
+
+  const weekSelect = select(
+    Array.from({ length: MAX_ROTATION_WEEKS }, (_, i) => ({
+      value: String(i + 1),
+      label: i === 0 ? '不轮换（每周同一张）' : `${i + 1} 周轮换`,
+    })),
+    String(weeks),
+    (v) => setRotationWeeks(Number(v)),
+  );
+
+  const startInput = h('input', {
+    type: 'date',
+    value: rotation.semesterStartDate || '',
+    disabled: weeks < 2,
+  });
+  startInput.addEventListener('change', () => {
+    rotation.semesterStartDate = startInput.value || '';
+    markDirtyLight();
+  });
+
+  const offsetInput = h('input', {
+    type: 'number',
+    min: -9,
+    max: 9,
+    step: 1,
+    value: String(rotation.offset || 0),
+    disabled: weeks < 2,
+    style: { width: '84px' },
+  });
+  offsetInput.addEventListener('change', () => {
+    const n = Math.max(-9, Math.min(9, Math.floor(Number(offsetInput.value) || 0)));
+    rotation.offset = n;
+    offsetInput.value = String(n);
+    markDirtyLight();
+  });
+
+  return h('div.card', { style: { marginBottom: '14px' } },
+    h('div.card-head',
+      h('div',
+        h('h3', '多周轮换'),
+        h('p.card-desc', '轮换由 ClassIsland 原生执行：这里定「几周一个循环」，'
+          + '再到「课表」页逐周排课。轮换起点是「第 1 周从哪天算起」；'
+          + '手动偏移用于临时整体平移进度（例如运动会占掉一周）。')),
+      h('div.card-actions',
+        h('span.badge' + (weeks < 2 ? '.badge-neutral' : '.badge-accent'),
+          weeks < 2 ? '未启用' : `${weeks} 周一轮`)),
+    ),
+    h('div.form-row', { style: { flexWrap: 'wrap' } },
+      field('轮换周期', weekSelect),
+      field('轮换起点（第 1 周的第一天）', startInput,
+        '一般填开学第一周的周日——ClassIsland 默认以周日为周起点。留空则由各教室自身的设置决定。'),
+      field('手动偏移（周）', offsetInput,
+        '正数表示轮换提前。例如运动会占掉一周，就填 1 把进度推回去。'),
+    ),
+  );
+}
+
 function paint(container) {
   clear(container);
 
   // 页面标题由路由统一处理，这里只渲染内容。
   container.appendChild(h('div',
     renderHeader(),
+    renderRotationBar(),
     h('div.card',
       h('div.editor-toolbar',
         h('div.tabs', ...TABS.map((tab) => h('button', {
@@ -605,7 +866,30 @@ function renderClassPlans() {
     state.scheduleSelection = null;
   }
 
+  // 多周轮换：周次切换器。一格 = 某一周的整周课表；标「（空）」的那一周教室大屏什么都不会显示，
+  // 这类空周只靠肉眼翻周次才看得出来，所以直接在标签上提示。
+  const weeks = profileRotation().weeks;
+  const week = currentWeek();
+  const weekBar = weeks < 2 ? null : h('div.toolbar',
+    h('span.toolbar-label', '轮换周次'),
+    segmented(
+      Array.from({ length: weeks }, (_, i) => ({
+        id: i + 1,
+        label: `第 ${i + 1} 周${weekDayCount(layout, i + 1) === 0 ? '（空）' : ''}`,
+      })),
+      week,
+      (v) => {
+        state.rotationWeek = Number(v);
+        state.scheduleSelection = null;
+        repaintTab();
+      },
+    ),
+    h('div.spacer'),
+    h('span.toolbar-hint', `当前编辑第 ${week} 周；这里的课表只在这一周生效。`),
+  );
+
   return h('div',
+    weekBar,
     h('div.toolbar',
       h('span.toolbar-label', '作息时间表'),
       layoutBar,
@@ -657,6 +941,8 @@ function openBulkOps(layout, periodCount) {
     mode: 'replace',
     srcDayFrom: '0', srcDayTo: '4', srcPeriodFrom: '0', srcPeriodTo: String(periodCount - 1),
     dstDayFrom: '0', dstDayTo: '4', dstPeriodFrom: '0', dstPeriodTo: String(periodCount - 1),
+    // 「从别的周复制」的源周次：默认选「不是当前周」的那一周（1↔2），省得每次都要改。
+    srcWeek: String(currentWeek() === 1 ? Math.min(2, profileRotation().weeks) : 1),
     replaceFrom: '', replaceTo: '',
     templateId: '',
   };
@@ -700,6 +986,56 @@ function openBulkOps(layout, periodCount) {
         }
 
         writeSlot(layout, day, period, value);
+        written++;
+      });
+    });
+
+    return { written, skipped };
+  }
+
+  /**
+   * 从另一周复制到**当前正在编辑的那一周**。
+   *
+   * 与「按节复制」的区别：那个是在同一周内搬移，这个是跨周抄整周。
+   * 轮换课表通常是「整周基本一样、只有少数几节不同」，先抄一整周再改那几节最省事，
+   * 也避免新起的一周留着空格——某个半天没课，教室大屏那半天就什么都不显示。
+   */
+  function applyCopyFromWeek() {
+    const sourceWeek = Number(cfg.srcWeek) || 1;
+    const days = expand('srcDayFrom', 'srcDayTo');
+    const periods = expand('srcPeriodFrom', 'srcPeriodTo');
+
+    const sourceByDay = new Map();
+    for (const plan of state.content.classPlans) {
+      if (plan.timeLayoutId !== layout.id || (plan.daysOfWeek || []).length !== 1) {
+        continue;
+      }
+
+      if ((planWeek(plan) || 1) === sourceWeek) {
+        sourceByDay.set(plan.daysOfWeek[0], plan);
+      }
+    }
+
+    // 先把源周整块读出来再写（与「按节复制」同一条原则：边读边写会读到已覆盖的值）。
+    const block = periods.map((period) => days.map((dayIndex) => {
+      const slot = (sourceByDay.get(GRID_DAYS[dayIndex].value)?.slots || [])
+        .find((s) => s.index === period);
+      return slot && slot.subjectId
+        ? { subjectId: slot.subjectId, isEnabled: slot.isEnabled !== false }
+        : null;
+    }));
+
+    let written = 0;
+    let skipped = 0;
+    periods.forEach((period, row) => {
+      days.forEach((dayIndex, col) => {
+        const day = GRID_DAYS[dayIndex].value;
+        if (cfg.mode === 'merge' && readSlot(layout, day, period)) {
+          skipped++;
+          return;
+        }
+
+        writeSlot(layout, day, period, block[row][col]);
         written++;
       });
     });
@@ -800,9 +1136,14 @@ function openBulkOps(layout, periodCount) {
   function paint() {
     clear(body);
 
+    // 「从别的周复制」只在多周轮换档案里出现——单周档案里它没有意义。
+    const actionKeys = [['copy', '按节复制'], ['clear', '批量清空'], ['replace', '替换科目'], ['template', '课表模板']];
+    if (profileRotation().weeks >= 2) {
+      actionKeys.splice(1, 0, ['fromweek', '从别的周复制']);
+    }
+
     body.appendChild(h('div.card-actions', { style: { gap: '6px', marginBottom: '12px' } },
-      ...[['copy', '按节复制'], ['clear', '批量清空'], ['replace', '替换科目'], ['template', '课表模板']]
-        .map(([key, label]) => h('button', {
+      ...actionKeys.map(([key, label]) => h('button', {
           type: 'button',
           class: `btn btn-sm${cfg.action === key ? ' btn-primary' : ''}`,
           onClick: () => { cfg.action = key; paint(); },
@@ -818,6 +1159,26 @@ function openBulkOps(layout, periodCount) {
         { value: 'merge', label: '只填空格（目标已有课的不动）' },
       ], cfg.mode, (v) => { cfg.mode = v; }),
       '源与目标重叠也没问题：会先把源整块读出来再写。'));
+    } else if (cfg.action === 'fromweek') {
+      const weeks = profileRotation().weeks;
+      const here = currentWeek();
+      body.appendChild(field('源 · 周次',
+        select(
+          Array.from({ length: weeks }, (_, i) => ({
+            value: String(i + 1),
+            label: `第 ${i + 1} 周${i + 1 === here ? '（当前正在编辑）' : ''}`,
+          })),
+          cfg.srcWeek,
+          (v) => { cfg.srcWeek = v; },
+        ),
+        '复制**到当前正在编辑的那一周**——想换目标周，先在网格上方切换周次。'));
+      body.appendChild(field('源 · 天', pair(dayOptions, 'srcDayFrom', 'srcDayTo')));
+      body.appendChild(field('源 · 节次', pair(periodOptions, 'srcPeriodFrom', 'srcPeriodTo')));
+      body.appendChild(field('方式', select([
+        { value: 'replace', label: '覆盖当前周（源里的空格也会照搬）' },
+        { value: 'merge', label: '只填空格（当前周已有课的不动）' },
+      ], cfg.mode, (v) => { cfg.mode = v; }),
+      '轮换课表大多是「整周基本一样、只有几节不同」：先整周抄过来，再改那几节即可。'));
     } else if (cfg.action === 'clear') {
       body.appendChild(field('范围 · 天', pair(dayOptions, 'srcDayFrom', 'srcDayTo')));
       body.appendChild(field('范围 · 节次', pair(periodOptions, 'srcPeriodFrom', 'srcPeriodTo')));
@@ -892,6 +1253,24 @@ function openBulkOps(layout, periodCount) {
         repaintTab();
       };
 
+      if (cfg.action === 'fromweek') {
+        const sourceWeek = Number(cfg.srcWeek) || 1;
+        const targetWeek = currentWeek();
+        if (sourceWeek === targetWeek) {
+          toast('warn', '源周次就是当前周',
+            '请选另一个周次：这个功能是把某一周抄到当前正在编辑的那一周。');
+          return false;
+        }
+
+        const copied = applyCopyFromWeek();
+        code();
+        toast('ok', '已复制',
+          `把第 ${sourceWeek} 周写进第 ${targetWeek} 周，共 ${copied.written} 格`
+          + `${copied.skipped ? `，跳过 ${copied.skipped} 格（当前周已有课）` : ''}。`
+          + '记得点右上角「保存并下发」才会生效。');
+        return true;
+      }
+
       if (cfg.action === 'copy') {
         const result = applyCopy();
         code();
@@ -941,27 +1320,42 @@ function openBulkOps(layout, periodCount) {
 
 /** 取「某一天」的课表；不存在返回 null（空天保持空，不自动创建）。 */
 function getDayPlan(layout, day) {
-  return state.content.classPlans.find((p) => p.timeLayoutId === layout.id
-    && (p.daysOfWeek || []).length === 1 && p.daysOfWeek[0] === day) || null;
+  const candidates = state.content.classPlans.filter((p) => p.timeLayoutId === layout.id
+    && (p.daysOfWeek || []).length === 1 && p.daysOfWeek[0] === day);
+
+  if (profileRotation().weeks < 2) {
+    return candidates[0] || null;
+  }
+
+  // 轮换档案里同一天会有多张课表（每周一张）：优先当前正在编辑的那一周，
+  // 其次才是「每周生效」的那张（用它兜底，免得在别的周显示成空）。
+  const week = currentWeek();
+  return candidates.find((p) => planWeek(p) === week)
+    || candidates.find((p) => planWeek(p) === 0)
+    || null;
 }
 
 /** 确保某天的课表存在（用户实际填课时才创建），返回课表对象。 */
 function ensureDayPlan(layout, day) {
   let plan = getDayPlan(layout, day);
-  if (!plan) {
-    const label = GRID_DAYS.find((d) => d.value === day)?.label || String(day);
-    plan = {
-      id: genId(),
-      name: `${label}课表`,
-      timeLayoutId: layout.id,
-      isEnabled: true,
-      daysOfWeek: [day],
-      weekInterval: 0,
-      weekOffset: 0,
-      slots: [],
-    };
-    state.content.classPlans.push(plan);
+  if (plan) {
+    return plan;
   }
+
+  const weeks = profileRotation().weeks;
+  const week = currentWeek();
+  const label = GRID_DAYS.find((d) => d.value === day)?.label || String(day);
+  plan = {
+    id: genId(),
+    name: weeks >= 2 ? `${label}课表（第 ${week} 周）` : `${label}课表`,
+    timeLayoutId: layout.id,
+    isEnabled: true,
+    daysOfWeek: [day],
+    weekInterval: weeks >= 2 ? weeks : 0,
+    weekOffset: weeks >= 2 ? week - 1 : 0,
+    slots: [],
+  };
+  state.content.classPlans.push(plan);
   return plan;
 }
 

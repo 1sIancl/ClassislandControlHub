@@ -6,11 +6,11 @@
  * 最容易让人以为它只是一次普通推送。
  */
 
-import { api } from '../core/api.js?v=115';
-import { toastError } from '../core/errors.js?v=115';
+import { api } from '../core/api.js?v=116';
+import { toastError } from '../core/errors.js?v=116';
 import {
   h, clear, toast, loadingBlock, field, select, confirmDialog, formatDateTime,
-} from '../core/ui.js?v=115';
+} from '../core/ui.js?v=116';
 
 export const meta = {
   title: '考试模式',

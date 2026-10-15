@@ -79,6 +79,8 @@ public static class LessonEndpoints
                         NextEndAt = row.NextEndAt,
                         LeftSeconds = row.LeftSeconds,
                         IsAdjusted = row.IsAdjusted,
+                        RotationWeeks = row.RotationWeeks,
+                        RotationWeek = row.RotationWeek,
                         ReportedAt = row.ReportedAt,
                     },
             });

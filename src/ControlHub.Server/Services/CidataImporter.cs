@@ -88,6 +88,9 @@ public static class CidataImporter
                 if (string.Equals(name, "Settings.json", StringComparison.OrdinalIgnoreCase))
                 {
                     result.HasSettings = true;
+                    // 应用设置整块不导入，但**轮换起点与多周偏移要看一眼**：
+                    // 多周课表离开这两个值就不知道「哪一周算第 1 周」，导进来会是错的日子。
+                    result.HostRotation = ParseHostRotation(ReadText(entry));
                     continue;
                 }
 
@@ -120,7 +123,7 @@ public static class CidataImporter
                         $"档案文件 {entry.Name} 超过 {MaxProfileEntryBytes / 1024 / 1024}MB，不像是一份正常的课表档案。");
                 }
 
-                result.Profiles.Add(Convert(entry.Name, ReadText(entry)));
+                result.Profiles.Add(Convert(entry.Name, ReadText(entry), result.HostRotation));
             }
 
             if (result.Profiles.Count == 0)
@@ -133,8 +136,13 @@ public static class CidataImporter
         }
     }
 
-    /// <summary>把一份档案 JSON 映射成集控内容包。</summary>
-    public static CidataProfileEntry Convert(string fileName, string json)
+    /// <summary>
+    /// 把一份档案 JSON 映射成集控内容包。
+    /// </summary>
+    /// <param name="fileName">包内文件名（例如 <c>Default.json</c>）。</param>
+    /// <param name="json">档案 JSON 文本。</param>
+    /// <param name="hostRotation">包内 <c>Settings.json</c> 里的轮换起点 / 多周偏移（没有就传 null）。</param>
+    public static CidataProfileEntry Convert(string fileName, string json, CidataRotationInfo? hostRotation = null)
     {
         ProfileJson? profile;
         try
@@ -411,7 +419,95 @@ public static class CidataImporter
                 + "集控的档案模型没有对应结构，未导入——需要的话请在集控里重新设置。");
         }
 
+        // ── 多周轮换的起点与偏移（来自包里的 Settings.json）──
+        ApplyHostRotation(entry, hostRotation);
+
         return entry;
+    }
+
+    /// <summary>
+    /// 把包内宿主的轮换起点 / 多周偏移接到档案的轮换设置上。
+    ///
+    /// <para>
+    /// 只在**这份档案确实有多周课表**（有课表的周期 ≥2）时才处理：没有多周课表的话，
+    /// 起点填与不填都不影响，硬写进去反而会让管理员以为「这个档案在轮换」。
+    /// 起点一律**提示核对**——宿主机从来没设过的话，那个值只是「导出那天所在周的周日」，
+    /// 照着它算周次会整学期错位，而这种错位要到上课那天才看得出来。
+    /// </para>
+    /// </summary>
+    private static void ApplyHostRotation(CidataProfileEntry entry, CidataRotationInfo? host)
+    {
+        var cycle = entry.Content.ClassPlans
+            .Where(p => p.WeekInterval >= 2)
+            .Select(p => p.WeekInterval)
+            .DefaultIfEmpty(0)
+            .Max();
+
+        if (cycle < 2)
+        {
+            return;
+        }
+
+        // 周次必须写进档案的轮换设置：保存时规范化会「档案没启用轮换 → 清掉课表周次」，
+        // 不写等于把刚导进来的单双周课表整套作废。
+        entry.Content.Rotation.Weeks = cycle;
+
+        if (host is null)
+        {
+            entry.Warnings.Add($"这份档案是 {cycle} 周一轮换，但包里没有可用的轮换起点（Settings.json 缺失或读不出来），"
+                + "导入后请在档案的「多周轮换」里把起点填成开学第一周，否则教室端会按各自的本地日期算周次。");
+            return;
+        }
+
+        if (host.SemesterStartDate is { } start)
+        {
+            entry.Content.Rotation.SemesterStartDate = start.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            entry.Warnings.Add($"这份档案是 {cycle} 周一轮换，轮换起点按包内宿主的「{start:yyyy-MM-dd}」导入，"
+                + "请核对它确实是开学第一周（宿主机上没设置过的话，这个值只是导出那天所在周的周日，照它算会整学期错位）。");
+        }
+
+        if (host.Offsets.TryGetValue(cycle, out var offset) && offset != 0)
+        {
+            entry.Content.Rotation.Offset = offset;
+            entry.Warnings.Add($"{cycle} 周轮换在宿主上带着 {offset} 周的手动偏移（临时调过进度），已一并导入。");
+        }
+    }
+
+    /// <summary>从包内 <c>Settings.json</c> 里取出与多周轮换有关的两个设置。</summary>
+    private static CidataRotationInfo? ParseHostRotation(string json)
+    {
+        SettingsJson? parsed;
+        try
+        {
+            parsed = JsonSerializer.Deserialize<SettingsJson>(json, HubJson.Options);
+        }
+        catch (JsonException)
+        {
+            // 设置解析失败不该拖垮导入：轮换起点是「锦上添花」，照旧导课表。
+            return null;
+        }
+
+        var info = new CidataRotationInfo();
+
+        if (DateTime.TryParse(parsed?.SingleWeekStartTime, CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var start))
+        {
+            info.SemesterStartDate = DateOnly.FromDateTime(start);
+        }
+
+        // 宿主的 MultiWeekRotationOffset 下标就是周期长度（2-first），-1 表示该周期没设置。
+        if (parsed?.MultiWeekRotationOffset is { Count: > 0 } offsets)
+        {
+            for (var cycle = 2; cycle < offsets.Count; cycle++)
+            {
+                if (offsets[cycle] >= 0)
+                {
+                    info.Offsets[cycle] = offsets[cycle];
+                }
+            }
+        }
+
+        return info.SemesterStartDate is null && info.Offsets.Count == 0 ? null : info;
     }
 
     /// <summary>把宿主的周次轮换（单双周）映射到集控的 <c>WeekInterval</c> / <c>WeekOffset</c>。</summary>
@@ -549,6 +645,16 @@ public static class CidataImporter
     // ── 以下内部模型只取需要的字段：宿主 JSON 是 PascalCase，
     //    HubJson.Options 是大小写不敏感的，未知字段自动忽略。 ──
 
+    /// <summary>包内 <c>Settings.json</c> 里与多周轮换有关的部分（其余设置一律不导入）。</summary>
+    private sealed class SettingsJson
+    {
+        /// <summary>轮换起点（宿主的「周次轮换起点 / 开学日期」）。</summary>
+        public string? SingleWeekStartTime { get; set; }
+
+        /// <summary>多周轮换偏移，下标为周期长度（2-first），<c>-1</c> 表示该周期没设置。</summary>
+        public List<int>? MultiWeekRotationOffset { get; set; }
+    }
+
     private sealed class ProfileJson
     {
         public string? Name { get; set; }
@@ -645,6 +751,9 @@ public sealed class CidataArchive
     /// <summary>是否带 <c>Settings.json</c>（应用设置）。</summary>
     public bool HasSettings { get; set; }
 
+    /// <summary>包内宿主的多周轮换设置（起点 / 各周期的手动偏移）；没有或不涉及时为 <c>null</c>。</summary>
+    public CidataRotationInfo? HostRotation { get; set; }
+
     /// <summary><c>Config/</c> 下的条目数（自动化、组件布局、主题、管理策略等）。</summary>
     public int ConfigEntryCount { get; set; }
 
@@ -673,6 +782,16 @@ public sealed class CidataArchive
 
         return notes;
     }
+}
+
+/// <summary>包内宿主的多周轮换设置（从 <c>Settings.json</c> 里取）。</summary>
+public sealed class CidataRotationInfo
+{
+    /// <summary>轮换起点（开学第一周的第一天）。</summary>
+    public DateOnly? SemesterStartDate { get; set; }
+
+    /// <summary>各周期长度对应的手动偏移（键为周期长度，2-first）。</summary>
+    public Dictionary<int, int> Offsets { get; } = [];
 }
 
 /// <summary>包内的一份档案，以及它映射成集控内容包的结果。</summary>

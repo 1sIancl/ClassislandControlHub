@@ -56,6 +56,7 @@ public sealed class ClassIslandAdapter(IPublicProfileService profileService, ILo
     {
         var profile = profileService.Profile ?? new Profile();
         var applied = new List<string>();
+        var rotationNote = string.Empty;
 
         try
         {
@@ -77,6 +78,12 @@ public sealed class ClassIslandAdapter(IPublicProfileService profileService, ILo
             {
                 ReplaceClassPlans(profile, content.ClassPlans);
                 applied.Add(HubProtocol.Sections.ClassPlans);
+
+                // 轮换起点 / 最大周期 / 手动偏移是**宿主级设置**，但与课表是一体的：
+                // 课表只说「我是周期里的第几周」，哪一周算第 1 周得由宿主算。两者必须一起下发，
+                // 否则多周轮换的课表在教室端会按各自的本地日期错开（课表全对、日子全错）。
+                // 因此它跟着「课表」开关走，而不是跟着「自定义设置」。
+                rotationNote = HostRotationSettings.Apply(content.Rotation, content.ClassPlans, logger);
             }
 
             // 自定义设置分区不涉及档案结构，仅作为元数据记录，无需写入档案。
@@ -92,11 +99,11 @@ public sealed class ClassIslandAdapter(IPublicProfileService profileService, ILo
                 ? (content.ClassPlans.FirstOrDefault(c => c.IsEnabled)?.Name ?? content.ClassPlans[0].Name)
                 : null;
 
-            logger.LogInformation("已应用集控配置：{Sections}。", string.Join(",", applied));
+            logger.LogInformation("已应用集控配置：{Sections}。{Rotation}", string.Join(",", applied), rotationNote);
             return new ApplyResult
             {
                 Success = true,
-                Message = "配置已应用。",
+                Message = "配置已应用。" + rotationNote,
                 AppliedSections = applied,
                 CurrentClassPlanName = planName,
             };
