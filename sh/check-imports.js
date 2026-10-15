@@ -12,7 +12,7 @@
  * 那一类由 `sh/ui-smoke.js`（真实浏览器加载页面）兜底，别删那个测试。
  *
  * 用法：
- *   node sh/check-imports.js                       # 默认检查 src/ControlHub.Server/wwwroot/js
+ *   node sh/check-imports.js                       # 默认检查 src/IslandHub.Server/wwwroot/js
  *   node sh/check-imports.js <某个 js 目录>
  *
  * 退出码：0 = 全部一致；1 = 发现问题（可接进 CI）。
@@ -21,7 +21,7 @@ const fs = require('fs');
 const path = require('path');
 
 const root = process.argv[2]
-  || path.join(__dirname, '..', 'src', 'ControlHub.Server', 'wwwroot', 'js');
+  || path.join(__dirname, '..', 'src', 'IslandHub.Server', 'wwwroot', 'js');
 
 /** 收集一个模块导出的所有名字（function / const / let / var / class / export {...}）。 */
 function exportedNames(file) {

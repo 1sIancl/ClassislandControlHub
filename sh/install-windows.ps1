@@ -1,13 +1,13 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    ClassislandControlHub 集控 A 端服务器 · Windows 一键部署脚本。
+    IslandHub A 端服务器 · Windows 一键部署脚本。
 
 .DESCRIPTION
     发布服务端程序并注册为 Windows 服务，实现开机自启、崩溃自动重启；
     同时配置防火墙放行 HTTP 端口与局域网自动发现（UDP）端口。
 
-    数据默认保存在 %ProgramData%\ClassislandControlHub\data，与服务程序分离，
+    数据默认保存在 %ProgramData%\IslandHub\data，与服务程序分离，
     重新部署/升级不会影响已配置的课表、设备与注册码。
 
     必须在“以管理员身份运行”的 PowerShell 中执行。
@@ -17,7 +17,7 @@
 
 .EXAMPLE
     # 自定义端口与安装目录
-    powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1 -HttpPort 8080 -InstallDir D:\ControlHub
+    powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1 -HttpPort 8080 -InstallDir D:\IslandHub
 #>
 [CmdletBinding()]
 param(
@@ -34,7 +34,10 @@ param(
     [int]$DiscoveryPort = 29810,
 
     # Windows 服务名称。
-    [string]$ServiceName = 'ClassislandControlHub',
+    # ⚠️ 服务名 / 安装目录 / 数据目录 / 配置节名**刻意保持旧名 ClassislandControlHub（ControlHub）**：
+#    已部署机器上就是这些名字，改品牌时连它们一起改，等于「装出第二份、老数据没人读」。
+#    品牌只体现在 DisplayName 与界面上。
+[string]$ServiceName = 'ClassislandControlHub',
 
     # 跳过防火墙规则配置。
     [switch]$NoFirewall
@@ -42,7 +45,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-function Write-Info([string]$Message) { Write-Host "[集控] $Message" -ForegroundColor Cyan }
+function Write-Info([string]$Message) { Write-Host "[IslandHub] $Message" -ForegroundColor Cyan }
 function Write-Warn2([string]$Message) { Write-Host "[警告] $Message" -ForegroundColor Yellow }
 function Write-Die([string]$Message) { Write-Host "[错误] $Message" -ForegroundColor Red; exit 1 }
 
@@ -55,7 +58,7 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 
 # ── 定位源码仓库 ──────────────────────────────────────────
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$serverProject = Join-Path $repoRoot 'src\ControlHub.Server\ControlHub.Server.csproj'
+$serverProject = Join-Path $repoRoot 'src\IslandHub.Server\IslandHub.Server.csproj'
 if (-not (Test-Path $serverProject)) {
     Write-Die "未找到服务端项目：$serverProject。请在本仓库的 sh 目录中运行本脚本。"
 }
@@ -116,7 +119,7 @@ New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 [IO.File]::WriteAllText($appSettings, ($json | ConvertTo-Json -Depth 32), (New-Object Text.UTF8Encoding($false)))
 
 # ── 注册 Windows 服务 ─────────────────────────────────────
-$exePath = Join-Path $serverDir 'ControlHub.Server.exe'
+$exePath = Join-Path $serverDir 'IslandHub.Server.exe'
 if (-not (Test-Path $exePath)) { Write-Die "发布目录缺少可执行文件：$exePath" }
 
 $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
@@ -138,9 +141,9 @@ if ($existing) {
 
 Write-Info "注册服务 $ServiceName …"
 # sc.exe 需要 `key= value` 形式（`=` 后必须有空格），值由 PowerShell 自动加引号。
-& sc.exe create $ServiceName 'binPath=' $exePath 'start=' 'auto' 'DisplayName=' 'ClassislandControlHub 集控服务器' | Out-Null
+& sc.exe create $ServiceName 'binPath=' $exePath 'start=' 'auto' 'DisplayName=' 'IslandHub 服务器' | Out-Null
 if ($LASTEXITCODE -ne 0) { Write-Die '创建服务失败。' }
-& sc.exe description $ServiceName 'ClassislandControlHub 集控服务器：统一下发课表/时间表/科目，管理与同步教室大屏。' | Out-Null
+& sc.exe description $ServiceName 'IslandHub 服务器：统一下发课表/时间表/科目，管理与同步教室大屏。' | Out-Null
 # 崩溃后自动重启（首次 5 秒，之后每 5 秒，计数器每天重置）。
 & sc.exe failure $ServiceName 'reset=' '86400' 'actions=' 'restart/5000/restart/5000/restart/5000' | Out-Null
 

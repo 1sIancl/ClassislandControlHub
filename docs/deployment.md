@@ -7,13 +7,13 @@
 
 ```bash
 # 编译整个解决方案
-dotnet build ClassIsland.ControlHub.slnx -c Release
+dotnet build ClassIsland.IslandHub.slnx -c Release
 
-# 打包 B 端插件（产出 src/ControlHub.Plugin/cipx/ControlHub.Plugin.cipx）
-dotnet build src/ControlHub.Plugin/ControlHub.Plugin.csproj -c Release -p:CreateCipx=true
+# 打包 B 端插件（产出 src/IslandHub.Plugin/cipx/ControlHub.Plugin.cipx）
+dotnet build src/IslandHub.Plugin/IslandHub.Plugin.csproj -c Release -p:CreateCipx=true
 
 # B 端映射自动化验证（科目/时间表/课表对齐/单双周轮换，无需真机）
-dotnet run --project tools/ControlHub.Verify -c Release
+dotnet run --project tools/IslandHub.Verify -c Release
 ```
 
 > 打包会一并生成 `cipx/checksums.md`（内容为 `<!-- CLASSISLAND_PKG_MD5 {...} -->`），
@@ -24,7 +24,7 @@ dotnet run --project tools/ControlHub.Verify -c Release
 ### 方式一：内网本地运行（推荐日常使用）
 
 ```bash
-cd src/ControlHub.Server
+cd src/IslandHub.Server
 dotnet run -c Release
 ```
 
@@ -39,19 +39,19 @@ dotnet run -c Release
 powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 ```
 
-脚本会完成：`dotnet publish` → 注册名为 `ClassislandControlHub` 的 Windows 服务（开机自启、
+脚本会完成：`dotnet publish` → 注册名为 `IslandHub` 的 Windows 服务（开机自启、
 崩溃自动重启）→ 放行 HTTP 与自动发现端口。可用参数：`-HttpPort`、`-DiscoveryPort`、
 `-InstallDir`、`-DataDir`、`-ServiceName`、`-NoFirewall`。
 
-数据默认保存在 `C:\ProgramData\ClassislandControlHub\data`，与服务程序目录分离，升级不影响数据。
+数据默认保存在 `C:\ProgramData\IslandHub\data`，与服务程序目录分离，升级不影响数据。
 卸载：`powershell -ExecutionPolicy Bypass -File .\sh\uninstall-windows.ps1`（加 `-RemoveData` 可一并删除数据）。
 
 ### 方式三：发布为自包含目录
 
 ```bash
-dotnet publish src/ControlHub.Server/ControlHub.Server.csproj -c Release -o dist/server
+dotnet publish src/IslandHub.Server/IslandHub.Server.csproj -c Release -o dist/server
 cd dist/server
-./ControlHub.Server
+./IslandHub.Server
 ```
 
 发布目录即一个完整的服务器应用，可拷贝到任意 Windows/Linux/macOS 机器运行。
@@ -64,11 +64,11 @@ cd dist/server
   这样自动发现与客户端提示中显示的公网地址才正确。
 - 长轮询是普通 HTTP/1.1 请求，Nginx 无需特殊配置，但请把 `proxy_read_timeout` 调到 60s 以上。
 
-### 配置项（`appsettings.json` 的 `ControlHub` 节）
+### 配置项（`appsettings.json` 的 `IslandHub` 节）
 
 | 键 | 默认 | 说明 |
 |---|---|---|
-| `ServerName` | ClassIsland 集控服务器 | 展示名称 |
+| `ServerName` | ClassIsland IslandHub 服务器 | 展示名称 |
 | `HttpPort` | 29800 | HTTP 端口 |
 | `BindAddress` | 0.0.0.0 | 监听地址 |
 | `DataDirectory` | data | 数据目录（SQLite 文件所在） |
@@ -104,7 +104,7 @@ cd dist/server
 2. 在教室电脑上安装 ClassIsland（2.1.1.1 及以上）。
 3. 把 `.cipx` 放入 ClassIsland 的插件目录（或通过插件市场分发安装）。
 4. 在 A 端 Web 界面生成注册码。
-5. 打开 ClassIsland【应用设置 → 集控客户端】：
+5. 打开 ClassIsland【应用设置 → IslandHub 客户端】：
    - 点「自动发现服务器」，或手动填写服务器地址；
    - 填入注册码，点「保存设置」，再点「立即同步」。
 

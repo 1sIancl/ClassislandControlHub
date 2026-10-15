@@ -6,8 +6,8 @@
 
 ## 背景
 
-路线图里「插件扩展机制」是项目从**工具**走向**平台**的关键：让其它 ClassIsland 插件把自己的能力接进集控，
-由集控统一下发、统一查看。第三方接入意味着**协议一旦发布就要长期兼容**——外部插件作者会照着它写代码，
+路线图里「插件扩展机制」是项目从**工具**走向**平台**的关键：让其它 ClassIsland 插件把自己的能力接进 IslandHub，
+由 IslandHub 统一下发、统一查看。第三方接入意味着**协议一旦发布就要长期兼容**——外部插件作者会照着它写代码，
 改协议的代价由别人承担。
 
 同时项目已经有一套内部命令协议（`shell` / `plugin.*` / `appearance.*` / `notify` / `power.*` /
@@ -20,7 +20,7 @@
 具体冻结内容（详见 plugin-protocol.md）：
 
 1. **操作类型 ID 命名空间**：内置保持现状；扩展**必须**用 `ext.<插件ID>.<操作名>`；
-   `ext.local.*` 保留给集控自身；**不认识的 `ext.*` 一律拒绝**（fail-closed，与 ADR-0002 一致）。
+   `ext.local.*` 保留给 IslandHub 自身；**不认识的 `ext.*` 一律拒绝**（fail-closed，与 ADR-0002 一致）。
 2. **能力声明**：随插件清单上报 `capabilities`（`id` / `title` / `pluginId` / `permission` /
    `idempotent` / `maxDurationSeconds` / `parameters` / `result`）——**作为可选字段**，旧插件不报也能正常工作。
 3. **参数 Schema**：只支持受限子集（string / number / integer / boolean / enum + `x-ui` 提示），

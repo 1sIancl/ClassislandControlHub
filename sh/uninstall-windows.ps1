@@ -1,7 +1,7 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    ClassislandControlHub 集控 A 端服务器 · Windows 卸载脚本。
+    IslandHub A 端服务器 · Windows 卸载脚本。
 
 .DESCRIPTION
     停止并删除 Windows 服务、清理防火墙规则。默认保留数据目录（课表/设备/注册码），
@@ -26,7 +26,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-function Write-Info([string]$Message) { Write-Host "[集控] $Message" -ForegroundColor Cyan }
+function Write-Info([string]$Message) { Write-Host "[IslandHub] $Message" -ForegroundColor Cyan }
 function Write-Die([string]$Message) { Write-Host "[错误] $Message" -ForegroundColor Red; exit 1 }
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()

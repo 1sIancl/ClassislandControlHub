@@ -4,7 +4,7 @@
 
 ```
 ┌────────────────────────────────────────────────────────────────┐
-│  A 端 · ControlHub.Server（ASP.NET Core，net10.0）               │
+│  A 端 · IslandHub.Server（ASP.NET Core，net10.0）               │
 │                                                                │
 │  Endpoints/    ClientEndpoints · AdminEndpoints · DeviceEndpoints · ProfileEndpoints
 │  Services/     SyncService · RevisionNotifier · AdminAuthService · DiscoveryService · MaintenanceService
@@ -14,17 +14,17 @@
 └───────────────────────────────┬────────────────────────────────┘
                                 │ 引用
                     ┌───────────▼────────────┐
-                    │ ControlHub.Protocol     │  共享：常量/错误码/封套/DTO/校验和
+                    │ IslandHub.Protocol     │  共享：常量/错误码/封套/DTO/校验和
                     └───────────┬────────────┘
                                 │ 引用
 ┌───────────────────────────────▼────────────────────────────────┐
-│  B 端 · ControlHub.Plugin（ClassIsland 插件，net10.0）            │
+│  B 端 · IslandHub.Plugin（ClassIsland 插件，net10.0）            │
 │                                                                │
 │  Plugin.cs            入口（注册服务 + 设置页面 + 后台服务）         │
 │  Services/             SyncEngine · HubClient · ServerDiscovery   │
 │                        ClassIslandAdapter · HubState              │
 │  Models/               PluginSettings · HubSettingsStore          │
-│  Views/                ControlHubSettingsPage（代码构建 UI）        │
+│  Views/                IslandHubSettingsPage（代码构建 UI）        │
 └────────────────────────────────────────────────────────────────┘
 ```
 

@@ -1,6 +1,6 @@
 # 贡献指南
 
-感谢你有兴趣参与 ClassislandControlHub（集控）。本文档说明**怎么把项目跑起来、怎么改、怎么提交**。
+感谢你有兴趣参与 IslandHub（IslandHub）。本文档说明**怎么把项目跑起来、怎么改、怎么提交**。
 
 ## 一、开始之前
 
@@ -20,17 +20,17 @@
 
 ```bash
 git clone https://github.com/1sIancl/ClassislandControlHub.git
-cd ClassislandControlHub
-dotnet build ClassIsland.ControlHub.slnx -c Release
+cd IslandHub
+dotnet build ClassIsland.IslandHub.slnx -c Release
 ```
 
 ## 三、本地运行
 
 ```bash
 # A 端（开发用，默认 29800 端口）
-dotnet run --project src/ControlHub.Server
+dotnet run --project src/IslandHub.Server
 
-# 前端：直接改 src/ControlHub.Server/wwwroot 下的文件，刷新浏览器即可，无需打包
+# 前端：直接改 src/IslandHub.Server/wwwroot 下的文件，刷新浏览器即可，无需打包
 # 注意：改了 js/css 后要同步把 index.html 与各 import 的 ?v=NN 版本号 +1（浏览器缓存兜底）
 ```
 
@@ -38,8 +38,8 @@ B 端插件：
 
 ```bash
 # 需要 ClassIsland 主程序集（本地已构建或从 Release 下载）后：
-dotnet build src/ControlHub.Plugin -c Release -p:CreateCipx=true
-# 产物：src/ControlHub.Plugin/cipx/ControlHub.Plugin.cipx
+dotnet build src/IslandHub.Plugin -c Release -p:CreateCipx=true
+# 产物：src/IslandHub.Plugin/cipx/ControlHub.Plugin.cipx
 ```
 
 ## 四、改代码时的约定
@@ -94,11 +94,11 @@ dotnet build src/ControlHub.Plugin -c Release -p:CreateCipx=true
 
 ```bash
 # 1) 三处版本号 + README 兼容表
-#    src/ControlHub.Protocol/HubProtocol.cs      ProductVersion
-#    src/ControlHub.Plugin/manifest.yml          version
-#    src/ControlHub.Plugin/ControlHub.Plugin.csproj  Version
+#    src/IslandHub.Protocol/HubProtocol.cs      ProductVersion
+#    src/IslandHub.Plugin/manifest.yml          version
+#    src/IslandHub.Plugin/IslandHub.Plugin.csproj  Version
 # 2) 提交后打标签并推送
-git tag -a 1.4.0.0 -m "ClassislandControlHub 1.4.0.0" && git push origin 1.4.0.0
+git tag -a 1.4.0.0 -m "IslandHub 1.4.0.0" && git push origin 1.4.0.0
 ```
 
 流水线会跑：Linux / Windows 两平台构建 A 端、打包 `.cipx`，并创建 Release（`release.yml`）。

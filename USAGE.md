@@ -1,8 +1,8 @@
-# 使用说明（ControlHub 集控系统）
+# 使用说明（IslandHub 系统）
 
 一套面向 **ClassIsland 2.1.1.1 及以上**的教室大屏集中管理系统，分 A、B 两端：
 
-- **A 端 · 集控服务器**：负责课表/时间表/科目的统一下发，自带网页管理后台。
+- **A 端 · IslandHub 服务器**：负责课表/时间表/科目的统一下发，自带网页管理后台。
 - **B 端 · 客户端插件**：装在教室电脑的 ClassIsland 里，自动接收并应用配置。
 
 > 建议先在一台机器上把 A 端跑起来，再逐步接入教室终端。
@@ -41,8 +41,8 @@ curl -fsSL https://cdn.jsdelivr.net/gh/1sIancl/ClassislandControlHub@main/sh/mai
 
 ```bash
 git clone https://github.com/1sIancl/ClassislandControlHub.git
-cd ClassIsland.ControlHub
-dotnet run --project src/ControlHub.Server -c Release
+cd ClassIsland.IslandHub
+dotnet run --project src/IslandHub.Server -c Release
 ```
 
 启动后浏览器访问 `http://localhost:29800`。局域网内其它机器用 `http://本机IP:29800` 访问。
@@ -56,13 +56,13 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 ```
 
 脚本会自动发布服务端并注册 Windows 服务（开机自启、崩溃自动重启），并放行 HTTP 与自动发现端口。
-数据默认保存在 `C:\ProgramData\ClassislandControlHub\data`，升级重新执行该命令即可。
+数据默认保存在 `C:\ProgramData\IslandHub\data`，升级重新执行该命令即可。
 
 | 操作 | 命令 |
 |---|---|
-| 查看状态 | `Get-Service ClassislandControlHub` |
-| 重启服务 | `Restart-Service ClassislandControlHub` |
-| 停止服务 | `Stop-Service ClassislandControlHub` |
+| 查看状态 | `Get-Service IslandHub` |
+| 重启服务 | `Restart-Service IslandHub` |
+| 停止服务 | `Stop-Service IslandHub` |
 | 卸载 | `powershell -ExecutionPolicy Bypass -File .\sh\uninstall-windows.ps1` |
 
 ### 方式 3：部署到公网（可选）
@@ -104,7 +104,7 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 
 ClassIsland 的档案编辑器支持导出 CSES（`.yml`）。在「配置档案 → 从 CSES 导入」中粘贴或选择该文件，
 会并入其中的**科目、作息时间表与逐格课表**：按 `enable_day` 生成每天的课表，
-各天作息一致的会自动合并成一张时间表。集控的课表模型不区分周次，单双周课表会合并处理。
+各天作息一致的会自动合并成一张时间表。IslandHub 的课表模型不区分周次，单双周课表会合并处理。
 
 **方式三：从 ClassIsland 的「数据迁移」包导入（`.cidata`）**
 
@@ -119,14 +119,14 @@ ClassIsland 的档案编辑器支持导出 CSES（`.yml`）。在「配置档案
 
 - **能导入**：时间表、课表、科目、课表群。
 - **导不进来**（逐条写明原因）：**应用设置**（主题 / 界面 / 天气）、**自动化与组件布局**、**插件**
-  ——这些属于教室端本机，集控不下发；**按日期的调休与临时换课**也不导入，请用「快捷换课」；
-  触发规则是**日期型 / 循环型**的课表会被跳过（集控只能按「星期几」下发）。
+  ——这些属于教室端本机，IslandHub 不下发；**按日期的调休与临时换课**也不导入，请用「快捷换课」；
+  触发规则是**日期型 / 循环型**的课表会被跳过（IslandHub 只能按「星期几」下发）。
 
 整包上限 64MB。导出时**不勾「其它配置」**可以小很多（插件目录不再被打进包里）。
 
 ### 多周轮换（单双周 / 多周课表）
 
-「这周上单周的课、下周上双周的课」这类排法由 ClassIsland 原生执行，集控负责让你**逐周排课**，
+「这周上单周的课、下周上双周的课」这类排法由 ClassIsland 原生执行，IslandHub 负责让你**逐周排课**，
 并把「哪一周算第 1 周」一起下发到教室端。
 
 1. 打开档案编辑器，最上面的「**多周轮换**」把周期选成「2 周轮换」（最多 9 周）。选完会**自动把第 1 周
@@ -158,13 +158,13 @@ ClassIsland 的档案编辑器支持导出 CSES（`.yml`）。在「配置档案
 1. 构建插件包（或在 Releases 下载现成的 `.cipx`）：
 
    ```bash
-   dotnet build src/ControlHub.Plugin/ControlHub.Plugin.csproj -c Release -p:CreateCipx=true
-   # 产物：src/ControlHub.Plugin/cipx/ControlHub.Plugin.cipx（同目录 checksums.md 为自动生成的 MD5 摘要）
+   dotnet build src/IslandHub.Plugin/IslandHub.Plugin.csproj -c Release -p:CreateCipx=true
+   # 产物：src/IslandHub.Plugin/cipx/ControlHub.Plugin.cipx（同目录 checksums.md 为自动生成的 MD5 摘要）
    ```
 
 2. 在教室电脑安装 ClassIsland（2.1.1.1 及以上），把 `.cipx` 放入插件目录（或走插件市场分发）。
 3. 回到管理后台「设备管理 → 生成注册码」，复制注册码。
-4. 打开 ClassIsland【应用设置 → 集控客户端】：
+4. 打开 ClassIsland【应用设置 → IslandHub 客户端】：
    - 点「自动发现服务器」（同一局域网），或手动填写服务器地址（如 `http://192.168.1.5:29800`）；
    - 填入注册码 → 「保存设置」→「立即同步」。
 5. 设备即出现在「设备管理」列表中，配置下发数秒内自动生效。
@@ -351,7 +351,7 @@ ClassIsland 的档案编辑器支持导出 CSES（`.yml`）。在「配置档案
 
 ### 走班制教室按时段切档案
 
-走班制教室里，同一个教室不同节次是不同班级——可以让集控**按节次自动切档案**：
+走班制教室里，同一个教室不同节次是不同班级——可以让 IslandHub**按节次自动切档案**：
 
 - 规则按**节次**配（第 1 节 → A 班档案、第 2 节 → B 班档案……），不按钟点：作息表改了
   （冬令时、临时调整）规则仍然成立，不用重配。
@@ -620,7 +620,7 @@ ClassIsland 的档案编辑器支持导出 CSES（`.yml`）。在「配置档案
 **为什么强调「按来源地址」**：教室端是从 A 端内置 NTP（UDP 123）取时间的，而 NTP 报文里
 **没有设备身份**，A 端只能按请求的**来源地址**逆推这台机器属于哪个分组。因此：
 
-- 设备要**先接入集控**并在界面上分好组（设备页能看到的地址，就是这里用来判定校区的地址）；
+- 设备要**先接入 IslandHub**并在界面上分好组（设备页能看到的地址，就是这里用来判定校区的地址）；
 - 设备换网段 / 换 IP 后会随心跳自动更新，不必手动改；
 - 万一同一个地址上有多台属于**不同**校区的设备（同一个 NAT 出口、或本机联调），
   A 端无法判断该按哪个校区的偏移下发，此时**退化为只叠加固定偏移**——
@@ -712,7 +712,7 @@ ClassIsland 的档案编辑器支持导出 CSES（`.yml`）。在「配置档案
 
 「页面设置 → 品牌」可以改：
 
-- **站点名称**：登录页标题、浏览器标题与侧边栏统一使用（例如改成「XX 中学集控」）。
+- **站点名称**：登录页标题、浏览器标题与侧边栏统一使用（例如改成「XX 中学 IslandHub」）。
 - **Logo 文字 / Logo 图片**：品牌方块显示的内容，可换成学校校徽。
 - **浏览器图标**：浏览器标签页上的小图标。
 - **三处图片都可以直接选本机图片上传**（Logo / 浏览器图标 / 登录页背景）：点「选择本地图片」
@@ -741,7 +741,7 @@ ClassIsland 的档案编辑器支持导出 CSES（`.yml`）。在「配置档案
    点击可看大图、下载原图。同一台设备**只保留最近 5 张**，可随时一键清空。
 2. 点「**请求前台进程**」——回传前台窗口（标题 + 进程 + PID）与按内存排序的进程快照，用于判断是不是别的程序
    抢占了大屏、或内存被谁吃满。
-3. 点「**请求诊断数据包**」——回传系统环境、ClassIsland 与插件版本、集控连接状态、宿主的「导出诊断数据」内容
+3. 点「**请求诊断数据包**」——回传系统环境、ClassIsland 与插件版本、IslandHub 连接状态、宿主的「导出诊断数据」内容
    与最近日志，并**顺带把教室端日志推送到服务端**，之后可在设备列表的「运行日志」里翻看。
 
 三点说明：
@@ -756,7 +756,7 @@ ClassIsland 的档案编辑器支持导出 CSES（`.yml`）。在「配置档案
 
 **保留与清理**（服务端每 6 小时自动执行一次，无需人工干预）：
 
-| 数据 | 保留策略 | 配置项（`appsettings.json` 的 `ControlHub` 节） |
+| 数据 | 保留策略 | 配置项（`appsettings.json` 的 `IslandHub` 节） |
 |---|---|---|
 | 客户端日志 | 30 天 | `ClientLogRetentionDays` |
 | 远程指令历史 | 30 天 | `CommandRetentionDays` |
@@ -835,17 +835,17 @@ ClassIsland 的档案编辑器支持导出 CSES（`.yml`）。在「配置档案
 
 ### 用桌面外壳一键启动（可选）
 
-不想手动起服务又想有个「双击即用」的入口，可以用仓库里的桌面外壳 `ControlHub.Shell`：
+不想手动起服务又想有个「双击即用」的入口，可以用仓库里的桌面外壳 `IslandHub.Shell`：
 
 1. 拿到外壳有两条路：**从 [Releases](https://github.com/1sIancl/ClassislandControlHub/releases) 下载
    `classislandcontrolhub-shell-win-x64-<版本>.zip` 解压即用**（里面已经把 A 端放在 `server/` 子目录）；
-   或者自己打包：`dotnet publish src/ControlHub.Server -c Release -o dist/shell/server` 与
-   `dotnet publish src/ControlHub.Shell -c Release -o dist/shell`；
-2. 双击 `ControlHub.Shell.exe`：它会自动启动 A 端（只监听 `127.0.0.1`）、内嵌打开管理界面，**无需登录**；
+   或者自己打包：`dotnet publish src/IslandHub.Server -c Release -o dist/shell/server` 与
+   `dotnet publish src/IslandHub.Shell -c Release -o dist/shell`；
+2. 双击 `IslandHub.Shell.exe`：它会自动启动 A 端（只监听 `127.0.0.1`）、内嵌打开管理界面，**无需登录**；
    关闭窗口默认最小化到托盘（A 端继续跑），托盘右键「退出」才会停掉它启动的 A 端。
-3. 想连远程服务器而不是起本地服务：`ControlHub.Shell.exe --server http://192.168.1.5:29800`（这种模式下需要正常登录）。
-4. 起不来时先跑 `ControlHub.Shell.exe --check`：它会检查 A 端位置、.NET 运行时、端口占用与 WebView2 运行时，
-   逐项给出结论；详细日志在 `%LOCALAPPDATA%\ClassislandControlHub\shell.log`。
+3. 想连远程服务器而不是起本地服务：`IslandHub.Shell.exe --server http://192.168.1.5:29800`（这种模式下需要正常登录）。
+4. 起不来时先跑 `IslandHub.Shell.exe --check`：它会检查 A 端位置、.NET 运行时、端口占用与 WebView2 运行时，
+   逐项给出结论；详细日志在 `%LOCALAPPDATA%\IslandHub\shell.log`。
 
 > 免登录只对本机生效，且需要读到 A 端数据目录里的 `local-shell.token` 文件；局域网其它电脑访问仍需登录。
 > 不需要这个能力可在 `appsettings.json` 里设 `ControlHub:LocalShellTrustEnabled=false`。

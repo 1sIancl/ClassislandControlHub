@@ -1,0 +1,1573 @@
+using IslandHub.Protocol;
+using IslandHub.Protocol.Dtos;
+using IslandHub.Server.Data;
+using IslandHub.Server.Http;
+using IslandHub.Server.Options;
+using IslandHub.Server.Services;
+using Microsoft.Extensions.Options;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
+
+namespace IslandHub.Server.Endpoints;
+
+/// <summary>
+/// 管理端认证、仪表盘与审计日志接口，挂载在 <c>/api/v1/admin</c> 下。
+/// </summary>
+public static class AdminEndpoints
+{
+    /// <summary>注册管理端路由。</summary>
+    public static void MapAdminEndpoints(this IEndpointRouteBuilder app)
+    {
+        // 公开接口：登录页需要在未登录时读取服务器名称等信息。
+        app.MapGet($"{HubProtocol.ApiPrefix}/server/info", ServerInfoAsync)
+            .WithTags("public")
+            .AllowAnonymous();
+
+        // 品牌图片（登录壁纸 / Logo / 站点图标）同样必须公开：登录页在**未登录**时就要显示它，
+        // 所以不能挂在带 AdminAuthFilter 的分组上。
+        app.MapGet($"{BrandingImageStore.UrlPrefix}{{name}}", GetBrandingImageAsync)
+            .WithTags("public")
+            .AllowAnonymous();
+
+        var group = app.NewVersionedGroup("admin");
+
+        // ── 公开接口（无需登录）──
+        group.MapPost("/login", LoginAsync).AllowAnonymous();
+        group.MapPost("/login/totp", TotpLoginAsync).AllowAnonymous();
+        group.MapGet("/registration", GetRegistrationInfoAsync).AllowAnonymous();
+        group.MapPost("/register", RegisterAsync).AllowAnonymous();
+
+        // 权限过滤器必须在 AdminAuthFilter 之后：前者负责校验会话，后者按路由元数据校验权限。
+        var authed = group.MapGroup(string.Empty)
+            .AddEndpointFilter<AdminAuthFilter>()
+            .AddEndpointFilter<AdminPermissionFilter>();
+
+        // ── 与登录状态本身相关：只要求已登录 ──
+        authed.MapPost("/logout", LogoutAsync).RequirePermission(PermissionKeys.Authenticated);
+        authed.MapGet("/me", MeAsync).RequirePermission(PermissionKeys.Authenticated);
+        authed.MapPost("/password", ChangePasswordAsync).RequirePermission(PermissionKeys.Authenticated);
+        authed.MapPost("/onboarding", CompleteOnboardingAsync).RequirePermission(PermissionKeys.Authenticated);
+        // 界面偏好是「每个人自己的设置」，任何已登录账号都能读写自己那份（#40）。
+        authed.MapGet("/ui-preferences", GetUiPreferencesAsync).RequirePermission(PermissionKeys.Authenticated);
+        authed.MapPut("/ui-preferences", SetUiPreferencesAsync).RequirePermission(PermissionKeys.Authenticated);
+
+        // 两步验证（TOTP）：绑定 / 启用 / 关闭，都是「对自己的账号」操作，只需已登录
+        authed.MapPost("/totp/setup", TotpSetupAsync).RequirePermission(PermissionKeys.Authenticated);
+        authed.MapPost("/totp/enable", TotpEnableAsync).RequirePermission(PermissionKeys.Authenticated);
+        authed.MapPost("/totp/disable", TotpDisableAsync).RequirePermission(PermissionKeys.Authenticated);
+        authed.MapGet("/dashboard", DashboardAsync).RequirePermission(PermissionKeys.Authenticated);
+
+        // ── 审计 ──
+        authed.MapGet("/audit", AuditAsync).RequirePermission(PermissionKeys.AuditRead);
+        authed.MapGet("/audit/export", AuditExportAsync).RequirePermission(PermissionKeys.AuditRead);
+
+        // ── 账号与权限 ──
+        // 密码策略（#28）：任何登录账号都读得到——改自己的密码要用它。
+        authed.MapGet("/password-policy", PasswordPolicyAsync).RequirePermission(PermissionKeys.Authenticated);
+        authed.MapGet("/permissions", PermissionsAsync).RequirePermission(PermissionKeys.AccountsRead);
+        authed.MapGet("/permission-presets", PermissionPresetsAsync).RequirePermission(PermissionKeys.AccountsRead);
+        authed.MapGet("/accounts", AccountsAsync).RequirePermission(PermissionKeys.AccountsRead);
+        authed.MapPost("/accounts", CreateAccountAsync).RequirePermission(PermissionKeys.AccountsWrite);
+        authed.MapPut("/accounts/{id}", UpdateAccountAsync).RequirePermission(PermissionKeys.AccountsWrite);
+        authed.MapDelete("/accounts/{id}", DeleteAccountAsync).RequirePermission(PermissionKeys.AccountsWrite);
+        authed.MapPost("/accounts/{id}/reset-password", ResetPasswordAsync)
+            .RequirePermission(PermissionKeys.AccountsWrite);
+
+        // ── 邀请码与自助注册开关 ──
+        authed.MapGet("/register-codes", ListRegisterCodesAsync).RequirePermission(PermissionKeys.AccountsRead);
+        authed.MapPost("/register-codes", CreateRegisterCodeAsync).RequirePermission(PermissionKeys.AccountsWrite);
+        authed.MapDelete("/register-codes/{code}", DeleteRegisterCodeAsync)
+            .RequirePermission(PermissionKeys.AccountsWrite);
+        authed.MapPut("/registration", SetRegistrationAsync).RequirePermission(PermissionKeys.AccountsWrite);
+
+        // ── 系统设置 ──
+        authed.MapGet("/branding", GetBrandingAsync).RequirePermission(PermissionKeys.SettingsRead);
+        authed.MapPut("/branding", SetBrandingAsync).RequirePermission(PermissionKeys.SettingsWrite);
+        // 品牌图片本地上传：有了它，管理员不必再自己找图床（外部图床的防盗链与限速
+        // 会直接表现为「壁纸不好用」）。权限与保存品牌一致。
+        authed.MapPost("/branding/image", UploadBrandingImageAsync)
+            .RequirePermission(PermissionKeys.SettingsWrite)
+            .DisableAntiforgery();
+        authed.MapGet("/time-offset", GetTimeOffsetAsync).RequirePermission(PermissionKeys.SettingsRead);
+        authed.MapPut("/time-offset", SetTimeOffsetAsync).RequirePermission(PermissionKeys.SettingsWrite);
+        authed.MapGet("/update/state", GetUpdateStateAsync).RequirePermission(PermissionKeys.SettingsRead);
+        authed.MapGet("/update/check", CheckUpdateAsync).RequirePermission(PermissionKeys.SettingsRead);
+        authed.MapPost("/update/apply", ApplyUpdateAsync).RequirePermission(PermissionKeys.SettingsWrite);
+    }
+
+    /// <summary>服务器基础信息。无需登录即可访问。</summary>
+    private static async Task<ApiResult<ServerInfoDto>> ServerInfoAsync(
+        HubStore store,
+        SyncService sync,
+        IOptions<ServerOptions> options,
+        IHostEnvironment environment,
+        CancellationToken cancellationToken)
+    {
+        var opts = options.Value;
+        var revision = await store.GetRevisionAsync(cancellationToken);
+        var devices = await store.GetDevicesAsync(cancellationToken);
+        var secrets = await store.GetSecretEncryptionStatsAsync(cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+        var online = devices.Count(d => !d.Revoked && d.LastSeenAt.HasValue
+            && (now - d.LastSeenAt.Value).TotalSeconds < opts.OnlineTimeoutSeconds);
+
+        return ApiResult<ServerInfoDto>.Success(new ServerInfoDto
+        {
+            ServerName = opts.ServerName,
+            Version = HubProtocol.ProductVersion,
+            ProtocolVersion = HubProtocol.Version,
+            Revision = revision,
+            RequiresEnrollCode = opts.RequireEnrollCode,
+            PublicBaseUrl = opts.PublicBaseUrl,
+            DiscoveryEnabled = opts.EnableDiscovery,
+            DeviceCount = devices.Count,
+            OnlineDeviceCount = online,
+            PendingDeviceCount = devices.Count(d => !d.Revoked && d.AppliedRevision < revision),
+            StartedAt = ServerRuntime.StartedAt,
+            UptimeSeconds = (long)ServerRuntime.Uptime.TotalSeconds,
+            DataDirectory = opts.ResolveDataDirectory(environment.ContentRootPath),
+            HttpPort = opts.HttpPort,
+            DiscoveryPort = opts.DiscoveryPort,
+            NtpServerEnabled = opts.EnableNtpServer,
+            NtpPort = opts.NtpPort,
+            Branding = await LoadBrandingAsync(store, cancellationToken),
+            SecretsEncrypted = new SecretEncryptionDto
+            {
+                EnrollCodes = ToSecretKindDto(secrets.EnrollCodes),
+                RegisterCodes = ToSecretKindDto(secrets.RegisterCodes),
+                Webhooks = ToSecretKindDto(secrets.Webhooks),
+                KeyFile = secrets.KeyFile,
+                KeyGenerated = secrets.KeyGenerated,
+            },
+        });
+    }
+
+    /// <summary>静态敏感数据计数（#36）→ 对外 DTO。</summary>
+    private static SecretKindDto ToSecretKindDto(SecretKindStats stats) => new()
+    {
+        Total = stats.Total,
+        Encrypted = stats.Encrypted,
+        Unavailable = stats.Unavailable,
+    };
+
+    /// <summary>读取品牌个性化配置，缺省返回默认值。</summary>
+    private static async Task<BrandingDto> LoadBrandingAsync(HubStore store, CancellationToken cancellationToken)
+    {
+        var json = await store.GetSettingAsync("branding", null, cancellationToken);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new BrandingDto();
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<BrandingDto>(json) ?? new BrandingDto();
+        }
+        catch
+        {
+            return new BrandingDto();
+        }
+    }
+
+    /// <summary>管理员登录。</summary>
+    private static async Task<ApiResult<LoginResponse>> LoginAsync(
+        LoginRequest request,
+        HttpContext http,
+        AdminAuthService auth,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
+        {
+            throw HubException.Validation("请输入用户名和密码。");
+        }
+
+        var response = await auth.LoginAsync(request.Username, request.Password,
+            http.GetClientIpAddress(), cancellationToken);
+
+        return ApiResult<LoginResponse>.Success(response);
+    }
+
+    /// <summary>完成两步验证：用半程票据 + 6 位验证码换取正式令牌。</summary>
+    private static async Task<ApiResult<LoginResponse>> TotpLoginAsync(
+        TotpLoginRequest request,
+        HttpContext http,
+        AdminAuthService auth,
+        CancellationToken cancellationToken)
+    {
+        var response = await auth.CompleteTotpLoginAsync(request.Ticket ?? string.Empty, request.Code ?? string.Empty,
+            http.GetClientIpAddress(), cancellationToken);
+        return ApiResult<LoginResponse>.Success(response);
+    }
+
+    /// <summary>生成待绑定的 TOTP 密钥（此时还没启用），返回密钥与 otpauth 链接。</summary>
+    private static async Task<ApiResult<TotpSetupDto>> TotpSetupAsync(
+        HttpContext http,
+        HubStore store,
+        AdminAuthService auth,
+        IOptions<ServerOptions> options,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var user = await store.GetUserAsync(session.UserId, cancellationToken)
+                   ?? throw HubException.NotFound("账号不存在。");
+
+        var issuer = string.IsNullOrWhiteSpace(options.Value.ServerName)
+            ? "ClassislandControlHub"
+            : options.Value.ServerName;
+
+        var (secret, url) = await auth.PrepareTotpAsync(user, issuer, cancellationToken);
+        return ApiResult<TotpSetupDto>.Success(new TotpSetupDto { Secret = secret, OtpAuthUrl = url });
+    }
+
+    /// <summary>校验一次验证码并启用两步验证。</summary>
+    private static async Task<ApiResult<bool>> TotpEnableAsync(
+        TotpEnableRequest request,
+        HttpContext http,
+        HubStore store,
+        AdminAuthService auth,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var user = await store.GetUserAsync(session.UserId, cancellationToken)
+                   ?? throw HubException.NotFound("账号不存在。");
+
+        await auth.EnableTotpAsync(user, request.Code ?? string.Empty, cancellationToken);
+        await store.AddAuditAsync(session.Username, "totp.enable", session.Username,
+            "启用了两步验证（TOTP）。", http.GetClientIpAddress(), cancellationToken);
+        return ApiResult<bool>.Success(true);
+    }
+
+    /// <summary>关闭两步验证（需要当前密码确认，避免会话被劫持后直接关掉）。</summary>
+    private static async Task<ApiResult<bool>> TotpDisableAsync(
+        TotpDisableRequest request,
+        HttpContext http,
+        HubStore store,
+        AdminAuthService auth,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var user = await store.GetUserAsync(session.UserId, cancellationToken)
+                   ?? throw HubException.NotFound("账号不存在。");
+
+        if (!PasswordHasher.Verify(request.Password ?? string.Empty, user.PasswordHash))
+        {
+            throw HubException.Validation("当前密码不正确。");
+        }
+
+        await auth.DisableTotpAsync(user, cancellationToken);
+        await store.AddAuditAsync(session.Username, "totp.disable", session.Username,
+            "关闭了两步验证（TOTP）。", http.GetClientIpAddress(), cancellationToken);
+        return ApiResult<bool>.Success(true);
+    }
+
+    /// <summary>登出。</summary>
+    private static async Task<ApiResult<bool>> LogoutAsync(
+        HttpContext http,
+        AdminAuthService auth,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        await auth.LogoutAsync(session.Token, cancellationToken);
+        return ApiResult<bool>.Success(true);
+    }
+
+    /// <summary>获取当前登录账号信息（含权限集合与新手引导状态，前端据此过滤导航与决定是否放引导）。</summary>
+    private static async Task<ApiResult<object>> MeAsync(
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var user = await store.GetUserAsync(session.UserId, cancellationToken);
+
+        return ApiResult<object>.Success(new
+        {
+            id = session.UserId,
+            username = session.Username,
+            displayName = string.IsNullOrWhiteSpace(session.DisplayName) ? session.Username : session.DisplayName,
+            role = session.Role,
+            // 超级管理员直接展开为全部权限，前端导航无需再特殊处理。
+            permissions = IsAdministratorRole(session.Role) ? PermissionKeys.Grantable : session.Permissions,
+            expiresAt = session.ExpiresAt,
+            mustChangePassword = user?.MustChangePassword ?? false,
+            totpEnabled = user?.TotpEnabled ?? false,
+            onboardingDone = await store.GetSettingAsync(OnboardingKey(session.UserId), "0", cancellationToken) == "1",
+            // 界面偏好随 /me 一起返回（#40）：省一次请求，也保证进主界面时布局已经就绪、不会先闪一下默认布局。
+            uiPreferences = await store.GetUiPreferencesAsync(session.UserId, cancellationToken),
+        });
+    }
+
+    // ────────────────────────────── 界面偏好（#40） ──────────────────────────────
+
+    /// <summary>
+    /// 允许云端同步的区域白名单。**必须与前端 `prefs.js` 里用到的 scope 保持一致**。
+    /// <para>前后端同包发布，白名单外的键只可能是拼写错误或改坏的前端——直接拒绝（fail-closed），
+    /// 而不是「存进去了但界面永远不生效」，那种问题最难查。</para>
+    /// </summary>
+    private static readonly HashSet<string> UiPreferenceScopes = new(StringComparer.Ordinal)
+    {
+        "dashboard.stats",
+        "dashboard.cards",
+        "columns.devices",
+    };
+
+    /// <summary>单个区域最多允许的条目数（防止用超长 JSON 撑库）。</summary>
+    private const int MaxUiPreferenceItems = 40;
+
+    /// <summary>偏好序列化后的整体大小上限（字节）。</summary>
+    private const int MaxUiPreferencesBytes = 16 * 1024;
+
+    /// <summary>条目键的合法形式（与前端模块 / 列的 key 约定一致）。</summary>
+    private static readonly Regex UiItemKeyPattern = new("^[A-Za-z0-9_.-]{1,40}$", RegexOptions.Compiled);
+
+    /// <summary>读取当前账号的界面偏好。</summary>
+    private static async Task<ApiResult<UiPreferencesDto>> GetUiPreferencesAsync(
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var preferences = await store.GetUiPreferencesAsync(session.UserId, cancellationToken);
+        return ApiResult<UiPreferencesDto>.Success(preferences);
+    }
+
+    /// <summary>保存当前账号的界面偏好（覆盖式）。</summary>
+    private static async Task<ApiResult<UiPreferencesDto>> SetUiPreferencesAsync(
+        UiPreferencesDto request,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        ValidateUiPreferences(request);
+        await store.SetUiPreferencesAsync(session.UserId, request, cancellationToken);
+        return ApiResult<UiPreferencesDto>.Success(request);
+    }
+
+    /// <summary>校验界面偏好：区域白名单、条目数、键格式与重复、整体大小。违规**直接拒绝**，不静默裁剪。</summary>
+    private static void ValidateUiPreferences(UiPreferencesDto preferences)
+    {
+        // 空布局是合法操作：表示「清掉自定义，回到默认」。
+        if (preferences.Layouts.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var (scope, items) in preferences.Layouts)
+        {
+            if (!UiPreferenceScopes.Contains(scope))
+            {
+                throw new HubException(HubErrorCodes.ValidationFailed, $"不支持的偏好区域「{scope}」。", 400);
+            }
+
+            if (items is null || items.Count > MaxUiPreferenceItems)
+            {
+                throw new HubException(HubErrorCodes.ValidationFailed,
+                    $"「{scope}」的条目数超出上限（最多 {MaxUiPreferenceItems} 项）。", 400);
+            }
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var item in items)
+            {
+                // JSON 里可能出现 null 元素，统一用局部变量取值，避免解引用空引用。
+                var key = item?.Key ?? string.Empty;
+                if (!UiItemKeyPattern.IsMatch(key))
+                {
+                    throw new HubException(HubErrorCodes.ValidationFailed,
+                        $"「{scope}」中存在不合法的条目键。", 400);
+                }
+
+                if (!seen.Add(key))
+                {
+                    throw new HubException(HubErrorCodes.ValidationFailed,
+                        $"「{scope}」中条目「{key}」重复。", 400);
+                }
+            }
+        }
+
+        if (Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(preferences)) > MaxUiPreferencesBytes)
+        {
+            throw new HubException(HubErrorCodes.ValidationFailed, "偏好数据过大，已拒绝保存。", 400);
+        }
+    }
+
+    /// <summary>修改当前账号密码。</summary>
+    private static async Task<ApiResult<bool>> ChangePasswordAsync(
+        ChangePasswordRequest request,
+        HttpContext http,
+        HubStore store,
+        AdminAuthService auth,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+
+        // 本地外壳不是数据库里的账号，没有密码可改。
+        if (LocalShellTrust.IsLocalShell(session))
+        {
+            throw HubException.Validation("本地控制台不需要密码；账号密码请在「系统设置 → 账号与权限」里维护。");
+        }
+
+        var user = await store.GetUserAsync(session.UserId, cancellationToken)
+                   ?? throw HubException.NotFound("账号不存在。");
+
+        await auth.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword,
+            http.GetClientIpAddress(), cancellationToken);
+
+        return ApiResult<bool>.Success(true);
+    }
+
+    /// <summary>仪表盘统计。</summary>
+    private static async Task<ApiResult<DashboardStatsDto>> DashboardAsync(
+        HttpContext http,
+        HubStore store,
+        IOptions<ServerOptions> options,
+        CancellationToken cancellationToken)
+    {
+        http.RequireAdminSession();
+
+        var opts = options.Value;
+        var revision = await store.GetRevisionAsync(cancellationToken);
+        var devices = await store.GetDevicesAsync(cancellationToken);
+        var summaries = await store.GetGroupsAsync(cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+
+        var online = devices.Count(d => !d.Revoked && d.LastSeenAt.HasValue
+            && (now - d.LastSeenAt.Value).TotalSeconds < opts.OnlineTimeoutSeconds);
+
+        var pending = devices.Count(d => !d.Revoked && d.AppliedRevision < revision);
+        var errors = devices.Count(d => !d.Revoked
+            && string.Equals(d.State, DeviceStates.Error, StringComparison.OrdinalIgnoreCase));
+
+        var recentEvents = (await store.GetRecentAuditAsync(12, cancellationToken))
+            .Select(ToAuditDto)
+            .ToList();
+
+        return ApiResult<DashboardStatsDto>.Success(new DashboardStatsDto
+        {
+            DeviceCount = devices.Count,
+            OnlineDeviceCount = online,
+            OfflineDeviceCount = devices.Count - online,
+            PendingDeviceCount = pending,
+            ErrorDeviceCount = errors,
+            GroupCount = summaries.Count,
+            ProfileCount = await store.CountProfilesAsync(cancellationToken),
+            Revision = revision,
+            RecentEnrollCount = devices.Count(d => (now - d.CreatedAt).TotalHours <= 24),
+            RecentEvents = recentEvents,
+        });
+    }
+
+    /// <summary>
+    /// 分页查询审计日志，支持按操作者 / 动作前缀 / 来源 IP / 时间范围 / 关键词筛选。
+    /// <para>与导出共用同一套筛选条件，保证「屏幕上看到的」和「导出的」是同一批数据。</para>
+    /// </summary>
+    private static async Task<ApiResult<PagedResult<AuditLogDto>>> AuditAsync(
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken,
+        int? page = null,
+        int? pageSize = null,
+        string? search = null,
+        string? actor = null,
+        string? action = null,
+        string? ip = null,
+        string? from = null,
+        string? to = null,
+        string? target = null)
+    {
+        http.RequireAdminSession();
+
+        var filter = new AuditFilter
+        {
+            Search = search,
+            Actor = actor,
+            ActionPrefix = action,
+            Ip = ip,
+            From = ParseAuditTime(from),
+            To = ParseAuditTime(to, endOfDay: true),
+            // 对象级时间线（#42）：按 target 精确取「以这个对象为目标」的操作。
+            Target = target,
+        };
+
+        var (items, total) = await store.QueryAuditLogsAsync(filter, page ?? 1, pageSize ?? 50, cancellationToken);
+
+        return ApiResult<PagedResult<AuditLogDto>>.Success(new PagedResult<AuditLogDto>
+        {
+            Items = items.Select(ToAuditDto).ToList(),
+            Total = total,
+            Page = page ?? 1,
+            PageSize = pageSize ?? 50,
+        });
+    }
+
+    /// <summary>导出审计日志 CSV（最多 2 万条，新的在前），筛选条件与列表页一致。</summary>
+    private static async Task<IResult> AuditExportAsync(
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken,
+        string? search = null,
+        string? actor = null,
+        string? action = null,
+        string? ip = null,
+        string? from = null,
+        string? to = null,
+        string? target = null,
+        bool mask = true)
+    {
+        var session = http.RequireAdminSession();
+        var filter = new AuditFilter
+        {
+            Search = search,
+            Actor = actor,
+            ActionPrefix = action,
+            Ip = ip,
+            From = ParseAuditTime(from),
+            To = ParseAuditTime(to, endOfDay: true),
+            Target = target,
+        };
+
+        var rows = await store.ExportAuditLogsAsync(filter, 20_000, cancellationToken);
+
+        var lines = new List<string>
+        {
+            string.Join(',', new[] { "时间", "操作者", "动作", "目标", "详情", "来源IP" }.Select(CsvCell)),
+        };
+
+        foreach (var row in rows)
+        {
+            lines.Add(string.Join(',', new[]
+            {
+                row.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss"),
+                row.Actor,
+                row.Action,
+                row.Target,
+                row.Detail,
+                mask ? MaskIpForExport(row.IpAddress) : row.IpAddress ?? string.Empty,
+            }.Select(CsvCell)));
+        }
+
+        await store.AddAuditAsync(session.Username, "audit.export.csv", "审计日志",
+            $"导出 {rows.Count} 条（来源 IP {(mask ? "已脱敏" : "未脱敏")}；筛选：{DescribeAuditFilter(filter)}）。",
+            http.GetClientIpAddress(), cancellationToken);
+
+        // 带 BOM：否则 Excel 打开中文列名是乱码。
+        var bytes = System.Text.Encoding.UTF8.GetPreamble()
+            .Concat(System.Text.Encoding.UTF8.GetBytes(string.Join("\r\n", lines)))
+            .ToArray();
+
+        return Results.File(bytes, "text/csv; charset=utf-8", $"audit-{DateTime.Now:yyyyMMdd-HHmmss}.csv");
+    }
+
+    /// <summary>把「筛选条件」写成一句人话，方便在审计里回看这次导出到底导了什么。</summary>
+    private static string DescribeAuditFilter(AuditFilter filter)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(filter.Search)) parts.Add($"关键词={filter.Search}");
+        if (!string.IsNullOrWhiteSpace(filter.Actor)) parts.Add($"操作者={filter.Actor}");
+        if (!string.IsNullOrWhiteSpace(filter.ActionPrefix)) parts.Add($"动作前缀={filter.ActionPrefix}");
+        if (!string.IsNullOrWhiteSpace(filter.Target)) parts.Add($"对象={filter.Target}");
+        if (!string.IsNullOrWhiteSpace(filter.Ip)) parts.Add($"来源={filter.Ip}");
+        if (filter.From.HasValue) parts.Add($"从 {filter.From.Value.ToLocalTime():yyyy-MM-dd HH:mm}");
+        if (filter.To.HasValue) parts.Add($"到 {filter.To.Value.ToLocalTime():yyyy-MM-dd HH:mm}");
+        return parts.Count == 0 ? "无（全部）" : string.Join("，", parts);
+    }
+
+    /// <summary>解析筛选时间：支持 <c>2026-10-02</c> 与完整 ISO 时间。</summary>
+    private static DateTimeOffset? ParseAuditTime(string? text, bool endOfDay = false)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var value = text.Trim();
+        if (DateTimeOffset.TryParse(value, out var parsed))
+        {
+            // 只给了日期时，把「到」的边界推到当天结束，否则「到 10-02」会把当天全漏掉。
+            if (endOfDay && value.Length <= 10)
+            {
+                parsed = parsed.Date.AddDays(1).AddSeconds(-1);
+            }
+
+            return parsed.ToUniversalTime();
+        }
+
+        return null;
+    }
+
+    /// <summary>导出时脱敏内网 IP：保留前两段。</summary>
+    private static string MaskIpForExport(string? ip)
+    {
+        if (string.IsNullOrWhiteSpace(ip))
+        {
+            return string.Empty;
+        }
+
+        var parts = ip.Split('.');
+        return parts.Length == 4 ? $"{parts[0]}.{parts[1]}.*.*" : "***";
+    }
+
+    /// <summary>CSV 单元格转义（含逗号 / 引号 / 换行时用双引号包裹）。</summary>
+    private static string CsvCell(string? value)
+    {
+        var text = value ?? string.Empty;
+        return text.Contains(',') || text.Contains('"') || text.Contains('\n') || text.Contains('\r')
+            ? '"' + text.Replace("\"", "\"\"") + '"'
+            : text;
+    }
+
+    /// <summary>列出管理员账号（含各自的权限集合）。</summary>
+    private static async Task<ApiResult<List<AccountDto>>> AccountsAsync(
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        http.RequireAdminSession();
+        var users = await store.GetUsersAsync(cancellationToken);
+        return ApiResult<List<AccountDto>>.Success(users.Select(ToAccountDto).ToList());
+    }
+
+    /// <summary>重置指定账号密码。</summary>
+    private static async Task<ApiResult<bool>> ResetPasswordAsync(
+        string id,
+        ChangePasswordRequest request,
+        HttpContext http,
+        HubStore store,
+        AdminAuthService auth,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var target = await store.GetUserAsync(id, cancellationToken)
+                     ?? throw HubException.NotFound("账号不存在。");
+        EnsureCanManage(session, target);
+
+        await auth.ResetPasswordAsync(id, request.NewPassword, session.Username,
+            http.GetClientIpAddress(), cancellationToken);
+
+        return ApiResult<bool>.Success(true);
+    }
+
+    /// <summary>读取品牌个性化配置。</summary>
+    private static async Task<ApiResult<BrandingDto>> GetBrandingAsync(
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        http.RequireAdminSession();
+        return ApiResult<BrandingDto>.Success(await LoadBrandingAsync(store, cancellationToken));
+    }
+
+    /// <summary>保存品牌个性化配置。</summary>
+    /// <remarks>
+    /// <para><b>整体替换，不是部分更新</b>：请求体里没出现的字段会被**重置为默认值**。
+    /// 所以调用方必须先读后合并再提交（前端的 <c>saveBranding()</c> 就是这么做的）。</para>
+    /// <para>为什么不做成部分更新：DTO 的字段都是「非空值类型 + 默认值」，服务端分不清
+    /// 「没传」和「就想要默认值」——而「把壁纸清空」恰恰是靠传空串表达的。分不清就只好
+    /// 整体替换，把这条约束写在文档与调用方，而不是让人在生产配置上试出来。</para>
+    /// </remarks>
+    private static async Task<ApiResult<BrandingDto>> SetBrandingAsync(
+        BrandingDto request,
+        HttpContext http,
+        HubStore store,
+        BrandingImageStore images,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+
+        request.SiteName = (request.SiteName ?? string.Empty).Trim();
+        request.LogoText = (request.LogoText ?? string.Empty).Trim();
+        request.LoginTitle = TrimTo(request.LoginTitle, 60);
+        request.LoginSubtitle = TrimTo(request.LoginSubtitle, 120);
+        request.LoginDescription = TrimTo(request.LoginDescription, 300);
+        request.FooterText = TrimTo(request.FooterText, 120);
+
+        // 特性列表：丢掉空行、限条数与长度（它会整排渲染在登录页，太长会撑破版式）。
+        request.LoginFeatures = (request.LoginFeatures ?? [])
+            .Select((x) => (x ?? string.Empty).Trim())
+            .Where((x) => x.Length > 0)
+            .Take(8)
+            .Select((x) => TrimTo(x, 40))
+            .ToList();
+
+        // 主题色只收十六进制：它会被写进 CSS 变量，放任任意字符串就是 CSS 注入。
+        request.AccentColor = AccentColorPattern.IsMatch((request.AccentColor ?? string.Empty).Trim())
+            ? request.AccentColor!.Trim()
+            : string.Empty;
+
+        // 枚举项认不出就回落默认值，而不是报错：为一次下拉选错挡住整次保存不值得。
+        request.GlassLevel = request.GlassLevel is "subtle" or "strong" ? request.GlassLevel : "standard";
+        request.LoginLayout = request.LoginLayout is "centered" ? "centered" : "split";
+        request.LoginBackgroundDim = Math.Clamp(request.LoginBackgroundDim, 0, 90);
+
+        // 自定义 CSS 限长。它能改外观、也能藏掉元素，所以**变更要进审计**。
+        request.CustomCss = TrimTo(request.CustomCss, 20000);
+
+        await store.SetSettingAsync("branding", JsonSerializer.Serialize(request), cancellationToken);
+
+        // 换掉的旧图已经没人引用了，顺手清掉。不清理的话，管理员每换一次壁纸
+        // 就在磁盘里留下一张没人用的 4K 图（几 MB），换十次就是几十 MB。
+        images.PruneExcept([request.LogoImage, request.Favicon, request.LoginBackground]);
+
+        var note = string.IsNullOrEmpty(request.CustomCss)
+            ? "更新站点品牌配置"
+            : $"更新站点品牌配置（含自定义 CSS {request.CustomCss.Length} 字符）";
+        await store.AddAuditAsync(session.Username, "branding.updated", "branding", note,
+            http.GetClientIpAddress(), cancellationToken);
+
+        return ApiResult<BrandingDto>.Success(request);
+    }
+
+    /// <summary>上传一张品牌图片，返回可直接写进品牌配置的站内地址。</summary>
+    private static async Task<ApiResult<BrandingImageDto>> UploadBrandingImageAsync(
+        HttpContext http,
+        HubStore store,
+        BrandingImageStore images,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        if (!http.Request.HasFormContentType)
+        {
+            throw HubException.Validation("请以表单方式上传图片（字段名 file）。");
+        }
+
+        var form = await http.Request.ReadFormAsync(cancellationToken);
+        var file = form.Files["file"] ?? (form.Files.Count > 0 ? form.Files[0] : null);
+        if (file is null || file.Length == 0)
+        {
+            throw HubException.Validation("没有收到图片文件（字段名 file）。");
+        }
+
+        if (file.Length > BrandingImageStore.MaxBytes)
+        {
+            throw HubException.Validation($"图片超过 {BrandingImageStore.MaxBytes / 1024 / 1024}MB 上限。");
+        }
+
+        BrandingImageDto saved;
+        await using (var stream = file.OpenReadStream())
+        {
+            saved = await images.SaveAsync(stream, cancellationToken);
+        }
+
+        // 上传本身不改配置（要等管理员点保存），但它是「谁往服务器里放了文件」，值得进审计。
+        await store.AddAuditAsync(session.Username, "branding.image.upload", file.FileName,
+            $"上传品牌图片 {saved.Name}（{saved.ContentType}，{saved.Size / 1024}KB）。",
+            http.GetClientIpAddress(), cancellationToken);
+
+        return ApiResult<BrandingImageDto>.Success(saved);
+    }
+
+    /// <summary>读取一张本站托管的品牌图片。<b>公开</b>：登录页未登录时也要显示它。</summary>
+    private static async Task GetBrandingImageAsync(
+        string name,
+        HttpContext http,
+        BrandingImageStore images,
+        CancellationToken cancellationToken)
+    {
+        if (!images.TryResolve(name, out var path, out var contentType))
+        {
+            throw HubException.NotFound("图片不存在。");
+        }
+
+        // 内容类型是服务端按文件头判定出来的，不采信任何请求头；
+        // nosniff 兜住"浏览器自己猜类型"，CSP + sandbox 断掉一切脚本能力（图片不需要脚本）。
+        http.Response.ContentType = contentType;
+        http.Response.Headers.CacheControl = "public, max-age=86400";
+        http.Response.Headers["X-Content-Type-Options"] = "nosniff";
+        http.Response.Headers["Content-Security-Policy"] = "default-src 'none'; sandbox";
+        // 直接写字节流：SendFileAsync 的重载集合里有 (string, IFileInfo, long?, long?, …) 这类
+        // 签名，参数个数对得上却类型全错，报错很难指向"其实是重载选错了"；图片也不需要 Range 支持。
+        // ⚠️ 换成手写流之后要**自己设 ContentType**——SendFileAsync 会顺手设掉，
+        // 漏了的话浏览器收到一个没有类型的 200，只能靠 nosniff 猜（结果是当成下载而不是显示）。
+        await using (var stream = File.OpenRead(path))
+        {
+            await stream.CopyToAsync(http.Response.Body, cancellationToken);
+        }
+    }
+
+    /// <summary>主题色白名单：只接受 <c>#rgb</c> / <c>#rrggbb</c>。</summary>
+    private static readonly System.Text.RegularExpressions.Regex AccentColorPattern =
+        new("^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$");
+
+    /// <summary>去首尾空白并截断到指定长度。</summary>
+    private static string TrimTo(string? value, int max)
+    {
+        var text = (value ?? string.Empty).Trim();
+        return text.Length <= max ? text : text[..max];
+    }
+
+    /// <summary>读取手动时间偏移、按分组（校区）的偏移及当前授时状态。</summary>
+    private static async Task<ApiResult<object>> GetTimeOffsetAsync(
+        HttpContext http,
+        HubStore store,
+        ServerTimeService serverTime,
+        CancellationToken cancellationToken)
+    {
+        http.RequireAdminSession();
+        return ApiResult<object>.Success(
+            await BuildTimeOffsetStateAsync(store, serverTime, cancellationToken));
+    }
+
+    /// <summary>
+    /// 组装时间偏移的完整读数（全局偏移 / 每日漂移 / 各分组偏移）。
+    /// <para>GET 与 PUT 共用同一份，避免两条出口对同一份配置给出不一样的数字。</para>
+    /// </summary>
+    private static async Task<object> BuildTimeOffsetStateAsync(HubStore store, ServerTimeService serverTime,
+        CancellationToken cancellationToken)
+    {
+        // 顺带把内存里的分组偏移刷新到最新（带 60 秒 TTL，通常命中缓存）——否则刚保存完回到页面上
+        // 看到的还是旧值，会让人以为「没保存上」。
+        await serverTime.EnsureAddressOffsetMapAsync(cancellationToken: cancellationToken);
+
+        var groups = await store.GetGroupsAsync(cancellationToken);
+        var deviceCounts = await store.GetGroupDeviceCountsAsync(cancellationToken);
+
+        return new
+        {
+            offsetSeconds = serverTime.ManualOffsetSeconds,
+            ntpOffsetSeconds = serverTime.OffsetSeconds,
+            // 每日漂移（秒/天）+ 已累计天数 + 当前累计出的补偿量。
+            // 三个都给出来，管理员才能判断「这个数还合不合理、要不要重置基准」。
+            dailyDriftSeconds = serverTime.DailyDriftSeconds,
+            driftDays = serverTime.DriftDays,
+            driftCompensationSeconds = serverTime.DriftCompensationSeconds,
+            serverTime = serverTime.GetUtcNow(),
+            lastSyncStatus = serverTime.LastSyncStatus,
+            lastSyncAt = serverTime.LastSyncAt,
+            // 分组（校区）偏移（#26)：自身值与生效值都给，界面才解释得清「没配就是继承上级」。
+            groups = groups.Select(g => new TimeGroupOffsetDto
+            {
+                Id = g.Id,
+                Name = g.Name,
+                ParentId = g.ParentId,
+                ParentName = g.ParentId is null
+                    ? null
+                    : groups.FirstOrDefault(p => string.Equals(p.Id, g.ParentId, StringComparison.Ordinal))?.Name,
+                DeviceCount = deviceCounts.GetValueOrDefault(g.Id),
+                OffsetSeconds = serverTime.GroupOffsetSeconds(g.Id),
+                EffectiveSeconds = serverTime.EffectiveGroupOffsetSeconds(g.Id),
+            }).ToList(),
+        };
+    }
+
+    /// <summary>
+    /// 设置时间偏移（秒），立即叠加到对外授时的时间上。
+    /// <para>带 <c>GroupId</c> 时设置的是**该分组（校区）**的偏移，叠加在全局偏移之上（#26）；
+    /// 各项互相独立，只提交其中一项不会把其它项顺手清零。</para>
+    /// </summary>
+    private static async Task<ApiResult<object>> SetTimeOffsetAsync(
+        TimeOffsetRequest request,
+        HttpContext http,
+        HubStore store,
+        ServerTimeService serverTime,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var ip = http.GetClientIpAddress();
+        var changes = new List<string>();
+
+        // 全局固定偏移。为空 = 本次不改（老客户端仍会带上它，语义不变）。
+        if (request.OffsetSeconds is { } requestedOffset)
+        {
+            var seconds = Math.Clamp(requestedOffset, -86400, 86400); // 限制在 ±24 小时内。
+            await store.SetSettingAsync("timeOffsetSeconds",
+                seconds.ToString("F3", System.Globalization.CultureInfo.InvariantCulture), cancellationToken);
+            serverTime.SetManualOffsetSeconds(seconds);
+            changes.Add($"全局偏移 {seconds:F3} 秒");
+        }
+
+        // 每日漂移（#4）：补偿「设备时钟每天稳定快/慢几秒」这类硬件差异。
+        // 只在请求里带了该字段时才改（null = 不动），避免老客户端提交偏移时把它清零。
+        if (request.DailyDriftSeconds is { } drift)
+        {
+            var clamped = Math.Clamp(drift, -600, 600); // ±10 分钟/天，再大就不是「漂移」而是配置错误。
+            await store.SetSettingAsync("timeDailyDriftSeconds",
+                clamped.ToString("F3", System.Globalization.CultureInfo.InvariantCulture), cancellationToken);
+            serverTime.SetDailyDriftSeconds(clamped);
+            await store.SetSettingAsync("timeDailyDriftAnchor",
+                DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                cancellationToken);
+            changes.Add($"每日漂移 {clamped:F3} 秒/天（累计起点已重置为今天）");
+        }
+
+        // 单独重置累计起点：设备做过一次人工校准后清零，保留漂移值。
+        if (request.ResetDriftAnchor == true)
+        {
+            serverTime.ResetDriftAnchor();
+            await store.SetSettingAsync("timeDailyDriftAnchor",
+                DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                cancellationToken);
+            changes.Add("已把漂移累计起点重置为今天");
+        }
+
+        // 分组（校区）偏移（#26）。整份写回：分组数量是个位数，整体替换语义最简单也最不容易写错。
+        if (!string.IsNullOrWhiteSpace(request.GroupId))
+        {
+            var groupId = request.GroupId.Trim();
+            var group = await store.GetGroupAsync(groupId, cancellationToken)
+                        ?? throw HubException.NotFound("分组不存在。");
+
+            var map = serverTime.GroupOffsets
+                .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
+
+            string detail;
+            if (request.GroupOffsetSeconds is { } groupSeconds)
+            {
+                var clamped = TimeGroupOffset.Clamp(groupSeconds);
+                map[groupId] = clamped;
+                detail = $"分组「{group.Name}」偏移 {clamped:F3} 秒";
+            }
+            else
+            {
+                // 字段为空 = 清除该分组的偏移（回到「继承上级」），与「配成 0 秒」是两回事。
+                map.Remove(groupId);
+                detail = $"清除分组「{group.Name}」的偏移（改为继承上级分组）";
+            }
+
+            await store.SetSettingAsync(ServerTimeService.GroupOffsetsKey, HubJson.Serialize(map), cancellationToken);
+            await serverTime.ReloadGroupOffsetsAsync(cancellationToken);
+
+            await store.AddAuditAsync(session.Username, "timeoffset.group.updated", group.Name,
+                detail + "。", ip, cancellationToken);
+        }
+
+        // 一项都没改时不写审计：否则「点开页面又保存一次」会在审计里留下一条没有信息量的记录。
+        if (changes.Count > 0)
+        {
+            await store.AddAuditAsync(session.Username, "timeoffset.updated", "timeOffsetSeconds",
+                "设置时间偏移：" + string.Join("；", changes) + "。", ip, cancellationToken);
+        }
+
+        return ApiResult<object>.Success(await BuildTimeOffsetStateAsync(store, serverTime, cancellationToken));
+    }
+
+    /// <summary>获取当前自动更新状态（不触发检查）。</summary>
+    private static ApiResult<UpdateState> GetUpdateStateAsync(
+        HttpContext http,
+        UpdateService update)
+    {
+        http.RequireAdminSession();
+        return ApiResult<UpdateState>.Success(update.GetState());
+    }
+
+    /// <summary>立即检查一次更新并返回最新状态。</summary>
+    private static async Task<ApiResult<UpdateState>> CheckUpdateAsync(
+        HttpContext http,
+        UpdateService update,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var state = await update.CheckForUpdateAsync(cancellationToken);
+        await store.AddAuditAsync(session.Username, "update.check", "更新",
+            $"检查更新：{state.Status}", http.GetClientIpAddress(), cancellationToken);
+        return ApiResult<UpdateState>.Success(state);
+    }
+
+    /// <summary>立即下载并应用更新（保留数据，完成后自动重启）。</summary>
+    private static async Task<ApiResult<UpdateState>> ApplyUpdateAsync(
+        HttpContext http,
+        UpdateService update,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        await store.AddAuditAsync(session.Username, "update.apply", "更新",
+            "发起自动更新。", http.GetClientIpAddress(), cancellationToken);
+        var state = await update.ApplyUpdateAsync(cancellationToken);
+        return ApiResult<UpdateState>.Success(state);
+    }
+
+    // ────────────────────────────── 账号、权限与自助注册 ──────────────────────────────
+
+    /// <summary>自助注册开关存放在设置表里，便于在界面上一键开关（默认关闭）。</summary>
+    private const string SelfRegistrationSettingKey = "selfRegistrationEnabled";
+
+    /// <summary>新手引导是否已完成的设置项键（按用户隔离）。</summary>
+    private static string OnboardingKey(string userId) => $"onboarding_done.{userId}";
+
+    /// <summary>是否超级管理员角色。</summary>
+    private static bool IsAdministratorRole(string? role) =>
+        string.Equals(role, PermissionKeys.AdministratorRole, StringComparison.OrdinalIgnoreCase);
+
+    private static string DescribeRole(string role) =>
+        IsAdministratorRole(role) ? "超级管理员" : "自定义权限";
+
+    private static AccountDto ToAccountDto(UserRow user) => new()
+    {
+        Id = user.Id,
+        Username = user.Username,
+        DisplayName = user.DisplayName,
+        Role = IsAdministratorRole(user.Role) ? PermissionKeys.AdministratorRole : PermissionKeys.CustomRole,
+        // 超级管理员始终展开为全部权限，界面上直接呈现「全选」。
+        Permissions = IsAdministratorRole(user.Role)
+            ? PermissionKeys.Grantable
+            : PermissionKeys.Normalize(user.Permissions),
+        MustChangePassword = user.MustChangePassword,
+        PasswordChangedAt = user.PasswordChangedAt,
+        CreatedAt = user.CreatedAt,
+    };
+
+    private static RegisterCodeDto ToRegisterCodeDto(RegisterCodeRow row) => new()
+    {
+        Code = row.Code,
+        Available = !row.CodeUnavailable,
+        Reference = HubStore.SecretReference(row.CodeHash),
+        Note = row.Note,
+        Permissions = PermissionKeys.Normalize(row.Permissions),
+        MaxUses = row.MaxUses,
+        UsedCount = row.UsedCount,
+        RemainingUses = row.MaxUses <= 0 ? -1 : Math.Max(0, row.MaxUses - row.UsedCount),
+        ExpiresAt = row.ExpiresAt,
+        CreatedAt = row.CreatedAt,
+    };
+
+    /// <summary>只有超级管理员能管理超级管理员账号，避免自定义权限账号把超管踢掉。</summary>
+    private static void EnsureCanManage(SessionRow session, UserRow target)
+    {
+        if (IsAdministratorRole(target.Role) && !IsAdministratorRole(session.Role))
+        {
+            throw HubException.Forbidden("只有超级管理员可以管理超级管理员账号。");
+        }
+    }
+
+    /// <summary>
+    /// 提权防护：非超级管理员既不能把别人设为超级管理员，也不能授予自己没有的权限。
+    /// </summary>
+    internal static void EnsureCanGrant(SessionRow session, string role, IEnumerable<string> permissions)
+    {
+        if (IsAdministratorRole(session.Role))
+        {
+            return;
+        }
+
+        if (IsAdministratorRole(role))
+        {
+            throw HubException.Forbidden("只有超级管理员可以把账号设为超级管理员。");
+        }
+
+        var missing = PermissionKeys.Normalize(permissions)
+            .Where(p => !PermissionKeys.Satisfies(session.Role, session.Permissions, p))
+            .ToList();
+
+        if (missing.Count > 0)
+        {
+            throw HubException.Forbidden(
+                "不能授予自己没有的权限：" + string.Join("、", missing.Select(PermissionCatalog.Describe)) + "。");
+        }
+    }
+
+    /// <summary>降级或删除超级管理员前的保护：系统至少要留一个。</summary>
+    private static async Task EnsureNotLastAdministratorAsync(HubStore store, CancellationToken cancellationToken)
+    {
+        var users = await store.GetUsersAsync(cancellationToken);
+        if (users.Count(u => IsAdministratorRole(u.Role)) <= 1)
+        {
+            throw HubException.Validation("系统至少需要保留一个超级管理员账号。");
+        }
+    }
+
+    /// <summary>校验用户名格式（新建账号、邀请码注册与自助申请共用）。</summary>
+    internal static string NormalizeUsername(string? username)
+    {
+        var value = (username ?? string.Empty).Trim();
+        if (value.Length < 3 || value.Length > 32)
+        {
+            throw HubException.Validation("用户名长度需在 3~32 个字符之间。");
+        }
+
+        if (!value.All(ch => char.IsAsciiLetterOrDigit(ch) || ch is '_' or '-' or '.'))
+        {
+            throw HubException.Validation("用户名只能包含字母、数字、下划线、减号与点。");
+        }
+
+        return value;
+    }
+
+    /// <summary>校验密码强度，不通过时抛出可读的业务异常（规则来自配置，#28）。</summary>
+    private static void EnsurePasswordStrength(string password, ServerOptions options)
+    {
+        var error = PasswordHasher.ValidateStrength(password,
+            options.PasswordMinLength, options.PasswordRequireMixedChars);
+        if (!string.IsNullOrEmpty(error))
+        {
+            throw HubException.Validation(error);
+        }
+    }
+
+    /// <summary>
+    /// 密码策略（#28）：改密弹窗与建号表单据此显示要求，不必把「至少 8 位」这类文案写死在前端
+    /// （写死的话，改了配置前端还在说旧规则）。
+    /// </summary>
+    private static ApiResult<PasswordPolicyDto> PasswordPolicyAsync(HttpContext http,
+        IOptions<ServerOptions> options)
+    {
+        // 只要是登录账号就得能读到：每个人都要改自己的密码。
+        http.RequireAdminSession();
+        var value = options.Value;
+        return ApiResult<PasswordPolicyDto>.Success(new PasswordPolicyDto
+        {
+            MinLength = Math.Max(0, value.PasswordMinLength),
+            RequireMixedChars = value.PasswordRequireMixedChars,
+            ExpiryDays = Math.Max(0, value.PasswordExpiryDays),
+            ExpiryWarnDays = Math.Max(0, value.PasswordExpiryWarnDays),
+        });
+    }
+
+    /// <summary>权限目录：账号界面据此渲染「查看 / 修改」勾选表。</summary>
+    private static ApiResult<List<PermissionModuleDto>> PermissionsAsync(HttpContext http)
+    {
+        http.RequireAdminSession();
+        return ApiResult<List<PermissionModuleDto>>.Success(PermissionCatalog.ToDto());
+    }
+
+    /// <summary>角色模板：账号界面「快速套用」岗位权限组合。</summary>
+    private static ApiResult<List<PermissionPresetDto>> PermissionPresetsAsync(HttpContext http)
+    {
+        http.RequireAdminSession();
+        return ApiResult<List<PermissionPresetDto>>.Success(PermissionCatalog.ToPresetDto());
+    }
+
+    /// <summary>新建账号。未指定密码时由系统生成，并在响应里回传一次。</summary>
+    private static async Task<ApiResult<AccountCreatedDto>> CreateAccountAsync(
+        AccountUpsertRequest request,
+        HttpContext http,
+        HubStore store,
+        IOptions<ServerOptions> options,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var username = NormalizeUsername(request.Username);
+
+        if (await store.GetUserByUsernameAsync(username, cancellationToken) is not null)
+        {
+            throw HubException.Conflict("该用户名已被占用。");
+        }
+
+        var role = IsAdministratorRole(request.Role) ? PermissionKeys.AdministratorRole : PermissionKeys.CustomRole;
+        var permissions = role == PermissionKeys.AdministratorRole
+            ? []
+            : PermissionKeys.Normalize(request.Permissions ?? PermissionKeys.DefaultForNewUser);
+        EnsureCanGrant(session, role, permissions);
+
+        var generated = string.IsNullOrWhiteSpace(request.Password);
+        var password = generated ? HubChecksum.NewEnrollCode(12).ToLowerInvariant() + "A1" : request.Password!;
+        EnsurePasswordStrength(password, options.Value);
+
+        var user = new UserRow
+        {
+            Id = HubChecksum.NewId(),
+            Username = username,
+            PasswordHash = PasswordHasher.Hash(password),
+            DisplayName = string.IsNullOrWhiteSpace(request.DisplayName) ? username : request.DisplayName.Trim(),
+            Role = role,
+            Permissions = permissions,
+            // 系统生成的初始密码强制首次登录修改。
+            MustChangePassword = generated,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+
+        await store.CreateUserAsync(user, cancellationToken);
+        await store.AddAuditAsync(session.Username, "account.create", user.Username,
+            $"新建账号（{DescribeRole(role)}，权限 {permissions.Count} 项）。",
+            http.GetClientIpAddress(), cancellationToken);
+
+        return ApiResult<AccountCreatedDto>.Success(new AccountCreatedDto
+        {
+            Account = ToAccountDto(user),
+            GeneratedPassword = generated ? password : null,
+        });
+    }
+
+    /// <summary>修改账号的显示名、角色与权限。权限变化会让该账号的会话立即失效（需重新登录）。</summary>
+    private static async Task<ApiResult<AccountDto>> UpdateAccountAsync(
+        string id,
+        AccountUpsertRequest request,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var target = await store.GetUserAsync(id, cancellationToken)
+                     ?? throw HubException.NotFound("账号不存在。");
+        EnsureCanManage(session, target);
+
+        var role = IsAdministratorRole(request.Role) ? PermissionKeys.AdministratorRole : PermissionKeys.CustomRole;
+        var permissions = role == PermissionKeys.AdministratorRole
+            ? []
+            : PermissionKeys.Normalize(request.Permissions ?? target.Permissions);
+        EnsureCanGrant(session, role, permissions);
+
+        var isSelf = string.Equals(session.UserId, id, StringComparison.Ordinal);
+        if (isSelf && !IsAdministratorRole(role))
+        {
+            throw HubException.Validation("不能取消自己的超级管理员角色。");
+        }
+
+        if (IsAdministratorRole(target.Role) && !IsAdministratorRole(role))
+        {
+            await EnsureNotLastAdministratorAsync(store, cancellationToken);
+        }
+
+        var displayName = string.IsNullOrWhiteSpace(request.DisplayName) ? target.DisplayName : request.DisplayName.Trim();
+        await store.UpdateUserAsync(id, displayName, role, permissions, cancellationToken);
+
+        // 会话里缓存了权限，改动后必须让该账号重新登录才会生效。
+        var changed = !IsAdministratorRole(role) && !target.Permissions.OrderBy(p => p).SequenceEqual(permissions.OrderBy(p => p))
+                      || !string.Equals(target.Role, role, StringComparison.OrdinalIgnoreCase);
+        if (changed)
+        {
+            await store.DeleteUserSessionsAsync(id, cancellationToken);
+        }
+
+        await store.AddAuditAsync(session.Username, "account.update", target.Username,
+            $"更新账号（{DescribeRole(role)}，权限 {permissions.Count} 项）。",
+            http.GetClientIpAddress(), cancellationToken);
+
+        var updated = await store.GetUserAsync(id, cancellationToken) ?? target;
+        return ApiResult<AccountDto>.Success(ToAccountDto(updated));
+    }
+
+    /// <summary>删除账号（连同它的会话与个人提醒）。</summary>
+    private static async Task<ApiResult<bool>> DeleteAccountAsync(
+        string id,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var target = await store.GetUserAsync(id, cancellationToken)
+                     ?? throw HubException.NotFound("账号不存在。");
+        EnsureCanManage(session, target);
+
+        if (string.Equals(session.UserId, id, StringComparison.Ordinal))
+        {
+            throw HubException.Validation("不能删除当前登录的账号。");
+        }
+
+        if (IsAdministratorRole(target.Role))
+        {
+            await EnsureNotLastAdministratorAsync(store, cancellationToken);
+        }
+
+        await store.DeleteUserAsync(id, cancellationToken);
+        await store.AddAuditAsync(session.Username, "account.delete", target.Username,
+            "删除账号（含其个人提醒与会话）。", http.GetClientIpAddress(), cancellationToken);
+
+        return ApiResult<bool>.Success(true);
+    }
+
+    // ────────────────────────────── 邀请码与自助注册 ──────────────────────────────
+
+    private static async Task<ApiResult<List<RegisterCodeDto>>> ListRegisterCodesAsync(
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        http.RequireAdminSession();
+        var rows = await store.GetRegisterCodesAsync(cancellationToken);
+        return ApiResult<List<RegisterCodeDto>>.Success(rows.Select(ToRegisterCodeDto).ToList());
+    }
+
+    /// <summary>生成邀请码。凭码注册的账号会拿到这里预设的权限。</summary>
+    private static async Task<ApiResult<RegisterCodeDto>> CreateRegisterCodeAsync(
+        RegisterCodeUpsertRequest request,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+
+        var permissions = PermissionKeys.Normalize(request.Permissions ?? PermissionKeys.DefaultForNewUser);
+        if (permissions.Count == 0)
+        {
+            throw HubException.Validation("请至少勾选一项权限，否则注册出来的账号什么都做不了。");
+        }
+
+        EnsureCanGrant(session, PermissionKeys.CustomRole, permissions);
+
+        var row = new RegisterCodeRow
+        {
+            Code = HubChecksum.NewEnrollCode(),
+            Note = (request.Note ?? string.Empty).Trim(),
+            Permissions = permissions,
+            MaxUses = Math.Max(0, request.MaxUses),
+            UsedCount = 0,
+            ExpiresAt = request.ValidHours > 0 ? DateTimeOffset.UtcNow.AddHours(request.ValidHours) : null,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+
+        await store.CreateRegisterCodeAsync(row, cancellationToken);
+        // 审计日志里不落邀请码明文（否则加密存储会被审计表旁路掉），只用指纹引用便于对照。
+        await store.AddAuditAsync(session.Username, "register-code.create", store.ComputeCodeReference(row.Code),
+            $"生成邀请码（权限 {permissions.Count} 项，可用 {row.MaxUses} 次）。",
+            http.GetClientIpAddress(), cancellationToken);
+
+        return ApiResult<RegisterCodeDto>.Success(ToRegisterCodeDto(row));
+    }
+
+    private static async Task<ApiResult<bool>> DeleteRegisterCodeAsync(
+        string code,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var row = await store.GetRegisterCodeAsync(code, cancellationToken);
+        await store.DeleteRegisterCodeAsync(code, cancellationToken);
+        await store.AddAuditAsync(session.Username, "register-code.delete", HubStore.SecretReference(row?.CodeHash),
+            row is null ? "删除邀请码（记录不存在）。" : $"删除了邀请码（备注「{row.Note}」）。",
+            http.GetClientIpAddress(), cancellationToken);
+        return ApiResult<bool>.Success(true);
+    }
+
+    /// <summary>注册开关的公开状态（登录页据此决定显示哪些注册入口）。</summary>
+    private static async Task<ApiResult<RegistrationInfoDto>> GetRegistrationInfoAsync(
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var enabled = await store.GetSettingAsync(SelfRegistrationSettingKey, "0", cancellationToken) == "1";
+        var approvalEnabled = await RegistrationEndpoints.IsApprovalEnabledAsync(store, cancellationToken);
+
+        return ApiResult<RegistrationInfoDto>.Success(new RegistrationInfoDto
+        {
+            Enabled = enabled,
+            ApprovalEnabled = approvalEnabled,
+            Hint = (enabled, approvalEnabled) switch
+            {
+                (true, true) => "可凭邀请码自助注册，也可提交申请等待管理员审批",
+                (true, false) => "凭管理员发放的邀请码自助注册",
+                (false, true) => "可提交注册申请，管理员审批通过后即可登录",
+                (false, false) => "当前未开放自助注册，请联系管理员开通账号。",
+            },
+        });
+    }
+
+    /// <summary>开关自助注册。默认关闭：A 端是校内控制台，开放注册意味着任何人都能拿到账号。</summary>
+    private static async Task<ApiResult<bool>> SetRegistrationAsync(
+        bool? enabled,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var value = enabled ?? false;
+        await store.SetSettingAsync(SelfRegistrationSettingKey, value ? "1" : "0", cancellationToken);
+        await store.AddAuditAsync(session.Username, "registration.switch", "selfRegistration",
+            value ? "开启了自助注册。" : "关闭了自助注册。", http.GetClientIpAddress(), cancellationToken);
+        return ApiResult<bool>.Success(value);
+    }
+
+    /// <summary>只读校验邀请码（不消耗使用次数），返回失败原因；可用时返回 null。</summary>
+    private static string? ValidateRegisterCode(RegisterCodeRow? row)
+    {
+        if (row is null)
+        {
+            return "邀请码不存在。";
+        }
+
+        if (row.CodeUnavailable)
+        {
+            // 指纹匹配到了但密文解密失败（密钥文件被更换 / 数据被改坏）：按不可用处理，绝不静默放行。
+            return "邀请码不可用：服务端加密密钥已更换，请让管理员重新生成。";
+        }
+
+        if (row.ExpiresAt.HasValue && row.ExpiresAt.Value <= DateTimeOffset.UtcNow)
+        {
+            return "邀请码已过期。";
+        }
+
+        if (row.MaxUses > 0 && row.UsedCount >= row.MaxUses)
+        {
+            return "邀请码使用次数已用尽。";
+        }
+
+        return null;
+    }
+
+    /// <summary>凭邀请码自助注册，成功后直接登录（无需再输一次密码）。</summary>
+    private static async Task<ApiResult<LoginResponse>> RegisterAsync(
+        RegisterRequest request,
+        HttpContext http,
+        HubStore store,
+        IOptions<ServerOptions> options,
+        AdminAuthService auth,
+        CancellationToken cancellationToken)
+    {
+        if (await store.GetSettingAsync(SelfRegistrationSettingKey, "0", cancellationToken) != "1")
+        {
+            throw HubException.Forbidden("当前未开放自助注册。");
+        }
+
+        var username = NormalizeUsername(request.Username);
+        EnsurePasswordStrength(request.Password ?? string.Empty, options.Value);
+
+        // 自助注册必须输入邀请码明文：显式拒绝管理端专用的指纹引用格式（ref:xxxxxxxx，#36）。
+        if ((request.Code ?? string.Empty).Trim()
+            .StartsWith(HubStore.SecretReferencePrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new HubException(HubErrorCodes.EnrollCodeInvalid, "邀请码格式不正确。", 400);
+        }
+
+        var code = HubStore.NormalizeEnrollCode(request.Code);
+
+        // 先只读校验邀请码，再查用户名重名：否则没有有效邀请码的人也能靠 400/409 的差异探测用户名是否存在。
+        var previewError = ValidateRegisterCode(await store.GetRegisterCodeAsync(code, cancellationToken));
+        if (previewError is not null)
+        {
+            await store.AddAuditAsync(username, "account.register.failed", username,
+                $"自助注册失败：{previewError}", http.GetClientIpAddress(), cancellationToken);
+            throw new HubException(HubErrorCodes.EnrollCodeInvalid, previewError, 400);
+        }
+
+        if (await store.GetUserByUsernameAsync(username, cancellationToken) is not null)
+        {
+            throw HubException.Conflict("该用户名已被占用。");
+        }
+
+        // 真正消耗一次使用次数（内部会在同一事务里再校验一遍，避免并发把次数用超）。
+        var (codeRow, error) = await store.ConsumeRegisterCodeAsync(code, cancellationToken);
+        if (codeRow is null)
+        {
+            throw new HubException(HubErrorCodes.EnrollCodeInvalid, error ?? "邀请码无效。", 400);
+        }
+
+        var permissions = codeRow.Permissions.Count > 0 ? codeRow.Permissions : PermissionKeys.DefaultForNewUser.ToList();
+        var user = new UserRow
+        {
+            Id = HubChecksum.NewId(),
+            Username = username,
+            PasswordHash = PasswordHasher.Hash(request.Password!),
+            DisplayName = string.IsNullOrWhiteSpace(request.DisplayName) ? username : request.DisplayName.Trim(),
+            Role = PermissionKeys.CustomRole,
+            Permissions = PermissionKeys.Normalize(permissions),
+            MustChangePassword = false,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+
+        await store.CreateUserAsync(user, cancellationToken);
+        await store.AddAuditAsync(username, "account.register", username,
+            $"凭邀请码自助注册（权限 {user.Permissions.Count} 项）。",
+            http.GetClientIpAddress(), cancellationToken);
+
+        return ApiResult<LoginResponse>.Success(
+            await auth.LoginAsync(username, request.Password!, http.GetClientIpAddress(), cancellationToken));
+    }
+
+    /// <summary>标记新手引导已完成；再次调用可重置（用于「重新观看引导」）。</summary>
+    private static async Task<ApiResult<bool>> CompleteOnboardingAsync(
+        bool? done,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var value = done ?? true;
+        await store.SetSettingAsync(OnboardingKey(session.UserId), value ? "1" : "0", cancellationToken);
+        return ApiResult<bool>.Success(value);
+    }
+
+    private static AuditLogDto ToAuditDto(AuditLogRow row) => new()
+    {
+        Id = row.Id,
+        Timestamp = row.Timestamp,
+        Actor = row.Actor,
+        Action = row.Action,
+        Target = row.Target,
+        Detail = row.Detail,
+        IpAddress = row.IpAddress,
+    };
+}
+
+/// <summary>一个分组（校区）的时间偏移（#26）。</summary>
+public sealed class TimeGroupOffsetDto
+{
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>上级分组 ID（顶层为空）。</summary>
+    public string? ParentId { get; set; }
+
+    /// <summary>上级分组名；界面用它解释「没配就是继承谁」。</summary>
+    public string? ParentName { get; set; }
+
+    /// <summary>该分组下的设备台数。</summary>
+    public int DeviceCount { get; set; }
+
+    /// <summary>
+    /// 本组**自己**配置的偏移（秒）；未配置时为 <c>null</c>（表示沿上级继承）。
+    /// <para>
+    /// 这里必须显式声明「null 也要序列化出来」：服务端默认忽略 null 属性，
+    /// 字段直接消失的话前端读到的是 <c>undefined</c>——于是「未配置」会被显示成
+    /// 「已单独配置」，而这正是本项最容易看错的地方（改完界面看不出来其实是没配上）。
+    /// </para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public double? OffsetSeconds { get; set; }
+
+    /// <summary>实际生效的偏移（含沿上级继承的结果）。</summary>
+    public double EffectiveSeconds { get; set; }
+}
+
+/// <summary>设置时间偏移的请求体（固定偏移 + 每日漂移 + 分组偏移）。</summary>
+public sealed class TimeOffsetRequest
+{
+    /// <summary>全局固定时间偏移（秒），正值表示整体提前。为空表示本次不改这一项。</summary>
+    public double? OffsetSeconds { get; set; }
+
+    /// <summary>
+    /// 每日漂移（秒/天）。为空表示不改这一项——老客户端只提交 <see cref="OffsetSeconds"/> 时，
+    /// 不能把管理员配好的漂移值顺手清零。
+    /// </summary>
+    public double? DailyDriftSeconds { get; set; }
+
+    /// <summary>是否把漂移的累计起点重置为今天（保留漂移值）。</summary>
+    public bool? ResetDriftAnchor { get; set; }
+
+    /// <summary>
+    /// 要设置偏移的分组（校区）ID（#26）。为空表示本次不改分组偏移——它叠加在全局偏移之上，
+    /// 设备没配对时沿上级分组就近继承。
+    /// </summary>
+    public string? GroupId { get; set; }
+
+    /// <summary>
+    /// 该分组（校区）自己的偏移秒数。**为空表示清除这个分组的偏移**（回到「继承上级」）：
+    /// 与「配成 0 秒」是两回事，前者会继续继承，后者会明确把该校区拉回全局偏移。
+    /// </summary>
+    public double? GroupOffsetSeconds { get; set; }
+}
+
+/// <summary>完成两步验证。</summary>
+public sealed class TotpLoginRequest
+{
+    /// <summary>登录第一步返回的临时票据。</summary>
+    public string? Ticket { get; set; }
+
+    /// <summary>验证器 App 显示的 6 位验证码。</summary>
+    public string? Code { get; set; }
+}
+
+/// <summary>启用两步验证。</summary>
+public sealed class TotpEnableRequest
+{
+    /// <summary>验证器当前显示的 6 位验证码。</summary>
+    public string? Code { get; set; }
+}
+
+/// <summary>关闭两步验证。</summary>
+public sealed class TotpDisableRequest
+{
+    /// <summary>当前登录密码，用于二次确认。</summary>
+    public string? Password { get; set; }
+}
+
+/// <summary>两步验证的绑定信息。</summary>
+public sealed class TotpSetupDto
+{
+    /// <summary>Base32 密钥：可手动录入验证器，也可用于生成二维码。</summary>
+    public string Secret { get; set; } = string.Empty;
+
+    /// <summary>otpauth:// 链接（验证器 App 可直接识别）。</summary>
+    public string OtpAuthUrl { get; set; } = string.Empty;
+}

@@ -1,0 +1,312 @@
+using System.Net.Security;
+using System.Security.Authentication;
+using System.Text;
+using IslandHub.Protocol;
+using IslandHub.Protocol.Dtos;
+
+namespace IslandHub.Plugin.Services;
+
+/// <summary>客户端调用 IslandHub 服务器时发生的协议级错误。</summary>
+public sealed class HubApiException : Exception
+{
+    /// <summary>稳定错误码。</summary>
+    public string Code { get; }
+
+    /// <summary>HTTP 状态码。</summary>
+    public int StatusCode { get; }
+
+    public HubApiException(string code, string message, int statusCode = 0)
+        : base(message)
+    {
+        Code = code;
+        StatusCode = statusCode;
+    }
+}
+
+/// <summary>
+/// 与 IslandHub 服务器（A 端）通信的 HTTP 客户端。
+/// <para>
+/// 覆盖设备注册、配置查询、心跳、拉取配置、长轮询、结果上报与日志上传等全部客户端接口。
+/// 所有方法都是无状态的（显式传入服务器地址与令牌），便于同步引擎自由调度。
+/// </para>
+/// </summary>
+public sealed class HubClient
+{
+    /// <summary>是否允许连接不受信任的 HTTPS 服务器（自签名证书）。</summary>
+    private static volatile bool _allowInsecureTls;
+
+    /// <summary>共享的 HTTP 客户端。长轮询可能持续 60 秒以上，故不设置过短的总超时。</summary>
+    private static readonly HttpClient Http = Create();
+
+    private static HttpClient Create()
+    {
+        var handler = new SocketsHttpHandler
+        {
+            ConnectTimeout = TimeSpan.FromSeconds(10),
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+            SslOptions = new SslClientAuthenticationOptions
+            {
+                EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
+                RemoteCertificateValidationCallback = (_, _, _, errors) =>
+                    _allowInsecureTls || errors == SslPolicyErrors.None,
+            },
+        };
+
+        return new HttpClient(handler)
+        {
+            Timeout = TimeSpan.FromSeconds(90),
+            DefaultRequestVersion = new Version(1, 1),
+        };
+    }
+
+    /// <summary>同步「允许不安全证书」开关到共享处理器。</summary>
+    public void SetAllowInsecureTls(bool allow) => _allowInsecureTls = allow;
+
+    /// <summary>查询服务器公开配置（注册前即可调用）。</summary>
+    public async Task<ServerInfoDto> GetServerInfoAsync(string baseUrl, CancellationToken cancellationToken = default)
+    {
+        var result = await SendAsync<ServerInfoDto>(baseUrl, "/server/info", HttpMethod.Get,
+            auth: null, body: null, timeout: TimeSpan.FromSeconds(15), cancellationToken);
+        return result.Data!;
+    }
+
+    /// <summary>
+    /// 查询服务器 UTC 时间（用于本机时钟同步）。返回响应封套携带的服务器时间。
+    /// </summary>
+    public async Task<DateTimeOffset> GetServerTimeAsync(string baseUrl, CancellationToken cancellationToken = default)
+    {
+        var result = await SendAsync<TimeSyncResponse>(baseUrl, "/client/time", HttpMethod.Get,
+            auth: null, body: null, timeout: TimeSpan.FromSeconds(10), cancellationToken);
+        return result.Data?.ServerTime ?? result.ServerTime;
+    }
+
+    /// <summary>注册设备。</summary>
+    public async Task<EnrollResponse> EnrollAsync(string baseUrl, EnrollRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await SendAsync<EnrollResponse>(baseUrl, "/client/enroll", HttpMethod.Post,
+            auth: null, body: request, timeout: TimeSpan.FromSeconds(20), cancellationToken);
+        return result.Data!;
+    }
+
+    /// <summary>上报心跳。</summary>
+    public async Task<HeartbeatResponse> HeartbeatAsync(string baseUrl, string deviceToken,
+        HeartbeatRequest request, CancellationToken cancellationToken = default)
+    {
+        var result = await SendAsync<HeartbeatResponse>(baseUrl, "/client/heartbeat", HttpMethod.Post,
+            auth: HubProtocol.DeviceScheme + " " + deviceToken, body: request,
+            timeout: TimeSpan.FromSeconds(20), cancellationToken);
+        return result.Data!;
+    }
+
+    /// <summary>拉取配置。版本一致且非强制时返回 <c>null</c> 表示无需下发。</summary>
+    public async Task<SyncResponse?> SyncAsync(string baseUrl, string deviceToken, long revision,
+        long pushEpoch, IReadOnlyCollection<string> sections, bool force,
+        CancellationToken cancellationToken = default)
+    {
+        var query = $"/client/sync?revision={revision}&pushEpoch={pushEpoch}"
+                    + (force ? "&force=true" : string.Empty);
+        if (sections.Count > 0)
+        {
+            query += "&sections=" + Uri.EscapeDataString(string.Join(",", sections));
+        }
+
+        var result = await SendAsync<SyncResponse?>(baseUrl, query, HttpMethod.Get,
+            auth: HubProtocol.DeviceScheme + " " + deviceToken, body: null,
+            timeout: TimeSpan.FromSeconds(30), cancellationToken);
+        return result.Data;
+    }
+
+    /// <summary>长轮询等待变更。</summary>
+    public async Task<WaitResponse> WaitAsync(string baseUrl, string deviceToken, long revision,
+        long pushEpoch, int timeoutSeconds, CancellationToken cancellationToken = default)
+    {
+        var query = $"/client/wait?revision={revision}&pushEpoch={pushEpoch}&timeout={timeoutSeconds}";
+        var result = await SendAsync<WaitResponse>(baseUrl, query, HttpMethod.Get,
+            auth: HubProtocol.DeviceScheme + " " + deviceToken, body: null,
+            timeout: TimeSpan.FromSeconds(timeoutSeconds + 10), cancellationToken);
+        return result.Data!;
+    }
+
+    /// <summary>上报通知回执（#7）：展示开始 / 展示结束。</summary>
+    public async Task ReportNotificationReceiptAsync(string baseUrl, string deviceToken,
+        NotificationReceiptRequest request, CancellationToken cancellationToken = default)
+    {
+        await SendAsync<bool>(baseUrl, "/client/commands/receipt", HttpMethod.Post,
+            auth: HubProtocol.DeviceScheme + " " + deviceToken, body: request,
+            timeout: TimeSpan.FromSeconds(15), cancellationToken);
+    }
+
+    /// <summary>上报配置应用结果。</summary>
+    public async Task ReportAsync(string baseUrl, string deviceToken, ApplyReportRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        await SendAsync<bool>(baseUrl, "/client/report", HttpMethod.Post,
+            auth: HubProtocol.DeviceScheme + " " + deviceToken, body: request,
+            timeout: TimeSpan.FromSeconds(20), cancellationToken);
+    }
+
+    /// <summary>上传本地日志。</summary>
+    public async Task UploadLogsAsync(string baseUrl, string deviceToken, List<LogEntryDto> entries,
+        CancellationToken cancellationToken = default)
+    {
+        if (entries.Count == 0)
+        {
+            return;
+        }
+
+        await SendAsync<bool>(baseUrl, "/client/logs", HttpMethod.Post,
+            auth: HubProtocol.DeviceScheme + " " + deviceToken,
+            body: new LogReportRequest { Entries = entries },
+            timeout: TimeSpan.FromSeconds(20), cancellationToken);
+    }
+
+    /// <summary>上传诊断工件（屏幕截图等，内容为 Base64）。</summary>
+    public async Task UploadDiagnosticAsync(string baseUrl, string deviceToken, DiagnosticUploadRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        // 截图可能上兆，给足超时。
+        await SendAsync<bool>(baseUrl, "/client/diagnostics", HttpMethod.Post,
+            auth: HubProtocol.DeviceScheme + " " + deviceToken, body: request,
+            timeout: TimeSpan.FromSeconds(60), cancellationToken);
+    }
+
+    /// <summary>拉取待执行的远程指令。</summary>
+    public async Task<List<RemoteCommandDto>> GetCommandsAsync(string baseUrl, string deviceToken,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await SendAsync<List<RemoteCommandDto>>(baseUrl, "/client/commands", HttpMethod.Get,
+            auth: HubProtocol.DeviceScheme + " " + deviceToken, body: null,
+            timeout: TimeSpan.FromSeconds(20), cancellationToken);
+        return result.Data ?? [];
+    }
+
+    /// <summary>回报远程指令执行结果。</summary>
+    public async Task ReportCommandAsync(string baseUrl, string deviceToken, CommandReportRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        await SendAsync<bool>(baseUrl, "/client/commands/report", HttpMethod.Post,
+            auth: HubProtocol.DeviceScheme + " " + deviceToken, body: request,
+            timeout: TimeSpan.FromSeconds(20), cancellationToken);
+    }
+
+    /// <summary>上报已安装插件列表。</summary>
+    public async Task ReportPluginsAsync(string baseUrl, string deviceToken, List<PluginInfoDto> plugins,
+        CancellationToken cancellationToken = default)
+    {
+        await SendAsync<bool>(baseUrl, "/client/plugins", HttpMethod.Post,
+            auth: HubProtocol.DeviceScheme + " " + deviceToken,
+            body: new PluginReportRequest { Plugins = plugins },
+            timeout: TimeSpan.FromSeconds(20), cancellationToken);
+    }
+
+    /// <summary>上报课表目录（今天各节 / 科目 / 课表），供管理端渲染下拉框。</summary>
+    public async Task ReportLessonCatalogAsync(string baseUrl, string deviceToken, LessonCatalogDto catalog,
+        CancellationToken cancellationToken = default)
+    {
+        await SendAsync<bool>(baseUrl, "/client/lessons/catalog", HttpMethod.Post,
+            auth: HubProtocol.DeviceScheme + " " + deviceToken,
+            body: catalog,
+            timeout: TimeSpan.FromSeconds(20), cancellationToken);
+    }
+
+    /// <summary>
+    /// 下载一个二进制资源（插件包等，#121）。<paramref name="path"/> 可以是 A 端的相对路径
+    /// （推荐：<c>/client/plugin-packages/…/download</c>），也可以是绝对地址。
+    /// </summary>
+    /// <exception cref="HubApiException">网络失败、超时，或服务端返回失败封套。</exception>
+    public async Task<byte[]> DownloadBytesAsync(string baseUrl, string deviceToken, string path,
+        CancellationToken cancellationToken = default)
+    {
+        var url = path.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                  || path.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            ? path
+            : baseUrl.TrimEnd('/') + HubProtocol.ApiPrefix + "/" + path.TrimStart('/');
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.TryAddWithoutValidation("Authorization", HubProtocol.DeviceScheme + " " + deviceToken);
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        // 包可能有几 MB，给足时间；比共享 HttpClient 的总超时（90 秒）宽松。
+        cts.CancelAfter(TimeSpan.FromMinutes(5));
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new HubApiException("TIMEOUT", $"下载超时：{path}");
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new HubApiException("NETWORK", $"无法连接服务器：{ex.Message}");
+        }
+
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                // 失败时服务端仍回 JSON 封套，尽量把它的中文原因带出来（否则只剩一个状态码）。
+                var text = await response.Content.ReadAsStringAsync(cancellationToken);
+                var envelope = HubJson.DeserializeOrDefault(text, new ApiResult<bool> { Ok = false });
+                throw new HubApiException(
+                    envelope.Error?.Code ?? HubErrorCodes.Internal,
+                    envelope.Error?.Message ?? $"下载失败：HTTP {(int)response.StatusCode}",
+                    (int)response.StatusCode);
+            }
+
+            return await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        }
+    }
+
+    private async Task<ApiResult<T>> SendAsync<T>(string baseUrl, string path, HttpMethod method,
+        string? auth, object? body, TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        var url = baseUrl.TrimEnd('/') + HubProtocol.ApiPrefix + path;
+
+        using var request = new HttpRequestMessage(method, url);
+        request.Headers.TryAddWithoutValidation("Accept", "application/json");
+        if (auth is not null)
+        {
+            request.Headers.TryAddWithoutValidation("Authorization", auth);
+        }
+
+        if (body is not null)
+        {
+            request.Content = new StringContent(HubJson.Serialize(body), Encoding.UTF8, "application/json");
+        }
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(timeout);
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await Http.SendAsync(request, cts.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new HubApiException("TIMEOUT", $"请求服务器超时：{method} {path}");
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new HubApiException("NETWORK", $"无法连接服务器：{ex.Message}");
+        }
+
+        var text = await response.Content.ReadAsStringAsync(cancellationToken);
+        var result = HubJson.DeserializeOrDefault(text, new ApiResult<T> { Ok = false });
+
+        // 服务器返回的失败封套。
+        if (!result.Ok)
+        {
+            throw new HubApiException(
+                result.Error?.Code ?? HubErrorCodes.Internal,
+                result.Error?.Message ?? "服务器返回了未知错误。",
+                (int)response.StatusCode);
+        }
+
+        return result;
+    }
+}

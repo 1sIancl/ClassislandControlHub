@@ -10,7 +10,7 @@
 
 | 表 / 列 | 内容 | 泄露后果 |
 |---|---|---|
-| `enroll_codes.code` | 注册邀请码（一次性/多次） | 拿到即可把自己的机器注册进集控 |
+| `enroll_codes.code` | 注册邀请码（一次性/多次） | 拿到即可把自己的机器注册进 IslandHub |
 | `webhooks.secret` | 钉钉加签密钥 | 可伪造推送到群机器人 |
 | `backup` 文件（若有） | 上述内容的副本 | 同上 |
 
@@ -176,4 +176,4 @@ UPDATE webhooks SET secret = $enc WHERE id = $id AND secret <> '' AND secret NOT
 代码位置：`Services/SecretProtector.cs`、`Data/HubStore.Secrets.cs`（迁移与统计）、
 `Data/HubStore.Admin.cs` / `HubStore.Reminders.cs` / `HubStore.Webhooks.cs`（读写路径）、
 `Endpoints/AdminEndpoints.cs`（`server/info` 计数）、`Program.cs`（启动迁移与日志）。
-回归测试：`tests/ControlHub.Tests/SecretProtectorTests.cs`、`SecretStorageTests.cs`（含密钥丢失、老库迁移、引用删除等）。
+回归测试：`tests/IslandHub.Tests/SecretProtectorTests.cs`、`SecretStorageTests.cs`（含密钥丢失、老库迁移、引用删除等）。

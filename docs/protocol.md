@@ -1,7 +1,7 @@
 # 通信协议与数据格式
 
-本文档定义集控系统 A 端（服务器）与 B 端（ClassIsland 插件）之间的通信协议。
-协议常量、错误码与数据模型统一定义在共享程序集 **`ControlHub.Protocol`** 中，
+本文档定义 IslandHub 系统 A 端（服务器）与 B 端（ClassIsland 插件）之间的通信协议。
+协议常量、错误码与数据模型统一定义在共享程序集 **`IslandHub.Protocol`** 中，
 两端引用同一份代码，从根本上避免「协议漂移」。
 
 ## 1. 传输层
@@ -217,7 +217,7 @@ HTTP 状态码与业务结果同时生效：`401` 鉴权失败、`404` 资源不
   "deviceToken": "<长期令牌>",
   "deviceName": "高一(3)班",
   "groupId": null, "groupName": null,
-  "revision": 3, "heartbeatSeconds": 30, "serverName": "XX 中学集控"
+  "revision": 3, "heartbeatSeconds": 30, "serverName": "XX 中学 IslandHub"
 }
 ```
 
@@ -343,7 +343,7 @@ ClassIsland「精确时间」（ExactTimeServer 指向 A 端，IsExactTimeEnable
 
 // 应答（回显 nonce，便于客户端匹配）
 { "magic": "ClassIsland.ControlHub", "version": 1, "nonce": "<随机串>",
-  "serverName": "XX 中学集控", "baseUrl": "http://192.168.1.5:29800",
+  "serverName": "XX 中学 IslandHub", "baseUrl": "http://192.168.1.5:29800",
   "apiPrefix": "/api/v1", "requiresEnrollCode": true,
   "revision": 0, "serverTime": "..." }
 ```

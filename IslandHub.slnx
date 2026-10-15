@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/IslandHub.Plugin/IslandHub.Plugin.csproj" />
+    <Project Path="src/IslandHub.Protocol/IslandHub.Protocol.csproj" />
+    <Project Path="src/IslandHub.Server/IslandHub.Server.csproj" />
+    <Project Path="src/IslandHub.Desktop/IslandHub.Desktop.csproj" />
+    <Project Path="src/IslandHub.LoadTest/IslandHub.LoadTest.csproj" />
+    <Project Path="src/IslandHub.Shell/IslandHub.Shell.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/IslandHub.Tests/IslandHub.Tests.csproj" />
+  </Folder>
+</Solution>

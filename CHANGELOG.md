@@ -7,11 +7,42 @@
 
 ---
 
+## [1.4.4.0] — 2026-10-15
+
+### 变更
+
+- **项目更名为 IslandHub**：产品名、界面文案、文档与**代码标识符**（项目目录 / 命名空间 / 程序集
+  `ControlHub.*` → `IslandHub.*`）全部改成 IslandHub —— `IslandHub.slnx`、
+  `src/IslandHub.Server|Plugin|Protocol|Desktop|Shell|LoadTest`、`tools/IslandHub.Verify`、`tests/IslandHub.Tests`。
+  - ⚠️ **刻意保持旧名的地方**（改了会让已部署环境出问题，README 里新增了「关于命名」一节写清）：
+    配置节 `ControlHub`（appsettings 键 / `ControlHub__` 环境变量 / `--ControlHub:` 命令行，三者一体，
+    改了两者的对应关系就断了——`SecretsKeyPath` 一失效旧密文直接解不开）、Windows 服务名与安装 /
+    数据目录、数据库 `controlhub.db`、本机令牌 `local-shell.token`、局域网发现魔数 `ClassIsland.ControlHub`、
+    插件 id `classislandcontrolhub.client`、插件包名 `ControlHub.Plugin.cipx`、GitHub 仓库地址。
+  - **插件包名仍叫 `ControlHub.Plugin.cipx`**：SDK 是按项目名生成包名的，改名后新增了一个「建完再改回旧名」的
+    目标，并**排在生成 MD5 摘要之前**（否则 checksums.md 里记的是改名后的文件名，校验对不上）。
+  - **默认品牌图换成项目 logo**：内置到 `wwwroot/icon.png`（256×256）、插件市场图标、外壳图标与 README；
+    品牌标记在 JS 接管**前后**都是这张图（`index.html` 直接放 `<img>`，没配品牌图时不再回落成「CI」两个字）。
+  - 前端资源版本串 `?v=116 → ?v=117`。
+
+### 验证
+
+| 检查 | 结果 |
+|---|---|
+| 全量构建 / 全量单元测试 | **0 警告 0 错误** / **179 / 179** |
+| 验证台 `tools/IslandHub.Verify`（含用真实发行版 `ClassIsland.dll` 验反射契约） | **123 / 123** |
+| 界面冒烟 `sh/ui-smoke.js` | **157 / 157** |
+| 更名与品牌图 `_shot/verify-islandhub-branding.js`（登录页两处 + 侧栏品牌块都是新 logo、`/server/info` 与静态页无旧名、站点图标已换） | **7 / 7** |
+| 端到端：`verify-cidata-import` 34/34、`verify-cidata-ui` 16/16、`verify-rotation` 21/21、`verify-rotation-report` 5/5 | 全通过 |
+| 前端静态检查（`check-imports` / `check-consts` / `check-modules`） | **0 问题** |
+
+---
+
 ## [1.4.3.0] — 2026-10-15
 
 ### 新增
 
-- **多周轮换课表（单双周 / 最多 9 周）**：轮换逻辑由 ClassIsland 原生执行，集控负责**逐周排课**，
+- **多周轮换课表（单双周 / 最多 9 周）**：轮换逻辑由 ClassIsland 原生执行，IslandHub 负责**逐周排课**，
   并把「哪一周算第 1 周」一起下发。
   - **课表页周次切换**：设成 N 周轮换后，课表网格上方出现「第 1 周 … 第 N 周」，每周独立排课；
     某个周次一张课表都没有时标签直接标「（空）」——空周在教室里就是那几天什么都不显示，只翻周次很难发现。
@@ -46,15 +77,15 @@
 | 合并去重单元测试（`ContentMergerTests`：单双周不互相覆盖 / 反复导入不重复 / 轮换设置合并） | **5 / 5** |
 | CSES 周次映射单元测试（`CsesImporterTests`） | **3 / 3** |
 | `.cidata` 轮换导入单元测试（追加到 `CidataImporterTests`） | **3 / 3** |
-| 全量单元测试（`tests/ControlHub.Tests`） | **179 / 179** |
-| 验证台 `tools/ControlHub.Verify`（「宿主轮换设置下发 / 周次算法」16 项 + **用真实发行版 `ClassIsland.dll` 验反射契约 4 项**） | **123 / 123** |
+| 全量单元测试（`tests/IslandHub.Tests`） | **179 / 179** |
+| 验证台 `tools/IslandHub.Verify`（「宿主轮换设置下发 / 周次算法」16 项 + **用真实发行版 `ClassIsland.dll` 验反射契约 4 项**） | **123 / 123** |
 | 端到端 `_shot/verify-rotation.js`（接口 + 真浏览器：周次切换 / 自动补齐 / 从别的周复制 / 关回不轮换） | **21 / 21** |
 | 端到端 `_shot/verify-rotation-report.js`（教室端上报周次 → 落库 → 快捷换课页显示；老插件默认值） | **5 / 5** |
 | 端到端 `_shot/verify-cidata-import.js`（新增「轮换周期与起点」断言） | **34 / 34** |
 | 界面 `_shot/verify-cidata-ui.js` | **16 / 16** |
 | 界面冒烟 `sh/ui-smoke.js`（本地 A 端 29800） | **157 / 157** |
 | 前端静态检查（`check-imports` / `check-consts` / `check-modules`） | **0 问题**（35 个模块可解析） |
-| 全量构建 `dotnet build ClassIsland.ControlHub.slnx -c Release --no-incremental` | **0 警告 0 错误** |
+| 全量构建 `dotnet build ClassIsland.IslandHub.slnx -c Release --no-incremental` | **0 警告 0 错误** |
 
 ---
 
@@ -77,15 +108,15 @@
     「未配置」以 `null` 下发（否则会被界面显示成「已单独配置」）。
   - 审计新增动作 `timeoffset.group.updated`（写明改的是哪个分组、改成了多少秒）。
 - **从 ClassIsland「数据迁移」包（`.cidata`）导入档案**：档案页工具条新增「从 .cidata 导入」，
-  把某台已配好的教室机的整包搬进集控的档案。**先预览、再确认**：上传后包落在 `data/imports/` 并换回一个
+  把某台已配好的教室机的整包搬进 IslandHub 的档案。**先预览、再确认**：上传后包落在 `data/imports/` 并换回一个
   **一次性令牌**（确认时按令牌取回，几十 MB 的包不必传两遍、服务端也不挂会话状态），
   预览里写清「能导入什么 / 哪些装不下 / 为什么」。
   - ⚠️ **只认四块**：时间表 / 课表 / 科目 / 课表群。`Settings.json`（主题 / 界面 / 天气）、`Config/`
-    （自动化 / 组件布局 / 管理策略）、`Plugins/`（插件与插件设置）在集控的档案模型里**没有落点**，
+    （自动化 / 组件布局 / 管理策略）、`Plugins/`（插件与插件设置）在 IslandHub 的档案模型里**没有落点**，
     一律**逐条列出**说明，而不是悄悄丢掉。
-  - ⚠️ **两条「不静默改语义」**：① 触发规则是**日期型 / 循环型**的课表**跳过**——集控只能表达
+  - ⚠️ **两条「不静默改语义」**：① 触发规则是**日期型 / 循环型**的课表**跳过**——IslandHub 只能表达
     「星期几」，硬按星期几塞进去会变成「这张课表每天都在用」；② **临时层课表**（临时换课）与
-    **按日期的调休（`OrderedSchedules`）不导入**——集控侧对应的是「快捷换课」通道。
+    **按日期的调休（`OrderedSchedules`）不导入**——IslandHub 侧对应的是「快捷换课」通道。
   - 时间点解析不出来的时间表**整张跳过**（连同用到它的课表）并在预览里说明，不「猜一个」时刻
     （猜错会让整张时间表的节次全部错位，且错位后看不出来）；课表里指向包内不存在科目的格子**留空**，
     不留悬空 ID（悬空 ID 会让教室端显示一格空白而查不出原因）。
@@ -98,15 +129,15 @@
 |---|---|
 | 分组偏移单元测试（层级 / 就近继承 / 环 / 越界 / 歧义退化 / 心跳刷新地址） | **25 / 25** |
 | 从 `.cidata` 导入单元测试（映射 / 跳过项 / 不静默改语义） | **23 / 23** |
-| 全量单元测试（`tests/ControlHub.Tests`） | **157 / 157** |
+| 全量单元测试（`tests/IslandHub.Tests`） | **157 / 157** |
 | 端到端 `_shot/verify-timegroup-offset.js`（真发 NTP 报文，按来源地址核对叠加秒数） | **20 / 20** |
 | 界面 `_shot/verify-timegroup-ui.js`（空状态 / 表格 / 点保存 / 点清除） | **9 / 9** |
 | 端到端 `_shot/verify-cidata-import.js`（上传 → 预览 → 导入 → 直读落库核对 → 报错路径 → 临时文件清理） | **33 / 33** |
 | 界面 `_shot/verify-cidata-ui.js`（真浏览器：按钮 → 弹窗 → 真上传 → 预览 → 确认 → 清场） | **16 / 16** |
 | 界面冒烟 `sh/ui-smoke.js`（本地 A 端 29800，真浏览器点一遍） | **157 / 157** |
-| 验证台 `tools/ControlHub.Verify`（插件侧：指令执行 / 课表桥接 / 包安装语义） | **103 / 103** |
+| 验证台 `tools/IslandHub.Verify`（插件侧：指令执行 / 课表桥接 / 包安装语义） | **103 / 103** |
 | 前端静态检查（`sh/check-imports.js` / `sh/check-consts.js` / `_shot/check-modules.js`） | **0 问题**（35 个模块全部可解析） |
-| 全量构建 `dotnet build ClassIsland.ControlHub.slnx -c Release --no-incremental` | **0 警告 0 错误** |
+| 全量构建 `dotnet build ClassIsland.IslandHub.slnx -c Release --no-incremental` | **0 警告 0 错误** |
 
 ---
 
@@ -140,7 +171,7 @@
 |---|---|
 | 全量构建（`--no-incremental`） | **0 警告 0 错误** |
 | 单元测试 | **109 / 109** |
-| 验证台（`ControlHub.Verify`） | **103 / 103** |
+| 验证台（`IslandHub.Verify`） | **103 / 103** |
 | 界面冒烟（`sh/ui-smoke.js`） | **156 / 156** |
 | 端到端：主链路 / 定时开关机 / 插件市场 / 提醒事件 / 考试模式 / 走班制 / 模板套用 / 诊断扩展 / Webhook 事件 / 指令错误码 / 网络唤醒 / 性能基准 | 16 / 16 / 33 / 24 / 14 / 12 / 8 / 7 / 4 / 11 / 10 / 8，**0 失败** |
 | 端到端：课表 API / 课表界面 / 图片上传 / 图片界面 / 课表清理 | 全部 0 失败 |
@@ -224,7 +255,7 @@
     之后每次都发那个旧时间——而「推送到哪」「这次几台」本来就每次可能不同。
   - **写错的占位符原样保留**：把 `{time}` 写成 `{tme}` 时，通知里还能看见它，管理员一眼能发现；
     静默删掉则要等现场来问「这里怎么空了」。
-  - 渲染助手 `ReminderTemplate` 放在 `ControlHub.Protocol`（纯函数）→ **5 个单元测试**钉住；
+  - 渲染助手 `ReminderTemplate` 放在 `IslandHub.Protocol`（纯函数）→ **5 个单元测试**钉住；
     端到端额外断言「**真正下发给教室端的通知载荷**里变量已被替换」（而不是只看服务端日志）。
   - 界面上的内容输入框直接提示可用变量（比写进文档更容易被看到）。
 
@@ -254,7 +285,7 @@
     自己算最小 / 平均 / 最大，中英文系统都准。`时间<1ms` 按 1ms 记（比记 0 更诚实）。
   - **刻意不设 `StandardOutputEncoding`**：让 .NET 用系统默认控制台编码（中文 Windows 上是 GBK），
     否则 ping 输出里的中文全变乱码。
-- 解析逻辑放进 `ControlHub.Protocol` 的 `NetProbeParser`（纯函数、无 IO），因此**单元测试能钉住它**：
+- 解析逻辑放进 `IslandHub.Protocol` 的 `NetProbeParser`（纯函数、无 IO），因此**单元测试能钉住它**：
   新增 **17 个用例**（安全字符集 12 例 + 中文输出 + 英文输出 + 全丢包 + 跳数统计 + 磁盘格式化）。
 
 ### 新增（第六批：提醒的「配置同步完成」触发 = #12 的第二种事件）
@@ -485,7 +516,7 @@
     绝不假装成功（教室大屏没变、管理端显示"已设置"，现场只会以为系统坏了）。
   - 载荷校验刻意严格：`brightness.set` 的 `percent` 是**可空**类型，漏传报「载荷不完整」，
     而不是默默把屏幕设成 0（全黑后现场只能靠显示器按键恢复）；音量越界同样直接拒绝。
-  - 实测：`ControlHub.Verify` **82 项**（含在这台机器上**真读真写真还原**系统音量、
+  - 实测：`IslandHub.Verify` **82 项**（含在这台机器上**真读真写真还原**系统音量、
     以及把指令喂给执行器跑通两个新分支与全部校验分支）；`sh/ui-smoke.js` **129 项**
     （新增 2 项：标签页控件齐全、从界面点一下真的发出 `volume.set`）。
 - **远程唤醒 / 开机（Wake-on-LAN，#20 的「开机」一半）**：设备随心跳上报**主网卡 MAC**，
@@ -570,7 +601,7 @@
 
 ### 工程
 
-- **`tools/ControlHub.Verify` 新增课表桥接语义验证（65 项）**：课表桥接没有 HTTP 接口可验
+- **`tools/IslandHub.Verify` 新增课表桥接语义验证（65 项）**：课表桥接没有 HTTP 接口可验
   （A 端只看得到「指令已下发」），所以把「临时层 / 调休 / 恢复 / 已调整判定 / 兜底科目」这些
   真实语义固化成可重复执行的断言。为此 `LessonBridge` 的依赖从 `IProfileService` / `ILessonsService`
   收窄到公开的 `IPublicProfileService` / `IPublicLessonsService`——后者带 `internal` 成员，
@@ -795,7 +826,7 @@
   > 指令与操作两块直接聚合既有数据，不额外维护统计表（也就不会出现「统计与事实对不上」）。
 - **备份加密（#60）**：备份可导出为加密文件（`.zip.enc`）—— AES-256-GCM + PBKDF2-SHA256（20 万次迭代）。
   口令走请求体（不进 URL 与访问日志），服务端**不保存**口令，导出前要求二次输入。
-  解密用服务端命令行 `ControlHub.Server --decrypt-backup <加密文件> <输出.zip>`（口令交互式输入，
+  解密用服务端命令行 `IslandHub.Server --decrypt-backup <加密文件> <输出.zip>`（口令交互式输入，
   也可从标准输入读）—— 做成命令行而非接口，是因为真到换机器 / 灾难恢复时服务端往往起不来，
   而可执行文件一定能运行。审计只记录「导出过一份加密备份」，绝不记口令。
 - **备份内容可选（#59）**：新建备份时可选择包含哪些内容——数据库（必需）、配置文件（默认含）、
@@ -936,7 +967,7 @@
 
 ### 工程化
 
-- **单元测试项目** `tests/ControlHub.Tests`（xunit，11 个用例全部通过）：覆盖「下发差异预览」的六种分支
+- **单元测试项目** `tests/IslandHub.Tests`（xunit，11 个用例全部通过）：覆盖「下发差异预览」的六种分支
   （无基线 / 同版本 / 改版用快照对比 / 内容实质相同 / 换档案 / 同名项修改）与协议层约束
   （校验和稳定性、令牌 URL 安全、权限去重、版本号格式、心跳与长轮询区间）。
   测试项目同样「警告即错误」，并启用 xUnit 分析器。
@@ -965,7 +996,7 @@
 - **待执行指令队列可视化**：「远程命令行」与「远程诊断」页显示排队中的指令、排队原因（离线 / 定时未到 / 已派发在途）、
   到期倒计时，并可逐条取消。
 - **远程诊断**：屏幕截图（渲染画面抓取 + 每设备保留最近 5 张 + 网页预览 / 下载）、前台进程快照、诊断数据包
-  （系统环境 / 版本 / 集控状态 / 宿主诊断信息 / 最近日志），并接通客户端日志上报。
+  （系统环境 / 版本 / IslandHub 状态 / 宿主诊断信息 / 最近日志），并接通客户端日志上报。
 - **新手引导 / 品牌个性化 / 响应式界面（手机可用）** 等界面能力。
 - **文档**：`docs/roadmap.md`（路线图与 backlog 单一事实来源）、`docs/plugin-protocol.md`（插件扩展协议草案）、
   `docs/troubleshooting.md`（故障排查）、`docs/security.md`（安全加固）、`docs/api.md`（对外 API 指南）、
@@ -1010,7 +1041,7 @@
 ## [1.3.1.0] — 2026-09-30
 
 - 修复「运行时长 / 启动时间」显示系统开机时长的问题（A 端 `1.3.1`）。
-- 首次带桌面外壳（`ControlHub.Shell`）安装包，外壳发布指定 `win-x64`，安装包从约 192 MB 降到约 30 MB。
+- 首次带桌面外壳（`IslandHub.Shell`）安装包，外壳发布指定 `win-x64`，安装包从约 192 MB 降到约 30 MB。
 
 ## [1.3.0.0] — 2026-09-29
 

@@ -5,7 +5,7 @@
 
 ## 1. 目标与边界
 
-让第三方 ClassIsland 插件把自己的能力接进集控：由集控统一下发、展示、鉴权与审计。
+让第三方 ClassIsland 插件把自己的能力接进 IslandHub：由 IslandHub 统一下发、展示、鉴权与审计。
 
 **不做的事（v1 明确排除）**：
 
@@ -13,7 +13,7 @@
 - 不提供插件自绘 UI——参数表单由 schema 自动生成，复杂交互请引导用户去 ClassIsland 本地界面；
 - 不做自动重试与跨设备编排（留给后续的规则引擎）。
 
-一句话：**插件在教室端进程内执行，集控只负责「传指令、校验、展示、记账」。**
+一句话：**插件在教室端进程内执行，IslandHub 只负责「传指令、校验、展示、记账」。**
 
 ## 2. 操作类型 ID
 
@@ -27,7 +27,7 @@
 - `<插件ID>` 用 ClassIsland 插件 ID（含点号，例如 `classisland.weather`）；
 - `<操作名>` 只允许 `[a-z0-9-]`，整串长度 ≤ 96；
 - 例：`ext.classisland.weather.refresh`；
-- `ext.local.*` 保留给集控自身，第三方不得占用。
+- `ext.local.*` 保留给 IslandHub 自身，第三方不得占用。
 
 **A 端对不认识的 `ext.*` 一律拒绝**（fail-closed），并返回稳定错误码，避免「指令发出去石沉大海」。
 
@@ -60,7 +60,7 @@ POST /api/v1/client/plugins
 | `kind` | ✅ | 见第 2 节 |
 | `title` / `description` | ✅ | 管理端展示用；标题 ≤ 30 字 |
 | `pluginId` | ✅ | 提供方插件 ID，用于归属与权限分组 |
-| `permission` | ✅ | 执行该能力需要的集控权限键（见第 5 节） |
+| `permission` | ✅ | 执行该能力需要的 IslandHub 权限键（见第 5 节） |
 | `idempotent` | ✅ | 重复执行是否安全；决定 TTL 内的派发语义（第 6 节） |
 | `maxDurationSeconds` | ⬜ | 预期最长执行时间，仅用于展示与超时提示 |
 | `parameters` | ⬜ | 参数 JSON Schema（第 4 节）；缺省表示无参数 |
@@ -86,7 +86,7 @@ A 端存储为 `device_capabilities.<deviceId>`（复用现有设置存储方式
 
 ## 5. 权限声明
 
-- 每个能力必须声明一个集控权限键：`remote.read`（纯读取）或 `remote.write`（有副作用）；
+- 每个能力必须声明一个 IslandHub 权限键：`remote.read`（纯读取）或 `remote.write`（有副作用）；
 - 后续可引入细粒度键 `ext.<插件ID>`（`PermissionKeys` 已预留命名空间），由管理员在账号里逐项勾选；
 - A 端渲染与下发都以权限为准：当前账号无权限的能力**不显示**，即使直连接口也拒绝（沿用现有 fail-closed 校验）。
 
@@ -133,7 +133,7 @@ A 端存储为 `device_capabilities.<deviceId>`（复用现有设置存储方式
 1. 上报通道加 `capabilities`（可选字段）+ A 端存储与展示；
 2. 下发前校验：能力存在 + schema 通过 + 权限满足 → 拒绝时给稳定错误码；
 3. 管理端按 schema 自动生成表单；命令历史按 `result` 渲染；
-4. 插件 SDK 侧提供注册助手（`IControlHubCapability` 之类），插件只声明不问 JSON 细节；
+4. 插件 SDK 侧提供注册助手（`IIslandHubCapability` 之类），插件只声明不问 JSON 细节；
 5. 能力级权限键 `ext.<插件ID>`，管理员可细粒度授权。
 
 前两步是「能用」，第 3 步是「好用」，第 4 步决定第三方接入成本——建议按顺序做，不要跳。

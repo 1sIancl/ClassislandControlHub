@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# ClassIsland.ControlHub · A 端服务器 Linux 一键部署脚本
+# ClassIsland.IslandHub · A 端服务器 Linux 一键部署脚本
 #
 # 用法（在目标 Linux 服务器上，用 root 执行）：
 #   curl -fsSL https://cdn.jsdelivr.net/gh/1sIancl/ClassislandControlHub@main/sh/main.sh -o /tmp/controlhub-install.sh && sudo bash /tmp/controlhub-install.sh
@@ -34,7 +34,7 @@ DOTNET_BIN=""
 # 未指定时，脚本会依次尝试直连与若干内置镜像，最后一个失败才报错。
 GIT_MIRROR="${GIT_MIRROR:-}"
 
-info() { printf '\033[36m[集控]\033[0m %s\n' "$*"; }
+info() { printf '\033[36m[IslandHub]\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m[警告]\033[0m %s\n' "$*"; }
 die()  { printf '\033[31m[错误]\033[0m %s\n' "$*" >&2; exit 1; }
 
@@ -116,7 +116,7 @@ fetch_source() {
 # ── 编译发布 ──────────────────────────────────────────────
 publish() {
   info "编译发布（Release）…"
-  (cd "$INSTALL_DIR" && "$DOTNET_BIN" publish src/ControlHub.Server/ControlHub.Server.csproj -c Release -o "$INSTALL_DIR/server")
+  (cd "$INSTALL_DIR" && "$DOTNET_BIN" publish src/IslandHub.Server/IslandHub.Server.csproj -c Release -o "$INSTALL_DIR/server")
 }
 
 # ── 注册 systemd 服务 ─────────────────────────────────────
@@ -124,12 +124,12 @@ install_service() {
   info "注册 systemd 服务 $SERVICE_NAME …"
   cat > "/etc/systemd/system/$SERVICE_NAME.service" <<EOF
 [Unit]
-Description=ClassIsland ControlHub Server
+Description=ClassIsland IslandHub Server
 After=network.target
 
 [Service]
 WorkingDirectory=$INSTALL_DIR/server
-ExecStart=$DOTNET_BIN $INSTALL_DIR/server/ControlHub.Server.dll
+ExecStart=$DOTNET_BIN $INSTALL_DIR/server/IslandHub.Server.dll
 Restart=always
 RestartSec=3
 Environment=ControlHub__HttpPort=$HTTP_PORT
@@ -157,7 +157,7 @@ EOF
 
 # ── 主流程 ────────────────────────────────────────────────
 main() {
-  info "开始部署 ClassIsland.ControlHub A 端服务器"
+  info "开始部署 ClassIsland.IslandHub A 端服务器"
   install_dotnet
   fetch_source
   publish

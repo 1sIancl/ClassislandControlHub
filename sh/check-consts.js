@@ -22,7 +22,7 @@ const fs = require('fs');
 const path = require('path');
 
 const root = process.argv[2]
-  || path.join(__dirname, '..', 'src', 'ControlHub.Server', 'wwwroot', 'js');
+  || path.join(__dirname, '..', 'src', 'IslandHub.Server', 'wwwroot', 'js');
 
 /** 少数确实来自外部的名字（浏览器 / 协议 / 业务缩写），不作为「未定义」处理。 */
 const KNOWN = new Set([

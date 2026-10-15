@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>IslandHub.Verify</RootNamespace>
+    <AssemblyName>IslandHub.Verify</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 直接复用 B 端插件的真实映射代码（ClassIslandAdapter）。 -->
+    <ProjectReference Include="..\..\src\IslandHub.Plugin\IslandHub.Plugin.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      插件默认把 ClassIsland 运行时程序集排除在输出之外（运行时由宿主提供）。
+      验证工具需要在普通控制台里真实运行，因此显式引入这些程序集。
+    -->
+    <PackageReference Include="ClassIsland.Shared" Version="2.1.1.1" />
+    <PackageReference Include="ClassIsland.Shared.IPC" Version="2.1.1.1" />
+    <!--
+      ClassIsland.Core：课表桥接测试要用到宿主的 IProfileService / ILessonsService / IExactTimeService。
+      它同时会（传递地）把 Avalonia 带进来——插件里的 UiThread 用的是 Avalonia 的 Dispatcher，
+      在宿主里由宿主提供，在这里必须显式引入，否则一调 LessonBridge 就是 TypeLoadException。
+    -->
+    <PackageReference Include="ClassIsland.Core" Version="2.1.1.1" />
+  </ItemGroup>
+
+  <!--
+    ClassIsland.Core 会传递引入 Avalonia（课表桥接的 UiThread 要 Avalonia 的 Dispatcher）。
+    ⚠️ 下面这段是**兜底**，别把它当成「SkiaSharp 这个包本来就没有 pdb」——
+    `skiasharp.nativeassets.win32` 的 .nupkg 里其实带了 3 个 libSkiaSharp.pdb（每个约 84MB），
+    只是本机 NuGet 缓存里的这几份被清掉过，复制阶段就报 MSB3030「找不到该文件」
+    （同一个原因也会让 `src/IslandHub.Desktop` 构建失败，CI 上是新解压所以不会遇到）。
+    真正的修法是把它从**本地已有的 .nupkg** 重新解压回缓存目录；
+    这里过滤掉不存在的文件，只是让缓存再次出问题时验证台仍然能跑。
+  -->
+  <Target Name="IslandHubSkipMissingNativeSymbols"
+          DependsOnTargets="ResolvePackageAssets"
+          BeforeTargets="GenerateBuildDependencyFile;_CopyFilesMarkedCopyLocal">
+    <ItemGroup>
+      <!-- 复制阶段（_CopyFilesMarkedCopyLocal）读这个。 -->
+      <ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)" Condition="!Exists('%(FullPath)')" />
+      <!-- 生成 deps.json 阶段（GenerateDepsFile）读这几个，缺文件会在读版本号时直接抛异常。 -->
+      <NativeCopyLocalItems Remove="@(NativeCopyLocalItems)" Condition="!Exists('%(FullPath)')" />
+      <RuntimeCopyLocalItems Remove="@(RuntimeCopyLocalItems)" Condition="!Exists('%(FullPath)')" />
+      <RuntimeTargetsCopyLocalItems Remove="@(RuntimeTargetsCopyLocalItems)" Condition="!Exists('%(FullPath)')" />
+    </ItemGroup>
+  </Target>
+
+</Project>

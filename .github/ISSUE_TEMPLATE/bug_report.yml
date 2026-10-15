@@ -15,7 +15,7 @@ body:
     attributes:
       label: 问题出在哪一端
       options:
-        - A 端 · 集控服务器（Web 管理界面 / API）
+        - A 端 · IslandHub 服务器（Web 管理界面 / API）
         - B 端 · ClassIsland 插件（教室大屏）
         - 部署脚本 / 安装升级流程
         - 文档描述有误
@@ -26,7 +26,7 @@ body:
   - type: input
     id: hub_version
     attributes:
-      label: 集控版本
+      label: IslandHub 版本
       description: A 端见「系统设置 → 服务器信息」，插件见 ClassIsland 插件列表里的版本号
       placeholder: 例如 A 端 1.1.0 / 插件 1.1.0.0
     validations:

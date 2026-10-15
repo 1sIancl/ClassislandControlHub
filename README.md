@@ -1,18 +1,20 @@
-# ClassislandControlHub集控
+# IslandHub
+
+<img src="docs/images/logo.png" alt="IslandHub" width="120" />
 
 > **一处配置，全网生效 —— 让每一块教室大屏，都准时、统一、可控。**
 
 [![构建](https://github.com/1sIancl/ClassislandControlHub/actions/workflows/build.yml/badge.svg)](https://github.com/1sIancl/ClassislandControlHub/actions/workflows/build.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
-**ClassislandControlHub集控** 是面向 **ClassIsland 2.1.1.1 及以上（.NET 10）** 的班级大屏集中管理系统，分为 A、B 两端：
+**IslandHub** 是面向 **ClassIsland 2.1.1.1 及以上（.NET 10）** 的班级大屏集中管理系统，分为 A、B 两端：
 
-- **A 端 · 集控服务器**：ASP.NET Core 应用，自带可视化 Web 管理界面。可作为学校内网本地服务器运行，也可部署到服务器以网页形式访问，负责课表、时间表、科目的统一下发与设备管理。
-- **B 端 · ClassislandControlHub集控接收端**：以 ClassIsland 插件形式运行在教室大屏上，连接 A 端，自动接收并应用**课表、时间表、科目、自定义设置**的下发与同步。
+- **A 端 · IslandHub 服务器**：ASP.NET Core 应用，自带可视化 Web 管理界面。可作为学校内网本地服务器运行，也可部署到服务器以网页形式访问，负责课表、时间表、科目的统一下发与设备管理。
+- **B 端 · IslandHub 接收端**：以 ClassIsland 插件形式运行在教室大屏上，连接 A 端，自动接收并应用**课表、时间表、科目、自定义设置**的下发与同步。
 
 ```
                 ┌───────────────────────────────┐
-                │  A 端 · 集控服务器（Web 管理端）  │
+                │  A 端 · IslandHub 服务器（Web 管理端）  │
                 │  ASP.NET Core + SQLite + Web UI │
                 │  ┌─────────┐  ┌─────────────┐   │
                 │  │ REST API│  │ UDP 自动发现 │   │
@@ -29,7 +31,7 @@
 
 ## 安装教程
 
-### 一、部署 A 端（集控服务器）
+### 一、部署 A 端（IslandHub 服务器）
 
 **方式 1：Linux 服务器一键部署（推荐）**
 
@@ -57,8 +59,8 @@ curl -fsSL https://cdn.jsdelivr.net/gh/1sIancl/ClassislandControlHub@main/sh/mai
 
 ```bash
 git clone https://github.com/1sIancl/ClassislandControlHub.git
-cd ClassIsland.ControlHub
-dotnet run --project src/ControlHub.Server -c Release
+cd ClassIsland.IslandHub
+dotnet run --project src/IslandHub.Server -c Release
 ```
 
 启动后浏览器访问 `http://localhost:29800`，局域网内其它机器用 `http://本机IP:29800` 访问。默认账号 `admin`，密码 `admin123`（登录后请立即修改）。
@@ -72,7 +74,7 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 ```
 
 脚本会发布服务端并注册为 Windows 服务（开机自启、崩溃自动重启），同时放行防火墙端口。数据保存在
-`C:\ProgramData\ClassislandControlHub\data`，升级只需重新执行该命令。卸载用 `.\sh\uninstall-windows.ps1`。
+`C:\ProgramData\IslandHub\data`，升级只需重新执行该命令。卸载用 `.\sh\uninstall-windows.ps1`。
 
 ### 选择 A 端安装包：框架依赖 or 自带运行时
 
@@ -86,18 +88,18 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 两者**可以互换**：换包时保留 `data/` 目录即可，设备无需重新注册，配置项与数据目录完全相同。
 教室端插件（`.cipx`）不分形态，只有一种。
 
-### 二、安装 B 端（ClassislandControlHub集控接收端）
+### 二、安装 B 端（IslandHub 接收端）
 
 1. 构建插件包（或在 GitHub Releases 下载现成的 `.cipx`）：
 
    ```bash
-   dotnet build src/ControlHub.Plugin/ControlHub.Plugin.csproj -c Release -p:CreateCipx=true
-   # 产物：src/ControlHub.Plugin/cipx/ControlHub.Plugin.cipx 与 checksums.md（自动生成，无需 pwsh）
+   dotnet build src/IslandHub.Plugin/IslandHub.Plugin.csproj -c Release -p:CreateCipx=true
+   # 产物：src/IslandHub.Plugin/cipx/ControlHub.Plugin.cipx 与 checksums.md（自动生成，无需 pwsh）
    ```
 
-2. 在教室电脑安装 ClassIsland（2.1.1.1 及以上），把 `.cipx` 放入插件目录，或通过 **ClassIsland 插件市场** 搜索「ClassislandControlHub集控接收端」安装。
+2. 在教室电脑安装 ClassIsland（2.1.1.1 及以上），把 `.cipx` 放入插件目录，或通过 **ClassIsland 插件市场** 搜索「IslandHub 接收端」安装。
 3. 回到 A 端 Web 界面「设备管理 → 生成注册码」，复制注册码。
-4. 打开 ClassIsland【应用设置 → ClassislandControlHub集控接收端】：
+4. 打开 ClassIsland【应用设置 → IslandHub 接收端】：
    - 点「自动发现服务器」（同一局域网），或手动填写服务器地址（如 `http://192.168.1.5:29800`）；
    - 填入注册码 → 「保存设置」→「立即同步」。
 5. 设备即出现在「设备管理」列表中，配置下发数秒内自动生效。
@@ -135,7 +137,7 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
   指令为一次性派发（不会重复执行）、超 2 小时自动作废；广播默认只发在线设备，可勾选「含离线设备」排队。
 - **远程诊断（截图 / 前台进程 / 诊断数据包 / 日志）**：「远程管理 → 远程诊断」可让教室端**抓取主界面画面**并自动上传
   （每台设备保留最近 5 张，可在网页里预览大图与下载原图）、请求**前台进程与窗口快照**、请求**诊断数据包**
-  （系统环境、应用与插件版本、集控运行状态、宿主「导出诊断数据」内容与最近日志）；诊断数据包会顺带把教室端日志
+  （系统环境、应用与插件版本、IslandHub 运行状态、宿主「导出诊断数据」内容与最近日志）；诊断数据包会顺带把教室端日志
   推送到服务端，可在设备列表的「运行日志」里查看。教室端离线时指令排队等待，上线后自动执行。
 - **备份与恢复**：A 端数据一键备份（手动/自动，保留最近 16 份），支持下载 zip 与恢复。
 - **自动发现**：UDP 广播，接收端一键发现局域网内的服务器。
@@ -150,7 +152,7 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
   反之，**建议在桌面端完成的操作**有：周课表网格的逐格排课、设备拖拽换楼层 / 换楼栋、配置档案的完整编辑与
   CSES / AI 导入结果校对、批量设备操作（多选下发 / 关机 / 重启）、账号与权限配置、备份恢复与更新——
   这些在窄屏虽然打得开，但操作精度与信息密度明显不如桌面端。
-- **本地桌面外壳（可选）**：`ControlHub.Shell` 把「起服务 + 打开管理界面」合并成双击一次——外壳只做进程生命周期管理、
+- **本地桌面外壳（可选）**：`IslandHub.Shell` 把「起服务 + 打开管理界面」合并成双击一次——外壳只做进程生命周期管理、
   WebView 容器与本地信任通道三件事，**业务界面完全复用现有 Web UI**；三种模式（本地进程 / Windows 服务 / 远程服务器）
   自动判定，退出时只停自己启动的进程。本机免登录基于数据目录里的 `local-shell.token`（仅回环地址 + 令牌有效才生效，
   局域网访问仍需登录），详见下文「本地桌面外壳」。`--check` 可自检环境，`--smoke` 能无界面跑通整条链路。
@@ -159,8 +161,16 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 
 ## 最近更新
 
+- **`1.4.4.0`**（A 端 `1.4.4` / 插件 `1.4.4.0`，2026-10-15 发布）：
+  - **项目更名为 IslandHub**：产品名、界面文案、文档与**代码标识符**（项目 / 命名空间 / 程序集
+    `ControlHub.*` → `IslandHub.*`）全部更新。教室里已装的插件**不用卸载重装**（插件 id 未变，可直接升级）。
+  - **新的默认品牌图**：内置为站点图标、登录页与侧栏品牌块、插件市场图标、桌面外壳与 README 的头图——
+    没配品牌图时显示的就是它（不再回落成「CI」两个字）；你仍然可以在「页面设置 → 品牌」里换成自己的校徽。
+  - ⚠️ **这些名字刻意保持旧名**（改了会让已部署环境出错，详见「关于命名」一节）：配置节 `ControlHub`
+    （`appsettings.json` 的键 / `ControlHub__` 环境变量 / `--ControlHub:` 命令行，三者一体）、Windows 服务名与
+    安装 / 数据目录、数据库 `controlhub.db`、本机令牌、局域网发现魔数、插件 id 与插件包名 `ControlHub.Plugin.cipx`。
 - **`1.4.3.0`**（A 端 `1.4.3` / 插件 `1.4.3.0`，2026-10-15 发布）：
-  - **多周轮换课表（单双周 / 最多 9 周）**：轮换逻辑仍由 ClassIsland 原生执行，集控这次补上**逐周排课 +
+  - **多周轮换课表（单双周 / 最多 9 周）**：轮换逻辑仍由 ClassIsland 原生执行，IslandHub 这次补上**逐周排课 +
     下发轮换起点与偏移**那一半。档案编辑器新增「多周轮换」：选成 N 周后课表网格上方出现
     「第 1 周 … 第 N 周」，每周独立排课；**从「不轮换」打开时会自动把第 1 周复制到其余各周**（不留空周），
     哪一周一张课表都没有会直接标「（空）」。
@@ -188,8 +198,8 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
   - **导入进来的东西**：时间表、课表、科目、课表群——合并进你选中的档案（同名科目与相同作息自动复用，
     同一天课表被本次结果覆盖）。
   - **导不进来的一律列出**（不悄悄丢掉）：应用设置（主题 / 界面 / 天气）、自动化与组件布局、插件
-    都属于教室端本机，集控不下发；按日期的调休与临时换课也不导入，请用「快捷换课」。
-  - **导入不会悄悄改语义**：触发规则是「日期型 / 循环型」的课表**跳过**（集控只能按「星期几」下发，
+    都属于教室端本机，IslandHub 不下发；按日期的调休与临时换课也不导入，请用「快捷换课」。
+  - **导入不会悄悄改语义**：触发规则是「日期型 / 循环型」的课表**跳过**（IslandHub 只能按「星期几」下发，
     硬塞会变成这张课表每天都在用）；时间点解析不出来的时间表**整张跳过**、指向包内不存在科目的格子**留空**，
     都在预览里说明。上限：整包 64MB（导出时不勾「其它配置」能小很多）。
 - **`1.4.1.0`**（A 端 `1.4.1` / 插件 `1.4.1.0`，2026-10-14 发布）：
@@ -342,19 +352,19 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 - **修复同机多实例时自动发现端口冲突拖垮服务**：以前同机已有实例占用 UDP 发现端口时，新实例的后台服务异常会
   直接让整个宿主退出；现在与 NTP 端口冲突一样降级处理——记录警告、跳过自动发现、HTTP 服务继续可用。
 
-- **本地桌面外壳**：新增 `src/ControlHub.Shell`——启动 / 复用 / 停止 A 端 + 内嵌 WebView 打开管理界面 + 本机免登录。
+- **本地桌面外壳**：新增 `src/IslandHub.Shell`——启动 / 复用 / 停止 A 端 + 内嵌 WebView 打开管理界面 + 本机免登录。
   免登录走「数据目录里的 `local-shell.token` + HttpOnly Cookie」，**只对回环地址生效**；A 端配套新增 `/api/health`
   与优雅停机接口 `POST /api/v1/local-shell/shutdown`。外壳自带 `--check` 环境自检与 `--smoke` 无界面端到端验证
   （已实测：启动 → 免登录 → 以「本地控制台」身份读到全部权限 → 停止 → 端口释放）。
 
 - **运维与隐私补强**：诊断截图、远程指令历史纳入自动清理（保留天数与全库容量上限均可配置，默认 30 天 / 512 MB）——
-  此前指令历史的清理代码存在但从未被调用；新增**规模验证工具** `src/ControlHub.LoadTest`，可在自己机器上实测能扛多少台；
+  此前指令历史的清理代码存在但从未被调用；新增**规模验证工具** `src/IslandHub.LoadTest`，可在自己机器上实测能扛多少台；
   教室端新增「**远程协助与隐私**」开关（可关闭远程截图），且每次截图都会在教室大屏上显示提示。
 - **文档**：新增「建议在桌面端完成的操作」清单、版本兼容表的「插件市场可用」列，以及保留策略与隐私说明。
 
 - **远程诊断（截图 / 前台进程 / 诊断数据包 / 日志）**：「远程管理 → 远程诊断」新增三种诊断指令——教室端
   **抓取 ClassIsland 主界面画面**并上传（每台设备保留最近 5 张，可预览大图、下载原图、一键清空）、
-  回传**前台窗口与进程快照**、回传**诊断数据包**（系统环境 / 版本 / 集控状态 / 宿主「导出诊断数据」/ 最近日志），
+  回传**前台窗口与进程快照**、回传**诊断数据包**（系统环境 / 版本 / IslandHub 状态 / 宿主「导出诊断数据」/ 最近日志），
   并顺带把教室端日志推送到「设备 → 运行日志」页。诊断指令与其它远程指令同规则：一次性派发、超 2 小时作废、可排队给离线设备。
 - **修复「备份下载」在浏览器里点了没反应**：管理端接口只认 `Authorization` 头，而原先下载是个直链
   （新标签不会带令牌，必然 401）。现在改为带鉴权取回文件再保存，截图下载同理。
@@ -403,13 +413,29 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 
 > 更早的改动见提交记录；上手指引见 [使用说明](USAGE.md)。
 
+## 关于命名（改名时请照这个来）
+
+产品名是 **IslandHub**；代码标识符（项目 / 命名空间 / 程序集）统一为 `IslandHub.*`。
+
+**但下面这些名字刻意保持旧名 `ClassislandControlHub` / `ControlHub`，不要跟着改**：
+
+| 名字 | 为什么不动 |
+|---|---|
+| 配置节 `ControlHub`（`appsettings.json` 的键 / `ControlHub__Xxx` 环境变量 / `--ControlHub:Xxx` 命令行） | 三者是一回事；改了会让已部署机器上的配置（含 `SecretsKeyPath`）**静默失效**，旧密文直接解不开 |
+| Windows 服务名、安装目录 `%ProgramFiles%\ClassislandControlHub`、数据目录 `%ProgramData%\ClassislandControlHub\data` | 已部署机器上就是这些路径，改了等于装出第二份、老数据没人读 |
+| 数据库 `controlhub.db`、本机令牌 `local-shell.token` | 同上（数据文件） |
+| 局域网发现魔数 `ClassIsland.ControlHub` | 两端握手的协议常量，改了新旧插件互相发现不了 |
+| 插件 id `classislandcontrolhub.client`、插件包名 `ControlHub.Plugin.cipx` | 教室端按 id 认插件（改了要逐台卸载重装）；包名是插件市场与文档里的下载路径 |
+| GitHub 仓库 `1sIancl/ClassislandControlHub` | 仓库地址本身（未改名）；`manifest.yml` 的 `repoOwner` / `repoName` 必须与它一致 |
+
 ## 版本兼容性
 
 本项目分 A 端（服务器）与 B 端（ClassIsland 插件）两部分，装插件前请先按下表确认版本：
 
-| 集控版本 | 插件包 | 支持的 ClassIsland | 插件市场 | 状态 |
+| IslandHub 版本 | 插件包 | 支持的 ClassIsland | 插件市场 | 状态 |
 |---|---|---|---|---|
-| A 端 `1.4.3` / 插件 `1.4.3.0` | `ControlHub.Plugin.cipx` `1.4.3.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ✅ **当前已发布版本**（多周轮换课表 / 教室端上报当前周次） |
+| A 端 `1.4.4` / 插件 `1.4.4.0` | `ControlHub.Plugin.cipx` `1.4.4.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ✅ **当前已发布版本**（项目更名为 IslandHub / 新的默认品牌图） |
+| A 端 `1.4.3` / 插件 `1.4.3.0` | `ControlHub.Plugin.cipx` `1.4.3.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（多周轮换课表 / 教室端上报当前周次） |
 | A 端 `1.4.2` / 插件 `1.4.2.0` | `ControlHub.Plugin.cipx` `1.4.2.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（多校区时间偏移 / 从 ClassIsland「数据迁移」包导入档案） |
 | A 端 `1.4.1` / 插件 `1.4.1.0` | `ControlHub.Plugin.cipx` `1.4.1.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（考试模式 / 走班制按时段切档案 / 远程诊断扩展 / 提醒事件触发 / 通知强调可关 / 密码策略 / 提醒模板变量） |
 | A 端 `1.4.0` / 插件 `1.4.0.0` | `ControlHub.Plugin.cipx` `1.4.0.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（插件市场代理缓存 / 批量装插件 / 完整性校验） |
@@ -444,7 +470,7 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
   **本身就是 2.2 同期的技术栈**（Avalonia 12 / .NET 10），因此 2.2 上应当可以直接使用。
   `apiVersion` 现按 `2.1.1.1` 声明——如果 2.2 主程序按更高 `apiVersion` 校验插件，需要在 2.2 正式版
   发布后再调整该字段；在 2.2 预览版上实测通过前，这一条以"技术栈同源、预期可用"为准，不宣称已验证。
-- A 端与插件通过 `ControlHub.Protocol` 共享同一份协议定义（协议版本 `1.0`）。**建议两端同步升级**：
+- A 端与插件通过 `IslandHub.Protocol` 共享同一份协议定义（协议版本 `1.0`）。**建议两端同步升级**：
   只升一端时注册、心跳与配置下发仍可用，但新增能力（远程命令、定时提醒等）需要两端都升级才会生效。
 - A 端需要 **.NET 10 运行时**（用 `sh/main.sh` 一键脚本会自动装）；插件随 ClassIsland 进程运行，不需要单独装运行时。
 
@@ -454,7 +480,7 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 |---|---|
 | A 端 | ASP.NET Core（minimal API）、SQLite、原生 HTML/CSS/JS 单页应用（无构建步骤） |
 | B 端 | ClassIsland 插件 SDK（`ClassIsland.PluginSdk 2.1.1.1`）、Avalonia 12 |
-| 共享 | `ControlHub.Protocol`（net10.0，无外部依赖，System.Text.Json） |
+| 共享 | `IslandHub.Protocol`（net10.0，无外部依赖，System.Text.Json） |
 
 > **能力边界（容易误解，故单独说明）**：三部分的跨平台能力**并不相同**——
 >
@@ -462,13 +488,13 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 > |---|---|
 > | A 端服务端 + Web 管理界面 | **跨平台**：Windows / Linux 都能部署（Linux 一键 systemd、Windows 一键注册服务），浏览器访问即可管理 |
 > | B 端插件（教室端） | **仅 Windows** 上的 ClassIsland 2.1.1.1 及以上（`supportedOSPlatforms: [Windows]`） |
-> | 本地桌面外壳 `ControlHub.Shell` | **仅 Windows**（用 WebView2 内嵌界面，并依赖 Windows 服务控制 API） |
+> | 本地桌面外壳 `IslandHub.Shell` | **仅 Windows**（用 WebView2 内嵌界面，并依赖 Windows 服务控制 API） |
 >
 > 也就是说：**外壳只是「双击即用」的可选入口，没有它任何功能都不受影响**——其它平台直接用浏览器访问 A 端即可。
 
 ## 本地桌面外壳（可选）
 
-不想开浏览器、也不想记着「先起服务再访问」？仓库里带了一个**薄外壳** `src/ControlHub.Shell`：它只做三件事——
+不想开浏览器、也不想记着「先起服务再访问」？仓库里带了一个**薄外壳** `src/IslandHub.Shell`：它只做三件事——
 
 1. **进程生命周期管理**：启动 / 复用 / 停止 A 端；
 2. **WebView 容器**：用系统原生浏览器内核（Windows 是 WebView2）内嵌管理界面；
@@ -477,13 +503,13 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 **业务界面完全复用 A 端 Web UI，外壳不重写任何界面**——课表、设备、远程管理、诊断都在原页面里，A 端更新后外壳自动跟随，不存在「两套前端互相追赶」。
 
 **最省事的方式**：从 [Releases](https://github.com/1sIancl/ClassislandControlHub/releases) 下载
-`classislandcontrolhub-shell-win-x64-<版本>.zip` 解压，双击 `ControlHub.Shell.exe` 即可——包里已经带上 A 端
+`classislandcontrolhub-shell-win-x64-<版本>.zip` 解压，双击 `IslandHub.Shell.exe` 即可——包里已经带上 A 端
 （放在 `server/` 子目录，外壳会自动找到它）。想自己打包：
 
 ```bash
-dotnet publish src/ControlHub.Server -c Release -o dist/shell/server   # 外壳会在 server/ 子目录里找 A 端
-dotnet publish src/ControlHub.Shell  -c Release -o dist/shell
-# 之后双击 dist/shell/ControlHub.Shell.exe
+dotnet publish src/IslandHub.Server -c Release -o dist/shell/server   # 外壳会在 server/ 子目录里找 A 端
+dotnet publish src/IslandHub.Shell  -c Release -o dist/shell
+# 之后双击 dist/shell/IslandHub.Shell.exe
 ```
 
 三种运行模式（自动判定，无需配置）：
@@ -497,7 +523,7 @@ dotnet publish src/ControlHub.Shell  -c Release -o dist/shell
 常用参数：`--server-path`（指定 A 端位置）、`--data-dir`（与服务模式共用数据）、`--port`、`--no-stop-on-exit`、
 `--exit-on-close`（默认关闭窗口最小化到托盘）、`--check`（环境自检）、`--smoke <秒>`（无界面跑一遍启停链路）、
 `--screenshot <路径>`（把窗口渲染成 PNG，用于验证外观或上报界面问题；只渲染本窗口，不抓桌面）。
-日志在 `%LOCALAPPDATA%\ClassislandControlHub\shell.log`。
+日志在 `%LOCALAPPDATA%\IslandHub\shell.log`。
 
 **免登录是怎么做的（以及安全边界）**
 
@@ -510,7 +536,7 @@ Cookie 里存的是令牌的 SHA-256，原始令牌不进浏览器。
 外壳托管时还会把 A 端限制为 `--urls 127.0.0.1`（只监听回环，外部根本连不上）。不需要这个能力时，
 把 `ControlHub:LocalShellTrustEnabled` 设为 `false` 即可整体关闭。
 
-> **关于旧的 `ControlHub.Desktop`**：仓库里另有一个原生 Avalonia 客户端项目（`src/ControlHub.Desktop`），
+> **关于旧的 `IslandHub.Desktop`**：仓库里另有一个原生 Avalonia 客户端项目（`src/IslandHub.Desktop`），
 > 那是早期尝试的「第二套管理界面」，现已**冻结为实验性代码**——不再同步新功能（缺定时提醒、Webhook、两步验证、
 > 远程诊断等），也不随 Release 分发。需要桌面入口请使用上面的外壳，或直接用浏览器访问 A 端。
 > 保留它是为了那些想参考原生 Avalonia 客户端写法的场景，不建议部署。
@@ -548,7 +574,7 @@ Cookie 里存的是令牌的 SHA-256，原始令牌不进浏览器。
 ```bash
 # 1) 先在管理端「设备管理 → 注册码」建一个「不限次数」的注册码
 # 2) 运行（会消耗注册码次数，N 台设备消耗 N 次）
-dotnet run --project src/ControlHub.LoadTest -- --server http://127.0.0.1:29800 --code <注册码> --devices 300 --duration 300
+dotnet run --project src/IslandHub.LoadTest -- --server http://127.0.0.1:29800 --code <注册码> --devices 300 --duration 300
 ```
 
 它模拟 N 台教室端设备（注册 → 心跳 → 长轮询），每 5 秒打印心跳成功/失败、平均与 p95 延迟，结束时给出汇总与错误分类。
@@ -563,10 +589,10 @@ dotnet run --project src/ControlHub.LoadTest -- --server http://127.0.0.1:29800 
 
 | 方向 | 状态 | 说明 |
 |---|---|---|
-| 插件扩展机制 | 规划中 | 目前远程操作是固定类型集（命令行 / 插件 / 外观 / 提醒 / 电源 / 自动化 / 诊断）。计划开放注册接口，让其它 ClassIsland 插件把自己的能力接进来，由集控统一下发与查看 |
+| 插件扩展机制 | 规划中 | 目前远程操作是固定类型集（命令行 / 插件 / 外观 / 提醒 / 电源 / 自动化 / 诊断）。计划开放注册接口，让其它 ClassIsland 插件把自己的能力接进来，由 IslandHub 统一下发与查看 |
 | 教务系统 API 适配 | 规划中（优先级较低） | 现有 **CSES 导入**与 **AI 解析导入**已覆盖多数排课格式；后续再针对常见教务系统的排课接口做直接拉取 |
 
-对照官方集控 TODOs：**请求日志、请求诊断数据、请求屏幕截图、请求前台进程信息**均已在「远程诊断」中实现。
+对照官方 IslandHub TODOs：**请求日志、请求诊断数据、请求屏幕截图、请求前台进程信息**均已在「远程诊断」中实现。
 
 ## 文档
 
@@ -604,7 +630,7 @@ dotnet run --project src/ControlHub.LoadTest -- --server http://127.0.0.1:29800 
 - B 端插件依赖 **ClassIsland**——通过 `ClassIsland.PluginSdk` 包，并在编译期引用 ClassIsland 主程序集
   （`ClassIsland.dll`，`Private=false`，本身不打进插件包）。ClassIsland 本体已采用 **GPLv3**。
 - 按 GPLv3 的传染性，与 ClassIsland 结合运行的插件属于衍生作品，必须以 GPLv3 兼容的许可证分发。
-  由于插件、共享程序集 `ControlHub.Protocol` 与 A 端同处一个仓库、一起分发源码，
+  由于插件、共享程序集 `IslandHub.Protocol` 与 A 端同处一个仓库、一起分发源码，
   **整个仓库统一采用 GPL-3.0**，避免出现「一部分 GPL、一部分闭源」的许可冲突。
 - 第三方依赖的许可证均与 GPL-3.0 兼容：`Microsoft.Data.Sqlite`、Avalonia、FluentAvaloniaUI、
   CommunityToolkit.Mvvm、`Microsoft.Extensions.*`（均为 MIT）。

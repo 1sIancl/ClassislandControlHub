@@ -48,10 +48,10 @@ jobs:
         run: |
           set -euo pipefail
           # 外壳会在自己的 server/ 子目录里找 A 端，所以直接发布进去即可。
-          dotnet publish src/ControlHub.Server/ControlHub.Server.csproj -c Release -r win-x64 --self-contained false -o shell/server
+          dotnet publish src/IslandHub.Server/IslandHub.Server.csproj -c Release -r win-x64 --self-contained false -o shell/server
           # 外壳必须指定 RID 发布：不带 RID 时会把 Avalonia/Skia 的**所有平台**原生库一起带上
           # （runtimes/ 目录 300 MB 左右，压缩后仍有 190 MB），指定 win-x64 后约 50 MB。
-          dotnet publish src/ControlHub.Shell/ControlHub.Shell.csproj -c Release -r win-x64 --self-contained false -o shell
+          dotnet publish src/IslandHub.Shell/IslandHub.Shell.csproj -c Release -r win-x64 --self-contained false -o shell
 
       - name: 打包 zip
         shell: pwsh
@@ -92,11 +92,11 @@ jobs:
         run: |
           set -euo pipefail
           for rid in linux-x64 win-x64; do
-            dotnet publish src/ControlHub.Server/ControlHub.Server.csproj \
+            dotnet publish src/IslandHub.Server/IslandHub.Server.csproj \
               -c Release -r "$rid" --self-contained false -o "dist/server-$rid"
             (cd dist && zip -qr "controlhub-server-$rid-$VERSION.zip" "server-$rid")
 
-            dotnet publish src/ControlHub.Server/ControlHub.Server.csproj \
+            dotnet publish src/IslandHub.Server/IslandHub.Server.csproj \
               -c Release -r "$rid" --self-contained true -o "dist/server-$rid-full"
             (cd dist && zip -qr "controlhub-server-$rid-full-$VERSION.zip" "server-$rid-full")
           done
@@ -124,7 +124,7 @@ jobs:
 
       - name: 构建插件并打包 .cipx
         run: |
-          dotnet build src/ControlHub.Plugin/ControlHub.Plugin.csproj -c Release \
+          dotnet build src/IslandHub.Plugin/IslandHub.Plugin.csproj -c Release \
             -p:CreateCipx=true \
             -p:ClassIslandAssemblyPath="$CLASSISLAND_ASSEMBLY"
 
@@ -137,7 +137,7 @@ jobs:
       - name: 整理发布资产
         run: |
           set -euo pipefail
-          cp src/ControlHub.Plugin/cipx/ControlHub.Plugin.cipx dist/
+          cp src/IslandHub.Plugin/cipx/ControlHub.Plugin.cipx dist/
           ls -lh dist/
 
       - name: 创建 Release
@@ -146,7 +146,7 @@ jobs:
         run: |
           set -euo pipefail
           gh release create "$TAG" \
-            --title "ClassislandControlHub $VERSION" \
+            --title "IslandHub $VERSION" \
             --generate-notes \
             "dist/ControlHub.Plugin.cipx" \
             dist/controlhub-server-linux-x64-"$VERSION".zip \
