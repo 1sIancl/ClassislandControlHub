@@ -36,6 +36,14 @@ public static class ProfileEndpoints
         group.MapPost("/profiles/{id}/default", SetDefaultAsync).RequirePermission(PermissionKeys.ProfilesWrite);
         group.MapPost("/profiles/{id}/push", PushAsync).RequirePermission(PermissionKeys.DeployWrite);
         group.MapPost("/profiles/import-cses", ImportCsesAsync).RequirePermission(PermissionKeys.ProfilesWrite);
+        // 从 ClassIsland 的 .cidata 数据迁移包导入：先上传解析出预览，确认后再落库。
+        // 分两步是因为包里的东西**只有四块能导进来**（时间表 / 课表 / 科目 / 课表群），
+        // 管理员得先看清「哪些会丢」再决定写不写。
+        group.MapPost("/profiles/import-cidata/parse", ImportCidataParseAsync)
+            .RequirePermission(PermissionKeys.ProfilesWrite)
+            .DisableAntiforgery();
+        group.MapPost("/profiles/import-cidata/apply", ImportCidataApplyAsync)
+            .RequirePermission(PermissionKeys.ProfilesWrite);
 
         // 历史版本：保存前自动留快照，改坏了可以一键回滚
         group.MapGet("/profiles/{id}/versions", ListVersionsAsync).RequirePermission(PermissionKeys.ProfilesRead);
@@ -455,6 +463,144 @@ public static class ProfileEndpoints
     }
 
     /// <summary>
+    /// 解析上传的 `.cidata`（ClassIsland 数据迁移包）并返回预览，**不写库**。
+    ///
+    /// <para>
+    /// 上传的包先落进 `data/imports/` 临时目录换一个一次性 token，确认导入时按 token 取回——
+    /// 这样几十 MB 的包不必传两遍，服务端也不用挂着会话状态。
+    /// </para>
+    /// </summary>
+    private static async Task<ApiResult<CidataPreviewResult>> ImportCidataParseAsync(
+        HttpContext http,
+        CidataImportStore imports,
+        CancellationToken cancellationToken)
+    {
+        http.RequireAdminSession();
+
+        var form = await http.Request.ReadFormAsync(cancellationToken);
+        var file = form.Files["file"];
+        if (file is null || file.Length == 0)
+        {
+            throw HubException.Validation("请选择要导入的 .cidata 文件（表单字段名 file）。");
+        }
+
+        var token = await imports.SaveAsync(file.OpenReadStream(), cancellationToken);
+
+        CidataArchive archive;
+        try
+        {
+            await using var stream = File.OpenRead(imports.ResolvePath(token)!);
+            archive = CidataImporter.Inspect(stream);
+        }
+        catch (InvalidDataException ex)
+        {
+            imports.Remove(token);
+            throw HubException.Validation(ex.Message);
+        }
+        catch (Exception ex) when (ex is not HubException)
+        {
+            imports.Remove(token);
+            throw HubException.Validation("解析 .cidata 失败：" + ex.Message);
+        }
+
+        return ApiResult<CidataPreviewResult>.Success(new CidataPreviewResult
+        {
+            Token = token,
+            FileName = Path.GetFileName(file.FileName),
+            Profiles = archive.Profiles.Select(ToPreview).ToList(),
+            NotImported = archive.NotImportedNotes(),
+        });
+    }
+
+    /// <summary>把 `.cidata` 里的某一份档案导入到指定档案（合并语义，与 CSES / AI 导入一致）。</summary>
+    private static async Task<ApiResult<CidataImportResult>> ImportCidataApplyAsync(
+        CidataImportRequest request,
+        HttpContext http,
+        HubStore store,
+        SyncService sync,
+        CidataImportStore imports,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+
+        var path = imports.ResolvePath(request.Token)
+                   ?? throw HubException.Validation(
+                       "导入会话已过期（临时文件只保留 2 小时），请重新上传 .cidata 文件。");
+
+        var profile = await store.GetProfileAsync(request.ProfileId, cancellationToken)
+                      ?? throw HubException.NotFound("配置档案不存在。");
+
+        CidataProfileEntry entry;
+        try
+        {
+            await using var stream = File.OpenRead(path);
+            var archive = CidataImporter.Inspect(stream);
+            entry = archive.Profiles.FirstOrDefault(p =>
+                        string.Equals(p.FileName, request.ProfileFile, StringComparison.OrdinalIgnoreCase))
+                    ?? throw HubException.Validation("包里没有这份档案，请重新上传后再试。");
+        }
+        catch (InvalidDataException ex)
+        {
+            imports.Remove(request.Token);
+            throw HubException.Validation(ex.Message);
+        }
+
+        var content = HubJson.DeserializeOrDefault(profile.Content, new ContentBundleDto());
+        var merged = ContentMerger.Merge(content, entry.Content, includeClassPlans: true);
+
+        // 与「保存档案」走同一条规范化路径：悬空引用、越界节次等当场修掉并如实回报，
+        // 而不是写出一份接口看着没问题、教室端却渲染不出来的档案。
+        var repairs = ContentNormalizer.Normalize(content);
+
+        var updated = await store.UpdateProfileAsync(profile.Id, profile.Name, profile.Description,
+            HubJson.Serialize(content), true, cancellationToken)
+                      ?? throw HubException.NotFound("配置档案不存在。");
+
+        var revision = await sync.BumpRevisionAsync(cancellationToken);
+        sync.PublishWakeUp();
+
+        // 导入成功后删掉临时包：它是整份教室端配置的副本，留着没有意义还占盘。
+        imports.Remove(request.Token);
+
+        var skipped = entry.Warnings.Count > 0
+            ? $"；另有 {entry.Warnings.Count} 处内容集控装不下，已在预览里说明"
+            : string.Empty;
+
+        await store.AddAuditAsync(session.Username, "profile.import-cidata", profile.Name,
+            $"从 .cidata（档案「{entry.ProfileName}」）导入：新增科目 {merged.AddedSubjects} 个、"
+            + $"时间表 {merged.AddedTimeLayouts} 个、课表 {merged.AddedClassPlans} 张"
+            + $"（覆盖 {merged.UpdatedClassPlans} 张）{skipped}。",
+            http.GetClientIpAddress(), cancellationToken);
+
+        return ApiResult<CidataImportResult>.Success(new CidataImportResult
+        {
+            Profile = ToDto(updated, includeContent: true),
+            AddedSubjects = merged.AddedSubjects,
+            EnrichedSubjects = merged.EnrichedSubjects,
+            AddedTimeLayouts = merged.AddedTimeLayouts,
+            AddedClassPlans = merged.AddedClassPlans,
+            UpdatedClassPlans = merged.UpdatedClassPlans,
+            Revision = revision,
+            Repairs = repairs,
+        });
+    }
+
+    /// <summary>把解析结果压成预览用的小对象（不把整份内容包发给浏览器）。</summary>
+    private static CidataProfilePreview ToPreview(CidataProfileEntry entry) => new()
+    {
+        FileName = entry.FileName,
+        ProfileName = entry.ProfileName,
+        Subjects = entry.Content.Subjects.Count,
+        TimeLayouts = entry.Content.TimeLayouts.Count,
+        ClassPlans = entry.Content.ClassPlans.Count,
+        ClassPlanNames = entry.Content.ClassPlans.Select(p => p.Name).Take(8).ToList(),
+        Groups = entry.Groups,
+        OrderedSchedules = entry.SkippedOrderedSchedules,
+        OverlayPlans = entry.SkippedOverlayPlans,
+        Warnings = [.. entry.Warnings],
+    };
+
+    /// <summary>
     /// 解析设备最终生效的档案 ID。与 <see cref="SyncService.ResolveProfileAsync"/> 保持一致的优先级。
     /// </summary>
     private static async Task<string?> ResolveEffectiveProfileIdAsync(HubStore store, DeviceRow device,
@@ -675,4 +821,95 @@ public sealed class CsesImportResult
 
     /// <summary>保存后的全局配置版本号。</summary>
     public long Revision { get; set; }
+}
+
+/// <summary>`.cidata` 上传解析后的预览。</summary>
+public sealed class CidataPreviewResult
+{
+    /// <summary>一次性导入令牌：确认导入时带上它，服务端据此取回临时文件。</summary>
+    public string Token { get; set; } = string.Empty;
+
+    /// <summary>上传时的原始文件名。</summary>
+    public string FileName { get; set; } = string.Empty;
+
+    /// <summary>包里包含的档案（ClassIsland 的 `Profiles/*.json`，可能有多份）。</summary>
+    public List<CidataProfilePreview> Profiles { get; set; } = [];
+
+    /// <summary>包里那些集控装不下的部分（应用设置 / 其它配置 / 插件），逐条说明。</summary>
+    public List<string> NotImported { get; set; } = [];
+}
+
+/// <summary>包里一份档案的预览。</summary>
+public sealed class CidataProfilePreview
+{
+    /// <summary>包内文件名（确认导入时用它指定这一份）。</summary>
+    public string FileName { get; set; } = string.Empty;
+
+    /// <summary>档案名。</summary>
+    public string ProfileName { get; set; } = string.Empty;
+
+    /// <summary>能导入的科目数。</summary>
+    public int Subjects { get; set; }
+
+    /// <summary>能导入的时间表数。</summary>
+    public int TimeLayouts { get; set; }
+
+    /// <summary>能导入的课表数。</summary>
+    public int ClassPlans { get; set; }
+
+    /// <summary>前几张课表的名称（让管理员能对上号）。</summary>
+    public List<string> ClassPlanNames { get; set; } = [];
+
+    /// <summary>包内定义的课表群。</summary>
+    public List<CidataGroupInfo> Groups { get; set; } = [];
+
+    /// <summary>包内按日期调休 / 换课的条数（未导入）。</summary>
+    public int OrderedSchedules { get; set; }
+
+    /// <summary>包内临时层课表的张数（未导入）。</summary>
+    public int OverlayPlans { get; set; }
+
+    /// <summary>导入会丢东西的地方，逐条写清「丢了什么、为什么」。</summary>
+    public List<string> Warnings { get; set; } = [];
+}
+
+/// <summary>确认导入 `.cidata` 的请求体。</summary>
+public sealed class CidataImportRequest
+{
+    /// <summary>预览时拿到的一次性令牌。</summary>
+    public string Token { get; set; } = string.Empty;
+
+    /// <summary>要导入包里哪一份档案（<see cref="CidataProfilePreview.FileName"/>）。</summary>
+    public string ProfileFile { get; set; } = string.Empty;
+
+    /// <summary>导入到哪个配置档案（合并语义）。</summary>
+    public string ProfileId { get; set; } = string.Empty;
+}
+
+/// <summary>从 `.cidata` 导入的结果。</summary>
+public sealed class CidataImportResult
+{
+    /// <summary>导入后的档案。</summary>
+    public ProfileDto Profile { get; set; } = new();
+
+    /// <summary>新增的科目数量。</summary>
+    public int AddedSubjects { get; set; }
+
+    /// <summary>被补全了简称或教师的科目数量。</summary>
+    public int EnrichedSubjects { get; set; }
+
+    /// <summary>新增的时间表数量。</summary>
+    public int AddedTimeLayouts { get; set; }
+
+    /// <summary>新增的课表数量。</summary>
+    public int AddedClassPlans { get; set; }
+
+    /// <summary>被覆盖更新的课表数量。</summary>
+    public int UpdatedClassPlans { get; set; }
+
+    /// <summary>保存后的全局配置版本号。</summary>
+    public long Revision { get; set; }
+
+    /// <summary>落库时自动修复的问题（悬空引用、越界节次等），如实回报而不是悄悄改。</summary>
+    public List<string> Repairs { get; set; } = [];
 }

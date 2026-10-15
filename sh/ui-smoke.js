@@ -1815,6 +1815,24 @@ function check(name, ok, extra = '') {
       ? `含每日漂移 / 已累计 / 重置起点`
       : `未找到，片段=${timeCard.slice(0, 120)}`);
 
+  // 分组（校区）时间偏移（#26）：卡片必须在——有分组时是一张表，没分组时给「先去设备页建分组」
+  // 的提示。两种都算通过，断言不该依赖演示数据里有没有分组。
+  const groupCard = await page.evaluate(() => {
+    const cards = [...document.querySelectorAll('#content .card')];
+    const card = cards.find((c) => (c.textContent || '').includes('分组（校区）时间偏移'));
+    return {
+      found: !!card,
+      hasTable: !!card?.querySelector('table.data'),
+      headers: [...(card?.querySelectorAll('thead th') || [])].map((th) => th.textContent.trim()),
+      notice: card?.querySelector('.notice')?.textContent.replace(/\s+/g, ' ').trim() || '',
+    };
+  });
+  check('时间偏移页有「分组（校区）时间偏移」卡片（有分组给表格、没分组给可照做的提示）',
+    groupCard.found && (groupCard.hasTable
+      ? groupCard.headers.includes('本组偏移（秒）') && groupCard.headers.includes('当前生效')
+      : groupCard.notice.includes('还没有任何分组')),
+    JSON.stringify(groupCard));
+
   // 登录页顶栏用 logo 图而不是文字（用户反馈的问题）。
   // 这里要连「图真的加载出来了」一起断言：品牌图片是**外链地址**，曾被响应头的
   // CSP（img-src 只允许 'self' data: blob:）整块拦掉——元素在、图不显示，

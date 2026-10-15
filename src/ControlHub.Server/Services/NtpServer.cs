@@ -77,7 +77,10 @@ public sealed class NtpServer(
         var version = (request[0] >> 3) & 0x07;
         var t1 = NtpTimestamp.ReadUInt64BigEndian(request, 40);
 
-        var nowUtc = serverTime.GetUtcNow().UtcDateTime;
+        // 多校区时间偏移（#26）：NTP 报文里没有设备身份，只能按**来源地址**换算成设备所属分组，
+        // 再叠加该分组配置的偏移。映射带 60 秒 TTL 缓存，刷新失败时沿用旧映射（授时照常应答）。
+        await serverTime.EnsureAddressOffsetMapAsync(cancellationToken: cancellationToken);
+        var nowUtc = serverTime.GetUtcNowForIp(result.RemoteEndPoint.Address.ToString()).UtcDateTime;
         var nowNtp = NtpTimestamp.ToUInt64(nowUtc);
 
         // 构造 48 字节响应。

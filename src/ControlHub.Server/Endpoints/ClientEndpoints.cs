@@ -173,14 +173,33 @@ public static class ClientEndpoints
     }
 
     /// <summary>
-    /// 时间同步查询。返回经 NTP 授时校正后的服务器 UTC 时间，供 B 端按 NTP 方式（RTT 补偿）校准本机时钟。
-    /// 匿名可访问——时间信息无害，且设备在注册前也应能对时。
+    /// 时间同步查询。返回经 NTP 授时校正、并按请求方所属分组（校区）叠加偏移后的服务器 UTC 时间，
+    /// 供 B 端按 NTP 方式（RTT 补偿）校准本机时钟。
+    /// <para>
+    /// 匿名可访问——时间信息无害，且设备在注册前也应能对时。带了设备令牌时按**设备所属分组**
+    /// 叠加偏移（#26）；没带令牌（或令牌已失效）时按**来源地址**判定，判定不出就只叠加全局偏移。
+    /// </para>
     /// </summary>
-    private static ApiResult<TimeSyncResponse> GetTimeAsync(ServerTimeService serverTime)
+    private static async Task<ApiResult<TimeSyncResponse>> GetTimeAsync(
+        HttpContext http,
+        HubStore store,
+        ServerTimeService serverTime,
+        CancellationToken cancellationToken)
     {
+        var token = http.ReadToken(HubProtocol.DeviceScheme)
+                    ?? http.Request.Headers[HubProtocol.DeviceIdHeader].FirstOrDefault();
+        var device = string.IsNullOrWhiteSpace(token)
+            ? null
+            : await store.GetDeviceByTokenAsync(token, cancellationToken);
+
+        // 顺带把「分组偏移 + 来源地址映射」刷新到最新（带 60 秒 TTL，命中缓存时一次库查询都不会发）。
+        await serverTime.EnsureAddressOffsetMapAsync(cancellationToken: cancellationToken);
+
         return ApiResult<TimeSyncResponse>.Success(new TimeSyncResponse
         {
-            ServerTime = serverTime.GetUtcNow(),
+            ServerTime = device is null
+                ? serverTime.GetUtcNowForIp(http.GetClientIpAddress())
+                : serverTime.GetUtcNowForGroup(device.GroupId),
         });
     }
 
@@ -249,6 +268,9 @@ public static class ClientEndpoints
             request.LastError,
             HubJson.Serialize(request.Metrics),
             request.MacAddress,
+            // 顺带刷新来源地址：多校区时间偏移（#26）按「来源地址 → 设备所属分组」下发，
+            // 只在注册时记一次地址的话，DHCP 换址后整间教室就会拿到别的校区的偏移。
+            http.GetClientIpAddress(),
             cancellationToken);
 
         // 课表实时状态：一台设备只留最新一条（管理员要看的是「这间教室现在在上什么」）。
@@ -388,9 +410,10 @@ public static class ClientEndpoints
         {
             // macAddress 传 null：这条路径只是把设备标成出错，**不该顺带改**网卡地址
             // （SQL 里是 COALESCE(NULLIF($mac,''), mac_address)，传 null 等于「不动这一列」）。
+            // 来源地址照旧刷新（#26 的分组偏移要靠它对齐校区）。
             await store.UpdateHeartbeatAsync(device.Id, DeviceStates.Error, device.AppliedRevision,
                 device.AppliedPushEpoch, device.CurrentClassPlanName, request.Message, device.Metrics,
-                null, cancellationToken);
+                null, http.GetClientIpAddress(), cancellationToken);
         }
 
         var sections = string.Join(",", request.AppliedSections);

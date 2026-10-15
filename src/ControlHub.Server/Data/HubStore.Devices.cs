@@ -142,7 +142,7 @@ public sealed partial class HubStore
     /// <summary>更新心跳信息。</summary>
     public async Task UpdateHeartbeatAsync(string deviceId, string state, long appliedRevision,
         long appliedPushEpoch, string? currentClassPlanName, string? lastError, string metrics,
-        string? macAddress, CancellationToken cancellationToken = default)
+        string? macAddress, string? ipAddress, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
@@ -155,7 +155,8 @@ public sealed partial class HubStore
                 current_class_plan_name = $plan,
                 last_error              = $error,
                 metrics                 = $metrics,
-                mac_address             = COALESCE(NULLIF($mac, ''), mac_address)
+                mac_address             = COALESCE(NULLIF($mac, ''), mac_address),
+                ip_address              = COALESCE(NULLIF($ip, ''), ip_address)
             WHERE id = $id;
             """;
         AddParameters(command,
@@ -169,6 +170,10 @@ public sealed partial class HubStore
             // 只在上报非空时才覆盖：网卡切换 / 权限受限会让插件偶尔取不到 MAC，
             // 用空值清掉等于「这台设备永久失去唤醒能力」，而管理员看不出原因。
             ("$mac", TextOrNull(macAddress)),
+            // 地址每次心跳都刷新（DHCP 换址 / 换网段后仍能对上）：多校区时间偏移（#26）要按
+            // 「来源地址 → 设备所属分组」下发，地址陈旧会让整校区拿到别的校区的偏移。
+            // 取不到时同样是「保留旧值」，绝不用空值清掉。
+            ("$ip", TextOrNull(ipAddress)),
             ("$id", deviceId));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }

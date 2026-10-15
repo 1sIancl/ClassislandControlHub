@@ -252,9 +252,9 @@ HTTP 状态码与业务结果同时生效：`401` 鉴权失败、`404` 资源不
 
 用于让 B 端教室终端的 ClassIsland 大屏时钟以服务器为时间源。采用标准 NTP 协议：
 
-- **A 端内置 NTP 服务器**（UDP `NtpPort`，默认 123，`NtpServer`）：标准 NTP 单播响应，回显客户端 T1、返回 T2/T3，时间来自 `ServerTimeService.GetUtcNow()`（NTP 校正 + 手动偏移）。
+- **A 端内置 NTP 服务器**（UDP `NtpPort`，默认 123，`NtpServer`）：标准 NTP 单播响应，回显客户端 T1、返回 T2/T3，时间来自 `ServerTimeService`（NTP 校正 + 手动偏移 + **按请求来源地址叠加的分组偏移**）。NTP 报文里没有设备身份，所以「这台机器属于哪个校区」只能按来源 IP 逆推（`EnsureAddressOffsetMapAsync` 维护一份 60 秒 TTL 的 `来源地址 → 偏移` 映射）。
 - **B 端**：把 ClassIsland 的「精确时间服务器」（`Settings.ExactTimeServer`）指向 A 端主机，启用「使用精确时间」（`IsExactTimeEnabled=true`）并触发同步。此后 ClassIsland 周期性从 A 端 NTP 服务器同步，**修改的是 ClassIsland 的时钟（精确时间），而非 Windows 系统时间**。
-- `GET /client/time` 仍提供 HTTP 方式的服务器时间（匿名可访问），供需要 HTTP 对时的场景使用。
+- `GET /client/time` 仍提供 HTTP 方式的服务器时间（匿名可访问），供需要 HTTP 对时的场景使用；带上 `Authorization: HubDevice <token>` 时按**设备所属分组**叠加偏移，否则按来源地址判定。
 
 ```jsonc
 // GET /client/time 应答（data）
@@ -268,7 +268,8 @@ HTTP 状态码与业务结果同时生效：`401` 鉴权失败、`404` 资源不
       │  A 端 SNTP 客户端（NtpClient）授时，得到 ntpOffset
       ▼
 A 端时间 = 系统时间 + ntpOffset + 手动偏移（/admin/time-offset，settings 表 key=timeOffsetSeconds）
-      │  A 端内置 NTP 服务器（UDP 123）下发
+      │  A 端内置 NTP 服务器（UDP 123）下发：再按**请求来源地址**叠加该设备所属分组的偏移
+      │  （settings 表 key=timeGroupOffsets，{groupId: 秒}；分组没配则沿上级就近继承）
       ▼
 ClassIsland「精确时间」（ExactTimeServer 指向 A 端，IsExactTimeEnabled=true）
       │

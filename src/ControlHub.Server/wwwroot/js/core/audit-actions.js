@@ -74,6 +74,7 @@ const VERB_LABELS = {
   notify: '发送提醒',
   'plugin.refresh': '刷新插件列表',
   'import-cses': '导入 CSES 课表',
+  'import-cidata': '导入 .cidata 档案',
   'version.delete': '删除历史版本',
   'deliveries.clear': '清空投递记录',
   // 插件管理（#121）。前缀是 plugin，这里填的是动作码去掉前缀后的部分。
@@ -119,6 +120,9 @@ const VERB_LABELS = {
   start: '开启',
   end: '结束',
   updated: '修改',
+  // 多校区时间偏移（#26）：动作码是 `timeoffset.group.updated`，缺了这条会显示成
+  // 「授时 · group.updated」这种半英文。
+  'group.updated': '修改分组偏移',
   check: '检查',
   vacuum: '清理空间',
   'image.upload': '上传图片',

@@ -136,6 +136,7 @@ builder.Services.AddSingleton<ServerTimeService>();
 builder.Services.AddSingleton<UpdateService>();
 builder.Services.AddSingleton<BackupService>();
 builder.Services.AddSingleton<BrandingImageStore>();
+builder.Services.AddSingleton<CidataImportStore>();
 builder.Services.AddSingleton<AiTimetableService>();
 
 // 静态敏感数据加密（#36，见 docs/adr/0005）：设备注册码、管理端邀请码、Webhook 加签密钥

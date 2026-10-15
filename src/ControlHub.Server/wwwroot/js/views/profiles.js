@@ -3,13 +3,13 @@
  * 档案是集控下发的最小单元：一个档案 = 一套时间表 + 课表 + 科目 + 自定义设置。
  */
 
-import { api } from '../core/api.js?v=113';
-import { toastError, errorBlock } from '../core/errors.js?v=113';
-import { openAuditTimeline } from '../core/audit-timeline.js?v=113';
+import { api } from '../core/api.js?v=115';
+import { toastError, errorBlock } from '../core/errors.js?v=115';
+import { openAuditTimeline } from '../core/audit-timeline.js?v=115';
 import {
   h, clear, formatDateTime, toast, loadingBlock, modal, confirmDialog,
   emptyState, field, select,
-} from '../core/ui.js?v=113';
+} from '../core/ui.js?v=115';
 
 export const meta = {
   title: '配置档案',
@@ -38,6 +38,11 @@ export async function render(container) {
           }, '冲突检测'),
           h('button.btn.btn-sm', { type: 'button', onClick: () => openAiImportDialog(profiles) }, 'AI 导入课表'),
           h('button.btn.btn-sm', { type: 'button', onClick: () => openImportCsesDialog(profiles) }, '从 CSES 导入'),
+          h('button.btn.btn-sm', {
+            type: 'button',
+            title: 'ClassIsland 的「数据迁移」包：把另一台机器上配好的课表整包搬过来',
+            onClick: () => openImportCidataDialog(profiles),
+          }, '从 .cidata 导入'),
           h('button.btn.btn-sm', { type: 'button', onClick: () => openCreateDialog(false) }, '新建空白档案'),
           h('button.btn.btn-primary.btn-sm', { type: 'button', onClick: () => openCreateDialog(true) }, '+ 新建示例档案'),
         ),
@@ -561,7 +566,186 @@ function openImportCsesDialog(profiles) {
   });
 }
 
-const DAY_LABEL = { 1: '周一', 2: '周二', 3: '周三', 4: '周四', 5: '周五', 6: '周六', 7: '周日' };
+// 0/7 都给「周日」：AI 解析那边用的是 1..7，集控的档案用的是 0..6（0=周日），两种都容得下。
+const DAY_LABEL = { 0: '周日', 1: '周一', 2: '周二', 3: '周三', 4: '周四', 5: '周五', 6: '周六', 7: '周日' };
+
+/**
+ * 「从 .cidata 导入」对话框：上传 ClassIsland 的数据迁移包 → 预览 → 确认合并进档案。
+ *
+ * 这个包和 CSES 不是一回事：CSES 只传课表骨架，`.cidata` 是宿主数据目录的整包
+ * （应用设置、自动化、插件都在里面）。**其中只有时间表 / 课表 / 科目 / 课表群能落到集控的档案里**，
+ * 其余部分由服务端逐条列出来，这里必须原样显示，不能只报「导入成功 N 项」。
+ */
+function openImportCidataDialog(profiles) {
+  if (!profiles || profiles.length === 0) {
+    toast('warn', '请先创建档案', '.cidata 导入需要指定一个目标档案，请先新建一个档案。');
+    return;
+  }
+
+  let parsed = null;
+
+  const profileSelect = select(profiles.map((p) => ({ value: p.id, label: p.name })), profiles[0].id);
+  const preview = h('div');
+  const status = h('div', { style: { fontSize: '12.5px', color: 'var(--text-faint)', marginTop: '8px' } },
+    '还没选择文件。建议先在一台已配好的教室机上用 ClassIsland「数据迁移」导出 .cidata。');
+
+  const fileInput = h('input', {
+    type: 'file',
+    accept: '.cidata',
+    style: { display: 'none' },
+  });
+
+  const pickBtn = h('button.btn.btn-sm.btn-primary', {
+    type: 'button',
+    onClick: () => fileInput.click(),
+  }, '选择 .cidata 文件');
+
+  fileInput.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    parsed = null;
+    clear(preview);
+    status.textContent = `正在上传并解析 ${file.name}（${(file.size / 1024 / 1024).toFixed(1)} MB）……`;
+    status.style.color = 'var(--text-faint)';
+    pickBtn.disabled = true;
+
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      parsed = await api('/admin/profiles/import-cidata/parse', { method: 'POST', body: form });
+
+      const total = parsed.profiles.reduce((sum, p) => sum + p.classPlans, 0);
+      status.textContent = `解析完成：包里 ${parsed.profiles.length} 份档案，共 ${total} 张课表。`;
+      status.style.color = 'var(--ok)';
+      preview.appendChild(renderCidataPreview(parsed));
+    } catch (err) {
+      status.textContent = err.message;
+      status.style.color = 'var(--danger)';
+    } finally {
+      pickBtn.disabled = false;
+    }
+  });
+
+  modal({
+    title: '从 .cidata 导入',
+    width: 'wide',
+    body: h('div',
+      field('导入到档案', profileSelect),
+      h('div.notice.notice-info',
+        h('span.notice-icon', 'i'),
+        h('div', '`.cidata` 是 ClassIsland「数据迁移」导出的整包（ZIP）。'
+          + '集控只能接收其中的时间表、课表、科目、课表群——应用设置、自动化、插件这些'
+          + '属于教室端本机，不会跟着下发，解析结果里会逐条说明。'
+          + '导入是合并：同名科目与相同作息会自动复用，同一天（同一个时间表 + 同一个星期几）的课表会被覆盖。')),
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', margin: '14px 0 8px' } },
+        pickBtn, fileInput,
+        h('span', { style: { fontSize: '12px', color: 'var(--text-faint)' } }, '上限 64MB')),
+      status,
+      preview,
+    ),
+    confirmText: '导入到档案',
+    onConfirm: async () => {
+      if (!parsed) {
+        toast('warn', '请先选择 .cidata 文件', '解析出预览、确认无误之后再导入。');
+        return false;
+      }
+
+      const picked = preview.querySelector('select.js-cidata-profile');
+      const result = await api('/admin/profiles/import-cidata/apply', {
+        method: 'POST',
+        body: {
+          token: parsed.token,
+          profileFile: picked ? picked.value : parsed.profiles[0].fileName,
+          profileId: profileSelect.value,
+        },
+      });
+
+      const parts = [
+        `新增科目 ${result.addedSubjects} 个`,
+        `时间表 ${result.addedTimeLayouts} 个`,
+        `课表 ${result.addedClassPlans} 张`,
+      ];
+      if (result.updatedClassPlans > 0) parts.push(`覆盖课表 ${result.updatedClassPlans} 张`);
+      if (result.enrichedSubjects > 0) parts.push(`补全科目信息 ${result.enrichedSubjects} 个`);
+      if ((result.repairs || []).length > 0) parts.push(`自动修复 ${result.repairs.length} 处`);
+
+      toast('ok', '导入完成', `${parts.join('、')}。配置版本已更新为 ${result.revision}。`);
+      await render(document.getElementById('content'));
+      return true;
+    },
+  });
+}
+
+/** 渲染 `.cidata` 的解析预览：哪一份档案、能导入多少、哪些导不进来。 */
+function renderCidataPreview(parsed) {
+  const box = h('div');
+
+  if (parsed.profiles.length > 1) {
+    const picker = select(
+      parsed.profiles.map((p) => ({
+        value: p.fileName,
+        label: `${p.profileName}（${p.fileName}）`,
+      })),
+      parsed.profiles[0].fileName,
+    );
+    picker.classList.add('js-cidata-profile');
+    box.appendChild(field('导入包里哪一份档案', picker));
+  } else {
+    // 只有一份时也放一个（隐藏的）选择器：确认导入时统一从这里取值。
+    const hidden = select([{ value: parsed.profiles[0].fileName, label: parsed.profiles[0].fileName }],
+      parsed.profiles[0].fileName);
+    hidden.classList.add('js-cidata-profile');
+    hidden.style.display = 'none';
+    box.appendChild(hidden);
+  }
+
+  for (const profile of parsed.profiles) {
+    const counts = [
+      ['科目', profile.subjects],
+      ['时间表', profile.timeLayouts],
+      ['课表', profile.classPlans],
+      ['课表群', (profile.groups || []).length],
+    ];
+
+    box.appendChild(h('div', { style: { marginTop: '12px', borderTop: '1px solid var(--border)', paddingTop: '10px' } },
+      h('div', { style: { fontWeight: '600', marginBottom: '6px' } },
+        `档案「${profile.profileName}」`),
+      h('div', { style: { display: 'flex', gap: '14px', flexWrap: 'wrap', fontSize: '13px' } },
+        ...counts.map(([label, value]) => h('span', `${label} ${value}`)),
+        profile.orderedSchedules > 0 ? h('span', { style: { color: 'var(--warn)' } }, `日历调休 ${profile.orderedSchedules}（不导入）`) : null,
+        profile.overlayPlans > 0 ? h('span', { style: { color: 'var(--warn)' } }, `临时层课表 ${profile.overlayPlans}（不导入）`) : null),
+      (profile.classPlanNames || []).length > 0
+        ? h('div.cell-sub', { style: { marginTop: '4px' } }, `课表：${profile.classPlanNames.join('、')}`
+          + (profile.classPlans > profile.classPlanNames.length ? ' …' : ''))
+        : null,
+      (profile.groups || []).length > 0
+        ? h('div.cell-sub', { style: { marginTop: '2px' } },
+          `课表群：${profile.groups.map((g) => g.name).join('、')}`)
+        : null));
+  }
+
+  const warnings = parsed.profiles.flatMap((p) => p.warnings || []);
+  if (warnings.length > 0) {
+    box.appendChild(h('div.notice.notice-warn', { style: { marginTop: '12px' } },
+      h('span.notice-icon', '!'),
+      h('div',
+        h('div', { style: { fontWeight: '600' } }, `有 ${warnings.length} 处内容没法一起搬过来：`),
+        h('ul', { style: { margin: '6px 0 0 18px', padding: 0 } },
+          ...warnings.map((w) => h('li', { style: { marginBottom: '3px' } }, w))))));
+  }
+
+  if ((parsed.notImported || []).length > 0) {
+    box.appendChild(h('div.notice.notice-info', { style: { marginTop: '10px' } },
+      h('span.notice-icon', 'i'),
+      h('div',
+        h('div', { style: { fontWeight: '600' } }, '包里这些内容不会导入（集控下发的档案里没有它们的位置）：'),
+        h('ul', { style: { margin: '6px 0 0 18px', padding: 0 } },
+          ...parsed.notImported.map((n) => h('li', { style: { marginBottom: '3px' } }, n))))));
+  }
+
+  return box;
+}
 
 /**
  * 「AI 导入课表」对话框：粘贴任意格式的课表文本 → 交给模型解析 → 预览确认 → 合并进档案。

@@ -7,6 +7,7 @@ using ControlHub.Server.Services;
 using Microsoft.Extensions.Options;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace ControlHub.Server.Endpoints;
@@ -796,13 +797,33 @@ public static class AdminEndpoints
         return text.Length <= max ? text : text[..max];
     }
 
-    /// <summary>读取手动时间偏移及当前授时状态。</summary>
-    private static ApiResult<object> GetTimeOffsetAsync(
+    /// <summary>读取手动时间偏移、按分组（校区）的偏移及当前授时状态。</summary>
+    private static async Task<ApiResult<object>> GetTimeOffsetAsync(
         HttpContext http,
-        ServerTimeService serverTime)
+        HubStore store,
+        ServerTimeService serverTime,
+        CancellationToken cancellationToken)
     {
         http.RequireAdminSession();
-        return ApiResult<object>.Success(new
+        return ApiResult<object>.Success(
+            await BuildTimeOffsetStateAsync(store, serverTime, cancellationToken));
+    }
+
+    /// <summary>
+    /// 组装时间偏移的完整读数（全局偏移 / 每日漂移 / 各分组偏移）。
+    /// <para>GET 与 PUT 共用同一份，避免两条出口对同一份配置给出不一样的数字。</para>
+    /// </summary>
+    private static async Task<object> BuildTimeOffsetStateAsync(HubStore store, ServerTimeService serverTime,
+        CancellationToken cancellationToken)
+    {
+        // 顺带把内存里的分组偏移刷新到最新（带 60 秒 TTL，通常命中缓存）——否则刚保存完回到页面上
+        // 看到的还是旧值，会让人以为「没保存上」。
+        await serverTime.EnsureAddressOffsetMapAsync(cancellationToken: cancellationToken);
+
+        var groups = await store.GetGroupsAsync(cancellationToken);
+        var deviceCounts = await store.GetGroupDeviceCountsAsync(cancellationToken);
+
+        return new
         {
             offsetSeconds = serverTime.ManualOffsetSeconds,
             ntpOffsetSeconds = serverTime.OffsetSeconds,
@@ -814,10 +835,27 @@ public static class AdminEndpoints
             serverTime = serverTime.GetUtcNow(),
             lastSyncStatus = serverTime.LastSyncStatus,
             lastSyncAt = serverTime.LastSyncAt,
-        });
+            // 分组（校区）偏移（#26)：自身值与生效值都给，界面才解释得清「没配就是继承上级」。
+            groups = groups.Select(g => new TimeGroupOffsetDto
+            {
+                Id = g.Id,
+                Name = g.Name,
+                ParentId = g.ParentId,
+                ParentName = g.ParentId is null
+                    ? null
+                    : groups.FirstOrDefault(p => string.Equals(p.Id, g.ParentId, StringComparison.Ordinal))?.Name,
+                DeviceCount = deviceCounts.GetValueOrDefault(g.Id),
+                OffsetSeconds = serverTime.GroupOffsetSeconds(g.Id),
+                EffectiveSeconds = serverTime.EffectiveGroupOffsetSeconds(g.Id),
+            }).ToList(),
+        };
     }
 
-    /// <summary>设置手动时间偏移（秒），立即叠加到对外授时的时间上。</summary>
+    /// <summary>
+    /// 设置时间偏移（秒），立即叠加到对外授时的时间上。
+    /// <para>带 <c>GroupId</c> 时设置的是**该分组（校区）**的偏移，叠加在全局偏移之上（#26）；
+    /// 各项互相独立，只提交其中一项不会把其它项顺手清零。</para>
+    /// </summary>
     private static async Task<ApiResult<object>> SetTimeOffsetAsync(
         TimeOffsetRequest request,
         HttpContext http,
@@ -826,13 +864,18 @@ public static class AdminEndpoints
         CancellationToken cancellationToken)
     {
         var session = http.RequireAdminSession();
+        var ip = http.GetClientIpAddress();
+        var changes = new List<string>();
 
-        var seconds = Math.Clamp(request.OffsetSeconds, -86400, 86400); // 限制在 ±24 小时内。
-        await store.SetSettingAsync("timeOffsetSeconds",
-            seconds.ToString("F3", System.Globalization.CultureInfo.InvariantCulture), cancellationToken);
-        serverTime.SetManualOffsetSeconds(seconds);
-
-        var audit = $"设置时间偏移 {seconds:F3} 秒。";
+        // 全局固定偏移。为空 = 本次不改（老客户端仍会带上它，语义不变）。
+        if (request.OffsetSeconds is { } requestedOffset)
+        {
+            var seconds = Math.Clamp(requestedOffset, -86400, 86400); // 限制在 ±24 小时内。
+            await store.SetSettingAsync("timeOffsetSeconds",
+                seconds.ToString("F3", System.Globalization.CultureInfo.InvariantCulture), cancellationToken);
+            serverTime.SetManualOffsetSeconds(seconds);
+            changes.Add($"全局偏移 {seconds:F3} 秒");
+        }
 
         // 每日漂移（#4）：补偿「设备时钟每天稳定快/慢几秒」这类硬件差异。
         // 只在请求里带了该字段时才改（null = 不动），避免老客户端提交偏移时把它清零。
@@ -845,7 +888,7 @@ public static class AdminEndpoints
             await store.SetSettingAsync("timeDailyDriftAnchor",
                 DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
                 cancellationToken);
-            audit += $"每日漂移 {clamped:F3} 秒/天（累计起点已重置为今天）。";
+            changes.Add($"每日漂移 {clamped:F3} 秒/天（累计起点已重置为今天）");
         }
 
         // 单独重置累计起点：设备做过一次人工校准后清零，保留漂移值。
@@ -855,20 +898,48 @@ public static class AdminEndpoints
             await store.SetSettingAsync("timeDailyDriftAnchor",
                 DateOnly.FromDateTime(DateTime.UtcNow).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
                 cancellationToken);
-            audit += "已把漂移累计起点重置为今天。";
+            changes.Add("已把漂移累计起点重置为今天");
         }
 
-        await store.AddAuditAsync(session.Username, "timeoffset.updated", "timeOffsetSeconds",
-            audit, http.GetClientIpAddress(), cancellationToken);
-
-        return ApiResult<object>.Success(new
+        // 分组（校区）偏移（#26）。整份写回：分组数量是个位数，整体替换语义最简单也最不容易写错。
+        if (!string.IsNullOrWhiteSpace(request.GroupId))
         {
-            offsetSeconds = seconds,
-            dailyDriftSeconds = serverTime.DailyDriftSeconds,
-            driftDays = serverTime.DriftDays,
-            driftCompensationSeconds = serverTime.DriftCompensationSeconds,
-            serverTime = serverTime.GetUtcNow(),
-        });
+            var groupId = request.GroupId.Trim();
+            var group = await store.GetGroupAsync(groupId, cancellationToken)
+                        ?? throw HubException.NotFound("分组不存在。");
+
+            var map = serverTime.GroupOffsets
+                .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
+
+            string detail;
+            if (request.GroupOffsetSeconds is { } groupSeconds)
+            {
+                var clamped = TimeGroupOffset.Clamp(groupSeconds);
+                map[groupId] = clamped;
+                detail = $"分组「{group.Name}」偏移 {clamped:F3} 秒";
+            }
+            else
+            {
+                // 字段为空 = 清除该分组的偏移（回到「继承上级」），与「配成 0 秒」是两回事。
+                map.Remove(groupId);
+                detail = $"清除分组「{group.Name}」的偏移（改为继承上级分组）";
+            }
+
+            await store.SetSettingAsync(ServerTimeService.GroupOffsetsKey, HubJson.Serialize(map), cancellationToken);
+            await serverTime.ReloadGroupOffsetsAsync(cancellationToken);
+
+            await store.AddAuditAsync(session.Username, "timeoffset.group.updated", group.Name,
+                detail + "。", ip, cancellationToken);
+        }
+
+        // 一项都没改时不写审计：否则「点开页面又保存一次」会在审计里留下一条没有信息量的记录。
+        if (changes.Count > 0)
+        {
+            await store.AddAuditAsync(session.Username, "timeoffset.updated", "timeOffsetSeconds",
+                "设置时间偏移：" + string.Join("；", changes) + "。", ip, cancellationToken);
+        }
+
+        return ApiResult<object>.Success(await BuildTimeOffsetStateAsync(store, serverTime, cancellationToken));
     }
 
     /// <summary>获取当前自动更新状态（不触发检查）。</summary>
@@ -1409,11 +1480,41 @@ public static class AdminEndpoints
     };
 }
 
-/// <summary>设置时间偏移的请求体（固定偏移 + 每日漂移）。</summary>
+/// <summary>一个分组（校区）的时间偏移（#26）。</summary>
+public sealed class TimeGroupOffsetDto
+{
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>上级分组 ID（顶层为空）。</summary>
+    public string? ParentId { get; set; }
+
+    /// <summary>上级分组名；界面用它解释「没配就是继承谁」。</summary>
+    public string? ParentName { get; set; }
+
+    /// <summary>该分组下的设备台数。</summary>
+    public int DeviceCount { get; set; }
+
+    /// <summary>
+    /// 本组**自己**配置的偏移（秒）；未配置时为 <c>null</c>（表示沿上级继承）。
+    /// <para>
+    /// 这里必须显式声明「null 也要序列化出来」：服务端默认忽略 null 属性，
+    /// 字段直接消失的话前端读到的是 <c>undefined</c>——于是「未配置」会被显示成
+    /// 「已单独配置」，而这正是本项最容易看错的地方（改完界面看不出来其实是没配上）。
+    /// </para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public double? OffsetSeconds { get; set; }
+
+    /// <summary>实际生效的偏移（含沿上级继承的结果）。</summary>
+    public double EffectiveSeconds { get; set; }
+}
+
+/// <summary>设置时间偏移的请求体（固定偏移 + 每日漂移 + 分组偏移）。</summary>
 public sealed class TimeOffsetRequest
 {
-    /// <summary>固定时间偏移（秒），正值表示整体提前。</summary>
-    public double OffsetSeconds { get; set; }
+    /// <summary>全局固定时间偏移（秒），正值表示整体提前。为空表示本次不改这一项。</summary>
+    public double? OffsetSeconds { get; set; }
 
     /// <summary>
     /// 每日漂移（秒/天）。为空表示不改这一项——老客户端只提交 <see cref="OffsetSeconds"/> 时，
@@ -1423,6 +1524,18 @@ public sealed class TimeOffsetRequest
 
     /// <summary>是否把漂移的累计起点重置为今天（保留漂移值）。</summary>
     public bool? ResetDriftAnchor { get; set; }
+
+    /// <summary>
+    /// 要设置偏移的分组（校区）ID（#26）。为空表示本次不改分组偏移——它叠加在全局偏移之上，
+    /// 设备没配对时沿上级分组就近继承。
+    /// </summary>
+    public string? GroupId { get; set; }
+
+    /// <summary>
+    /// 该分组（校区）自己的偏移秒数。**为空表示清除这个分组的偏移**（回到「继承上级」）：
+    /// 与「配成 0 秒」是两回事，前者会继续继承，后者会明确把该校区拉回全局偏移。
+    /// </summary>
+    public double? GroupOffsetSeconds { get; set; }
 }
 
 /// <summary>完成两步验证。</summary>

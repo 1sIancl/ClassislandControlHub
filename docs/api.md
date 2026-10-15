@@ -112,6 +112,8 @@ curl -s "$BASE/admin/devices" -H "Authorization: Bearer $TOKEN" \
 | GET | `/admin/assignments` | `devices.read` | 设备 / 分组与档案的绑定关系 |
 | GET/POST/PUT/DELETE | `/admin/profiles...` | `profiles.*` | 档案增删改查；`/profiles/{id}/push` 单独推送；`/profiles/{id}/versions` 历史版本与回滚 |
 | POST | `/admin/profiles/import-cses` | `profiles.write` | 从 CSES 课表导入 |
+| POST | `/admin/profiles/import-cidata/parse` | `profiles.write` | 上传 ClassIsland「数据迁移」包（`.cidata`，multipart 字段 `file`）→ 返回**一次性令牌** + 预览（能导入什么 / 哪些装不下） |
+| POST | `/admin/profiles/import-cidata/apply` | `profiles.write` | 按令牌确认导入：`{"token":"…","profileFile":"演示中学.json","profileId":"…"}`，**合并**进目标档案 |
 
 ### 远程管理与诊断
 
@@ -244,7 +246,7 @@ curl -s "$BASE/admin/devices" -H "Authorization: Bearer $TOKEN" \
 |---|---|---|---|
 | GET/PUT | `/admin/branding` | `settings.read` / `settings.write` | 品牌个性化配置（站点名 / Logo / 登录页 / 主题色 / 玻璃 / 自定义 CSS） |
 | POST | `/admin/branding/image` | `settings.write` | 上传品牌图片：`multipart/form-data`、字段名 `file`。**按文件内容判定类型**（PNG / JPEG / WebP / GIF / AVIF，≤ 8 MB，**不收 SVG**），返回 `{url,name,contentType,size}`；保存品牌时自动清理不再被引用的旧图 |
-| GET | `/admin/time-offset` | `settings.read` | 时间偏移与每日漂移（写入用同路径 PUT） |
+| GET | `/admin/time-offset` | `settings.read` | 时间偏移（全局固定偏移 / 每日漂移 / 各分组校区偏移，写入用同路径 PUT） |
 
 > ⚠️ **`PUT /admin/branding` 是整体替换**：请求体里**没出现的字段会被重置为默认值**。
 > 调用方必须「先 GET 读回 → 合并要改的字段 → 整份 PUT」（前端 `saveBranding()` 就是这么做的），
