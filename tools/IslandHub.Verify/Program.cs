@@ -222,6 +222,10 @@ internal static class Program
         // 没装宿主时这一段会自己跳过，不影响其它检查。
         HostAssemblyChecks.Run(Check);
 
+        // B 端安装检查：宿主 Plugins 目录里那份插件能不能真的被加载（少依赖 / 旧程序集残留）。
+        // 没装教室端时同样自己跳过。
+        PluginInstallChecks.Run(Check);
+
         // 教室端设备控制（音量 / 亮度）：这一层同样没有 HTTP 接口可验，只能在这里真调实现。
         await DeviceControlChecks.RunAsync(Check);
 

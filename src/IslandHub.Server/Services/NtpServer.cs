@@ -17,7 +17,7 @@ namespace IslandHub.Server.Services;
 /// <para>实现标准 NTP 单播响应：回显客户端 T1，返回 T2/T3，客户端据此计算 offset。</para>
 /// </summary>
 public sealed class NtpServer(
-    IOptions<ServerOptions> options,
+    IOptionsMonitor<ServerOptions> options,
     ServerTimeService serverTime,
     ILogger<NtpServer> logger) : BackgroundService
 {
@@ -26,13 +26,13 @@ public sealed class NtpServer(
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!options.Value.EnableNtpServer)
+        if (!options.CurrentValue.EnableNtpServer)
         {
             logger.LogInformation("NTP 服务器已禁用。");
             return;
         }
 
-        var port = options.Value.NtpPort;
+        var port = options.CurrentValue.NtpPort;
         try
         {
             _listener = new UdpClient(new IPEndPoint(IPAddress.Any, port));

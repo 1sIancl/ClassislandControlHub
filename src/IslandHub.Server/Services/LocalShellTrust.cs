@@ -43,10 +43,10 @@ public sealed class LocalShellTrust
     private string _token = string.Empty;
 
     /// <summary>构造函数。</summary>
-    public LocalShellTrust(IOptions<ServerOptions> options, IHostEnvironment environment,
+    public LocalShellTrust(IOptionsMonitor<ServerOptions> options, IHostEnvironment environment,
         ILogger<LocalShellTrust> logger)
     {
-        _options = options.Value;
+        _options = options.CurrentValue;
         _logger = logger;
         TokenPath = Path.Combine(_options.ResolveDataDirectory(environment.ContentRootPath), TokenFileName);
     }

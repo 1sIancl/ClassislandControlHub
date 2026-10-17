@@ -7,7 +7,7 @@
 
 ```bash
 # 编译整个解决方案
-dotnet build ClassIsland.IslandHub.slnx -c Release
+dotnet build IslandHub.slnx -c Release
 
 # 打包 B 端插件（产出 src/IslandHub.Plugin/cipx/ControlHub.Plugin.cipx）
 dotnet build src/IslandHub.Plugin/IslandHub.Plugin.csproj -c Release -p:CreateCipx=true
@@ -64,7 +64,7 @@ cd dist/server
   这样自动发现与客户端提示中显示的公网地址才正确。
 - 长轮询是普通 HTTP/1.1 请求，Nginx 无需特殊配置，但请把 `proxy_read_timeout` 调到 60s 以上。
 
-### 配置项（`appsettings.json` 的 `IslandHub` 节）
+### 配置项（`appsettings.json` 的 `ControlHub` 节）
 
 | 键 | 默认 | 说明 |
 |---|---|---|
@@ -74,6 +74,7 @@ cd dist/server
 | `DataDirectory` | data | 数据目录（SQLite 文件所在） |
 | `RequireEnrollCode` | true | 是否强制注册码 |
 | `EnableDiscovery` | true | 是否开启 UDP 自动发现 |
+| `EnableOpenApi` | true | 是否提供机器可读的接口规范（`/api/v1/admin/openapi/v1.json`，需登录 + `settings.read`） |
 | `EnableNtpSync` | true | 是否启用服务端授时（周期性从标准 NTP 同步） |
 | `NtpServers` | `["ntp.aliyun.com"]` | 标准 NTP 服务器列表（按顺序尝试） |
 | `EnableNtpServer` | true | 是否启用内置 NTP 服务器（供教室终端「精确时间」接入） |
@@ -86,6 +87,26 @@ cd dist/server
 > 自动生成一张有效期 5 年的自签名证书（`controlhub-selfsigned.pfx`，SAN 含主机名、localhost、回环与本机内网 IP）。
 > 自签名证书不会被客户端自动信任：请在插件设置页勾选「允许不受信任的 HTTPS 证书」，
 > 或改用正式证书 / Nginx 反向代理终止 TLS。
+
+### 改配置要不要重启？
+
+**绝大多数配置项改完即生效**（路线图 `#87`）：保存 `appsettings.json` 后服务端会在运行中重载，
+日志里记一行 `配置已热重载（第 N 次）：ServerName: A → B`；`GET /api/v1/server/info` 也会给出
+`configReloadedAt` / `configReloadCount` / `configReloadChanges`，刷新界面就能确认生效了没有。
+
+| 即时生效（热重载） | 需要重启 |
+|---|---|
+| `ServerName`、`PublicBaseUrl`、`RequireEnrollCode`、`EnableDiscovery`、`EnableOpenApi`、`AdminIpAllowList`、`CorsAllowedOrigins`、`OnlineTimeoutSeconds`、`SessionLifetimeHours`、`PushBatchSize`、`MetricsToken` … | `BindAddress`、`HttpPort`、`HttpsPort`、`EnableHttps`、`CertificatePath`、`EnableNtpServer`、`NtpPort`、`DiscoveryPort`、`DataDirectory`、`SecretsKeyPath`、`RequireHttpsRedirect`、`LogJson` |
+
+「需要重启」那一列不是偷懒：它们要么**已经绑进 Kestrel**（监听地址 / 端口 / 证书），要么**决定文件位置**
+（数据目录、密钥路径），要么**决定中间件挂不挂**（`RequireHttpsRedirect`）或日志格式（`LogJson`）。
+改了这些项时日志会**明确警告** `以下改动**需要重启**才会生效：HttpPort: 29800 → 8080`——不必靠猜。
+
+⚠️ 三点注意：
+
+- 保存前确认 JSON 合法：写成非法 JSON 时改动**不生效**（服务照常运行、不会崩），日志里有记录可查。
+- **环境变量（`ControlHub__Xxx`）改不动运行中的进程**：要热改就得改文件；容器里通常靠重启换环境变量。
+- 热重载只对「按请求 / 按周期读取」的配置项生效——启动时一次性确定的东西（比如数据库文件）改不动。
 
 ### 备份与迁移
 

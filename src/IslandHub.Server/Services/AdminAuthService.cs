@@ -11,11 +11,11 @@ namespace IslandHub.Server.Services;
 /// </summary>
 public sealed class AdminAuthService(
     HubStore store,
-    IOptions<ServerOptions> options,
+    IOptionsMonitor<ServerOptions> options,
     WebhookService webhooks,
     ILogger<AdminAuthService> logger)
 {
-    private readonly ServerOptions _options = options.Value;
+    private readonly ServerOptions _options = options.CurrentValue;
 
     /// <summary>
     /// 两步验证的「半程票据」：密码校验通过、验证码还没校验时的中间状态。

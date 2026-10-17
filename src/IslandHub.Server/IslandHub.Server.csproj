@@ -18,6 +18,9 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.*" />
     <!-- 支持以 Windows 服务方式运行（可由 sh/install-windows.ps1 一键注册）。 -->
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.*" />
+    <!-- #95 机器可读的接口规范（OpenAPI 3.1）：从运行时端点表生成，见 Endpoints/OpenApiEndpoints.cs。
+         用第一方包而不是自己拼 JSON —— 它能把我们那一堆 DTO 生成出字段级 schema。 -->
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.*" />
   </ItemGroup>
 
   <ItemGroup>

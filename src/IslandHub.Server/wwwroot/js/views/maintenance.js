@@ -1,10 +1,10 @@
 /** 系统维护视图（系统设置拆分而来）：自动更新、备份与数据库整理。 */
 
-import { api, hasPermission, fetchBlob } from '../core/api.js?v=117';
-import { toastError } from '../core/errors.js?v=117';
+import { api, hasPermission, fetchBlob } from '../core/api.js?v=123';
+import { toastError } from '../core/errors.js?v=123';
 import {
   h, clear, formatDateTime, toast, modal, confirmDialog, field, loadingBlock, kvRow,
-} from '../core/ui.js?v=117';
+} from '../core/ui.js?v=123';
 
 export const meta = {
   title: '系统维护',
@@ -36,10 +36,146 @@ export async function render(container) {
     canSettings ? renderUpdateCard(updateState) : null,
     // 备份与数据库维护（#59 / #62）：权限独立于系统设置，有 backup.read 就可见。
     canBackup ? renderBackupCard(container) : null,
+    // 数据迁移（#61）：导出看 settings.read，导入需要 settings.write。
+    canSettings ? renderMigrationCard(hasPermission('settings.write')) : null,
     (canSettings || canBackup) ? null : h('div.notice.notice-warn',
       h('span.notice-icon', '!'),
       h('div', '当前账号没有「系统设置」或「备份」权限，本页没有可操作的内容。')),
   ));
+}
+
+/**
+ * 数据迁移（#61）：整包导出 / 导入。
+ *
+ * 为什么放在「系统维护」而不是「系统设置」：它与「备份与恢复」是一类事——
+ * 都会整体动这台服务器的数据，出问题的补救方式也一样（先备份、再动手）。
+ */
+function renderMigrationCard(canWrite) {
+  const status = h('div', { style: { fontSize: '13px', color: 'var(--text-dim)' } },
+    '导出会把「人配出来的东西」（档案 / 分组 / 标签 / 设备 / 账号 / 通知渠道 / 提醒 / 模板 / 系统设置）打成'
+    + '一个 JSON 包；设备令牌、账号密码、Webhook 密钥不在包里。');
+  const previewHost = h('div', { style: { marginTop: '12px' } });
+  let pendingToken = null;
+
+  const exportBtn = h('button.btn.btn-sm', {
+    type: 'button',
+    onClick: async () => {
+      exportBtn.disabled = true;
+      exportBtn.textContent = '导出中…';
+      try {
+        const pack = await api('/admin/migration/export');
+        const rows = Object.values(pack.tables).reduce((sum, t) => sum + t.rows.length, 0);
+        const blob = new Blob([JSON.stringify(pack, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = h('a', {
+          href: url,
+          download: `islandhub-migration-${new Date().toISOString().slice(0, 10)}.json`,
+        });
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        status.textContent = `已导出：${Object.keys(pack.tables).length} 张表、${rows} 行（包里不含令牌 / 密码 / 密钥）。`;
+      } catch (e) {
+        toastError(e, '导出失败');
+      } finally {
+        exportBtn.disabled = false;
+        exportBtn.textContent = '导出迁移包';
+      }
+    },
+  }, '导出迁移包');
+
+  const applyBtn = h('button.btn.btn-sm.btn-danger', {
+    type: 'button',
+    disabled: true,
+    onClick: async () => {
+      if (!pendingToken) return;
+      const ok = await confirmDialog('确认导入',
+        '导入会覆盖本机同名（同 ID）的档案 / 分组 / 设置。导入前会自动生成一份备份，'
+        + '确认继续吗？', '导入', true);
+      if (!ok) return;
+
+      applyBtn.disabled = true;
+      applyBtn.textContent = '导入中…';
+      try {
+        const result = await api('/admin/migration/apply', { method: 'POST', body: { token: pendingToken } });
+        pendingToken = null;
+        previewHost.replaceChildren();
+        status.textContent = `导入完成：新增 ${result.tables.reduce((s, t) => s + t.added, 0)} / `
+          + `覆盖 ${result.tables.reduce((s, t) => s + t.updated, 0)} / `
+          + `跳过 ${result.tables.reduce((s, t) => s + t.skipped, 0)}。导入前的备份：${result.backupId}。`;
+        toast('ok', '导入完成', '出问题可在下方「备份与恢复」里用刚才那份备份回退。');
+        applyBtn.textContent = '确认导入';
+      } catch (e) {
+        toastError(e, '导入失败');
+        applyBtn.disabled = false;
+        applyBtn.textContent = '确认导入';
+      }
+    },
+  }, '确认导入');
+
+  const fileInput = h('input', {
+    type: 'file',
+    accept: '.json,application/json',
+    style: { display: 'none' },
+    onChange: async (event) => {
+      const file = event.target.files?.[0];
+      event.target.value = '';
+      if (!file) return;
+
+      previewHost.replaceChildren(loadingBlock());
+      pendingToken = null;
+      applyBtn.disabled = true;
+      try {
+        const pack = JSON.parse(await file.text());
+        const preview = await api('/admin/migration/preview', { method: 'POST', body: pack });
+        pendingToken = preview.token;
+
+        const table = h('table.table', { style: { fontSize: '13px' } },
+          h('thead', h('tr',
+            h('th', '内容'), h('th', '新增'), h('th', '覆盖'), h('th', '跳过'), h('th', '说明'))),
+          h('tbody', ...preview.tables.map((t) => h('tr',
+            h('td', t.label),
+            h('td', String(t.added)),
+            h('td', t.updated > 0 ? h('span', { style: { color: 'var(--warn)' } }, String(t.updated)) : '0'),
+            h('td', String(t.skipped)),
+            h('td', { style: { fontSize: '12px', color: 'var(--text-faint)' } }, t.note || ''),
+          ))));
+
+        previewHost.replaceChildren(h('div',
+          h('div', { style: { fontSize: '13px', marginBottom: '8px' } },
+            `来源：${preview.serverName || '（未署名）'} v${preview.version || '?'}`,
+            ` · 合计新增 ${preview.totalAdded} / 覆盖 ${preview.totalUpdated} / 跳过 ${preview.totalSkipped}`),
+          table,
+          ...(preview.warnings || []).map((w) => h('div.notice.notice-warn', { style: { marginTop: '8px' } },
+            h('span.notice-icon', '!'), h('div', w))),
+        ));
+        applyBtn.disabled = !canWrite;
+      } catch (e) {
+        toastError(e, '这个文件不是有效的迁移包');
+        previewHost.replaceChildren();
+      }
+    },
+  });
+
+  const pickBtn = h('button.btn.btn-sm', {
+    type: 'button',
+    disabled: !canWrite,
+    onClick: () => fileInput.click(),
+  }, '选择迁移包…');
+
+  return h('div.card', { style: { marginTop: '18px' } },
+    h('div.card-head',
+      h('h3', '数据迁移'),
+      h('span.card-sub', '把一台服务器上配好的东西整包搬到另一台')),
+    h('div.card-body',
+      h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px' } },
+        exportBtn, pickBtn, applyBtn, fileInput),
+      status,
+      canWrite ? null : h('div', { style: { fontSize: '12px', color: 'var(--warn)', marginTop: '6px' } },
+        '当前账号没有「系统设置 · 修改」权限：可以导出，但不能导入。'),
+      previewHost,
+    ));
 }
 
 function renderUpdateCard(update) {
@@ -271,8 +407,15 @@ function renderBackupCard(container) {
                 }
 
                 try {
-                  await api(`/admin/backups/${encodeURIComponent(entry.id)}/restore`, { method: 'POST' });
-                  toast('ok', '已恢复', '需要重启服务端才能生效。', 8000);
+                  // 操作审批（#35）：非超级管理员点下去只会**提交审批**，返回 executed=false。
+                  const result = await api(`/admin/backups/${encodeURIComponent(entry.id)}/restore`,
+                    { method: 'POST' });
+                  if (result && result.executed === false) {
+                    toast('ok', '已提交审批', result.message || '等待超级管理员在「操作审批」里确认。', 9000);
+                  } else {
+                    toast('ok', '已恢复', '需要重启服务端才能生效。', 8000);
+                  }
+
                   await reload();
                 } catch (err) {
                   toastError(err, '恢复失败');

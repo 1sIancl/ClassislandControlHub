@@ -1934,6 +1934,279 @@ body.sched-compact .sched-cell {
   font-size: 12px;
 }
 
+/* 语言下拉（#48）：放在顶栏右下角，样式跟随顶栏的其它 ghost 控件。 */
+.locale-picker {
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel-2);
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+.locale-picker:hover {
+  color: var(--text);
+  border-color: var(--accent-line);
+}
+
+/* ── 大屏看板（#113）：挂在墙上看的一屏总览，字大、对比高、不放操作入口 ── */
+.board {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.board-loading {
+  padding: 24px;
+  color: var(--text-dim);
+}
+.board-head {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.board-brand {
+  display: flex;
+  flex-direction: column;
+}
+.board-server {
+  font-size: 20px;
+  font-weight: 700;
+}
+.board-version {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.board-clock {
+  margin-left: auto;
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  font-variant-numeric: tabular-nums;
+}
+.board-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.board-refresh {
+  margin-right: auto;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.board-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+.board-tile {
+  padding: 16px 18px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel-2);
+  border-left: 4px solid var(--line);
+}
+.board-tile.tone-ok {
+  border-left-color: var(--ok);
+}
+.board-tile.tone-warn {
+  border-left-color: var(--warn);
+}
+.board-tile-value {
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.board-tile-label {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.board-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px;
+}
+.board-panel {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+}
+.board-panel-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.board-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.board-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 14px;
+  border-bottom: 1px dashed var(--line);
+}
+.board-list li:last-child {
+  border-bottom: none;
+}
+.board-name {
+  font-weight: 600;
+}
+.board-meta {
+  text-align: right;
+  color: var(--text-dim);
+}
+.board-empty {
+  padding: 6px 0;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+/* 看板模式：把整屏留给数据（大屏上不必再按 F11）。
+   ⚠️ 必须 `!important`：侧栏在宽屏/窄屏的几处媒体查询里是用 `.sidebar { display: flex !important }`
+   摆位的（`!important` 压过普通声明，跟选择器权重无关），不加它就会出现
+   「顶栏收了、侧栏还在」——实测踩到过。 */
+body.board-full .topbar,
+body.board-full .sidebar {
+  display: none !important;
+}
+body.board-full #content {
+  padding: 18px 22px;
+}
+
+/* ── 时间表：可视化时间轴（#56，可拖动）── */
+/* 定高 + 内部滚动：一天的作息在 1 分钟 = 1.2px 下大约 1200px 高，
+   为了「塞进一屏」而压缩刻度会让 5 分钟只有 1~2px、拖不准。 */
+.tl-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tl-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.tl-hint {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.tl-scroll {
+  max-height: 460px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel-2);
+  padding: 8px 10px;
+}
+.tl-canvas {
+  position: relative;
+  margin-left: 52px;
+}
+.tl-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--line);
+  pointer-events: none;
+}
+.tl-mark {
+  position: absolute;
+  left: -52px;
+  width: 46px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--text-faint);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.tl-block {
+  position: absolute;
+  left: 0;
+  right: 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 12px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none; /* 触摸屏上拖动不要被浏览器当成滚动 */
+  overflow: hidden;
+}
+.tl-block.kind-break {
+  border-left-color: var(--text-faint);
+  background: var(--bg-hover);
+  color: var(--text-dim);
+}
+.tl-block.kind-separator,
+.tl-block.kind-action {
+  border-left-color: var(--warn);
+  background: var(--warn-soft);
+  min-height: 3px;
+  padding: 0 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.tl-block.hidden-point {
+  opacity: 0.5;
+}
+.tl-block:hover {
+  filter: brightness(1.12);
+}
+.tl-block.dragging {
+  cursor: grabbing;
+  z-index: 3;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.tl-block-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 下边缘的拉伸手柄（改时长）。给足热区，否则 6px 高的块根本按不到。 */
+.tl-grip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -3px;
+  height: 8px;
+  cursor: ns-resize;
+}
+.tl-grip:hover {
+  background: var(--accent-line);
+}
+.tl-tip {
+  position: absolute;
+  right: 4px;
+  top: -20px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* ── 时间表：时间点单元格网格 ── */
 .period-grid {
   display: grid;

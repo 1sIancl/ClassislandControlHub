@@ -9,11 +9,11 @@ namespace IslandHub.Server.Services;
 /// </summary>
 public sealed class MaintenanceService(
     HubStore store,
-    IOptions<ServerOptions> options,
+    IOptionsMonitor<ServerOptions> options,
     ILogger<MaintenanceService> logger) : BackgroundService
 {
     private static readonly TimeSpan Interval = TimeSpan.FromHours(6);
-    private readonly ServerOptions _options = options.Value;
+    private readonly ServerOptions _options = options.CurrentValue;
 
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

@@ -12,9 +12,9 @@ namespace IslandHub.Server.Services;
 public sealed class SyncService(
     HubStore store,
     RevisionNotifier notifier,
-    IOptions<ServerOptions> options)
+    IOptionsMonitor<ServerOptions> options)
 {
-    private readonly ServerOptions _options = options.Value;
+    private readonly ServerOptions _options = options.CurrentValue;
 
     /// <summary>
     /// 解析设备当前应生效的配置档案。

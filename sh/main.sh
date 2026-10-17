@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# ClassIsland.IslandHub · A 端服务器 Linux 一键部署脚本
+# IslandHub · A 端服务器 Linux 一键部署脚本
 #
 # 用法（在目标 Linux 服务器上，用 root 执行）：
 #   curl -fsSL https://cdn.jsdelivr.net/gh/1sIancl/ClassislandControlHub@main/sh/main.sh -o /tmp/controlhub-install.sh && sudo bash /tmp/controlhub-install.sh
@@ -157,7 +157,7 @@ EOF
 
 # ── 主流程 ────────────────────────────────────────────────
 main() {
-  info "开始部署 ClassIsland.IslandHub A 端服务器"
+  info "开始部署 IslandHub A 端服务器"
   install_dotnet
   fetch_source
   publish

@@ -67,7 +67,7 @@ public static class RegistrationEndpoints
         RegisterRequestSubmit request,
         HttpContext http,
         HubStore store,
-        IOptions<ServerOptions> options,
+        IOptionsMonitor<ServerOptions> options,
         CancellationToken cancellationToken)
     {
         if (!await IsApprovalEnabledAsync(store, cancellationToken))
@@ -78,7 +78,7 @@ public static class RegistrationEndpoints
         var username = AdminEndpoints.NormalizeUsername(request.Username);
         var password = request.Password ?? string.Empty;
         var strengthError = PasswordHasher.ValidateStrength(password,
-            options.Value.PasswordMinLength, options.Value.PasswordRequireMixedChars);
+            options.CurrentValue.PasswordMinLength, options.CurrentValue.PasswordRequireMixedChars);
         if (!string.IsNullOrEmpty(strengthError))
         {
             throw HubException.Validation(strengthError);

@@ -40,7 +40,7 @@ public static class LessonEndpoints
     private static async Task<ApiResult<LessonLiveOverviewDto>> LiveAsync(
         HttpContext http,
         HubStore store,
-        IOptions<ServerOptions> options,
+        IOptionsMonitor<ServerOptions> options,
         CancellationToken cancellationToken)
     {
         http.RequireAdminSession();
@@ -64,7 +64,7 @@ public static class LessonEndpoints
                 DeviceId = device.Id,
                 DeviceName = device.Name,
                 GroupName = device.GroupId is { } gid && groups.TryGetValue(gid, out var gname) ? gname : null,
-                IsOnline = IsOnline(device, options.Value),
+                IsOnline = IsOnline(device, options.CurrentValue),
                 CatalogAt = row?.CatalogAt,
                 Lesson = row is null
                     ? null

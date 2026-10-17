@@ -152,19 +152,50 @@ public static class BackupEndpoints
         return Results.File(bytes, "application/zip", $"{id}.zip");
     }
 
-    private static async Task<ApiResult<bool>> RestoreAsync(
+    private static async Task<ApiResult<DangerousActionResultDto>> RestoreAsync(
         string id,
         HttpContext http,
         BackupService backups,
         HubStore store,
+        ApprovalService approvals,
         CancellationToken cancellationToken)
     {
         var session = http.RequireAdminSession();
+
+        // 操作审批（#35）：恢复备份会**整库覆盖**，拿错备份等于把一学期的配置换掉。
+        // 所以非超管点下去只是**提交一条审批**，由超级管理员确认后才真正执行。
+        if (ApprovalService.NeedsApproval(session))
+        {
+            var request = await approvals.SubmitAsync(
+                ApprovalKinds.BackupRestore,
+                new BackupRestoreApprovalPayload { BackupId = id },
+                session.Username,
+                cancellationToken);
+
+            await store.AddAuditAsync(session.Username, "backup.restore.request", id,
+                $"提交恢复备份审批（申请 {request.Id}），等待超级管理员确认。",
+                http.GetClientIpAddress(), cancellationToken);
+
+            return ApiResult<DangerousActionResultDto>.Success(new DangerousActionResultDto
+            {
+                Executed = false,
+                ApprovalId = request.Id,
+                Status = ApprovalStatuses.Pending,
+                Message = "已提交审批：恢复备份会整库覆盖，需要超级管理员在「操作审批」里确认后才执行。",
+            });
+        }
+
         var ok = backups.RestoreBackup(id);
         await store.AddAuditAsync(session.Username, "backup.restore", id,
             $"从备份恢复数据库（{(ok ? "成功" : "失败")}），需重启服务生效。",
             http.GetClientIpAddress(), cancellationToken);
-        return ApiResult<bool>.Success(ok);
+
+        return ApiResult<DangerousActionResultDto>.Success(new DangerousActionResultDto
+        {
+            Executed = true,
+            Status = ok ? "done" : "failed",
+            Message = ok ? "已恢复备份，重启服务后生效。" : "恢复失败（备份文件可能已损坏或被删除）。",
+        });
     }
 }
 

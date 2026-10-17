@@ -18,10 +18,10 @@ namespace IslandHub.Server.Services;
 /// </para>
 /// </summary>
 public sealed class DiscoveryService(
-    IOptions<ServerOptions> options,
+    IOptionsMonitor<ServerOptions> options,
     ILogger<DiscoveryService> logger) : BackgroundService
 {
-    private readonly ServerOptions _options = options.Value;
+    private readonly ServerOptions _options = options.CurrentValue;
 
     /// <summary>单次接收缓冲大小。发现报文很小，4KB 足够。</summary>
     private const int BufferSize = 4096;

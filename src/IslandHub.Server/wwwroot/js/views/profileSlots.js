@@ -5,9 +5,9 @@
  * 后台每 30 秒对一次点，只在「该换」时才改档案并下发；这里提供配置入口与「立即对齐」。
  */
 
-import { api } from '../core/api.js?v=117';
-import { toastError } from '../core/errors.js?v=117';
-import { h, clear, toast, loadingBlock, field, select, modal, formatDateTime } from '../core/ui.js?v=117';
+import { api } from '../core/api.js?v=123';
+import { toastError } from '../core/errors.js?v=123';
+import { h, clear, toast, loadingBlock, field, select, modal, formatDateTime } from '../core/ui.js?v=123';
 
 export const meta = {
   title: '走班制',

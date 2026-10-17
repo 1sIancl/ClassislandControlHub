@@ -3,13 +3,13 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=117';
-import { toastError } from '../core/errors.js?v=117';
+import { api } from '../core/api.js?v=123';
+import { toastError } from '../core/errors.js?v=123';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, icon, select,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=117';
-import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=117';
+} from '../core/ui.js?v=123';
+import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=123';
 
 export const meta = {
   title: '编辑配置档案',
@@ -569,8 +569,13 @@ function renderTimeLayouts() {
       ? emptyState('clock', '还没有时间表',
         '时间表定义了一天的作息时间点，课表以它的「上课」时间点为基准。',
         h('button.btn.btn-primary', { type: 'button', onClick: addLayout }, '新建时间表'))
-      : h('div.grid-scroll',
-        h('div.period-grid', ...layout.items.map((item, index) => periodCell(layout, item, index))),
+      : h('div',
+        // 可视化时间轴放在表格**上方**（两个视图同时可见，不需要切来切去）：
+        // 拖动色块平移整段时间、拖下边缘改时长，分钟吸附到 5 分钟并自动避让相邻时间点。
+        renderLayoutTimeline(layout),
+        h('div.grid-scroll', { style: { marginTop: '14px' } },
+          h('div.period-grid', ...layout.items.map((item, index) => periodCell(layout, item, index))),
+        ),
       ),
     layout && layout.items.length === 0
       ? h('div.notice.notice-warn', { style: { marginTop: '14px' } },
@@ -670,6 +675,226 @@ function countClassBefore(layout, index) {
 function markDirtyValues() {
   state.dirty = true;
   repaintTab();
+}
+
+// ────────────────────────── 时间表可视化编辑（#56）──────────────────────────
+//
+// 为什么要有：表格适合「精确填时间」，但调作息在现实里是「第 2 节整体往后挪 5 分钟」这类动作——
+// 填表要同时改开始与结束、还得自己避免和上/下一个时间点重叠。时间轴把一天画成一条竖条：
+// 拖动色块平移、拖下边缘改时长，且**自动避让相邻时间点**（不允许重叠）。
+//
+// 关于刻度：1 分钟 = 1.2px（5 分钟 = 6px，够precision又不会让一天长得离谱），
+// 时间轴自身定高可滚动，因此不需要为了「塞进一屏」而牺牲拖动精度；
+// 分辨率固定为 5 分钟（作息表本来就是 5 分钟的倍数，吸附之后数字好看且可复现）。
+
+const TL_PX_PER_MIN = 1.2;
+
+/** 拖动吸附粒度（分钟）。 */
+const TL_SNAP_MIN = 5;
+
+/** 上课 / 课间的最短时长（分钟）：拖到更短会夹住，避免出现「0 分钟的一节课」。 */
+const TL_MIN_DURATION = 5;
+
+/** `HH:mm:ss` → 分钟；认不出来返回 null。 */
+function tlMinutes(time) {
+  const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(String(time || '').trim());
+  if (!m) return null;
+  const total = Number(m[1]) * 60 + Number(m[2]);
+  return total >= 0 && total <= 1439 ? total : null;
+}
+
+/** 分钟 → `HH:mm:ss`（夹在一天之内）。 */
+function tlTime(minutes) {
+  const clamped = Math.max(0, Math.min(1439, Math.round(minutes)));
+  const hh = String(Math.floor(clamped / 60)).padStart(2, '0');
+  const mm = String(clamped % 60).padStart(2, '0');
+  return `${hh}:${mm}:00`;
+}
+
+/** 吸附到 5 分钟。 */
+function tlSnap(minutes) {
+  return Math.round(minutes / TL_SNAP_MIN) * TL_SNAP_MIN;
+}
+
+/** 时间轴可见范围：至少覆盖 06:00–22:00，超出则按小时向外扩。 */
+function tlSpan(layout) {
+  const items = layout.items || [];
+  const starts = items.map((i) => tlMinutes(i.startTime)).filter((v) => v !== null);
+  const ends = items.map((i) => {
+    const start = tlMinutes(i.startTime);
+    const end = tlMinutes(i.endTime);
+    return end === null || start === null ? start : Math.max(start, end);
+  }).filter((v) => v !== null);
+  const from = Math.max(0, Math.floor(Math.min(360, ...starts) / 60) * 60);
+  const to = Math.min(1440, Math.ceil(Math.max(1320, ...ends) / 60) * 60);
+  return { from, to: to > from ? to : from + 60 };
+}
+
+/** 某个时间点（按数组下标）可平移的上下界（分钟）；边界不存在时为整天。 */
+function tlMoveBounds(layout, index) {
+  const items = layout.items || [];
+  const item = items[index];
+  const start = tlMinutes(item.startTime) ?? 0;
+  const end = tlMinutes(item.endTime) ?? start;
+  const duration = ['separator', 'action'].includes(item.kind) ? 0 : Math.max(0, end - start);
+
+  const prevEnd = index > 0 ? tlMinutes(items[index - 1].endTime) : 0;
+  const nextStart = index < items.length - 1 ? tlMinutes(items[index + 1].startTime) : 1440;
+  let lower = prevEnd === null ? 0 : prevEnd;
+  let upper = (nextStart === null ? 1440 : nextStart) - duration;
+
+  // 数据本身乱序 / 重叠时不要把用户卡死：退化成「整天」范围，让他能拖出来。
+  if (lower > upper) {
+    lower = 0;
+    upper = 1440 - duration;
+  }
+  return { lower: Math.max(0, lower), upper: Math.min(1440 - duration, upper), duration };
+}
+
+/** 平移一个时间点（结束时间同步平移，保持时长）；返回实际落地的新开始时间。 */
+function tlApplyMove(layout, index, minutes) {
+  const item = layout.items[index];
+  const { lower, upper, duration } = tlMoveBounds(layout, index);
+  const target = Math.max(lower, Math.min(upper, tlSnap(minutes)));
+  item.startTime = tlTime(target);
+  item.endTime = tlTime(target + duration);
+  return target;
+}
+
+/** 改一个时间点的结束时间（只对上课 / 课间有效）；返回实际落地的新结束时间。 */
+function tlApplyResize(layout, index, minutes) {
+  const items = layout.items || [];
+  const item = items[index];
+  const start = tlMinutes(item.startTime) ?? 0;
+  const nextStart = index < items.length - 1 ? tlMinutes(items[index + 1].startTime) : 1440;
+  const upper = Math.min(1440, nextStart === null ? 1440 : nextStart);
+  const lower = Math.min(start + TL_MIN_DURATION, upper);
+  const target = Math.max(lower, Math.min(upper, tlSnap(minutes)));
+  item.endTime = tlTime(target);
+  return target;
+}
+
+/** 时间点的时长（分钟）；分割线 / 行动算 0。 */
+function tlDuration(item) {
+  if (['separator', 'action'].includes(item.kind)) return 0;
+  const start = tlMinutes(item.startTime) ?? 0;
+  const end = tlMinutes(item.endTime) ?? start;
+  return Math.max(0, end - start);
+}
+
+/** 把一天画成一条可拖动的时间轴。 */
+function renderLayoutTimeline(layout) {
+  const items = layout.items || [];
+  if (items.length === 0) return null;
+
+  const span = tlSpan(layout);
+  const height = Math.round((span.to - span.from) * TL_PX_PER_MIN);
+  const toY = (minutes) => (minutes - span.from) * TL_PX_PER_MIN;
+
+  const ticks = [];
+  for (let hour = span.from; hour <= span.to; hour += 60) {
+    ticks.push({ minutes: hour, label: `${String(Math.floor(hour / 60)).padStart(2, '0')}:00` });
+  }
+
+  const canvas = h('div.tl-canvas', { style: { height: `${height}px` } },
+    ...ticks.flatMap((tick) => [
+      h('div.tl-line', { style: { top: `${toY(tick.minutes)}px` } }),
+      h('div.tl-mark', { style: { top: `${toY(tick.minutes)}px` } }, tick.label),
+    ]),
+    ...items.map((item, index) => timelineBlock(layout, item, index, toY)),
+  );
+
+  return h('div.tl-wrap',
+    h('div.tl-title',
+      h('span', '时间轴'),
+      h('span.tl-hint', '拖动色块平移整段时间，拖下边缘改时长；分钟吸附到 5 分钟，并自动避让相邻时间点。')),
+    h('div.tl-scroll', canvas),
+  );
+}
+
+/** 时间轴上的一个色块（含拖动交互）。 */
+function timelineBlock(layout, item, index, toY) {
+  const start = tlMinutes(item.startTime) ?? 0;
+  const duration = tlDuration(item);
+  const isPoint = item.kind === 'separator' || item.kind === 'action';
+  const blockHeight = isPoint ? 3 : Math.max(6, duration * TL_PX_PER_MIN);
+
+  const label = isPoint
+    ? `${TIME_KIND_LABEL[item.kind] || ''} ${tlTime(start).slice(0, 5)}`
+    : `${item.kind === 'class' ? `第 ${countClassBefore(layout, index) + 1} 节 · ` : '课间 · '}`
+      + `${tlTime(start).slice(0, 5)}–${tlTime(start + duration).slice(0, 5)}（${duration} 分）`
+      + (item.breakName && item.kind === 'break' ? ` ${item.breakName}` : '');
+
+  const block = h('div', {
+    class: `tl-block kind-${item.kind}${item.isHideDefault ? ' hidden-point' : ''}`,
+    style: { top: `${toY(start)}px`, height: `${blockHeight}px` },
+    title: label,
+    'data-index': String(index),
+    'data-kind': item.kind,
+  }, h('span.tl-block-label', label));
+
+  if (!isPoint) {
+    block.appendChild(h('div.tl-grip', { title: '拖动改时长' }));
+  }
+
+  block.addEventListener('pointerdown', (event) => {
+    // 抓下边缘 = 改时长；抓块体 = 平移（分割线 / 行动没有时长，只平移）。
+    const onGrip = event.target instanceof Element && event.target.classList.contains('tl-grip');
+    startTimelineDrag(event, layout, index, block, onGrip && !isPoint ? 'resize' : 'move', toY);
+  });
+
+  return block;
+}
+
+/** 拖动处理：实时更新色块位置与读数，松手后重绘（让下方的表格同步）。 */
+function startTimelineDrag(event, layout, index, block, mode, toY) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+
+  const item = layout.items[index];
+  const originStart = tlMinutes(item.startTime) ?? 0;
+  const originEnd = tlMinutes(item.endTime) ?? originStart;
+  const startY = event.clientY;
+
+  block.classList.add('dragging');
+  const tip = h('div.tl-tip', '');
+  block.appendChild(tip);
+
+  const isPointKind = ['separator', 'action'].includes(item.kind);
+  const paint = () => {
+    const start = tlMinutes(item.startTime) ?? 0;
+    const duration = tlDuration(item);
+    block.style.top = `${toY(start)}px`;
+    block.style.height = isPointKind ? '3px' : `${Math.max(6, duration * TL_PX_PER_MIN)}px`;
+    const text = `${tlTime(start).slice(0, 5)}–${tlTime(start + duration).slice(0, 5)}（${duration} 分）`;
+    tip.textContent = text;
+    block.querySelector('.tl-block-label').textContent = text;
+  };
+
+  const onMove = (moveEvent) => {
+    const deltaMinutes = (moveEvent.clientY - startY) / TL_PX_PER_MIN;
+    if (mode === 'resize') {
+      tlApplyResize(layout, index, originEnd + deltaMinutes);
+    } else {
+      tlApplyMove(layout, index, originStart + deltaMinutes);
+    }
+    paint();
+    markDirtyLight();
+  };
+
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
+    block.classList.remove('dragging');
+    // 松手才重绘：拖动过程中重绘会把手里的元素换掉，拖到一半就断了。
+    markDirtyValues();
+  };
+
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
 }
 
 function timeInput(value, onChange) {

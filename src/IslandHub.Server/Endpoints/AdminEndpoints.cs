@@ -101,11 +101,11 @@ public static class AdminEndpoints
     private static async Task<ApiResult<ServerInfoDto>> ServerInfoAsync(
         HubStore store,
         SyncService sync,
-        IOptions<ServerOptions> options,
+        IOptionsMonitor<ServerOptions> options,
         IHostEnvironment environment,
         CancellationToken cancellationToken)
     {
-        var opts = options.Value;
+        var opts = options.CurrentValue;
         var revision = await store.GetRevisionAsync(cancellationToken);
         var devices = await store.GetDevicesAsync(cancellationToken);
         var secrets = await store.GetSecretEncryptionStatsAsync(cancellationToken);
@@ -127,6 +127,10 @@ public static class AdminEndpoints
             PendingDeviceCount = devices.Count(d => !d.Revoked && d.AppliedRevision < revision),
             StartedAt = ServerRuntime.StartedAt,
             UptimeSeconds = (long)ServerRuntime.Uptime.TotalSeconds,
+            // 配置热重载（#87）：改完 appsettings 刷新界面就能确认到底生效了没有。
+            ConfigReloadedAt = ServerRuntime.ConfigReloadedAt,
+            ConfigReloadCount = ServerRuntime.ConfigReloadCount,
+            ConfigReloadChanges = [.. ServerRuntime.ConfigReloadChanges.Take(5)],
             DataDirectory = opts.ResolveDataDirectory(environment.ContentRootPath),
             HttpPort = opts.HttpPort,
             DiscoveryPort = opts.DiscoveryPort,
@@ -206,16 +210,16 @@ public static class AdminEndpoints
         HttpContext http,
         HubStore store,
         AdminAuthService auth,
-        IOptions<ServerOptions> options,
+        IOptionsMonitor<ServerOptions> options,
         CancellationToken cancellationToken)
     {
         var session = http.RequireAdminSession();
         var user = await store.GetUserAsync(session.UserId, cancellationToken)
                    ?? throw HubException.NotFound("账号不存在。");
 
-        var issuer = string.IsNullOrWhiteSpace(options.Value.ServerName)
+        var issuer = string.IsNullOrWhiteSpace(options.CurrentValue.ServerName)
             ? "ClassislandControlHub"
-            : options.Value.ServerName;
+            : options.CurrentValue.ServerName;
 
         var (secret, url) = await auth.PrepareTotpAsync(user, issuer, cancellationToken);
         return ApiResult<TotpSetupDto>.Success(new TotpSetupDto { Secret = secret, OtpAuthUrl = url });
@@ -422,12 +426,12 @@ public static class AdminEndpoints
     private static async Task<ApiResult<DashboardStatsDto>> DashboardAsync(
         HttpContext http,
         HubStore store,
-        IOptions<ServerOptions> options,
+        IOptionsMonitor<ServerOptions> options,
         CancellationToken cancellationToken)
     {
         http.RequireAdminSession();
 
-        var opts = options.Value;
+        var opts = options.CurrentValue;
         var revision = await store.GetRevisionAsync(cancellationToken);
         var devices = await store.GetDevicesAsync(cancellationToken);
         var summaries = await store.GetGroupsAsync(cancellationToken);
@@ -1101,11 +1105,11 @@ public static class AdminEndpoints
     /// （写死的话，改了配置前端还在说旧规则）。
     /// </summary>
     private static ApiResult<PasswordPolicyDto> PasswordPolicyAsync(HttpContext http,
-        IOptions<ServerOptions> options)
+        IOptionsMonitor<ServerOptions> options)
     {
         // 只要是登录账号就得能读到：每个人都要改自己的密码。
         http.RequireAdminSession();
-        var value = options.Value;
+        var value = options.CurrentValue;
         return ApiResult<PasswordPolicyDto>.Success(new PasswordPolicyDto
         {
             MinLength = Math.Max(0, value.PasswordMinLength),
@@ -1134,7 +1138,7 @@ public static class AdminEndpoints
         AccountUpsertRequest request,
         HttpContext http,
         HubStore store,
-        IOptions<ServerOptions> options,
+        IOptionsMonitor<ServerOptions> options,
         CancellationToken cancellationToken)
     {
         var session = http.RequireAdminSession();
@@ -1153,7 +1157,7 @@ public static class AdminEndpoints
 
         var generated = string.IsNullOrWhiteSpace(request.Password);
         var password = generated ? HubChecksum.NewEnrollCode(12).ToLowerInvariant() + "A1" : request.Password!;
-        EnsurePasswordStrength(password, options.Value);
+        EnsurePasswordStrength(password, options.CurrentValue);
 
         var user = new UserRow
         {
@@ -1391,7 +1395,7 @@ public static class AdminEndpoints
         RegisterRequest request,
         HttpContext http,
         HubStore store,
-        IOptions<ServerOptions> options,
+        IOptionsMonitor<ServerOptions> options,
         AdminAuthService auth,
         CancellationToken cancellationToken)
     {
@@ -1401,7 +1405,7 @@ public static class AdminEndpoints
         }
 
         var username = NormalizeUsername(request.Username);
-        EnsurePasswordStrength(request.Password ?? string.Empty, options.Value);
+        EnsurePasswordStrength(request.Password ?? string.Empty, options.CurrentValue);
 
         // 自助注册必须输入邀请码明文：显式拒绝管理端专用的指纹引用格式（ref:xxxxxxxx，#36）。
         if ((request.Code ?? string.Empty).Trim()

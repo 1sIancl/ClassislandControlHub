@@ -2,20 +2,21 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=117';
-import { toastError } from './core/errors.js?v=117';
-import { h, clear, toast, icon } from './core/ui.js?v=117';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=123';
+import { toastError } from './core/errors.js?v=123';
+import { h, clear, toast, icon } from './core/ui.js?v=123';
+import { t, applyStatic, mountLocalePicker } from './core/i18n.js?v=123';
 import {
   initTheme,
   getSidebarCollapsed, setSidebarCollapsed,
   applyDensity,
   applyAppearance, setBrandingAccent,
   applyRemotePrefs, applySchedScale,
-} from './core/prefs.js?v=117';
-import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=117';
-import { initGlassHighlight } from './core/glass.js?v=117';
-import { initTopbar } from './topbar.js?v=117';
-import { openSearch } from './core/search.js?v=117';
+} from './core/prefs.js?v=123';
+import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=123';
+import { initGlassHighlight } from './core/glass.js?v=123';
+import { initTopbar } from './topbar.js?v=123';
+import { openSearch } from './core/search.js?v=123';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -56,11 +57,24 @@ function startTotpCountdown() {
   startTotpCountdown.timer = setInterval(tick, 1000);
 }
 
+/**
+ * 导航分组名 → 文案键（#48）。分组没有 key 字段，这里按中文原名映射一次；
+ * 新增分组时记得同时加 `nav.group.*` 的条目。
+ */
+const NAV_GROUP_KEYS = {
+  日常: 'nav.group.daily',
+  教学配置: 'nav.group.teaching',
+  设备: 'nav.group.devices',
+  系统: 'nav.group.system',
+};
+
 const NAV = [
   {
     label: '日常',
     items: [
       { key: 'dashboard', label: '仪表盘', icon: 'dashboard', hash: '#/dashboard' },
+  // 大屏看板（#113）：挂在值班室大屏上的只读总览；放得离仪表盘近，找起来顺。
+  { key: 'board', label: '大屏看板', icon: 'monitor', hash: '#/board', perm: 'devices.read' },
       { key: 'deploy', label: '配置下发', icon: 'send', hash: '#/deploy', perm: 'deploy.write' },
       { key: 'remote', label: '远程管理', icon: 'send', hash: '#/remote', perm: 'remote.read' },
     ],
@@ -96,6 +110,9 @@ const NAV = [
     items: [
       { key: 'reports', label: '报表', icon: 'clock', hash: '#/reports', perm: 'audit.read' },
       { key: 'audit', label: '审计日志', icon: 'list', hash: '#/audit', perm: 'audit.read' },
+      // 操作审批（#35）：危险操作（恢复备份等）由非超管发起时，在这里等超级管理员确认。
+      // 不设 perm：提交人要看得到自己提交的申请（非超管在服务端只被允许看到自己的）。
+      { key: 'approvals', label: '操作审批', icon: 'list', hash: '#/approvals' },
       { key: 'appearance', label: '页面设置', icon: 'auto', hash: '#/appearance', perm: ['settings.read', 'settings.write'] },
       // 原来的「系统设置」一页十四张卡，管理员每找一个开关都要滚很久；
       // 拆成四页之后每一页只讲一件事（账号 / 服务器 / 维护 / 集成）。
@@ -106,6 +123,20 @@ const NAV = [
     ],
   },
 ];
+
+// 文案抽资源（#48）：导航文案在模块加载时按 `nav.<key>` / `nav.group.*` 取一次。
+// 这里就地改写 NAV（而不是把 label 换成键名），是为了让「键缺失」时还能退回数组里的中文——
+// 翻译做一半时最多是某几项还是中文，不会出现空标签。
+for (const group of NAV) {
+  group.label = t(NAV_GROUP_KEYS[group.label] || group.label);
+  for (const item of group.items) {
+    item.label = t(`nav.${item.key}`);
+  }
+}
+
+// 静态 HTML 上的文案（登录页、顶栏、账号菜单）与语言下拉框。
+applyStatic();
+mountLocalePicker(document.getElementById('localePicker'));
 
 /**
  * 旧链接重定向：改过导航之后，别人收藏的旧地址不能变成 404。
@@ -122,28 +153,30 @@ const ROUTE_ALIASES = {
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=117'),
-  devices: () => import('./views/devices.js?v=117'),
+  dashboard: () => import('./views/dashboard.js?v=123'),
+  devices: () => import('./views/devices.js?v=123'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=117'),
-  profiles: () => import('./views/profiles.js?v=117'),
-  profileEditor: () => import('./views/profileEditor.js?v=117'),
-  deploy: () => import('./views/deploy.js?v=117'),
-  remote: () => import('./views/remote.js?v=117'),
-  reminders: () => import('./views/reminders.js?v=117'),
-  examMode: () => import('./views/examMode.js?v=117'),
-  profileSlots: () => import('./views/profileSlots.js?v=117'),
-  audit: () => import('./views/audit.js?v=117'),
-  reports: () => import('./views/reports.js?v=117'),
-  appearance: () => import('./views/appearance.js?v=117'),
+  groups: () => import('./views/devices.js?v=123'),
+  profiles: () => import('./views/profiles.js?v=123'),
+  profileEditor: () => import('./views/profileEditor.js?v=123'),
+  deploy: () => import('./views/deploy.js?v=123'),
+  remote: () => import('./views/remote.js?v=123'),
+  reminders: () => import('./views/reminders.js?v=123'),
+  examMode: () => import('./views/examMode.js?v=123'),
+  profileSlots: () => import('./views/profileSlots.js?v=123'),
+  audit: () => import('./views/audit.js?v=123'),
+  reports: () => import('./views/reports.js?v=123'),
+  appearance: () => import('./views/appearance.js?v=123'),
   // 「系统设置」拆成四页（原 settings.js 已按此拆分，见各文件头部说明）。
-  accounts: () => import('./views/accounts.js?v=117'),
-  server: () => import('./views/server.js?v=117'),
-  integrations: () => import('./views/integrations.js?v=117'),
-  maintenance: () => import('./views/maintenance.js?v=117'),
-  timesync: () => import('./views/timesync.js?v=117'),
-  lessons: () => import('./views/lessons.js?v=117'),
-  plugins: () => import('./views/pluginMarket.js?v=117'),
+  accounts: () => import('./views/accounts.js?v=123'),
+  server: () => import('./views/server.js?v=123'),
+  integrations: () => import('./views/integrations.js?v=123'),
+  maintenance: () => import('./views/maintenance.js?v=123'),
+  board: () => import('./views/board.js?v=123'),
+  approvals: () => import('./views/approvals.js?v=123'),
+  timesync: () => import('./views/timesync.js?v=123'),
+  lessons: () => import('./views/lessons.js?v=123'),
+  plugins: () => import('./views/pluginMarket.js?v=123'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -688,7 +721,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=117');
+    const { startTour } = await import('./core/tour.js?v=123');
     startTour({
       onFinish: async (skipped) => {
         try {

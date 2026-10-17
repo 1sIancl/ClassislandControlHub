@@ -59,7 +59,7 @@ curl -fsSL https://cdn.jsdelivr.net/gh/1sIancl/ClassislandControlHub@main/sh/mai
 
 ```bash
 git clone https://github.com/1sIancl/ClassislandControlHub.git
-cd ClassIsland.IslandHub
+cd ClassislandControlHub
 dotnet run --project src/IslandHub.Server -c Release
 ```
 
@@ -161,6 +161,25 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 
 ## 最近更新
 
+- **`1.4.5.0`**（A 端 `1.4.5` / 插件 `1.4.5.0`，2026-10-17 发布）：
+  - **数据迁移工具**：把一台服务器上配好的东西（档案 / 分组 / 标签 / 设备 / 账号 / 通知渠道 / 提醒 / 模板 / 系统设置）
+    整包搬到另一台——先**逐表预览**再确认导入，**导入前自动备份**。⚠️ 设备令牌 / 账号密码 / Webhook 密钥
+    **不进包**；设备与账号**只新增、不覆盖**（覆盖设备会让教室端当场掉线）。
+  - **操作审批流**：恢复备份这类危险操作，非超级管理员点下去只是**提交审批**，超管在「系统 → 操作审批」里
+    确认后才执行；驳回不执行且留痕。顺带修掉「恢复备份在运行中从来没能成功过」（Windows 上 SQLite WAL 的
+    `-shm` 被内存映射占用）。
+  - **大屏看板**：挂在值班室大屏上的一屏总览——四个大数字（与 `/server/info` 一致）、需要注意的教室、
+    教室实时课表、最近事件；30 秒自动刷新 + 大时钟 + 「看板模式」收起侧栏顶栏。
+  - **时间表可视化拖拽**：档案编辑器的时间表页上方新增时间轴，拖色块平移、拖下边缘改时长，
+    吸附 5 分钟并自动避让相邻时间点。
+  - **配置热重载**：改 `appsettings.json` **不用重启**即生效（日志会写「变了哪些项」，需重启的项会额外警告）；
+    `/server/info` 可直接看「最近一次重载」。顺手修掉「管理端来源限制改了不生效」。
+  - **机器可读的接口规范**：`GET /api/v1/admin/openapi/v1.json`（OpenAPI 3.1，含每条接口的鉴权方式与所需权限），
+    可直接导入 Apifox / Postman / `openapi-generator`。
+  - **界面多语言（框架 + 外壳）**：文案抽进 `js/locales/*.js`，右上角可切 English；本轮覆盖导航、顶栏、
+    账号菜单、登录页与大屏看板（其余页面后续逐页替换）。
+  - ⚠️ **升级提示**：插件 id 未变，教室里**不必卸载重装**；但入口程序集自 1.4.4 起叫 `IslandHub.Plugin.dll`，
+    手动安装时请**先清空旧的插件文件夹再解压**（否则旧 dll 残留可能被宿主加载）。详见 `USAGE.md`。
 - **`1.4.4.0`**（A 端 `1.4.4` / 插件 `1.4.4.0`，2026-10-15 发布）：
   - **项目更名为 IslandHub**：产品名、界面文案、文档与**代码标识符**（项目 / 命名空间 / 程序集
     `ControlHub.*` → `IslandHub.*`）全部更新。教室里已装的插件**不用卸载重装**（插件 id 未变，可直接升级）。
@@ -434,7 +453,8 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 
 | IslandHub 版本 | 插件包 | 支持的 ClassIsland | 插件市场 | 状态 |
 |---|---|---|---|---|
-| A 端 `1.4.4` / 插件 `1.4.4.0` | `ControlHub.Plugin.cipx` `1.4.4.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ✅ **当前已发布版本**（项目更名为 IslandHub / 新的默认品牌图） |
+| A 端 `1.4.5` / 插件 `1.4.5.0` | `ControlHub.Plugin.cipx` `1.4.5.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ✅ **当前已发布版本**（数据迁移 / 操作审批 / 大屏看板 / 时间表拖拽 / 配置热重载 / OpenAPI / 多语言外壳） |
+| A 端 `1.4.4` / 插件 `1.4.4.0` | `ControlHub.Plugin.cipx` `1.4.4.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（项目更名为 IslandHub / 新的默认品牌图） |
 | A 端 `1.4.3` / 插件 `1.4.3.0` | `ControlHub.Plugin.cipx` `1.4.3.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（多周轮换课表 / 教室端上报当前周次） |
 | A 端 `1.4.2` / 插件 `1.4.2.0` | `ControlHub.Plugin.cipx` `1.4.2.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（多校区时间偏移 / 从 ClassIsland「数据迁移」包导入档案） |
 | A 端 `1.4.1` / 插件 `1.4.1.0` | `ControlHub.Plugin.cipx` `1.4.1.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（考试模式 / 走班制按时段切档案 / 远程诊断扩展 / 提醒事件触发 / 通知强调可关 / 密码策略 / 提醒模板变量） |

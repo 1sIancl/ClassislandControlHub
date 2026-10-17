@@ -15,7 +15,7 @@ namespace IslandHub.Server.Services;
 /// </summary>
 public sealed class StatsService(
     HubStore store,
-    IOptions<ServerOptions> options,
+    IOptionsMonitor<ServerOptions> options,
     ILogger<StatsService> logger) : BackgroundService
 {
     private static readonly TimeSpan Interval = TimeSpan.FromMinutes(1);
@@ -39,7 +39,7 @@ public sealed class StatsService(
             try
             {
                 // 与 SyncService.IsOnline 用同一个超时值，保证报表和仪表盘的在线数不是一个口径。
-                var timeout = TimeSpan.FromSeconds(Math.Max(10, options.Value.OnlineTimeoutSeconds));
+                var timeout = TimeSpan.FromSeconds(Math.Max(10, options.CurrentValue.OnlineTimeoutSeconds));
                 var online = await store.RecordOnlineSampleAsync(timeout, stoppingToken);
                 logger.LogDebug("在线采样完成：本轮 {Online} 台设备在线。", online);
             }

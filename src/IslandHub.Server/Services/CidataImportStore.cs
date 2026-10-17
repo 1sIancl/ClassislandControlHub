@@ -35,11 +35,11 @@ public sealed class CidataImportStore
     private readonly ILogger<CidataImportStore> _logger;
 
     public CidataImportStore(
-        IOptions<ServerOptions> options,
+        IOptionsMonitor<ServerOptions> options,
         IWebHostEnvironment environment,
         ILogger<CidataImportStore> logger)
     {
-        _root = Path.Combine(options.Value.ResolveDataDirectory(environment.ContentRootPath), "imports");
+        _root = Path.Combine(options.CurrentValue.ResolveDataDirectory(environment.ContentRootPath), "imports");
         _logger = logger;
     }
 

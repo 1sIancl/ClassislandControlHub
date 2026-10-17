@@ -11,11 +11,11 @@
   <!-- 样式分三层加载：令牌（tokens）→ 基础样式（app）→ 玻璃皮肤（glass）。
        glass.css **必须排在最后**：它靠同名选择器覆盖 app.css 里的容器外观，
        用的是「后写的规则胜出」，而不是更高的优先级。 -->
-  <link rel="stylesheet" href="css/tokens.css?v=117" />
-  <link rel="stylesheet" href="css/base.css?v=117" />
-  <link rel="stylesheet" href="css/app.css?v=117" />
-  <link rel="stylesheet" href="css/topbar.css?v=117" />
-  <link rel="stylesheet" href="css/glass.css?v=117" />
+  <link rel="stylesheet" href="css/tokens.css?v=123" />
+  <link rel="stylesheet" href="css/base.css?v=123" />
+  <link rel="stylesheet" href="css/app.css?v=123" />
+  <link rel="stylesheet" href="css/topbar.css?v=123" />
+  <link rel="stylesheet" href="css/glass.css?v=123" />
 </head>
 
 <body>
@@ -48,16 +48,17 @@
           <span class="kbd-hint">Ctrl K</span>
         </button>
         <div class="topbar-right">
+          <select class="locale-picker" id="localePicker" data-i18n-title="topbar.language" data-i18n-aria="topbar.language"></select>
           <span class="revision-chip" id="revisionChip" title="当前全局配置版本号">版本 —</span>
-          <button class="btn btn-ghost" id="refreshBtn" title="刷新当前页面">刷新</button>
+          <button class="btn btn-ghost" id="refreshBtn" data-i18n-title="topbar.refresh" data-i18n="topbar.refresh">刷新</button>
           <div class="user-menu">
             <button class="btn btn-ghost" id="userBtn">
               <span class="avatar" id="userAvatar">A</span>
               <span id="userName">管理员</span>
             </button>
             <div class="dropdown" id="userDropdown" hidden>
-              <button data-action="change-password">修改密码</button>
-              <button data-action="logout">退出登录</button>
+              <button data-action="change-password" data-i18n="topbar.changePassword">修改密码</button>
+              <button data-action="logout" data-i18n="topbar.logout">退出登录</button>
             </div>
           </div>
         </div>
@@ -166,25 +167,25 @@
 
       <section class="login-card">
         <div class="login-card-head">
-          <h2 id="loginHeading">欢迎回来</h2>
-          <p id="loginSubtitle">登录以继续管理您的 IslandHub 服务</p>
+          <h2 id="loginHeading" data-i18n="login.heading">欢迎回来</h2>
+          <p id="loginSubtitle" data-i18n="login.subtitle">登录以继续管理您的 IslandHub 服务</p>
         </div>
 
         <p id="loginServerName" class="login-server">
           <span class="login-server-dot" aria-hidden="true"></span>
-          <span id="loginServerText" role="status" aria-live="polite">正在连接服务器…</span>
+          <span id="loginServerText" role="status" aria-live="polite" data-i18n="login.connecting">正在连接服务器…</span>
         </p>
 
         <form id="loginForm" class="login-form" autocomplete="on">
           <label class="field">
-            <span>用户名</span>
-            <input type="text" id="loginUsername" autocomplete="username" placeholder="请输入用户名" required />
+            <span data-i18n="login.username">用户名</span>
+            <input type="text" id="loginUsername" autocomplete="username" data-i18n-placeholder="login.usernamePlaceholder" placeholder="请输入用户名" required />
           </label>
           <label class="field">
-            <span>密码</span>
+            <span data-i18n="login.password">密码</span>
             <span class="input-wrap">
-              <input type="password" id="loginPassword" autocomplete="current-password" placeholder="请输入密码" required />
-              <button type="button" class="pw-toggle" data-pw-toggle="loginPassword" aria-label="显示密码" aria-pressed="false">
+              <input type="password" id="loginPassword" autocomplete="current-password" data-i18n-placeholder="login.passwordPlaceholder" placeholder="请输入密码" required />
+              <button type="button" class="pw-toggle" data-pw-toggle="loginPassword" data-i18n-aria="login.showPassword" aria-label="显示密码" aria-pressed="false">
                 <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12S6.2 5.6 12 5.6 21.5 12 21.5 12 17.8 18.4 12 18.4 2.5 12 2.5 12Z" /><circle cx="12" cy="12" r="3" /></svg>
               </button>
             </span>
@@ -285,7 +286,7 @@
   <!-- 新手引导浮层 -->
   <div id="tourHost" class="tour-host" hidden></div>
 
-  <script type="module" src="js/app.js?v=117"></script>
+  <script type="module" src="js/app.js?v=123"></script>
 </body>
 
 </html>

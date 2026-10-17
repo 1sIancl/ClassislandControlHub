@@ -16,7 +16,7 @@ public static class HubProtocol
     public static string Version => $"{MajorVersion}.{MinorVersion}";
 
     /// <summary>IslandHub 系统产品版本号（三段式语义化版本，形如 <c>1.0.0</c>）。A/B 两端与界面展示共用。</summary>
-    public const string ProductVersion = "1.4.4";
+    public const string ProductVersion = "1.4.5";
 
     /// <summary>HTTP API 根路径。</summary>
     public const string ApiPrefix = "/api/v1";
@@ -31,7 +31,7 @@ public static class HubProtocol
     public const string DiscoveryMagic = "ClassIsland.ControlHub";
 
     /// <summary>服务端标识名，出现在发现应答与 User-Agent 中。</summary>
-    public const string ProductName = "ClassIsland.IslandHub";
+    public const string ProductName = "IslandHub";
 
     /// <summary>客户端设备令牌的 HTTP 鉴权方案名：<c>Authorization: HubDevice &lt;token&gt;</c></summary>
     public const string DeviceScheme = "HubDevice";

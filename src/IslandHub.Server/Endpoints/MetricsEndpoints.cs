@@ -26,11 +26,11 @@ public static class MetricsEndpoints
     private static async Task<IResult> MetricsAsync(
         HttpContext http,
         HubStore store,
-        IOptions<ServerOptions> options,
+        IOptionsMonitor<ServerOptions> options,
         IHostEnvironment environment,
         CancellationToken cancellationToken)
     {
-        var settings = options.Value;
+        var settings = options.CurrentValue;
         if (!IsAllowed(http, settings))
         {
             return Results.Json(

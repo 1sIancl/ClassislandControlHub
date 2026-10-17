@@ -23,7 +23,7 @@ namespace IslandHub.Server.Services;
 public sealed class ProfileSlotService(
     HubStore store,
     SyncService sync,
-    IOptions<ServerOptions> options,
+    IOptionsMonitor<ServerOptions> options,
     ILogger<ProfileSlotService> logger) : BackgroundService
 {
     /// <summary>执行者标识（写进推送批次的 createdBy，报表里一眼看出是走班规则推的）。</summary>
@@ -33,12 +33,12 @@ public sealed class ProfileSlotService(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // 启动后先对齐一次：服务重启（例如深夜升级）之后，早上的第一节要按规则切过来。
-        var interval = TimeSpan.FromSeconds(Math.Max(10, options.Value.ProfileSlotIntervalSeconds));
+        var interval = TimeSpan.FromSeconds(Math.Max(10, options.CurrentValue.ProfileSlotIntervalSeconds));
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                if (options.Value.ProfileSlotsEnabled)
+                if (options.CurrentValue.ProfileSlotsEnabled)
                 {
                     await ReconcileAsync(null, stoppingToken);
                 }

@@ -557,6 +557,23 @@ public sealed partial class HubStore
         );
         CREATE INDEX IF NOT EXISTS idx_assignments_profile ON assignments(profile_id);
 
+        -- 操作审批（#35）：把危险操作的「发起」与「执行」拆开，由超级管理员确认后才执行。
+        -- 一律只追加、不删历史（只按条数裁掉最旧的），审批留痕本身就有价值。
+        CREATE TABLE IF NOT EXISTS approval_requests (
+            id           TEXT PRIMARY KEY,
+            kind         TEXT NOT NULL,
+            title        TEXT NOT NULL DEFAULT '',
+            payload      TEXT NOT NULL DEFAULT '',
+            status       TEXT NOT NULL DEFAULT 'pending',
+            requested_by TEXT NOT NULL,
+            requested_at TEXT NOT NULL,
+            decided_by   TEXT,
+            decided_at   TEXT,
+            comment      TEXT,
+            result       TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_approvals_status ON approval_requests(status, requested_at);
+
         CREATE TABLE IF NOT EXISTS device_commands (
             id            TEXT PRIMARY KEY,
             device_id     TEXT NOT NULL,

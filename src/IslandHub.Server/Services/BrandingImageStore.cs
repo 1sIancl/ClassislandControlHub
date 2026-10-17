@@ -35,9 +35,9 @@ public sealed class BrandingImageStore
 
     private readonly string _root;
 
-    public BrandingImageStore(IOptions<ServerOptions> options, IWebHostEnvironment environment)
+    public BrandingImageStore(IOptionsMonitor<ServerOptions> options, IWebHostEnvironment environment)
     {
-        _root = Path.Combine(options.Value.ResolveDataDirectory(environment.ContentRootPath), "branding");
+        _root = Path.Combine(options.CurrentValue.ResolveDataDirectory(environment.ContentRootPath), "branding");
     }
 
     /// <summary>

@@ -154,8 +154,10 @@ public sealed class GroupTimeOffsetServiceTests : IDisposable
 
     private HubStore NewStore() => new(DbPath, new SecretProtector(Path.Combine(dir, "secrets.key")));
 
+    // #87 起 ServerTimeService 收 IOptionsMonitor（要在运行中看到配置变化）；
+    // 测试里给个不变的实现即可。
     private static ServerTimeService NewService(HubStore store) =>
-        new(Options.Create(new ServerOptions()), new NtpClient(), store,
+        new(new StaticOptionsMonitor<ServerOptions>(new ServerOptions()), new NtpClient(), store,
             NullLogger<ServerTimeService>.Instance);
 
     public void Dispose()

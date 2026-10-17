@@ -61,10 +61,10 @@ public static class LocalShellEndpoints
             }).AllowAnonymous().WithTags("public");
 
         app.MapGet("/api/health/deep",
-            async (HubStore store, IOptions<ServerOptions> options, IHostEnvironment environment,
+            async (HubStore store, IOptionsMonitor<ServerOptions> options, IHostEnvironment environment,
                 CancellationToken cancellationToken) =>
             {
-                var settings = options.Value;
+                var settings = options.CurrentValue;
                 var dataDirectory = settings.ResolveDataDirectory(environment.ContentRootPath);
 
                 bool writable;

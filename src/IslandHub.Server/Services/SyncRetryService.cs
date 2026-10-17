@@ -24,7 +24,7 @@ public sealed class SyncRetryService(
     HubStore store,
     SyncService sync,
     WebhookService webhooks,
-    IOptions<ServerOptions> options,
+    IOptionsMonitor<ServerOptions> options,
     ILogger<SyncRetryService> logger) : BackgroundService
 {
     /// <summary>每台设备的重试记账（放内存即可：重启后重新计数是安全的方向）。</summary>
@@ -40,7 +40,7 @@ public sealed class SyncRetryService(
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var settings = options.Value;
+        var settings = options.CurrentValue;
         if (!settings.SyncRetryEnabled)
         {
             logger.LogInformation("配置下发失败自动重试已关闭（SyncRetryEnabled=false）。");
@@ -79,7 +79,7 @@ public sealed class SyncRetryService(
     /// <summary>把回报过失败、仍在线、且没超过重试上限的设备各重推一次。</summary>
     private async Task RetryFailedDevicesAsync(TimeSpan cooldown, CancellationToken cancellationToken)
     {
-        var maxAttempts = Math.Max(1, options.Value.SyncRetryMaxAttempts);
+        var maxAttempts = Math.Max(1, options.CurrentValue.SyncRetryMaxAttempts);
         var devices = await store.GetDevicesAsync(cancellationToken);
 
         var failed = devices

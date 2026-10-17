@@ -53,9 +53,9 @@ public sealed class SecurityHeadersMiddleware(RequestDelegate next)
 /// 把 HTTP 请求跳转到 HTTPS（仅在 <c>ControlHub:RequireHttpsRedirect=true</c> 时挂载）。
 /// <para>回环地址**永远不跳转**：桌面外壳的「本机免登录」依赖 http://127.0.0.1，跳转会让它立刻失效。</para>
 /// </summary>
-public sealed class HttpsRedirectMiddleware(RequestDelegate next, IOptions<ServerOptions> options)
+public sealed class HttpsRedirectMiddleware(RequestDelegate next, IOptionsMonitor<ServerOptions> options)
 {
-    private readonly ServerOptions _options = options.Value;
+    private readonly ServerOptions _options = options.CurrentValue;
 
     public async Task InvokeAsync(HttpContext context)
     {
@@ -88,24 +88,42 @@ public sealed class HttpsRedirectMiddleware(RequestDelegate next, IOptions<Serve
 /// <para>只约束 <c>/api/v1/admin</c>——教室端（<c>/client</c>）必须放行，否则教室就上不来了。
 /// 回环地址始终放行（本机免登录与运维脚本依赖它）。名单为空表示完全不限制。</para>
 /// </summary>
-public sealed class AdminIpAllowListMiddleware(RequestDelegate next, IOptions<ServerOptions> options)
+public sealed class AdminIpAllowListMiddleware(RequestDelegate next, IOptionsMonitor<ServerOptions> options)
 {
-    private readonly IReadOnlyList<(byte[] Network, int Prefix)> _ranges =
-        ParseRanges(options.Value.AdminIpAllowList);
+    // ⚠️ **不要在构造时解析**：中间件是单例，构造只发生一次——那样改配置就再也不生效了
+    // （#87 实测踩到：注入换成 IOptionsMonitor 也没用，因为值早被抄进字段了）。
+    // 这里按「原始条目串」做缓存：配置没变就复用上次的解析结果，不会每个请求都解析一遍。
+    private (string Key, IReadOnlyList<(byte[] Network, int Prefix)> Ranges) _cache = (string.Empty, []);
+
+    /// <summary>当前生效的解析结果（随配置热重载变化）。</summary>
+    private IReadOnlyList<(byte[] Network, int Prefix)> Ranges()
+    {
+        var entries = options.CurrentValue.AdminIpAllowList;
+        var key = string.Join("|", entries);
+        var cached = _cache;
+        if (!string.Equals(cached.Key, key, StringComparison.Ordinal))
+        {
+            cached = (key, ParseRanges(entries));
+            _cache = cached;
+        }
+
+        return cached.Ranges;
+    }
 
     /// <summary>解析出的规则条数（供启动日志打印，便于排查「配了却没生效」）。</summary>
-    internal int RuleCount => _ranges.Count;
+    internal int RuleCount => Ranges().Count;
 
     public async Task InvokeAsync(HttpContext context)
     {
-        if (_ranges.Count == 0 || !IsAdminApi(context.Request.Path))
+        var ranges = Ranges();
+        if (ranges.Count == 0 || !IsAdminApi(context.Request.Path))
         {
             await next(context);
             return;
         }
 
         var remote = context.Connection.RemoteIpAddress;
-        if (remote is not null && (IPAddress.IsLoopback(remote) || IsAllowed(remote)))
+        if (remote is not null && (IPAddress.IsLoopback(remote) || IsAllowed(remote, ranges)))
         {
             await next(context);
             return;
@@ -121,10 +139,10 @@ public sealed class AdminIpAllowListMiddleware(RequestDelegate next, IOptions<Se
     private static bool IsAdminApi(PathString path) =>
         path.StartsWithSegments(HubProtocol.ApiPrefix + "/admin");
 
-    private bool IsAllowed(IPAddress address)
+    private static bool IsAllowed(IPAddress address, IReadOnlyList<(byte[] Network, int Prefix)> ranges)
     {
         var bytes = Normalize(address).GetAddressBytes();
-        foreach (var (network, prefix) in _ranges)
+        foreach (var (network, prefix) in ranges)
         {
             // 必须同族比较（v4 对 v4、v6 对 v6）：
             // 曾把双方都映射成 IPv6 再比前缀，结果 v4 的 ::ffff: 前缀全是 0，
@@ -202,10 +220,13 @@ public sealed class AdminIpAllowListMiddleware(RequestDelegate next, IOptions<Se
     }
 
     /// <summary>解析日志用：把允许列表原样回显，便于启动时确认到底配上了没有。</summary>
-    public string DescribeAllowList() =>
-        _ranges.Count == 0
+    public string DescribeAllowList()
+    {
+        var ranges = Ranges();
+        return ranges.Count == 0
             ? "未配置（管理端不限制来源）"
-            : string.Join(", ", _ranges.Select(r => $"{new IPAddress(r.Network)}/{r.Prefix}"));
+            : string.Join(", ", ranges.Select(r => $"{new IPAddress(r.Network)}/{r.Prefix}"));
+    }
 }
 
 // ────────────────────────────── 访问日志与追踪 ID（#29 / #84 / #85） ──────────────────────────────
@@ -218,9 +239,9 @@ public sealed class AdminIpAllowListMiddleware(RequestDelegate next, IOptions<Se
 public sealed class ApiAccessLogMiddleware(
     RequestDelegate next,
     ILogger<ApiAccessLogMiddleware> logger,
-    IOptions<ServerOptions> options)
+    IOptionsMonitor<ServerOptions> options)
 {
-    private readonly ServerOptions _options = options.Value;
+    private readonly ServerOptions _options = options.CurrentValue;
 
     public async Task InvokeAsync(HttpContext context)
     {

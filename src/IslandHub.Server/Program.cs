@@ -41,6 +41,14 @@ builder.Services.Configure<ServerOptions>(builder.Configuration.GetSection(Serve
 var serverOptions = builder.Configuration.GetSection(ServerOptions.SectionName).Get<ServerOptions>()
                     ?? new ServerOptions();
 
+// 机器可读的接口规范（#95）：从运行时端点表生成，端点挂在管理端分组下（见 MapOpenApiEndpoints）。
+builder.Services.AddHubOpenApi(serverOptions);
+
+// 操作审批（#35）：危险操作由**非超管**发起时转成「待审批」，超级管理员确认后才执行。
+// 加新的危险操作只要实现一个 IApprovalExecutor 并在这里注册（类型见 ApprovalKinds）。
+builder.Services.AddSingleton<IApprovalExecutor, BackupRestoreExecutor>();
+builder.Services.AddSingleton<ApprovalService>();
+
 // 环境变量只能给标量值：`ControlHub__AdminIpAllowList=192.168.1.0/24` **不会**被绑定到 string[]，
 // 结果是「明明配了却全部放行」——这比不配更危险（实测踩到：局域网来源照样能访问管理端）。
 // 这里把标量 / 逗号分隔写法补回数组，让环境变量与 appsettings.json 两种写法都能用。
@@ -61,6 +69,108 @@ builder.Services.PostConfigure<ServerOptions>(options =>
 static string[] SplitAllowList(string raw) => raw
     .Split([',', ';', ' ', '\n', '\r', '\t'],
         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+// 配置热重载（#87）：订阅 ServerOptions 的变更，把「哪些项真的换了」记进日志。
+// 有些项**天然不可能热生效**（监听地址/端口、证书路径、NTP 与发现端口的绑定、数据目录与密钥路径——
+// 它们要么已经绑进 Kestrel，要么决定文件位置），单独列出来提醒「这些要重启」，避免反复重启排查。
+static void WatchConfigReload(WebApplication app)
+{
+    string[] restartRequired =
+    [
+        nameof(ServerOptions.BindAddress), nameof(ServerOptions.HttpPort), nameof(ServerOptions.HttpsPort),
+        nameof(ServerOptions.EnableHttps), nameof(ServerOptions.CertificatePath),
+        nameof(ServerOptions.EnableNtpServer), nameof(ServerOptions.NtpPort),
+        nameof(ServerOptions.DiscoveryPort), nameof(ServerOptions.DataDirectory),
+        nameof(ServerOptions.SecretsKeyPath),
+        // 这个中间件是「按启动时的开关」决定挂不挂进管道的，所以打开/关闭都要重启才生效。
+        nameof(ServerOptions.RequireHttpsRedirect),
+        nameof(ServerOptions.LogJson),
+    ];
+
+    app.Logger.LogInformation(
+        "配置热重载已启用：改 appsettings.json 即时生效（无需重启）；需重启才生效的有：{Items}",
+        string.Join("、", restartRequired));
+
+    var monitor = app.Services.GetRequiredService<IOptionsMonitor<ServerOptions>>();
+    // ⚠️ `OnChange(Action<TOptions, string?>)` 的第二个参数是**选项实例名**（默认实例为 null），
+    // 不是「上一次的值」——要算 diff 必须自己留一份上次生效值。
+    var known = monitor.CurrentValue;
+    var gate = new object();
+
+    monitor.OnChange(next =>
+    {
+        ServerOptions previous;
+        lock (gate)
+        {
+            previous = known;
+            known = next;
+        }
+
+        var changed = new List<string>();
+        var restart = new List<string>();
+
+        void Diff(string name, string? before, string? after)
+        {
+            if (string.Equals(before, after, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            (restartRequired.Contains(name) ? restart : changed)
+                .Add($"{name}: {Clip(before)} → {Clip(after)}");
+        }
+
+        // 「需重启」的那些项也要 diff：否则改了端口只会看到「内容有变化，但不影响已生效的项」，
+        // 读起来像「改了没用」，而不是「改了但要重启才生效」。
+        Diff(nameof(ServerOptions.BindAddress), previous.BindAddress, next.BindAddress);
+        Diff(nameof(ServerOptions.HttpPort), previous.HttpPort.ToString(), next.HttpPort.ToString());
+        Diff(nameof(ServerOptions.HttpsPort), previous.HttpsPort.ToString(), next.HttpsPort.ToString());
+        Diff(nameof(ServerOptions.EnableHttps), previous.EnableHttps.ToString(), next.EnableHttps.ToString());
+        Diff(nameof(ServerOptions.CertificatePath), previous.CertificatePath, next.CertificatePath);
+        Diff(nameof(ServerOptions.EnableNtpServer), previous.EnableNtpServer.ToString(), next.EnableNtpServer.ToString());
+        Diff(nameof(ServerOptions.NtpPort), previous.NtpPort.ToString(), next.NtpPort.ToString());
+        Diff(nameof(ServerOptions.DiscoveryPort), previous.DiscoveryPort.ToString(), next.DiscoveryPort.ToString());
+        Diff(nameof(ServerOptions.DataDirectory), previous.DataDirectory, next.DataDirectory);
+        Diff(nameof(ServerOptions.SecretsKeyPath),
+            string.IsNullOrWhiteSpace(previous.SecretsKeyPath) ? "(空)" : "***",
+            string.IsNullOrWhiteSpace(next.SecretsKeyPath) ? "(空)" : "***");
+
+        Diff(nameof(ServerOptions.ServerName), previous.ServerName, next.ServerName);
+        Diff(nameof(ServerOptions.PublicBaseUrl), previous.PublicBaseUrl, next.PublicBaseUrl);
+        Diff(nameof(ServerOptions.RequireEnrollCode), previous.RequireEnrollCode.ToString(), next.RequireEnrollCode.ToString());
+        Diff(nameof(ServerOptions.RequireHttpsRedirect), previous.RequireHttpsRedirect.ToString(), next.RequireHttpsRedirect.ToString());
+        Diff(nameof(ServerOptions.EnableDiscovery), previous.EnableDiscovery.ToString(), next.EnableDiscovery.ToString());
+        Diff(nameof(ServerOptions.EnableOpenApi), previous.EnableOpenApi.ToString(), next.EnableOpenApi.ToString());
+        Diff(nameof(ServerOptions.AdminIpAllowList),
+            string.Join(",", previous.AdminIpAllowList), string.Join(",", next.AdminIpAllowList));
+        Diff(nameof(ServerOptions.CorsAllowedOrigins),
+            string.Join(",", previous.CorsAllowedOrigins), string.Join(",", next.CorsAllowedOrigins));
+        Diff(nameof(ServerOptions.OnlineTimeoutSeconds), previous.OnlineTimeoutSeconds.ToString(), next.OnlineTimeoutSeconds.ToString());
+        Diff(nameof(ServerOptions.SessionLifetimeHours), previous.SessionLifetimeHours.ToString(), next.SessionLifetimeHours.ToString());
+        Diff(nameof(ServerOptions.PushBatchSize), previous.PushBatchSize.ToString(), next.PushBatchSize.ToString());
+        Diff(nameof(ServerOptions.LogJson), previous.LogJson.ToString(), next.LogJson.ToString());
+        // ⚠️ LogJson / RequireHttpsRedirect 在 restartRequired 名单里：日志格式与「跳转中间件挂不挂」
+        //    都是启动时决定的，改完日志里会提示需要重启（别让运维以为没生效）。
+        // 密钥类只在日志里说「变了」，绝不打印新旧值（日志会进工单与日志平台）。
+        Diff(nameof(ServerOptions.MetricsToken),
+            string.IsNullOrEmpty(previous.MetricsToken) ? "(空)" : "***",
+            string.IsNullOrEmpty(next.MetricsToken) ? "(空)" : "***");
+
+        ServerRuntime.RecordConfigReload(changed);
+        app.Logger.LogInformation("配置已热重载（第 {Count} 次）：{Changes}",
+            ServerRuntime.ConfigReloadCount,
+            changed.Count > 0 ? string.Join("；", changed) : "内容有变化，但不影响已生效的项");
+
+        if (restart.Count > 0)
+        {
+            app.Logger.LogWarning("以下改动**需要重启**才会生效：{Items}", string.Join("；", restart));
+        }
+    });
+}
+
+static string Clip(string? value) => value is null
+    ? "(空)"
+    : value.Length <= 60 ? value : value[..60] + "…";
 
 // ────────────────────────────── 序列化 ──────────────────────────────
 // 两端共用同一套 JSON 约定（camelCase、保留中文、忽略 null）。
@@ -104,6 +214,8 @@ builder.WebHost.ConfigureKestrel(kestrel =>
 // ────────────────────────────── 依赖注入 ──────────────────────────────
 builder.Services.AddSingleton(sp =>
 {
+    // 这里刻意用 **快照**（IOptions）而不是 IOptionsMonitor：数据库文件路径一旦启动就定了，
+    // 「热重载」在运行中换库没有意义（详见 #87：能热生效的是按请求/按周期读的那些项）。
     var options = sp.GetRequiredService<IOptions<ServerOptions>>().Value;
     var environment = sp.GetRequiredService<IHostEnvironment>();
     return new HubStore(options.ResolveDatabasePath(environment.ContentRootPath),
@@ -145,6 +257,7 @@ builder.Services.AddSingleton<AiTimetableService>();
 // 但**不要**把它和数据库放进同一个会被外发的备份包里（ADR 0005「密钥管理」）。
 builder.Services.AddSingleton(sp =>
 {
+    // 同上：密钥文件路径是启动时一次性的（换路径等于换密钥，必须重启）。
     var options = sp.GetRequiredService<IOptions<ServerOptions>>().Value;
     var environment = sp.GetRequiredService<IHostEnvironment>();
     var keyPath = string.IsNullOrWhiteSpace(options.SecretsKeyPath)
@@ -208,6 +321,11 @@ if (serverOptions.LogJson)
 }
 
 var app = builder.Build();
+
+// 配置热重载（#87）：appsettings.json 的改动会在**运行中**生效（按请求/按周期读的项走 IOptionsMonitor）。
+// 这里订阅变更：把「哪些项真的换了」记进日志，并把「必须重启才生效的项」单独点出来——
+// 否则最容易出现的误解是「我改了却没生效」，然后反复重启排查。
+WatchConfigReload(app);
 
 // ────────────────────────────── 初始化 ──────────────────────────────
 await using (var scope = app.Services.CreateAsyncScope())
@@ -352,6 +470,12 @@ app.MapLessonEndpoints();
 // 插件市场代理缓存（#121）：市场索引 / 包缓存 / 已装清单 / 批量下发。
 app.MapPluginMarketEndpoints();
 app.MapWebhookEndpoints();
+// 机器可读的接口规范（#95）：/api/v1/admin/openapi/v1.json，只对已登录且具备 settings.read 的账号开放。
+app.MapOpenApiEndpoints(serverOptions);
+// 数据迁移（#61）：整包导出 / 预览 / 导入（导入前自动备份）。
+app.MapMigrationEndpoints();
+// 操作审批（#35）：列出 / 通过 / 驳回（危险操作由非超管发起时转成待审批）。
+app.MapApprovalEndpoints();
 
 // 未匹配到的 API 路径统一返回 JSON 404，而不是落到前端页面。
 app.Map($"{HubProtocol.ApiPrefix}/{{**rest}}",

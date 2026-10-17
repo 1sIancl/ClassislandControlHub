@@ -21,7 +21,7 @@
 ```bash
 git clone https://github.com/1sIancl/ClassislandControlHub.git
 cd IslandHub
-dotnet build ClassIsland.IslandHub.slnx -c Release
+dotnet build IslandHub.slnx -c Release
 ```
 
 ## 三、本地运行

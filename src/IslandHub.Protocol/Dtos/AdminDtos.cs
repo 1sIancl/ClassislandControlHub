@@ -113,6 +113,18 @@ public sealed class ServerInfoDto
     /// <summary>是否要求注册码。</summary>
     public bool RequiresEnrollCode { get; set; } = true;
 
+    /// <summary>
+    /// 最近一次「配置热重载」的时刻（UTC）；为 <c>null</c> 表示本次启动以来还没重载过（#87）。
+    /// <para>改完 appsettings.json 刷新界面即可确认是否已生效，不必靠重启来验证。</para>
+    /// </summary>
+    public DateTimeOffset? ConfigReloadedAt { get; set; }
+
+    /// <summary>本次启动以来的配置热重载次数（#87）。</summary>
+    public int ConfigReloadCount { get; set; }
+
+    /// <summary>最近一次重载中「真的变了」的配置项（最多几条，供界面提示；#87）。</summary>
+    public List<string> ConfigReloadChanges { get; set; } = [];
+
     /// <summary>对外公布的基础地址，可为空（自动推断）。</summary>
     public string? PublicBaseUrl { get; set; }
 

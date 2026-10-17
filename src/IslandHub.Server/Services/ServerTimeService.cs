@@ -29,7 +29,7 @@ namespace IslandHub.Server.Services;
 /// </para>
 /// </summary>
 public sealed class ServerTimeService(
-    IOptions<ServerOptions> options,
+    IOptionsMonitor<ServerOptions> options,
     NtpClient ntpClient,
     HubStore store,
     ILogger<ServerTimeService> logger) : BackgroundService
@@ -110,7 +110,7 @@ public sealed class ServerTimeService(
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            if (options.Value.EnableNtpSync)
+            if (options.CurrentValue.EnableNtpSync)
             {
                 await SyncOnceAsync(stoppingToken);
             }
@@ -175,7 +175,7 @@ public sealed class ServerTimeService(
     /// <summary>立即从 NTP 服务器授时一次，并更新缓存偏移。</summary>
     public async Task SyncOnceAsync(CancellationToken cancellationToken = default)
     {
-        var servers = options.Value.NtpServers;
+        var servers = options.CurrentValue.NtpServers;
 
         foreach (var server in servers)
         {

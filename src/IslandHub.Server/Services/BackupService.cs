@@ -3,6 +3,7 @@ using System.Text.Json;
 using IslandHub.Protocol;
 using IslandHub.Protocol.Dtos;
 using IslandHub.Server.Options;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
 
 namespace IslandHub.Server.Services;
@@ -38,10 +39,10 @@ public sealed class BackupEntry
 /// 支持手动/自动/更新前备份，自动备份仅保留最近 <see cref="ServerOptions.BackupRetention"/> 份。</para>
 /// </summary>
 public sealed class BackupService(
-    IOptions<ServerOptions> options,
+    IOptionsMonitor<ServerOptions> options,
     ILogger<BackupService> logger)
 {
-    private readonly ServerOptions _options = options.Value;
+    private readonly ServerOptions _options = options.CurrentValue;
 
     private string Root => Path.Combine(_options.ResolveDataDirectory(AppContext.BaseDirectory), "Backups");
 
@@ -255,9 +256,44 @@ public sealed class BackupService(
             IncludeLocalShellToken = true,
         });
 
-        foreach (var f in source)
+        // ⚠️ Windows 上**不能直接覆盖**正在使用的 SQLite 库：库在 WAL 模式下 `-shm` / `-wal` 是内存映射的，
+        //    `File.Copy(overwrite: true)` 会抛 ERROR_USER_MAPPED_FILE
+        //    （"请求的操作无法在使用用户映射区域打开的文件上执行"）——恢复备份曾因此在运行中永远失败。
+        //    先把连接池清空（连接都是按需打开、用完即关，池里只剩空闲连接），再覆盖。
+        SqliteConnection.ClearAllPools();
+
+        // 旧库留下的 WAL / SHM 必须清掉：它们是**旧库**的事务日志，留着会和新库搅在一起
+        // （轻则读到旧数据，重则判成损坏）。备份里带了这两份文件时，下面会重新拷回来。
+        foreach (var suffix in new[] { "-wal", "-shm" })
         {
-            File.Copy(f, Path.Combine(dataDir, Path.GetFileName(f)), overwrite: true);
+            var stale = Path.Combine(dataDir, "controlhub.db" + suffix);
+            try
+            {
+                if (File.Exists(stale))
+                {
+                    File.Delete(stale);
+                }
+            }
+            catch (Exception ex)
+            {
+                // 删不掉不致命（下面覆盖主库才是关键），但要在日志里留痕，便于排查「恢复了却像没恢复」。
+                logger.LogWarning(ex, "清理旧库残留文件 {File} 失败。", stale);
+            }
+        }
+
+        try
+        {
+            foreach (var f in source)
+            {
+                File.Copy(f, Path.Combine(dataDir, Path.GetFileName(f)), overwrite: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            // 恢复失败要**如实返回 false**（而不是抛异常）：调用方（含操作审批）据此记录
+            // 「执行失败：文件被占用」这类结论，比一个 500 有用得多。
+            logger.LogError(ex, "从备份 {Id} 恢复数据库失败（文件可能仍被占用）。", id);
+            return false;
         }
 
         // 备份里带了密钥就一并恢复（#59）：否则恢复出来的库解不开注册码 / Webhook 密钥，
@@ -305,13 +341,13 @@ public sealed class BackupService(
 public sealed class AutoBackupService(
     BackupService backups,
     WebhookService webhooks,
-    IOptions<ServerOptions> options,
+    IOptionsMonitor<ServerOptions> options,
     ILogger<AutoBackupService> logger) : BackgroundService
 {
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var opts = options.Value;
+        var opts = options.CurrentValue;
         if (!opts.EnableAutoBackup)
         {
             return;

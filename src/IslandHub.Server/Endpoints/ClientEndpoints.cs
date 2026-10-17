@@ -52,12 +52,12 @@ public static class ClientEndpoints
         HttpContext http,
         HubStore store,
         SyncService sync,
-        IOptions<ServerOptions> options,
+        IOptionsMonitor<ServerOptions> options,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
         var logger = loggerFactory.CreateLogger("ClientEndpoints");
-        var opts = options.Value;
+        var opts = options.CurrentValue;
 
         if (string.IsNullOrWhiteSpace(request.DeviceId))
         {
@@ -208,11 +208,11 @@ public static class ClientEndpoints
     /// </summary>
     private static async Task<ApiResult<ServerInfoDto>> GetConfigAsync(
         HubStore store,
-        IOptions<ServerOptions> options,
+        IOptionsMonitor<ServerOptions> options,
         IHostEnvironment environment,
         CancellationToken cancellationToken)
     {
-        var opts = options.Value;
+        var opts = options.CurrentValue;
         var revision = await store.GetRevisionAsync(cancellationToken);
         var devices = await store.GetDevicesAsync(cancellationToken);
         var online = devices.Count(d => d.LastSeenAt.HasValue
@@ -249,7 +249,7 @@ public static class ClientEndpoints
         HubStore store,
         SyncService sync,
         ReminderService reminders,
-        IOptions<ServerOptions> options,
+        IOptionsMonitor<ServerOptions> options,
         CancellationToken cancellationToken)
     {
         var device = http.RequireDevice();
@@ -305,7 +305,7 @@ public static class ClientEndpoints
             Revision = revision,
             PushEpoch = device.PushEpoch,
             ShouldSync = shouldSync,
-            HeartbeatSeconds = Math.Max(5, options.Value.OnlineTimeoutSeconds / 4),
+            HeartbeatSeconds = Math.Max(5, options.CurrentValue.OnlineTimeoutSeconds / 4),
             ServerTime = DateTimeOffset.UtcNow,
             Message = await sync.TakePushMessageAsync(cancellationToken),
             Revoked = false,

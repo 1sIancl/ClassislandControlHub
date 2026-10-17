@@ -53,6 +53,15 @@ public sealed class ServerOptions
     /// <summary>是否启用局域网 UDP 自动发现。</summary>
     public bool EnableDiscovery { get; set; } = true;
 
+    /// <summary>
+    /// 是否提供机器可读的接口规范（OpenAPI，路线图 #95）。
+    /// <para>
+    /// 默认开：它等价于「全部接口 + 每条接口要什么权限」的清单，只对**已登录且具备 `settings.read`
+    /// 的账号**开放（挂在管理端分组下），因此默认开着也不扩大对外暴露面。整站不想暴露这份清单时置 false。
+    /// </para>
+    /// </summary>
+    public bool EnableOpenApi { get; set; } = true;
+
     /// <summary>UDP 发现端口。</summary>
     public int DiscoveryPort { get; set; } = HubProtocol.DefaultDiscoveryPort;
 

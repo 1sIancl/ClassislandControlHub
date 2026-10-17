@@ -23,6 +23,27 @@ internal static class ServerRuntime
     /// <summary>在程序启动时调用一次，让启动时刻在启动瞬间就落定。</summary>
     public static void Init() => _startedAt = ResolveStart();
 
+    // ── 配置热重载（#87）──
+    // 为什么要记这个：改完 appsettings 后，「到底生效了没有」此前只能靠重启一次来确认；
+    // 现在把它暴露在 /server/info 与界面上，改完刷新一下就知道。
+
+    /// <summary>最近一次配置热重载的时刻（UTC）；从未重载过为 <c>null</c>。</summary>
+    public static DateTimeOffset? ConfigReloadedAt { get; private set; }
+
+    /// <summary>配置热重载次数（自本次启动起）。</summary>
+    public static int ConfigReloadCount { get; private set; }
+
+    /// <summary>最近一次重载里「真的变了」的项（用于日志与界面提示）。</summary>
+    public static IReadOnlyList<string> ConfigReloadChanges { get; private set; } = [];
+
+    /// <summary>记一次配置热重载。</summary>
+    public static void RecordConfigReload(IReadOnlyList<string> changes)
+    {
+        ConfigReloadedAt = DateTimeOffset.UtcNow;
+        ConfigReloadCount++;
+        ConfigReloadChanges = changes;
+    }
+
     private static DateTimeOffset ResolveStart()
     {
         try

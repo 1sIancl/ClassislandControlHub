@@ -29,7 +29,7 @@ public sealed class UpdateState
 /// <para>更新包约定：资产名为 <c>IslandHub.Server-&lt;rid&gt;.zip</c>，rid 为当前运行时标识（如 linux-x64）。</para>
 /// </summary>
 public sealed class UpdateService(
-    IOptions<ServerOptions> options,
+    IOptionsMonitor<ServerOptions> options,
     ILogger<UpdateService> logger) : BackgroundService
 {
     private static readonly HttpClient Http = new()
@@ -50,7 +50,7 @@ public sealed class UpdateService(
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!options.Value.AutoCheckUpdates)
+        if (!options.CurrentValue.AutoCheckUpdates)
         {
             return;
         }
@@ -70,7 +70,7 @@ public sealed class UpdateService(
                 logger.LogWarning(ex, "检查更新失败。");
             }
 
-            await SafeDelayAsync(TimeSpan.FromHours(Math.Max(1, options.Value.UpdateCheckIntervalHours)), stoppingToken);
+            await SafeDelayAsync(TimeSpan.FromHours(Math.Max(1, options.CurrentValue.UpdateCheckIntervalHours)), stoppingToken);
         }
     }
 
@@ -96,7 +96,7 @@ public sealed class UpdateService(
     /// <summary>检查 GitHub Release 是否有新版本，更新状态并返回。</summary>
     public async Task<UpdateState> CheckForUpdateAsync(CancellationToken cancellationToken = default)
     {
-        var repo = options.Value.UpdateRepo;
+        var repo = options.CurrentValue.UpdateRepo;
         var current = HubProtocol.ProductVersion;
 
         try
@@ -229,7 +229,7 @@ public sealed class UpdateService(
     private async Task ReplaceFilesAsync(string extractDir, CancellationToken ct)
     {
         var appDir = Path.GetFullPath(AppContext.BaseDirectory);
-        var dataDir = options.Value.ResolveDataDirectory(appDir);
+        var dataDir = options.CurrentValue.ResolveDataDirectory(appDir);
         var dataDirFull = Path.GetFullPath(dataDir);
 
         foreach (var srcFile in Directory.EnumerateFiles(extractDir, "*", SearchOption.AllDirectories))

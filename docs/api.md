@@ -8,6 +8,9 @@
 > 请求头二选一：`Authorization: ApiKey chk_...` 或 `X-Api-Key: chk_...`。
 > 明文只在创建响应里出现**一次**（服务端只存哈希），丢了就重新签发。
 > 出于安全考虑，「密钥管理」权限**不允许**授予密钥，避免一把密钥无限自我复制。
+>
+> **想直接导入工具？** 服务端提供机器可读的 OpenAPI 3.1 规范，见文末
+> [《六、机器可读的规范（OpenAPI）》](#六机器可读的规范openapi)。
 
 ---
 
@@ -86,7 +89,30 @@ curl -s "$BASE/admin/devices" -H "Authorization: Bearer $TOKEN" \
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/server/info` | 版本、启动时间、运行时长、设备统计、数据目录、`secretsEncrypted`（注册码 / 邀请码 / Webhook 密钥的已加密与不可用条数，可用于监控「加密到底生效没有」） |
+| GET | `/server/info` | 版本、启动时间、运行时长、设备统计、数据目录、`secretsEncrypted`（注册码 / 邀请码 / Webhook 密钥的已加密与不可用条数，可用于监控「加密到底生效没有」）；`configReloadedAt` / `configReloadCount` / `configReloadChanges` 反映**配置热重载**（#87）最近一次的情况——改完 `appsettings.json` 刷新这里就能确认生效了没有 |
+
+### 数据迁移（#61）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/admin/migration/export` | `settings.read` | 导出迁移包（JSON）。**凭据不进包**：设备令牌、账号密码哈希、Webhook 密钥列被剥离，`settings` 里的 `enc:` 密文行跳过 |
+| POST | `/admin/migration/preview` | `settings.write` | 上传迁移包 → 返回一次性令牌 + 逐表「新增 / 覆盖 / 跳过」预览（不改数据） |
+| POST | `/admin/migration/apply` | `settings.write` | 按令牌确认导入：`{"token":"…"}`。**导入前自动备份**（响应里的 `backupId` 可一键回退）；设备与账号**只新增不覆盖**；导入后推进配置版本号 |
+
+### 操作审批（#35）
+
+危险操作（目前是「恢复备份」）由**非超级管理员**发起时不会执行，而是生成一条审批申请；
+超级管理员确认后才执行。超管自己发起则直接执行。
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/admin/approvals?status=pending` | 登录即可 | 审批列表：返回 `{ canDecide, items[] }`。**非超管只返回自己发起的**；`canDecide=false` 表示当前账号不能审批 |
+| POST | `/admin/approvals/{id}/approve` | 仅超级管理员 | 通过并执行（可选请求体 `{"comment":"…"}`）。执行失败会把状态落成 `failed` 并写清原因 |
+| POST | `/admin/approvals/{id}/reject` | 仅超级管理员 | 驳回，不执行（建议带 `comment` 说明原因） |
+
+`POST /admin/backups/{id}/restore` 的响应因此变成
+`{ executed, approvalId, status, message }`：`executed=false` 表示已提交审批（`approvalId` 为申请号），
+`status` 取值 `done` / `failed` / `pending`。同一申请只能被处理一次（并发点「通过」只有一个能进入执行）。
 | GET | `/branding/img/{name}` | 上传的品牌图片（Logo / 浏览器图标 / 登录壁纸）。**免鉴权**——登录页在未登录时就要显示它；响应带 `nosniff` 与 `Content-Security-Policy: default-src 'none'; sandbox` |
 | GET | `/ping` | 探针 |
 | GET | `/api/health` | 健康检查（注意：不在 `/api/v1` 下） |
@@ -370,3 +396,36 @@ done
   脚本同理：`curl -H "Authorization: Bearer $TOKEN" .../content -o shot.png`。
 - **写操作要幂等**：指令是一次性的，重试会重复执行（例如重复重启）；请用返回的 `commandId` 去重。
 - 破坏性操作（删除设备 / 清空诊断 / 恢复备份）建议先在界面上做一次，确认语义后再写进脚本。
+
+## 六、机器可读的规范（OpenAPI）
+
+路线图 **#95**：服务端在**运行时端点表**上生成 OpenAPI 3.1 规范——所以不会出现「加了接口忘了写文档」，
+新路由自动出现在里面（当前 199 条操作 / 163 条路径，含全部管理端、教室端与公开接口）。
+
+```bash
+# 1) 登录拿会话令牌（账号需要 settings.read 权限）
+TOKEN=$(curl -s -X POST "http://<服务器>:29800/api/v1/admin/login" \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"…"}' | jq -r .data.token)
+
+# 2) 取规范
+curl -s "http://<服务器>:29800/api/v1/admin/openapi/v1.json" \
+  -H "Authorization: Bearer $TOKEN" -o islandhub-openapi.json
+```
+
+`islandhub-openapi.json` 可以直接导入 Apifox / Postman / Swagger Editor，或用 `openapi-generator` 生成客户端。
+
+规范里额外写了四样标准字段之外、但对接时最要紧的东西：
+
+| 位置 | 含义 |
+|---|---|
+| `components.securitySchemes` | 四种鉴权方式：`AdminBearer`（管理端会话）、`DeviceToken`（教室端 `HubDevice`）、`LocalShell`（桌面外壳本机信任）、`MetricsToken`（`/metrics` 抓取） |
+| 每个操作的 `security` | 这条接口**谁能调**；公开接口是空数组 |
+| 每个操作的 `x-public` | 明确标成「无需鉴权」（登录、存活探测、注册码换取设备令牌等） |
+| 管理端操作的 `x-permission` | 需要的权限键，与「账号与权限」页显示的键一致——据此申请**最小权限** |
+
+⚠️ 两条注意：
+
+- 规范挂在**管理端分组**下：需要登录，且账号要有 `settings.read`。它等价于「全部接口 + 权限清单」，
+  刻意不对整个内网公开（没权限就是 403）。想给某个只读观察号看，给它 `settings.read` 即可。
+- 整站不想提供这份清单时，把 `ControlHub:EnableOpenApi` 设为 `false`（改动需重启）。

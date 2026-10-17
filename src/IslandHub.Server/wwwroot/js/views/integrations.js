@@ -1,10 +1,10 @@
 /** 通知与集成视图（系统设置拆分而来）：Webhook 外部通知与 AI 辅助导入配置。 */
 
-import { api, hasPermission } from '../core/api.js?v=117';
-import { toastError } from '../core/errors.js?v=117';
+import { api, hasPermission } from '../core/api.js?v=123';
+import { toastError } from '../core/errors.js?v=123';
 import {
   h, clear, toast, modal, confirmDialog, field, select, guard, loadingBlock, hintIcon,
-} from '../core/ui.js?v=117';
+} from '../core/ui.js?v=123';
 
 export const meta = {
   title: '通知与集成',
