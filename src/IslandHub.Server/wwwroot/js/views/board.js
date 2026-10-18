@@ -7,14 +7,14 @@
  *   · 带「看板模式」：隐藏侧栏与顶栏，整屏都留给数据；
  *   · 页面切走自动停表（本仓的视图没有 unmount 钩子，靠 `container.isConnected` 自清）。
  */
-import { api, hasPermission } from '../core/api.js?v=123';
-import { toastError } from '../core/errors.js?v=123';
-import { h, clear, formatDateTime } from '../core/ui.js?v=123';
-import { t } from '../core/i18n.js?v=123';
+import { api, hasPermission } from '../core/api.js?v=128';
+import { toastError } from '../core/errors.js?v=128';
+import { h, clear, formatDateTime } from '../core/ui.js?v=128';
+import { t } from '../core/i18n.js?v=128';
 
 export const meta = {
-  title: '大屏看板',
-  subtitle: '一屏看清在线率、需要注意的教室与正在上的课',
+  title: t('board.title'),
+  subtitle: t('board.subtitle'),
 };
 
 const REFRESH_MS = 30000;
@@ -23,11 +23,13 @@ let clockTimer = null;
 
 /** 载入看板需要的全部数据（并发；某个接口没权限就少一块，不影响其它）。 */
 async function loadData() {
-  const [info, devices, lessons, audit] = await Promise.all([
+  const [info, devices, lessons, audit, weather] = await Promise.all([
     api('/server/info').catch(() => null),
     api('/admin/devices').catch(() => []),
     api('/admin/lessons/live').catch(() => null),
     hasPermission('audit.read') ? api('/admin/audit?limit=8').catch(() => null) : Promise.resolve(null),
+    // 天气（新功能）：没启用 / 没数据 / 没权限时一律当作没有，大屏上不显示——绝不能因此让整页空掉。
+    api('/admin/weather').catch(() => null),
   ]);
 
   return {
@@ -35,6 +37,7 @@ async function loadData() {
     devices: devices || [],
     lessons: lessons?.devices || [],
     audit: Array.isArray(audit) ? audit : (audit?.items || []),
+    weather: weather?.available ? weather : null,
     at: new Date(),
   };
 }
@@ -49,7 +52,8 @@ export async function render(container) {
     data = await loadData();
   } catch (e) {
     clear(container);
-    container.appendChild(h('div.notice.notice-warn', h('span.notice-icon', '!'), h('div', `载入失败：${e.message}`)));
+    container.appendChild(h('div.notice.notice-warn', h('span.notice-icon', '!'),
+      h('div', t('board.loadFailed', { message: e.message }))));
     return;
   }
 
@@ -123,6 +127,11 @@ function renderHeader(data, reload) {
         version: data.info?.version || '—',
         uptime: formatUptime(data.info?.uptimeSeconds),
       }))),
+    // 天气贴在时钟左边：值班的人最常看的就是「几点」和「今天什么天」。
+    data.weather
+      ? h('div.board-weather', { title: t('board.weatherTitle') },
+        h('span.board-weather-text', data.weather.summary || ''))
+      : null,
     h('div.board-clock', h('span', { 'data-clock': '' }, new Date().toLocaleTimeString('zh-CN', { hour12: false }))),
     h('div.board-actions',
       h('span.board-refresh', t('board.refreshHint', { seconds: REFRESH_MS / 1000, at: formatDateTime(data.at) })),

@@ -6,15 +6,16 @@
  * 最容易让人以为它只是一次普通推送。
  */
 
-import { api } from '../core/api.js?v=123';
-import { toastError } from '../core/errors.js?v=123';
+import { api } from '../core/api.js?v=128';
+import { toastError } from '../core/errors.js?v=128';
 import {
   h, clear, toast, loadingBlock, field, select, confirmDialog, formatDateTime,
-} from '../core/ui.js?v=123';
+} from '../core/ui.js?v=128';
+import { t } from '../core/i18n.js?v=128';
 
 export const meta = {
-  title: '考试模式',
-  subtitle: '临时把选定教室切到考试档案，考完一键还原',
+  title: t('exam.title'),
+  subtitle: t('exam.subtitle'),
 };
 
 export async function render(container) {
@@ -35,7 +36,7 @@ export async function render(container) {
       : renderStartCard(container, profiles, groups));
   } catch (err) {
     clear(container);
-    toastError(err, '考试模式加载失败');
+    toastError(err, t('exam.loadFailed'));
   }
 }
 
@@ -43,81 +44,86 @@ export async function render(container) {
 function renderStatusCard(state) {
   if (!state.active) {
     return h('div.card',
-      h('div', { style: { fontWeight: '600', marginBottom: '6px' } }, '当前没有进行中的考试模式'),
-      h('div.cell-sub', '教室按各自（或所属分组）的档案正常运行。'),
+      h('div', { style: { fontWeight: '600', marginBottom: '6px' } }, t('exam.idleTitle')),
+      h('div.cell-sub', t('exam.idleDesc')),
       h('div.notice.notice-info', { style: { marginTop: '10px' } },
         h('span.notice-icon', 'i'),
-        h('div', '开启后：选定教室会被切到考试档案并立即下发；',
-          h('strong', '结束时会还原成这些教室各自原来的档案'),
-          '（原本没单独指定档案的会还原成「跟随分组」）。')));
+        h('div', t('exam.intro1'),
+          h('strong', t('exam.intro2')),
+          t('exam.intro3'))));
   }
 
   const rows = (state.targets || []).map((t) => h('tr',
     h('td', t.deviceName || t.deviceId),
-    h('td', t.previousProfileName || '跟随分组（无单独档案）')));
+    h('td', t.previousProfileName || t('exam.followGroup'))));
 
   return h('div.card',
     h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' } },
-      h('span', { style: { fontWeight: '600' } }, '考试模式进行中'),
+      h('span', { style: { fontWeight: '600' } }, t('exam.running')),
       h('span', { style: { fontSize: '12px', color: 'var(--text-dim)' } },
-        `由 ${state.startedBy || '未知'} 于 ${formatDateTime(state.startedAt)} 开启`)),
+        t('exam.startedBy', {
+          by: state.startedBy || t('exam.unknown'),
+          at: formatDateTime(state.startedAt),
+        }))),
     h('div', { style: { marginTop: '8px' } },
-      h('div', `考试档案：${state.profileName || state.profileId}`),
-      h('div', `通知文案：${state.message || '（无）'}`),
-      h('div', `涉及教室：${state.targetCount} 台`)),
+      h('div', t('exam.profileLine', { name: state.profileName || state.profileId })),
+      h('div', t('exam.messageLine', { text: state.message || t('exam.none') })),
+      h('div', t('exam.targetLine', { count: state.targetCount }))),
     rows.length
       ? h('div.table-wrap', { style: { marginTop: '10px' } },
         h('table.data',
-          h('thead', h('tr', h('th', '教室'), h('th', '结束后还原为'))),
+          h('thead', h('tr', h('th', t('exam.colRoom')), h('th', t('exam.colRestore')))),
           h('tbody', ...rows)))
       : null,
     h('div.notice.notice-warn', { style: { marginTop: '10px' } },
       h('span.notice-icon', '!'),
-      h('div', '考试期间请勿在「配置下发 / 设备管理」里改动这些教室的档案——',
-        '否则结束后它们会按上表还原，你的改动会被覆盖。')));
+      h('div', t('exam.warn1'),
+        t('exam.warn2'))));
 }
 
 /** 开始表单。 */
 function renderStartCard(container, profiles, groups) {
   if (profiles.length === 0) {
-    return h('div.card', '还没有配置档案。请先到「配置档案」里建一个考试用的档案。');
+    return h('div.card', t('exam.noProfiles'));
   }
 
   const profileSelect = select(profiles.map((p) => ({ value: p.id, label: p.name })), profiles[0].id);
   const scopeSelect = select([
-    { value: 'all', label: '全部教室' },
-    { value: 'group', label: '指定分组' },
+    { value: 'all', label: t('exam.allRooms') },
+    { value: 'group', label: t('exam.byGroup') },
   ], 'all');
   const groupSelect = select(groups.map((g) => ({ value: g.id, label: g.name })), groups[0]?.id ?? '');
-  const groupField = field('分组', groupSelect);
+  const groupField = field(t('exam.group'), groupSelect);
   groupField.hidden = true;
   scopeSelect.addEventListener('change', () => {
     groupField.hidden = scopeSelect.value !== 'group';
   });
 
   const messageInput = h('input', {
-    type: 'text', value: '考试进行中，请勿操作教室设备。', style: { width: '320px' },
+    type: 'text', value: t('exam.busy'), style: { width: '320px' },
   });
   const notifyChk = h('input', { type: 'checkbox' });
   notifyChk.checked = true;
 
-  const startBtn = h('button.btn.btn-primary', { type: 'button' }, '开启考试模式');
+  const startBtn = h('button.btn.btn-primary', { type: 'button' }, t('exam.start'));
   startBtn.addEventListener('click', async () => {
     const scope = scopeSelect.value;
     if (scope === 'group' && !groupSelect.value) {
-      toast('warn', '请选择分组');
+      toast('warn', t('exam.selectGroup'));
       return;
     }
 
     const targetIds = scope === 'group' ? [groupSelect.value] : [];
     const scopeText = scope === 'group'
-      ? `分组「${groupSelect.options[groupSelect.selectedIndex]?.text ?? ''}」`
-      : '全部教室';
+      ? t('exam.groupQuoted', { name: groupSelect.options[groupSelect.selectedIndex]?.text ?? '' })
+      : t('exam.allRooms');
     if (!await confirmDialog({
-      title: '开启考试模式',
-      message: `将把${scopeText}切到档案「${profileSelect.options[profileSelect.selectedIndex]?.text ?? ''}」`
-        + '并立即下发。结束后可以一键还原成各自原来的档案。',
-      confirmText: '开启',
+      title: t('exam.start'),
+      message: t('exam.startConfirm1', {
+        scope: scopeText,
+        profile: profileSelect.options[profileSelect.selectedIndex]?.text ?? '',
+      }) + t('exam.startConfirm2'),
+      confirmText: t('exam.confirmStart'),
     })) {
       return;
     }
@@ -134,32 +140,32 @@ function renderStartCard(container, profiles, groups) {
           notify: notifyChk.checked,
         },
       });
-      toast('ok', '考试模式已开启', `已切换 ${result.targetCount} 台教室并下发。`);
+      toast('ok', t('exam.started'), t('exam.startedDesc', { count: result.targetCount }));
       await render(container);
     } catch (err) {
-      toastError(err, '开启失败');
+      toastError(err, t('exam.startFailed'));
       startBtn.disabled = false;
     }
   });
 
   return h('div.card',
-    h('div', { style: { fontWeight: '600', marginBottom: '10px' } }, '开启考试模式'),
-    h('div', field('考试档案', profileSelect)),
-    h('div', field('范围', scopeSelect)),
+    h('div', { style: { fontWeight: '600', marginBottom: '10px' } }, t('exam.start')),
+    h('div', field(t('exam.profile'), profileSelect)),
+    h('div', field(t('exam.scope'), scopeSelect)),
     h('div', groupField),
-    h('div', field('通知文案', messageInput, '会作为一条提醒发给这些教室（可关掉下方勾选）。')),
-    h('label.checkbox-field', notifyChk, h('span', '同时给这些教室推一条屏幕提醒')),
+    h('div', field(t('exam.message'), messageInput, t('exam.messageHint'))),
+    h('label.checkbox-field', notifyChk, h('span', t('exam.pushNotice'))),
     h('div', { style: { marginTop: '12px' } }, startBtn));
 }
 
 /** 结束按钮（带确认：还原是不可撤销的档案改写）。 */
 function renderEndCard(container) {
-  const endBtn = h('button.btn', { type: 'button' }, '结束考试模式并还原');
+  const endBtn = h('button.btn', { type: 'button' }, t('exam.end'));
   endBtn.addEventListener('click', async () => {
     if (!await confirmDialog({
-      title: '结束考试模式',
-      message: '将把上表里的教室还原成各自原来的档案并下发。',
-      confirmText: '结束并还原',
+      title: t('exam.endTitle'),
+      message: t('exam.endConfirm'),
+      confirmText: t('exam.endConfirmBtn'),
     })) {
       return;
     }
@@ -167,10 +173,10 @@ function renderEndCard(container) {
     endBtn.disabled = true;
     try {
       await api('/admin/exam-mode/end', { method: 'POST' });
-      toast('ok', '考试模式已结束', '已按各自原档案发起下发。');
+      toast('ok', t('exam.ended'), t('exam.endedDesc'));
       await render(container);
     } catch (err) {
-      toastError(err, '结束失败');
+      toastError(err, t('exam.endFailed'));
       endBtn.disabled = false;
     }
   });

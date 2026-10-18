@@ -161,6 +161,21 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 
 ## 最近更新
 
+- **`1.4.6.0`**（A 端 `1.4.6` / 插件 `1.4.6.0`，2026-10-18 发布）：
+  - **天气管理**（新）：「系统 → 天气」配好城市后服务端定时抓取，教室端可读、大屏看板会显示。
+    数据源 Open-Meteo **免 API Key**；内网抓不到时**保留上一次的数据**并把原因写在页面上。
+    教室端走 `GET /api/v1/client/weather`，`summary` 是拼好的整行文字（插件不必解析天气代码），
+    停用或无数据时 `available=false`（插件隐藏而不是显示空白）。
+  - **回滚发布机制**：自动更新前把当前**程序文件**打成快照（不含数据目录、只留 3 份），
+    「系统维护 → 自动更新」里可**一键回滚**；回滚前还会再拍一份，所以回滚本身也能撤销。
+  - **操作审批流**：「系统 → 操作审批」。非超级管理员对危险操作（目前是「恢复备份」）只能**提交申请**，
+    超管确认后才执行。⚠️ 顺带修掉「恢复备份在运行中从来没能成功过」（Windows 上 SQLite WAL 的
+    `-shm`/`-wal` 被内存映射占用）。
+  - **代码静态分析**：接入 GitHub CodeQL（C# + Actions，每周一次），告警进 Security 页但不卡发布。
+  - **无障碍收尾**：跳转链接「跳到主内容」、账号菜单与导航下拉的完整键盘契约（方向键 / Home / End / Esc 归还焦点）。
+  - **界面多语言继续推进**：新增「服务器信息」「考试模式」两页整页抽取，并补掉跳转链接、顶栏搜索按钮等
+    外壳残留中文（累计覆盖：导航 / 顶栏 / 登录页 / 全局交互件 / 大屏看板 / 首页 / 服务器信息 / 考试模式 / 天气）。
+  - **文档三件**：新增《升级与回滚指南》《常见问题 FAQ》《示例配置》（可直接抄的 `appsettings.json`）。
 - **`1.4.5.0`**（A 端 `1.4.5` / 插件 `1.4.5.0`，2026-10-17 发布）：
   - **数据迁移工具**：把一台服务器上配好的东西（档案 / 分组 / 标签 / 设备 / 账号 / 通知渠道 / 提醒 / 模板 / 系统设置）
     整包搬到另一台——先**逐表预览**再确认导入，**导入前自动备份**。⚠️ 设备令牌 / 账号密码 / Webhook 密钥
@@ -453,7 +468,8 @@ powershell -ExecutionPolicy Bypass -File .\sh\install-windows.ps1
 
 | IslandHub 版本 | 插件包 | 支持的 ClassIsland | 插件市场 | 状态 |
 |---|---|---|---|---|
-| A 端 `1.4.5` / 插件 `1.4.5.0` | `ControlHub.Plugin.cipx` `1.4.5.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ✅ **当前已发布版本**（数据迁移 / 操作审批 / 大屏看板 / 时间表拖拽 / 配置热重载 / OpenAPI / 多语言外壳） |
+| A 端 `1.4.6` / 插件 `1.4.6.0` | `ControlHub.Plugin.cipx` `1.4.6.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ✅ **当前已发布版本**（天气管理 / 回滚发布 / 操作审批 / CodeQL / 无障碍收尾 / 更多页面多语言 / 文档三件） |
+| A 端 `1.4.5` / 插件 `1.4.5.0` | `ControlHub.Plugin.cipx` `1.4.5.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（数据迁移 / 操作审批 / 大屏看板 / 时间表拖拽 / 配置热重载 / OpenAPI / 多语言外壳） |
 | A 端 `1.4.4` / 插件 `1.4.4.0` | `ControlHub.Plugin.cipx` `1.4.4.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（项目更名为 IslandHub / 新的默认品牌图） |
 | A 端 `1.4.3` / 插件 `1.4.3.0` | `ControlHub.Plugin.cipx` `1.4.3.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（多周轮换课表 / 教室端上报当前周次） |
 | A 端 `1.4.2` / 插件 `1.4.2.0` | `ControlHub.Plugin.cipx` `1.4.2.0` | `2.1.1.1 及以上 / 2.2.x`（`apiVersion 2.1.1.1`，基于 `ClassIsland.PluginSdk 2.1.1.1`） | ✅ 可直接安装 | ⚠️ 上一版本（多校区时间偏移 / 从 ClassIsland「数据迁移」包导入档案） |
@@ -620,11 +636,14 @@ dotnet run --project src/IslandHub.LoadTest -- --server http://127.0.0.1:29800 -
 
 - [使用说明](USAGE.md)
 - [部署与使用指南](docs/deployment.md)
+- [升级与回滚指南](docs/upgrade.md)（升级前三件事 / 一键回滚到上一版本）
+- [示例配置](docs/examples.md)（可直接抄的 `appsettings.json` + 示例档案 + 设备导入模板）
 
 **遇到问题**
 
 - [故障排查指南](docs/troubleshooting.md)
-- [常见问题 FAQ](USAGE.md#常见问题)
+- [常见问题 FAQ](docs/faq.md)
+- [安全与加固清单](docs/security.md)
 
 **对接与二次开发**
 

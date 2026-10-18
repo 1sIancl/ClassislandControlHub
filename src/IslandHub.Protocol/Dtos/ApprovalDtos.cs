@@ -121,10 +121,14 @@ public static class ApprovalKinds
     /// <summary>从备份恢复数据库（整库覆盖，最危险的一个）。</summary>
     public const string BackupRestore = "backup.restore";
 
+    /// <summary>把程序文件回滚到某个快照（换掉整个程序目录，需重启）。</summary>
+    public const string UpdateRollback = "update.rollback";
+
     /// <summary>类型的中文说明。</summary>
     public static string Describe(string? kind) => kind switch
     {
         BackupRestore => "恢复备份",
+        UpdateRollback => "回滚程序版本",
         _ => kind ?? string.Empty,
     };
 }

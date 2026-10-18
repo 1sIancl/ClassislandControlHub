@@ -47,7 +47,15 @@ builder.Services.AddHubOpenApi(serverOptions);
 // 操作审批（#35）：危险操作由**非超管**发起时转成「待审批」，超级管理员确认后才执行。
 // 加新的危险操作只要实现一个 IApprovalExecutor 并在这里注册（类型见 ApprovalKinds）。
 builder.Services.AddSingleton<IApprovalExecutor, BackupRestoreExecutor>();
+builder.Services.AddSingleton<IApprovalExecutor, UpdateRollbackExecutor>();
 builder.Services.AddSingleton<ApprovalService>();
+
+// 程序文件快照与回滚（#89）：更新前自动拍快照，出问题时一键退回上一版本。
+builder.Services.AddSingleton<RollbackService>();
+
+// 天气管理：定时抓取（免 Key 数据源 Open-Meteo），失败保留上一次数据。
+builder.Services.AddSingleton<WeatherService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<WeatherService>());
 
 // 环境变量只能给标量值：`ControlHub__AdminIpAllowList=192.168.1.0/24` **不会**被绑定到 string[]，
 // 结果是「明明配了却全部放行」——这比不配更危险（实测踩到：局域网来源照样能访问管理端）。
@@ -476,6 +484,8 @@ app.MapOpenApiEndpoints(serverOptions);
 app.MapMigrationEndpoints();
 // 操作审批（#35）：列出 / 通过 / 驳回（危险操作由非超管发起时转成待审批）。
 app.MapApprovalEndpoints();
+// 天气管理：读配置 / 保存 / 立即刷新（教室端那条是 /client/weather，在 ClientEndpoints 里）。
+app.MapWeatherEndpoints();
 
 // 未匹配到的 API 路径统一返回 JSON 404，而不是落到前端页面。
 app.Map($"{HubProtocol.ApiPrefix}/{{**rest}}",

@@ -95,6 +95,10 @@ public static class AdminEndpoints
         authed.MapGet("/update/state", GetUpdateStateAsync).RequirePermission(PermissionKeys.SettingsRead);
         authed.MapGet("/update/check", CheckUpdateAsync).RequirePermission(PermissionKeys.SettingsRead);
         authed.MapPost("/update/apply", ApplyUpdateAsync).RequirePermission(PermissionKeys.SettingsWrite);
+        // 回滚（#89）：程序文件快照列表 / 手动拍一份 / 回滚到某一份。
+        authed.MapGet("/update/rollbacks", ListRollbacksAsync).RequirePermission(PermissionKeys.SettingsRead);
+        authed.MapPost("/update/rollbacks", CreateRollbackSnapshotAsync).RequirePermission(PermissionKeys.SettingsWrite);
+        authed.MapPost("/update/rollbacks/{id}", RollbackAsync).RequirePermission(PermissionKeys.SettingsWrite);
     }
 
     /// <summary>服务器基础信息。无需登录即可访问。</summary>
@@ -981,6 +985,79 @@ public static class AdminEndpoints
             "发起自动更新。", http.GetClientIpAddress(), cancellationToken);
         var state = await update.ApplyUpdateAsync(cancellationToken);
         return ApiResult<UpdateState>.Success(state);
+    }
+
+    // ────────────────────────────── 回滚（#89）──────────────────────────────
+
+    /// <summary>可用的程序文件快照列表（新的在前）。</summary>
+    private static ApiResult<List<RollbackSnapshotDto>> ListRollbacksAsync(
+        HttpContext http,
+        RollbackService rollback)
+    {
+        http.RequireAdminSession();
+        return ApiResult<List<RollbackSnapshotDto>>.Success([.. rollback.List()]);
+    }
+
+    /// <summary>手动给当前程序文件拍一份快照（不必等到更新前）。</summary>
+    private static async Task<ApiResult<RollbackSnapshotDto?>> CreateRollbackSnapshotAsync(
+        HttpContext http,
+        RollbackService rollback,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var dto = rollback.Create(RollbackReasons.Manual);
+        await store.AddAuditAsync(session.Username, "update.snapshot", dto?.Id ?? "(失败)",
+            dto is null ? "手动创建程序文件快照失败。" : $"手动创建程序文件快照（{dto.FileCount} 个文件）。",
+            http.GetClientIpAddress(), cancellationToken);
+        return ApiResult<RollbackSnapshotDto?>.Success(dto);
+    }
+
+    /// <summary>
+    /// 回滚到指定快照。
+    /// <para>与「恢复备份」同一档危险程度（会换掉整个程序目录），所以同样走审批：非超管只是提交申请。</para>
+    /// </summary>
+    private static async Task<ApiResult<DangerousActionResultDto>> RollbackAsync(
+        string id,
+        HttpContext http,
+        RollbackService rollback,
+        ApprovalService approvals,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+
+        if (ApprovalService.NeedsApproval(session))
+        {
+            var request = await approvals.SubmitAsync(
+                ApprovalKinds.UpdateRollback,
+                new RollbackApprovalPayload { SnapshotId = id },
+                session.Username,
+                cancellationToken);
+
+            await store.AddAuditAsync(session.Username, "update.rollback.request", id,
+                $"提交程序回滚审批（申请 {request.Id}），等待超级管理员确认。",
+                http.GetClientIpAddress(), cancellationToken);
+
+            return ApiResult<DangerousActionResultDto>.Success(new DangerousActionResultDto
+            {
+                Executed = false,
+                ApprovalId = request.Id,
+                Status = ApprovalStatuses.Pending,
+                Message = "已提交审批：回滚会换掉整个程序目录，需要超级管理员在「操作审批」里确认后才执行。",
+            });
+        }
+
+        var result = rollback.Restore(id);
+        await store.AddAuditAsync(session.Username, "update.rollback", id,
+            result.Message, http.GetClientIpAddress(), cancellationToken);
+
+        return ApiResult<DangerousActionResultDto>.Success(new DangerousActionResultDto
+        {
+            Executed = result.Ok,
+            Status = result.Ok ? "done" : "failed",
+            Message = result.Message,
+        });
     }
 
     // ────────────────────────────── 账号、权限与自助注册 ──────────────────────────────

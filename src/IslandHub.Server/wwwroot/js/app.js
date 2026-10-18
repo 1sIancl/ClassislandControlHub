@@ -2,21 +2,21 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=123';
-import { toastError } from './core/errors.js?v=123';
-import { h, clear, toast, icon } from './core/ui.js?v=123';
-import { t, applyStatic, mountLocalePicker } from './core/i18n.js?v=123';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=128';
+import { toastError } from './core/errors.js?v=128';
+import { h, clear, toast, icon } from './core/ui.js?v=128';
+import { t, applyStatic, mountLocalePicker } from './core/i18n.js?v=128';
 import {
   initTheme,
   getSidebarCollapsed, setSidebarCollapsed,
   applyDensity,
   applyAppearance, setBrandingAccent,
   applyRemotePrefs, applySchedScale,
-} from './core/prefs.js?v=123';
-import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=123';
-import { initGlassHighlight } from './core/glass.js?v=123';
-import { initTopbar } from './topbar.js?v=123';
-import { openSearch } from './core/search.js?v=123';
+} from './core/prefs.js?v=128';
+import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=128';
+import { initGlassHighlight } from './core/glass.js?v=128';
+import { initTopbar } from './topbar.js?v=128';
+import { openSearch } from './core/search.js?v=128';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -118,6 +118,8 @@ const NAV = [
       // 拆成四页之后每一页只讲一件事（账号 / 服务器 / 维护 / 集成）。
       { key: 'accounts', label: '账号与权限', icon: 'user', hash: '#/accounts', perm: ['accounts.read', 'settings.read'] },
       { key: 'server', label: '服务器信息', icon: 'database', hash: '#/server', perm: 'settings.read' },
+      // 天气：全校一套，配好城市后教室端可读（`GET /client/weather`）。
+      { key: 'weather', label: '天气', icon: 'cloud', hash: '#/weather', perm: 'settings.read' },
       { key: 'integrations', label: '通知与集成', icon: 'link', hash: '#/integrations', perm: 'settings.read' },
       { key: 'maintenance', label: '系统维护', icon: 'gear', hash: '#/maintenance', perm: ['settings.read', 'backup.read'] },
     ],
@@ -153,30 +155,31 @@ const ROUTE_ALIASES = {
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=123'),
-  devices: () => import('./views/devices.js?v=123'),
+  dashboard: () => import('./views/dashboard.js?v=128'),
+  devices: () => import('./views/devices.js?v=128'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=123'),
-  profiles: () => import('./views/profiles.js?v=123'),
-  profileEditor: () => import('./views/profileEditor.js?v=123'),
-  deploy: () => import('./views/deploy.js?v=123'),
-  remote: () => import('./views/remote.js?v=123'),
-  reminders: () => import('./views/reminders.js?v=123'),
-  examMode: () => import('./views/examMode.js?v=123'),
-  profileSlots: () => import('./views/profileSlots.js?v=123'),
-  audit: () => import('./views/audit.js?v=123'),
-  reports: () => import('./views/reports.js?v=123'),
-  appearance: () => import('./views/appearance.js?v=123'),
+  groups: () => import('./views/devices.js?v=128'),
+  profiles: () => import('./views/profiles.js?v=128'),
+  profileEditor: () => import('./views/profileEditor.js?v=128'),
+  deploy: () => import('./views/deploy.js?v=128'),
+  remote: () => import('./views/remote.js?v=128'),
+  reminders: () => import('./views/reminders.js?v=128'),
+  examMode: () => import('./views/examMode.js?v=128'),
+  weather: () => import('./views/weather.js?v=128'),
+  profileSlots: () => import('./views/profileSlots.js?v=128'),
+  audit: () => import('./views/audit.js?v=128'),
+  reports: () => import('./views/reports.js?v=128'),
+  appearance: () => import('./views/appearance.js?v=128'),
   // 「系统设置」拆成四页（原 settings.js 已按此拆分，见各文件头部说明）。
-  accounts: () => import('./views/accounts.js?v=123'),
-  server: () => import('./views/server.js?v=123'),
-  integrations: () => import('./views/integrations.js?v=123'),
-  maintenance: () => import('./views/maintenance.js?v=123'),
-  board: () => import('./views/board.js?v=123'),
-  approvals: () => import('./views/approvals.js?v=123'),
-  timesync: () => import('./views/timesync.js?v=123'),
-  lessons: () => import('./views/lessons.js?v=123'),
-  plugins: () => import('./views/pluginMarket.js?v=123'),
+  accounts: () => import('./views/accounts.js?v=128'),
+  server: () => import('./views/server.js?v=128'),
+  integrations: () => import('./views/integrations.js?v=128'),
+  maintenance: () => import('./views/maintenance.js?v=128'),
+  board: () => import('./views/board.js?v=128'),
+  approvals: () => import('./views/approvals.js?v=128'),
+  timesync: () => import('./views/timesync.js?v=128'),
+  lessons: () => import('./views/lessons.js?v=128'),
+  plugins: () => import('./views/pluginMarket.js?v=128'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -721,7 +724,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=123');
+    const { startTour } = await import('./core/tour.js?v=128');
     startTour({
       onFinish: async (skipped) => {
         try {
@@ -790,6 +793,8 @@ function renderNav() {
     const trigger = h('button.nav-trigger', {
       type: 'button',
       'aria-haspopup': 'true',
+      // 状态由 closeNavDropdowns / toggleNavDropdown 维护（#49）：读屏软件靠它说「这一组现在开着」。
+      'aria-expanded': 'false',
       // 整组的页面用同一个 title：鼠标停住不动也能看到这组下有什么。
       title: items.map((i) => i.label).join(' · '),
       onClick: (event) => {
@@ -807,6 +812,7 @@ function renderNav() {
         const group = trigger.closest('.nav-group');
         closeNavDropdowns();
         group.classList.add('open');
+        group.querySelector('.nav-trigger')?.setAttribute('aria-expanded', 'true');
         // 下拉是**过渡显示**的：刚加上 .open 时里面的项还没进入可聚焦状态，focus() 会被静默丢掉。
         // 所以等一帧后试，没成功再退避重试几次（约半秒，覆盖过渡时长）。
         const focusWithRetry = (el, attempts) => {
@@ -962,7 +968,10 @@ function navPagesForPalette() {
 
 /** 收起所有分组下拉（点外部、Esc、选中页面后都会用到）。 */
 function closeNavDropdowns() {
-  document.querySelectorAll('.nav-group.open').forEach((el) => el.classList.remove('open'));
+  document.querySelectorAll('.nav-group.open').forEach((el) => {
+    el.classList.remove('open');
+    el.querySelector('.nav-trigger')?.setAttribute('aria-expanded', 'false');
+  });
 }
 
 // 分组下拉的键盘导航（#49 收尾）：Esc 收起并把焦点还给触发器；方向键在项之间移动。
@@ -1005,6 +1014,7 @@ function toggleNavDropdown(group) {
   closeNavDropdowns();
   if (!isOpen) {
     group.classList.add('open');
+    group.querySelector('.nav-trigger')?.setAttribute('aria-expanded', 'true');
   }
 }
 
@@ -1062,18 +1072,96 @@ function bindShellEvents() {
   // 这也顺带把顶栏右侧腾空，窄窗口不再互相挤压。
   const userBtn = document.getElementById('userBtn');
   const dropdown = document.getElementById('userDropdown');
+
+  /**
+   * 账号菜单的键盘支持（#49 收尾）。
+   *
+   * 屏幕阅读器 / 键盘用户面对的是一个 `aria-haspopup="menu"` 的按钮：
+   * 打开方式除了点击还有 Enter / 空格 / 方向键，菜单里上下移动、Esc 关闭并把焦点还给按钮。
+   * 「焦点归还」是键盘可用性的底线——菜单一关焦点若丢回文档开头，用户就得从头 Tab 一遍。
+   */
+  const userMenuItems = () => [...dropdown.querySelectorAll('[role="menuitem"]')];
+
+  const setUserMenuOpen = (open) => {
+    dropdown.hidden = !open;
+    userBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+
+  const openUserMenu = (focusFirst = true) => {
+    setUserMenuOpen(true);
+    if (focusFirst) {
+      userMenuItems()[0]?.focus();
+    }
+  };
+
+  const closeUserMenu = (restoreFocus = false) => {
+    setUserMenuOpen(false);
+    if (restoreFocus) {
+      userBtn.focus();
+    }
+  };
+
   userBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    dropdown.hidden = !dropdown.hidden;
+    if (dropdown.hidden) {
+      // 鼠标点开时**不抢焦点**（否则第一次点击会同时触发按钮的激活，行为很怪）；
+      // 键盘操作才把焦点移进菜单。
+      openUserMenu(false);
+    } else {
+      closeUserMenu();
+    }
   });
 
-  document.addEventListener('click', () => {
-    dropdown.hidden = true;
+  // Enter / 空格由按钮自己触发 click（上面已处理）；方向键直接开菜单并进第一项。
+  userBtn.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const items = userMenuItems();
+      if (items.length === 0) {
+        return;
+      }
+
+      openUserMenu(false);
+      (e.key === 'ArrowDown' ? items[0] : items[items.length - 1]).focus();
+    }
   });
+
+  dropdown.addEventListener('keydown', (e) => {
+    const items = userMenuItems();
+    if (items.length === 0) {
+      return;
+    }
+
+    const current = items.indexOf(document.activeElement);
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeUserMenu(true);
+      return;
+    }
+
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const next = e.key === 'ArrowDown'
+        ? (current < 0 ? 0 : (current + 1) % items.length)
+        : (current <= 0 ? items.length - 1 : current - 1);
+      items[next].focus();
+      return;
+    }
+
+    if (e.key === 'Home') {
+      e.preventDefault();
+      items[0].focus();
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      items[items.length - 1].focus();
+    }
+  });
+
+  document.addEventListener('click', () => closeUserMenu());
 
   dropdown.addEventListener('click', (e) => {
     const action = e.target.dataset?.action;
-    dropdown.hidden = true;
+    closeUserMenu();
     if (action === 'logout') {
       api('/admin/logout', { method: 'POST' }).catch(() => {});
       saveToken('');
@@ -1207,7 +1295,7 @@ async function refreshConnectionState() {
 function updateRevisionChip() {
   const info = session.serverInfo;
   if (info) {
-    document.getElementById('revisionChip').textContent = `版本 #${info.revision}`;
+    document.getElementById('revisionChip').textContent = t('topbar.revision', { revision: info.revision });
   }
 }
 

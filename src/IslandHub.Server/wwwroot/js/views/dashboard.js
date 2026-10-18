@@ -5,18 +5,19 @@
  * 同时同步到账号（见 core/prefs.js），换台电脑登录后布局保持一致。
  */
 
-import { api, session } from '../core/api.js?v=123';
+import { api, session } from '../core/api.js?v=128';
 import {
   h, clear, formatDateTime, formatDuration, relativeTime,
   loadingBlock, modal, append, icon, toast, guard,
-} from '../core/ui.js?v=123';
+} from '../core/ui.js?v=128';
 import {
   getLayout, saveLayout, getLayoutSyncState, onLayoutSyncChange,
-} from '../core/prefs.js?v=123';
+} from '../core/prefs.js?v=128';
+import { t } from '../core/i18n.js?v=128';
 
 export const meta = {
-  title: '仪表盘',
-  subtitle: 'IslandHub 运行概览',
+  title: t('dashboard.title'),
+  subtitle: t('dashboard.subtitle'),
 };
 
 // 当前视图容器与参数（供「自定义模块」面板保存后原地刷新）。
@@ -26,13 +27,13 @@ let _params = null;
 
 // 统计模块定义：key 用于持久化，label 用于配置面板，build 生成卡片。
 const STAT_DEFS = [
-  { key: 'total', label: '设备总数', build: (s) => stat('设备总数', s.deviceCount, `分 ${s.groupCount} 个组`, '', 'monitor', '#/devices') },
-  { key: 'online', label: '在线设备', build: (s) => stat('在线设备', s.onlineDeviceCount, `在线率 ${Math.round((s.onlineRate || 0) * 100)}%`, 'ok', 'checkCircle', '#/devices?status=online') },
-  { key: 'pending', label: '待同步', build: (s) => stat('待同步', s.pendingDeviceCount, s.pendingDeviceCount > 0 ? '等待客户端拉取' : '全部已同步', s.pendingDeviceCount > 0 ? 'warn' : 'ok', 'clock', '#/devices?status=pending') },
-  { key: 'error', label: '同步异常', build: (s) => stat('同步异常', s.errorDeviceCount, s.errorDeviceCount > 0 ? '需查看设备日志' : '无异常', s.errorDeviceCount > 0 ? 'danger' : 'ok', 'alert', '#/devices?status=error') },
-  { key: 'profiles', label: '配置档案', build: (s) => stat('配置档案', s.profileCount, `当前版本 ${s.revision}`, 'info', 'profiles', '#/profiles') },
+  { key: 'total', label: t('dashboard.statTotal'), build: (s) => stat(t('dashboard.statTotal'), s.deviceCount, t('dashboard.statGroups', { count: s.groupCount }), '', 'monitor', '#/devices') },
+  { key: 'online', label: t('dashboard.statOnline'), build: (s) => stat(t('dashboard.statOnline'), s.onlineDeviceCount, t('dashboard.statOnlineRate', { rate: Math.round((s.onlineRate || 0) * 100) }), 'ok', 'checkCircle', '#/devices?status=online') },
+  { key: 'pending', label: t('dashboard.statPending'), build: (s) => stat(t('dashboard.statPending'), s.pendingDeviceCount, s.pendingDeviceCount > 0 ? t('dashboard.statPendingHint') : t('dashboard.statAllSynced'), s.pendingDeviceCount > 0 ? 'warn' : 'ok', 'clock', '#/devices?status=pending') },
+  { key: 'error', label: t('dashboard.statError'), build: (s) => stat(t('dashboard.statError'), s.errorDeviceCount, s.errorDeviceCount > 0 ? t('dashboard.statErrorHint') : t('dashboard.statNoError'), s.errorDeviceCount > 0 ? 'danger' : 'ok', 'alert', '#/devices?status=error') },
+  { key: 'profiles', label: t('dashboard.statProfiles'), build: (s) => stat(t('dashboard.statProfiles'), s.profileCount, t('dashboard.statRevision', { revision: s.revision }), 'info', 'profiles', '#/profiles') },
   // 「近 24h 新增」没有对应的筛选视图，就不做成可点的——点了跳不到具体东西的入口，比不给更让人困惑。
-  { key: 'recent', label: '近 24h 新增', build: (s) => stat('近 24h 新增', s.recentEnrollCount, '新注册设备', '', 'plusCircle', null) },
+  { key: 'recent', label: t('dashboard.statRecent'), build: (s) => stat(t('dashboard.statRecent'), s.recentEnrollCount, t('dashboard.statRecentHint'), '', 'plusCircle', null) },
 ];
 
 const STAT_KEYS = () => STAT_DEFS.map((d) => d.key);
@@ -48,10 +49,10 @@ const STAT_KEYS = () => STAT_DEFS.map((d) => d.key);
  * 至少用户能**先看到**将要操作哪些设备。</para>
  */
 const QUICK_ACTIONS = [
-  { label: '发送通知', hint: '给选中的教室推送文字或图片', icon: 'bell', to: '#/devices?status=online' },
-  { label: '下发配置', hint: '按楼栋 / 楼层 / 设备推送档案', icon: 'send', to: '#/deploy' },
-  { label: '远程管理', hint: '指令、插件、外观与诊断', icon: 'monitor', to: '#/remote' },
-  { label: '定时提醒', hint: '按日期与周期自动推送到大屏', icon: 'clock', to: '#/reminders' },
+  { label: t('dashboard.actionNotify'), hint: t('dashboard.actionNotifyHint'), icon: 'bell', to: '#/devices?status=online' },
+  { label: t('dashboard.actionDeploy'), hint: t('dashboard.actionDeployHint'), icon: 'send', to: '#/deploy' },
+  { label: t('dashboard.actionRemote'), hint: t('dashboard.actionRemoteHint'), icon: 'monitor', to: '#/remote' },
+  { label: t('dashboard.actionReminder'), hint: t('dashboard.actionReminderHint'), icon: 'clock', to: '#/reminders' },
 ];
 
 function renderQuickActions() {
@@ -85,8 +86,8 @@ export async function render(container, params) {
     h('div', { style: { display: 'flex', justifyContent: 'flex-end', marginBottom: '10px' } },
       h('button.btn.btn-sm', {
         type: 'button',
-        onClick: () => guard('打开自定义仪表盘', () => openCustomize()),
-      }, '自定义仪表盘')),
+        onClick: () => guard(t('dashboard.openCustomize'), () => openCustomize()),
+      }, t('dashboard.customize'))),
     renderStats(stats),
     renderQuickActions(),
     ...renderCards({ stats, info, devices }),
@@ -107,10 +108,10 @@ function renderStats(stats) {
 
 // 页面模块定义（#40）：与统计卡片一样可显隐 / 排序。build 在无内容时返回 null（此时自然不占位）。
 const CARD_DEFS = [
-  { key: 'server', label: '服务器信息', build: (ctx) => renderServerCard(ctx.info, ctx.stats) },
-  { key: 'events', label: '最近事件', build: (ctx) => renderEventCard(ctx.stats) },
-  { key: 'onboarding', label: '快速开始', build: (ctx) => renderOnboarding(ctx.stats, ctx.devices) },
-  { key: 'devices', label: '设备状态速览', build: (ctx) => renderDevicePreview(ctx.devices) },
+  { key: 'server', label: t('dashboard.cardServer'), build: (ctx) => renderServerCard(ctx.info, ctx.stats) },
+  { key: 'events', label: t('dashboard.cardEvents'), build: (ctx) => renderEventCard(ctx.stats) },
+  { key: 'onboarding', label: t('dashboard.cardOnboarding'), build: (ctx) => renderOnboarding(ctx.stats, ctx.devices) },
+  { key: 'devices', label: t('dashboard.cardDevices'), build: (ctx) => renderDevicePreview(ctx.devices) },
 ];
 
 const CARD_KEYS = () => CARD_DEFS.map((d) => d.key);
@@ -172,7 +173,7 @@ function stat(label, value, hint, tone, iconKey, to = null) {
   return h(`div.stat.stat-link${tone ? '.' + tone : ''}`, {
     role: 'link',
     tabindex: '0',
-    title: `${label} · 点击查看明细`,
+    title: t('dashboard.statDetail', { label }),
     onClick: go,
     onKeydown: (event) => {
       // 键盘用户同样要能用（无障碍方向）：Enter / 空格等同于点击。
@@ -234,14 +235,14 @@ function openCustomize() {
     const failed = state.state === 'error';
     return h('div.notice' + (failed ? '.notice-warn' : '.notice-info'), { style: { marginTop: '14px' } },
       h('span.notice-icon', failed ? '!' : 'i'),
-      h('div', state.message || '布局偏好会同步到你的账号：换台电脑登录后仍然生效。'),
+      h('div', state.message || t('dashboard.layoutSyncNotice')),
     );
   }
 
   function buildPanel() {
     return h('div',
-      buildSection('dashboard.stats', STAT_DEFS, '统计卡片', '页面上方那排数字，关掉不关心的指标即可。'),
-      buildSection('dashboard.cards', CARD_DEFS, '页面模块', '整块卡片；「服务器信息」与「最近事件」相邻时会并排显示。'),
+      buildSection('dashboard.stats', STAT_DEFS, t('dashboard.panelStats'), t('dashboard.panelStatsDesc')),
+      buildSection('dashboard.cards', CARD_DEFS, t('dashboard.panelCards'), t('dashboard.panelCardsDesc')),
       syncNotice(),
     );
   }
@@ -259,9 +260,9 @@ function openCustomize() {
   rerender();
 
   modal({
-    title: '自定义仪表盘',
+    title: t('dashboard.customize'),
     body: container,
-    confirmText: '完成',
+    confirmText: t('dashboard.done'),
     onConfirm: () => {
       render(_container, _params);
       return true;
@@ -273,20 +274,20 @@ function renderServerCard(info, stats) {
   return h('div.card',
     h('div.card-head',
       h('div',
-        h('h3', '服务器信息'),
-        h('p.card-desc', info.serverName || 'IslandHub 服务器'),
+        h('h3', t('dashboard.cardServer')),
+        h('p.card-desc', info.serverName || t('dashboard.serverFallback')),
       ),
     ),
     h('div', { style: { display: 'grid', gap: '9px', fontSize: '13px' } },
-      infoRow('服务版本', info.version),
-      infoRow('协议版本', info.protocolVersion),
-      infoRow('配置版本', `#${info.revision}`),
-      infoRow('运行时长', formatDuration(info.uptimeSeconds)),
-      infoRow('启动时间', formatDateTime(info.startedAt)),
-      infoRow('HTTP 端口', String(info.httpPort)),
-      infoRow('发现端口', info.discoveryEnabled ? String(info.discoveryPort) : '已关闭'),
-      infoRow('要求注册码', info.requiresEnrollCode ? '是' : '否'),
-      infoRow('数据目录', info.dataDirectory, true),
+      infoRow(t('dashboard.serverVersion'), info.version),
+      infoRow(t('dashboard.protocolVersion'), info.protocolVersion),
+      infoRow(t('dashboard.configRevision'), `#${info.revision}`),
+      infoRow(t('dashboard.uptime'), formatDuration(info.uptimeSeconds)),
+      infoRow(t('dashboard.startedAt'), formatDateTime(info.startedAt)),
+      infoRow(t('dashboard.httpPort'), String(info.httpPort)),
+      infoRow(t('dashboard.discoveryPort'), info.discoveryEnabled ? String(info.discoveryPort) : t('dashboard.disabled')),
+      infoRow(t('dashboard.requireEnrollCode'), info.requiresEnrollCode ? t('dashboard.yes') : t('dashboard.no')),
+      infoRow(t('dashboard.dataDirectory'), info.dataDirectory, true),
     ),
   );
 }
@@ -310,12 +311,12 @@ function renderEventCard(stats) {
   return h('div.card',
     h('div.card-head',
       h('div',
-        h('h3', '最近事件'),
-        h('p.card-desc', '客户端注册、配置下发与同步记录'),
+        h('h3', t('dashboard.cardEvents')),
+        h('p.card-desc', t('dashboard.eventsDesc')),
       ),
     ),
     events.length === 0
-      ? h('div.empty', { style: { padding: '30px 10px' } }, h('p', '暂无事件记录'))
+      ? h('div.empty', { style: { padding: '30px 10px' } }, h('p', t('dashboard.noEvents')))
       : h('div.timeline', ...events.map((e) => h('div.timeline-item',
         h('div.timeline-time', relativeTime(e.timestamp)),
         h('div.timeline-body',
@@ -331,17 +332,17 @@ function renderOnboarding(stats, devices) {
 
   if (stats.profileCount === 0) {
     steps.push({
-      title: '① 创建一个配置档案',
-      text: '档案里放着时间表、课表和科目，是下发给客户端的实际内容。可直接用「示例档案」起步。',
-      action: { label: '前往配置档案', hash: '#/profiles' },
+      title: t('dashboard.step1Title'),
+      text: t('dashboard.step1Text'),
+      action: { label: t('dashboard.step1Action'), hash: '#/profiles' },
     });
   }
 
   if (devices.length === 0) {
     steps.push({
-      title: '② 生成注册码并安装插件',
-      text: '在「设备管理 → 注册码」生成注册码，然后在教室电脑的 ClassIsland 中安装 IslandHub 插件并填入注册码。',
-      action: { label: '前往注册码', hash: '#/devices' },
+      title: t('dashboard.step2Title'),
+      text: t('dashboard.step2Text'),
+      action: { label: t('dashboard.step2Action'), hash: '#/devices' },
     });
   }
 
@@ -351,9 +352,9 @@ function renderOnboarding(stats, devices) {
 
   if (stats.profileCount > 0 && devices.length > 0) {
     steps.push({
-      title: '③ 下发配置并观察同步结果',
-      text: '在「配置下发」中选择目标设备或分组执行推送，客户端会在数秒内自动拉取新配置。',
-      action: { label: '前往配置下发', hash: '#/deploy' },
+      title: t('dashboard.step3Title'),
+      text: t('dashboard.step3Text'),
+      action: { label: t('dashboard.step3Action'), hash: '#/deploy' },
     });
   }
 
@@ -362,8 +363,8 @@ function renderOnboarding(stats, devices) {
   return h('div.card', { style: { marginTop: '16px' } },
     h('div.card-head',
       h('div',
-        h('h3', '快速开始'),
-        h('p.card-desc', '按顺序完成以下步骤即可让教室大屏接入 IslandHub'),
+        h('h3', t('dashboard.cardOnboarding')),
+        h('p.card-desc', t('dashboard.onboardingDesc')),
       ),
     ),
     h('div', { style: { display: 'grid', gap: '12px' } }, ...steps.map((s) => h('div', {
@@ -390,33 +391,33 @@ function renderDevicePreview(devices) {
   return h('div.card', { style: { marginTop: '16px' } },
     h('div.card-head',
       h('div',
-        h('h3', pending.length > 0 ? `待同步设备（${pending.length}）` : '设备状态速览'),
-        h('p.card-desc', pending.length > 0 ? '以下设备尚未取到最新配置' : '全部设备均已同步到最新配置'),
+        h('h3', pending.length > 0 ? t('dashboard.pendingTitle', { count: pending.length }) : t('dashboard.cardDevices')),
+        h('p.card-desc', pending.length > 0 ? t('dashboard.pendingDesc') : t('dashboard.allSyncedDesc')),
       ),
-      h('a', { href: '#/devices', class: 'btn btn-sm', style: { textDecoration: 'none' } }, '查看全部设备'),
+      h('a', { href: '#/devices', class: 'btn btn-sm', style: { textDecoration: 'none' } }, t('dashboard.viewAllDevices')),
     ),
     h('div.table-wrap',
       h('table.data',
         h('thead', h('tr',
-          h('th', '设备'),
-          h('th', '分组'),
-          h('th', '状态'),
-          h('th', '版本'),
-          h('th', '最近心跳'),
+          h('th', t('dashboard.colDevice')),
+          h('th', t('dashboard.colGroup')),
+          h('th', t('dashboard.colState')),
+          h('th', t('dashboard.colRevision')),
+          h('th', t('dashboard.colLastSeen')),
         )),
         h('tbody', ...preview.map((d) => h('tr',
           h('td',
             h('div.cell-main', d.name),
             h('div.cell-sub', d.machineName || d.id.slice(0, 8)),
           ),
-          h('td', d.groupName || '未分组'),
+          h('td', d.groupName || t('dashboard.ungrouped')),
           h('td', d.revoked
-            ? h('span.badge.badge-danger', '已停用')
+            ? h('span.badge.badge-danger', t('ui.stateRevoked'))
             : d.online
-              ? h('span.badge.badge-ok', '在线')
-              : h('span.badge.badge-neutral', '离线')),
+              ? h('span.badge.badge-ok', t('ui.stateOnline'))
+              : h('span.badge.badge-neutral', t('ui.stateOffline'))),
           h('td', d.upToDate
-            ? h('span.badge.badge-ok', '最新')
+            ? h('span.badge.badge-ok', t('dashboard.revisionLatest'))
             : h('span.badge.badge-warn', `${d.appliedRevision} / ${d.serverRevision}`)),
           h('td', { style: { color: 'var(--text-faint)', fontSize: '12px' } }, relativeTime(d.lastSeenAt)),
         ))),

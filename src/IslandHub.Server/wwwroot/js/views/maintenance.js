@@ -1,10 +1,10 @@
 /** 系统维护视图（系统设置拆分而来）：自动更新、备份与数据库整理。 */
 
-import { api, hasPermission, fetchBlob } from '../core/api.js?v=123';
-import { toastError } from '../core/errors.js?v=123';
+import { api, hasPermission, fetchBlob } from '../core/api.js?v=128';
+import { toastError } from '../core/errors.js?v=128';
 import {
   h, clear, formatDateTime, toast, modal, confirmDialog, field, loadingBlock, kvRow,
-} from '../core/ui.js?v=123';
+} from '../core/ui.js?v=128';
 
 export const meta = {
   title: '系统维护',
@@ -244,8 +244,110 @@ function renderUpdateCard(update) {
       checkBtn,
       update.hasUpdate ? applyBtn : null,
     ),
+    // 回滚（#89）：更新前会自动拍快照，这里列出来并提供「回滚」。
+    renderRollbackSection(),
   );
 }
+
+/**
+ * 回滚区（#89）：列出程序文件快照，提供「手动快照」与「回滚到该版本」。
+ *
+ * 为什么放在更新卡片里：它和「更新」是同一件事的两端——更新前自动拍的那份快照，
+ * 就是为了「更新完发现不对」时有退路；分成两个页面反而让人想不到还能退。
+ */
+function renderRollbackSection() {
+  const host = h('div', { style: { marginTop: '14px', borderTop: '1px solid var(--line)', paddingTop: '12px' } });
+
+  const manualBtn = h('button.btn.btn-sm', {
+    type: 'button',
+    onClick: async () => {
+      manualBtn.disabled = true;
+      manualBtn.textContent = '正在拍快照…';
+      try {
+        const snap = await api('/admin/update/rollbacks', { method: 'POST' });
+        toast('ok', '快照已创建', snap ? `版本 ${snap.version}，${snap.fileCount} 个文件。` : '');
+        await reload();
+      } catch (e) {
+        toastError(e, '创建快照失败');
+      } finally {
+        manualBtn.disabled = false;
+        manualBtn.textContent = '手动拍一份快照';
+      }
+    },
+  }, '手动拍一份快照');
+
+  const rollback = async (item) => {
+    if (!await confirmDialog('回滚程序文件',
+      `将把程序文件换回「${item.version}」（${new Date(item.createdAt).toLocaleString()} 的快照）。\n`
+      + '数据目录不动；回滚前会自动再拍一份快照（所以回滚本身也能撤销）。完成后需重启服务生效。确定继续吗？',
+      '回滚', true)) {
+      return;
+    }
+
+    try {
+      const result = await api(`/admin/update/rollbacks/${encodeURIComponent(item.id)}`, { method: 'POST' });
+      if (result && result.executed === false) {
+        toast('ok', '已提交审批', result.message || '等待超级管理员确认。', 9000);
+      } else {
+        toast('ok', result?.executed ? '已回滚' : '回滚未完成', result?.message || '', 9000);
+        await reload();
+      }
+    } catch (e) {
+      toastError(e, '回滚失败');
+    }
+  };
+
+  const reload = async () => {
+    host.replaceChildren(h('div', { style: { fontSize: '12px', color: 'var(--text-faint)' } }, '正在读取快照…'));
+
+    let items = [];
+    try {
+      items = await api('/admin/update/rollbacks');
+    } catch (e) {
+      host.replaceChildren(h('div', { style: { fontSize: '12px', color: 'var(--warn)' } },
+        `读取快照失败：${e.message || e}`));
+      return;
+    }
+
+    const head = h('div', { style: { display: 'flex', gap: '8px', alignItems: 'baseline', marginBottom: '8px' } },
+      h('strong', '回滚到上一版本'),
+      h('span', { style: { fontSize: '12px', color: 'var(--text-faint)' } },
+        '每次自动更新前自动拍一份；快照只含程序文件，不含数据'));
+
+    if (!Array.isArray(items) || items.length === 0) {
+      host.replaceChildren(head,
+        h('div', { style: { fontSize: '12px', color: 'var(--text-faint)', marginBottom: '8px' } },
+          '还没有快照。可以现在手动拍一份：以后装插件 / 改配置出问题时，能整个程序目录退回来。'),
+        manualBtn);
+      return;
+    }
+
+    const rows = items.map((item) => h('div', {
+      style: {
+        display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '10px', alignItems: 'center',
+        padding: '6px 0', borderBottom: '1px dashed var(--line)', fontSize: '13px',
+      },
+    },
+    h('div',
+      h('div', `v${item.version} · ${ROLLBACK_REASON[item.reason] || item.reason || '快照'}`),
+      h('div', { style: { fontSize: '11px', color: 'var(--text-faint)' } },
+        `${new Date(item.createdAt).toLocaleString()} · ${item.fileCount || '?'} 个文件`)),
+    h('span', { style: { fontSize: '12px', color: 'var(--text-dim)' } }, formatBytes(item.sizeBytes || 0)),
+    h('button.btn.btn-sm', { type: 'button', onClick: () => rollback(item) }, '回滚到这个版本')));
+
+    host.replaceChildren(head, h('div', rows), h('div.card-actions', manualBtn));
+  };
+
+  reload();
+  return host;
+}
+
+/** 快照原因的中文说明（与后端 `RollbackReasons` 对应）。 */
+const ROLLBACK_REASON = {
+  'pre-update': '更新前自动快照',
+  'pre-rollback': '回滚前自动快照',
+  manual: '手动快照',
+};
 
 /** 字节数写成可读文本。 */
 function formatBytes(bytes) {

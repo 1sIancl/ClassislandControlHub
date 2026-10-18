@@ -1,13 +1,14 @@
 /** 服务器信息视图（系统设置拆分而来）：运行参数、数据目录、部署与接入说明。 */
 
-import { api, session } from '../core/api.js?v=123';
+import { api, session } from '../core/api.js?v=128';
+import { t } from '../core/i18n.js?v=128';
 import {
   h, clear, formatDateTime, formatDuration, toast, confirmDialog, copyText, loadingBlock, kvRow,
-} from '../core/ui.js?v=123';
+} from '../core/ui.js?v=128';
 
 export const meta = {
-  title: '服务器信息',
-  subtitle: '运行参数、数据目录与部署接入说明',
+  title: t('server.title'),
+  subtitle: t('server.subtitle'),
 };
 
 
@@ -38,30 +39,36 @@ function renderServerCard(info) {
   return h('div.card',
     h('div.card-head',
       h('div',
-        h('h3', '服务器信息'),
-        h('p.card-desc', info.serverName || 'IslandHub 服务器'),
+        h('h3', t('server.title')),
+        h('p.card-desc', info.serverName || t('server.serverFallback')),
       ),
     ),
     h('div', { style: { display: 'grid', gap: '10px', fontSize: '13px' } },
-      kvRow('管理界面地址', baseUrl, true),
-      kvRow('服务版本', info.version),
-      kvRow('通信协议', `v${info.protocolVersion}`),
-      kvRow('当前配置版本', `#${info.revision}`),
-      kvRow('运行时长', formatDuration(info.uptimeSeconds)),
-      kvRow('启动时间', formatDateTime(info.startedAt)),
-      kvRow('监听端口', `HTTP ${info.httpPort}`),
-      kvRow('局域网发现', info.discoveryEnabled ? `已开启（UDP ${info.discoveryPort}）` : '已关闭'),
-      kvRow('设备注册', info.requiresEnrollCode ? '需要注册码' : '无需注册码'),
-      kvRow('设备统计', `共 ${info.deviceCount} 台，在线 ${info.onlineDeviceCount} 台，待同步 ${info.pendingDeviceCount} 台`),
-      kvRow('数据目录', info.dataDirectory, true),
-      kvRow('敏感数据加密', formatSecrets(info.secretsEncrypted)),
-      kvRow('加密密钥文件', info.secretsEncrypted?.keyFile || '—', true),
+      kvRow(t('server.adminUrl'), baseUrl, true),
+      kvRow(t('server.version'), info.version),
+      kvRow(t('server.protocol'), `v${info.protocolVersion}`),
+      kvRow(t('server.revision'), `#${info.revision}`),
+      kvRow(t('server.uptime'), formatDuration(info.uptimeSeconds)),
+      kvRow(t('server.startedAt'), formatDateTime(info.startedAt)),
+      kvRow(t('server.port'), `HTTP ${info.httpPort}`),
+      kvRow(t('server.discovery'), info.discoveryEnabled
+        ? t('server.discoveryOn', { port: info.discoveryPort })
+        : t('server.discoveryOff')),
+      kvRow(t('server.enroll'), info.requiresEnrollCode ? t('server.enrollRequired') : t('server.enrollOpen')),
+      kvRow(t('server.deviceStats'), t('server.deviceStatsValue', {
+        total: info.deviceCount,
+        online: info.onlineDeviceCount,
+        pending: info.pendingDeviceCount,
+      })),
+      kvRow(t('server.dataDir'), info.dataDirectory, true),
+      kvRow(t('server.secrets'), formatSecrets(info.secretsEncrypted)),
+      kvRow(t('server.secretsKey'), info.secretsEncrypted?.keyFile || '—', true),
     ),
     h('div.card-actions', { style: { marginTop: '14px' } },
       h('button.btn.btn-sm', {
         type: 'button',
-        onClick: () => copyText(baseUrl, '访问地址已复制'),
-      }, '复制访问地址'),
+        onClick: () => copyText(baseUrl, t('server.copied')),
+      }, t('server.copyUrl')),
     ),
   );
 }
@@ -73,17 +80,19 @@ function renderServerCard(info) {
 function formatSecrets(secrets) {
   if (!secrets) return '—';
   const parts = [
-    `注册码 ${secrets.enrollCodes.encrypted}/${secrets.enrollCodes.total}`,
-    `邀请码 ${secrets.registerCodes.encrypted}/${secrets.registerCodes.total}`,
-    `Webhook 密钥 ${secrets.webhooks.encrypted}/${secrets.webhooks.total}`,
+    t('server.secretsEnroll', secrets.enrollCodes),
+    t('server.secretsInvite', secrets.registerCodes),
+    t('server.secretsWebhook', secrets.webhooks),
   ];
   const unavailable = (secrets.enrollCodes.unavailable || 0)
     + (secrets.registerCodes.unavailable || 0)
     + (secrets.webhooks.unavailable || 0);
+  // 列表分隔符也走资源：中文用「，」、英文用「, 」——写死一个在另一种语言下都别扭。
+  const list = parts.join(t('ui.listSeparator'));
   if (unavailable > 0) {
-    return `${parts.join('，')} 已加密；${unavailable} 条无法解密（密钥文件已更换或丢失），需重新生成 / 重新填写`;
+    return t('server.secretsBad', { list, count: unavailable });
   }
-  return `${parts.join('，')} 已加密`;
+  return t('server.secretsOk', { list });
 }
 
 /**
@@ -101,33 +110,33 @@ function renderShellCard() {
     type: 'button',
     onClick: () => {
       post(action);
-      toast('ok', '已通知本地外壳', `${label} 指令已发送。`);
+      toast('ok', t('server.shellNotified'), t('server.commandSent', { label }));
     },
   }, label);
 
   return h('div.card', { style: { marginTop: '16px' } },
     h('div.card-head',
       h('div',
-        h('h3', '本地外壳'),
-        h('p.card-desc', '当前界面运行在 IslandHub 桌面外壳里，可以在这里直接控制 A 端进程。'),
+        h('h3', t('server.shell')),
+        h('p.card-desc', t('server.shellDesc')),
       ),
     ),
     h('div.toolbar',
-      actionButton('restart', '重启 A 端', true),
-      actionButton('open-browser', '在浏览器打开'),
+      actionButton('restart', t('server.restart'), true),
+      actionButton('open-browser', t('server.openInBrowser')),
       h('div.spacer'),
       h('button.btn.btn-sm', {
         type: 'button',
         onClick: async () => {
-          if (!await confirmDialog('停止 A 端', '将停止由外壳启动的 A 端进程，本页面会随即断开。确定继续吗？', '停止')) return;
+          if (!await confirmDialog(t('server.stop'), t('server.stopWarning'), t('server.stopConfirm'))) return;
           post('stop');
-          toast('ok', '已通知本地外壳', 'A 端正在停止。');
+          toast('ok', t('server.shellNotified'), t('server.stopping'));
         },
-      }, '停止 A 端'),
+      }, t('server.stop')),
     ),
     h('div.notice.notice-info', { style: { marginTop: '10px' } },
       h('span.notice-icon', 'i'),
-      h('div', '「停止 A 端」只对由外壳启动的进程有效；A 端作为 Windows 服务运行、或外壳连的是远程服务器时不会生效。')),
+      h('div', t('server.stopHint'))),
   );
 }
 
@@ -135,29 +144,29 @@ function renderDeployCard(info) {
   return h('div.card', { style: { marginTop: '16px' } },
     h('div.card-head',
       h('div',
-        h('h3', '部署与接入说明'),
-        h('p.card-desc', '同一套服务端既可作为校内本地服务器运行，也可部署到公网服务器以网页访问。'),
+        h('h3', t('server.deployTitle')),
+        h('p.card-desc', t('server.deployIntro')),
       ),
     ),
     h('div', { style: { display: 'grid', gap: '14px', fontSize: '13px', lineHeight: '1.85' } },
-      block('教室终端如何接入',
+      block(t('server.howToConnect'),
         h('ol', { style: { margin: 0, paddingLeft: '20px' } },
-          h('li', '在「设备管理」中生成一个注册码。'),
-          h('li', '在教室电脑上打开 ClassIsland，从插件市场安装「IslandHub 客户端」插件（或放入 .cipx 插件包）。'),
-          h('li', '打开插件的设置页面，点击「自动发现服务器」；若不在同一网段，则手动填写服务器地址。'),
-          h('li', '填入注册码并保存，设备即会出现在本页的设备列表中。'),
+          h('li', t('server.step1')),
+          h('li', t('server.step2')),
+          h('li', t('server.step3')),
+          h('li', t('server.step4')),
         )),
-      block('内网本地运行',
-        h('div', '直接运行 IslandHub.Server.exe 即可。程序会监听所有网卡的 '
-          + `${info.httpPort} 端口，同一局域网内的终端经 http://本机IP:${info.httpPort} 即可访问。`
-          + '局域网自动发现使用 UDP ' + info.discoveryPort + ' 端口，请确保防火墙放行。')),
-      block('部署到服务器',
-        h('div', '把发布目录上传到服务器运行，并通过 Nginx 等反向代理提供 HTTPS。'
-          + '反代需要额外转发 WebSocket/长轮询所需的 HTTP/1.1 连接，并在配置中填入对外公布地址 '
-          + '（appsettings.json 的 PublicBaseUrl），这样局域网发现与客户端提示中显示的地址才正确。')),
-      block('数据与备份',
-        h('div', '所有数据存放在数据目录下的 controlhub.db（SQLite）。'
-          + `当前数据目录：${info.dataDirectory}。备份时复制该文件即可；建议在低峰期执行。`)),
+      block(t('server.localTitle'),
+        h('div', t('server.localP1') + ' '
+          + t('server.localUrl', { port: info.httpPort })
+          + t('server.localUdp') + ' ' + info.discoveryPort + t('server.localUdp2'))),
+      block(t('server.cloudTitle'),
+        h('div', t('server.cloudP1')
+          + t('server.cloudP2') + ' '
+          + t('server.cloudP3'))),
+      block(t('server.dataTitle'),
+        h('div', t('server.dataP1')
+          + t('server.dataCurrent', { dir: info.dataDirectory }))),
     ),
   );
 }

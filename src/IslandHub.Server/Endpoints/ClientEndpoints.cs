@@ -42,6 +42,31 @@ public static class ClientEndpoints
         // 课表目录（今天各节 / 科目 / 课表）：管理员点「读取课表」后由插件回报。
         authed.MapPost("/lessons/catalog", ReportLessonCatalogAsync);
         authed.MapPost("/time-report", ReportTimeSyncAsync);
+        // 天气（新功能）：教室端每天要显示的那个「杭州 多云 21°C」。
+        // 服务端拼好 summary，插件不必懂 WMO 代码；未启用时 available=false，插件就不显示。
+        authed.MapGet("/weather", GetWeatherAsync);
+    }
+
+    /// <summary>教室端读取天气（未启用 / 无数据时返回 available=false，而不是 404）。</summary>
+    private static ApiResult<WeatherStateDto> GetWeatherAsync(HttpContext http, WeatherService weather)
+    {
+        http.RequireDevice();
+        var state = weather.State;
+        return ApiResult<WeatherStateDto>.Success(new WeatherStateDto
+        {
+            Config = state.Config,
+            HasData = state.HasData,
+            WeatherCode = state.WeatherCode,
+            Temperature = state.Temperature,
+            TemperatureText = state.TemperatureText,
+            Humidity = state.Humidity,
+            WindSpeed = state.WindSpeed,
+            ObservedAt = state.ObservedAt,
+            UpdatedAt = state.UpdatedAt,
+            Error = state.Error,
+            Source = state.Source,
+            Summary = state.Summary,
+        });
     }
 
     /// <summary>

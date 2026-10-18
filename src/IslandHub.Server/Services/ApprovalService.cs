@@ -197,6 +197,50 @@ public sealed class BackupRestoreApprovalPayload
     public string BackupId { get; set; } = string.Empty;
 }
 
+/// <summary>「回滚程序版本」的审批参数。</summary>
+public sealed class RollbackApprovalPayload
+{
+    /// <summary>程序文件快照 ID。</summary>
+    public string SnapshotId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// 「把程序文件回滚到某个快照」的执行者（#89）。
+/// <para>
+/// 和「恢复备份」同一档危险程度：它会**换掉整个程序目录**。区别是数据目录不动，
+/// 所以它属于「版本退回去」，不是「数据退回去」。
+/// </para>
+/// </summary>
+public sealed class UpdateRollbackExecutor(RollbackService rollback, HubStore store) : IApprovalExecutor
+{
+    /// <inheritdoc />
+    public string Kind => ApprovalKinds.UpdateRollback;
+
+    /// <inheritdoc />
+    public string Describe(string payloadJson)
+    {
+        var payload = HubJson.DeserializeOrDefault(payloadJson, new RollbackApprovalPayload());
+        return $"把程序文件回滚到快照「{payload.SnapshotId}」（换掉整个程序目录，数据目录不动，需重启生效）";
+    }
+
+    /// <inheritdoc />
+    public async Task<(bool Ok, string Result)> ExecuteAsync(string payloadJson, string approver,
+        CancellationToken cancellationToken)
+    {
+        var payload = HubJson.DeserializeOrDefault(payloadJson, new RollbackApprovalPayload());
+        if (string.IsNullOrWhiteSpace(payload.SnapshotId))
+        {
+            return (false, "申请里没有快照 ID。");
+        }
+
+        var result = rollback.Restore(payload.SnapshotId);
+        await store.AddAuditAsync(approver, "update.rollback", payload.SnapshotId,
+            $"经审批{result.Message}", "approval", cancellationToken);
+
+        return (result.Ok, result.Message);
+    }
+}
+
 /// <summary>
 /// 「从备份恢复数据库」的执行者。
 /// <para>

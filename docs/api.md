@@ -110,6 +110,18 @@ curl -s "$BASE/admin/devices" -H "Authorization: Bearer $TOKEN" \
 | POST | `/admin/approvals/{id}/approve` | 仅超级管理员 | 通过并执行（可选请求体 `{"comment":"…"}`）。执行失败会把状态落成 `failed` 并写清原因 |
 | POST | `/admin/approvals/{id}/reject` | 仅超级管理员 | 驳回，不执行（建议带 `comment` 说明原因） |
 
+### 天气（#124）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/admin/weather` | `settings.read` | 天气配置 + 当前数据（`config` / `hasData` / `temperature` / `weatherCode` / `summary` / `error`） |
+| PUT | `/admin/weather` | `settings.write` | 保存配置并**立刻抓一次**：`{enabled, city, latitude, longitude, refreshMinutes, temperatureUnit}`。只填城市名会自动反查经纬度；**显式给坐标则不查**（内网离线部署可用） |
+| POST | `/admin/weather/refresh` | `settings.write` | 立即抓取一次。抓取失败不报错，原因写在 `error` 里 |
+| GET | `/client/weather` | 设备令牌 | 教室端读取。`available=true` 才显示；`summary` 是可直接显示的整行文字（如「杭州 晴间多云 22.5°C」） |
+
+数据源是 Open-Meteo（免 Key）。⚠️ 内网无外网时抓取会失败——服务端**保留上一次成功的数据**，
+所以 `available` 可能为 `true` 而 `error` 非空（表示「数据是旧的」）。
+
 `POST /admin/backups/{id}/restore` 的响应因此变成
 `{ executed, approvalId, status, message }`：`executed=false` 表示已提交审批（`approvalId` 为申请号），
 `status` 取值 `done` / `failed` / `pending`。同一申请只能被处理一次（并发点「通过」只有一个能进入执行）。

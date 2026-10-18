@@ -10,14 +10,14 @@
  * 每一步都写明「要不要重启」，卸载 / 启停也复用同一套下发与进度。</para>
  */
 
-import { api, hasPermission } from '../core/api.js?v=123';
-import { toastError, errorBlock } from '../core/errors.js?v=123';
-import { hintForCode } from '../core/error-hints.js?v=123';
-import { renderMarkdown } from '../core/markdown.js?v=123';
+import { api, hasPermission } from '../core/api.js?v=128';
+import { toastError, errorBlock } from '../core/errors.js?v=128';
+import { hintForCode } from '../core/error-hints.js?v=128';
+import { renderMarkdown } from '../core/markdown.js?v=128';
 import {
   h, clear, toast, loadingBlock, field, select, confirmDialog, emptyState,
   formatDateTime, relativeTime, hintIcon,
-} from '../core/ui.js?v=123';
+} from '../core/ui.js?v=128';
 
 export const meta = {
   title: '插件管理',

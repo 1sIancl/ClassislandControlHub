@@ -1,7 +1,10 @@
 /** 轻量 DOM 构建与通用交互组件，无框架依赖。 */
 
 // 只引「错误码 → 怎么办」的纯映射（#51）：本文件是最底层模块，不能反过来依赖 errors.js。
-import { formatErrorText, hasErrorHint } from './error-hints.js?v=123';
+import { formatErrorText, hasErrorHint } from './error-hints.js?v=128';
+// 文案资源（#48）：本文件是**全站共用**的交互件（弹窗 / 提示 / 徽章），
+// 所以这里的字符串进资源后收益最大——一次覆盖所有页面。
+import { t } from './i18n.js?v=128';
 
 /**
  * 创建元素。
@@ -76,7 +79,7 @@ export function append(parent, children) {
 function reportHandlerError(err) {
   // 这里是所有「没被单独接住」的操作的实际出口，光转述服务端原文不够用（#51）：
   // 按错误码补一句「怎么办」，带建议的多停留一会儿。
-  toast('error', '操作失败', formatErrorText(err), hasErrorHint(err) ? 8000 : 4200);
+  toast('error', t('ui.actionFailed'), formatErrorText(err), hasErrorHint(err) ? 8000 : 4200);
 }
 
 /**
@@ -108,11 +111,11 @@ export function guard(label, action) {
   try {
     const result = action();
     if (result && typeof result.catch === 'function') {
-      result.catch((err) => toast('error', `${label}失败`, formatErrorText(err), hasErrorHint(err) ? 8000 : 4200));
+      result.catch((err) => toast('error', t('ui.actionFailedWith', { label }), formatErrorText(err), hasErrorHint(err) ? 8000 : 4200));
     }
     return result;
   } catch (err) {
-    toast('error', `${label}失败`, formatErrorText(err), hasErrorHint(err) ? 8000 : 4200);
+    toast('error', t('ui.actionFailedWith', { label }), formatErrorText(err), hasErrorHint(err) ? 8000 : 4200);
     return undefined;
   }
 }
@@ -160,15 +163,15 @@ export function formatTime(value) {
 
 /** 相对时间，例如「3 分钟前」。 */
 export function relativeTime(value) {
-  if (!value) return '从未';
+  if (!value) return t('ui.never');
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '—';
   const diff = Math.floor((Date.now() - d.getTime()) / 1000);
-  if (diff < 5) return '刚刚';
-  if (diff < 60) return `${diff} 秒前`;
-  if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`;
-  if (diff < 2592000) return `${Math.floor(diff / 86400)} 天前`;
+  if (diff < 5) return t('ui.justNow');
+  if (diff < 60) return t('ui.secondsAgo', { count: diff });
+  if (diff < 3600) return t('ui.minutesAgo', { count: Math.floor(diff / 60) });
+  if (diff < 86400) return t('ui.hoursAgo', { count: Math.floor(diff / 3600) });
+  if (diff < 2592000) return t('ui.daysAgo', { count: Math.floor(diff / 86400) });
   return formatDateTime(value);
 }
 
@@ -178,10 +181,10 @@ export function formatDuration(seconds) {
   const days = Math.floor(s / 86400);
   const hours = Math.floor((s % 86400) / 3600);
   const minutes = Math.floor((s % 3600) / 60);
-  if (days > 0) return `${days} 天 ${hours} 小时`;
-  if (hours > 0) return `${hours} 小时 ${minutes} 分`;
-  if (minutes > 0) return `${minutes} 分 ${s % 60} 秒`;
-  return `${s} 秒`;
+  if (days > 0) return t('ui.durationDays', { days, hours });
+  if (hours > 0) return t('ui.durationHours', { hours, minutes });
+  if (minutes > 0) return t('ui.durationMinutes', { minutes, seconds: s % 60 });
+  return t('ui.durationSeconds', { seconds: s });
 }
 
 function pad(n) {
@@ -295,7 +298,7 @@ export function modal(options) {
 
   const confirmBtn = h(`button.btn.${options.danger ? 'btn-danger' : 'btn-primary'}`,
     { type: 'button' },
-    options.confirmText || '确定');
+    options.confirmText || t('ui.ok'));
 
   confirmBtn.addEventListener('click', async () => {
     if (!options.onConfirm) {
@@ -304,13 +307,13 @@ export function modal(options) {
     }
     confirmBtn.disabled = true;
     const original = confirmBtn.textContent;
-    confirmBtn.textContent = '处理中…';
+    confirmBtn.textContent = t('ui.processing');
     try {
       const result = await options.onConfirm();
       if (result !== false) close();
     } catch (err) {
       // 所有弹窗的「确定」都走这里（保存 / 确认类操作），同样带上「怎么办」（#51）。
-      toast('error', '操作失败', formatErrorText(err), hasErrorHint(err) ? 8000 : 4200);
+      toast('error', t('ui.actionFailed'), formatErrorText(err), hasErrorHint(err) ? 8000 : 4200);
     } finally {
       confirmBtn.disabled = false;
       confirmBtn.textContent = original;
@@ -321,20 +324,20 @@ export function modal(options) {
     {
       role: 'dialog',
       'aria-modal': 'true',
-      'aria-label': options.title || '对话框',
+      'aria-label': options.title || t('ui.dialog'),
     },
     h('div.modal-head',
       h('h3', options.title || ''),
       // 纯图标按钮必须有无障碍名（#49）：屏幕阅读器读的是 aria-label，不是里面的 SVG。
       h('button.btn.btn-ghost.btn-sm', {
-        type: 'button', title: '关闭', 'aria-label': '关闭', onClick: close,
+        type: 'button', title: t('ui.close'), 'aria-label': t('ui.close'), onClick: close,
       }, icon('close', 15)),
     ),
     bodyEl,
     options.hideFooter
       ? null
       : h('div.modal-foot',
-        h('button.btn', { type: 'button', onClick: close }, options.cancelText || '取消'),
+        h('button.btn', { type: 'button', onClick: close }, options.cancelText || t('ui.cancel')),
         confirmBtn,
       ),
   );
@@ -356,7 +359,7 @@ export function modal(options) {
 }
 
 /** 确认对话框。 */
-export function confirmDialog(title, message, confirmText = '确定', danger = false) {
+export function confirmDialog(title, message, confirmText = t('ui.ok'), danger = false) {
   return new Promise((resolve) => {
     modal({
       title,
@@ -364,7 +367,7 @@ export function confirmDialog(title, message, confirmText = '确定', danger = f
       body: h('div', { style: { fontSize: '13.5px', lineHeight: '1.75' } }, message),
       confirmText,
       danger,
-      cancelText: '取消',
+      cancelText: t('ui.cancel'),
       onConfirm: () => {
         resolve(true);
         return true;
@@ -402,14 +405,14 @@ export function undoBar(title, seconds, onUndo) {
         bar.remove();
         await onUndo();
       },
-    }, '撤销'),
+    }, t('ui.undo')),
     h('button.btn.btn-sm.btn-ghost', {
       type: 'button',
       onClick: () => {
         clearInterval(timer);
         bar.remove();
       },
-    }, '知道了'),
+    }, t('ui.gotIt')),
   );
 
   let left = seconds;
@@ -440,7 +443,7 @@ export function promptDialog(title, label, defaultValue = '', placeholder = '') 
       title,
       width: 'wide',
       body: h('label.field', h('span', label), input),
-      confirmText: '确定',
+      confirmText: t('ui.ok'),
       onConfirm: () => {
         resolve(input.value.trim());
         return true;
@@ -465,12 +468,12 @@ export function promptDialog(title, label, defaultValue = '', placeholder = '') 
 }
 
 /** 复制文本到剪贴板。 */
-export async function copyText(text, label = '已复制') {
+export async function copyText(text, label = t('ui.copied')) {
   try {
     await navigator.clipboard.writeText(text);
     toast('ok', label);
   } catch {
-    toast('warn', '复制失败', '当前浏览器不允许访问剪贴板，请手动选择复制。');
+    toast('warn', t('ui.copyFailed'), t('ui.copyBlocked'));
   }
 }
 
@@ -479,26 +482,26 @@ export async function copyText(text, label = '已复制') {
 /** 设备状态徽标。 */
 export function deviceStateBadge(device) {
   if (device.revoked) {
-    return h('span.badge.badge-danger', h('span.dot'), '已停用');
+    return h('span.badge.badge-danger', h('span.dot'), t('ui.stateRevoked'));
   }
   if (!device.online) {
-    return h('span.badge.badge-neutral', h('span.dot'), '离线');
+    return h('span.badge.badge-neutral', h('span.dot'), t('ui.stateOffline'));
   }
   switch (device.state) {
     case 'syncing':
-      return h('span.badge.badge-info', h('span.dot'), '同步中');
+      return h('span.badge.badge-info', h('span.dot'), t('ui.stateSyncing'));
     case 'error':
-      return h('span.badge.badge-danger', h('span.dot'), '异常');
+      return h('span.badge.badge-danger', h('span.dot'), t('ui.stateError'));
     default:
-      return h('span.badge.badge-ok', h('span.dot'), '在线');
+      return h('span.badge.badge-ok', h('span.dot'), t('ui.stateOnline'));
   }
 }
 
 /** 同步状态徽标。 */
 export function syncBadge(device) {
   return device.upToDate
-    ? h('span.badge.badge-ok', '已是最新')
-    : h('span.badge.badge-warn', `待同步 · 版本 ${device.appliedRevision}`);
+    ? h('span.badge.badge-ok', t('ui.syncUpToDate'))
+    : h('span.badge.badge-warn', t('ui.syncPending', { revision: device.appliedRevision }));
 }
 
 // ── 图标 ────────────────────────────────────────────────────────────────
@@ -525,6 +528,8 @@ const ICON_PATHS = {
   plusCircle: 'M12 3a9 9 0 1 1 0 18a9 9 0 0 1 0-18M12 8v8M8 12h8',
   inbox: 'M4.5 5.5h15v13h-15zM4.5 13.5H9l1.5 2.5h3l1.5-2.5h4.5',
   search: 'M11 4.2a6.8 6.8 0 1 1 0 13.6a6.8 6.8 0 0 1 0-13.6M20.2 20.2l-4.6-4.6',
+  // 天气：一朵云（配一个太阳）——比再引一套图标库划算。
+  cloud: 'M6.8 18.5h10.9a3.6 3.6 0 0 0 .3-7.2 5.4 5.4 0 0 0-10.3-1.2 4.2 4.2 0 0 0-.9 8.4zM8.2 6.6 7.4 4.4M12 5.6V3.2M15.8 6.6l.8-2.2',
   link: 'M10.2 13.8a4 4 0 0 0 5.6 0l2.9-2.9a4 4 0 0 0-5.6-5.6l-1 1M13.8 10.2a4 4 0 0 0-5.6 0l-2.9 2.9a4 4 0 0 0 5.6 5.6l1-1',
   clipboard: 'M9.5 3.5h5v2.7h-5zM8.2 4.6H6.5A1.5 1.5 0 0 0 5 6.1v12.6a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V6.1a1.5 1.5 0 0 0-1.5-1.5h-1.7',
   database: 'M12 3.2c4.4 0 8 1.1 8 2.5s-3.6 2.5-8 2.5-8-1.1-8-2.5 3.6-2.5 8-2.5M4 5.7v12.6c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5V5.7M4 12c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5',
@@ -595,7 +600,7 @@ export function skeletonRows(rows = 6) {
 }
 
 /** 加载占位。 */
-export function loadingBlock(text = '正在加载…') {
+export function loadingBlock(text = t('ui.loading')) {
   return h('div.empty',
     h('div', { style: { marginBottom: '12px' } }, h('span.spinner')),
     h('p', text),
@@ -630,15 +635,15 @@ export function hintIcon(text) {
     event.preventDefault();
     event.stopPropagation();
     modal({
-      title: '说明',
-      confirmText: '知道了',
+      title: t('ui.help'),
+      confirmText: t('ui.gotIt'),
       body: h('div', { style: { lineHeight: '1.75', fontSize: '13px' } }, text),
     });
   };
 
   return h('span.field-help', {
     role: 'img',
-    'aria-label': `帮助：${text}`,
+    'aria-label': t('ui.helpFor', { text }),
     title: text,
     tabIndex: '0',
     onClick: open,

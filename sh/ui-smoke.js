@@ -1662,12 +1662,14 @@ function check(name, ok, extra = '') {
     title: document.querySelector('.side-nav-title')?.textContent.trim() || '',
     pageTitle: document.getElementById('pageTitle')?.textContent || '',
   }));
-  // 「系统」组现在是 8 个页面（#35 加了「操作审批」）：报表 / 审计日志 / 操作审批 / 页面设置 /
-  // 账号与权限 / 服务器信息 / 通知与集成 / 系统维护。加页面时记得同步这里。
-  check('二级侧栏列出「系统」组下的 8 个页面（含新增的操作审批）',
-    systemNav.items.length === 8 && systemNav.items.some((t) => t.includes('账号与权限'))
+  // 「系统」组现在是 9 个页面（#35 加了「操作审批」、天气功能加了「天气」）：报表 / 审计日志 /
+  // 操作审批 / 页面设置 / 账号与权限 / 服务器信息 / 天气 / 通知与集成 / 系统维护。
+  // 加页面时记得同步这里——这条断言存在的意义就是逼人回来改。
+  check('二级侧栏列出「系统」组下的 9 个页面（含操作审批与天气）',
+    systemNav.items.length === 9 && systemNav.items.some((t) => t.includes('账号与权限'))
       && systemNav.items.some((t) => t.includes('系统维护'))
-      && systemNav.items.some((t) => t.includes('操作审批')),
+      && systemNav.items.some((t) => t.includes('操作审批'))
+      && systemNav.items.some((t) => t.includes('天气')),
     `组=${systemNav.title} 项=${JSON.stringify(systemNav.items)}`);
   // 这一段原来查的是「系统」组的侧栏有没有快捷键提示。加了「插件管理」页之后，
   // 系统组整体排到了第 10 个页面之后，而快捷键只到 Alt + 9（见 app.js 的

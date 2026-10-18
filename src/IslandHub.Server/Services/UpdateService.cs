@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using IslandHub.Protocol;
+using IslandHub.Protocol.Dtos;
 using IslandHub.Server.Options;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -30,6 +31,7 @@ public sealed class UpdateState
 /// </summary>
 public sealed class UpdateService(
     IOptionsMonitor<ServerOptions> options,
+    RollbackService rollback,
     ILogger<UpdateService> logger) : BackgroundService
 {
     private static readonly HttpClient Http = new()
@@ -177,6 +179,10 @@ public sealed class UpdateService(
                 logger.LogInformation("解压更新包到 {Dir}", extractDir);
                 Directory.CreateDirectory(extractDir);
                 ZipFile.ExtractToDirectory(zipPath, extractDir);
+
+                // #89 回滚保险：换文件**之前**把当前程序文件拍一份快照。
+                // 更新完才发现新版有问题时，这是唯一能一键退回去的凭据（失败只记日志，不阻断更新）。
+                rollback.Create(RollbackReasons.PreUpdate);
 
                 await ReplaceFilesAsync(extractDir, cancellationToken);
             }

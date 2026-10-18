@@ -1,0 +1,70 @@
+name: 代码静态分析
+
+# 路线图 #82：用 GitHub 原生的 CodeQL 做全量静态扫描（不引第三方服务）。
+#
+# 为什么放在单独的流水线而不是并进「构建」：
+#   · CodeQL 一次全扫要几分钟，并进构建会让「编译没过」和「有告警」两件事互相掩盖；
+#   · 节奏也不同——构建是每次提交，CodeQL 每周一次 + 手动触发就够了。
+#
+# 默认用官方 security 查询套件：告警进 Security 页，**不会让流水线变红**——
+# 不想让一条中低危告警卡住版本发布，但也不想让告警没人看。
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - '.github/ISSUE_TEMPLATE/**'
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - '.github/ISSUE_TEMPLATE/**'
+  schedule:
+    # 每周一 UTC 18:00（北京时间周二凌晨）扫一次全仓。
+    - cron: '0 18 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # CodeQL 要把告警写进安全页，必须有这个权限。
+  security-events: write
+
+jobs:
+  analyze:
+    name: CodeQL 扫描（${{ matrix.language }}）
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      # csharp = 代码；actions = 工作流自身（能查出写错的权限、命令注入之类的 CI 问题）。
+      # 两个语言分开跑：csharp 要先构建，actions 不用，混在一个作业里只会互相拖时间。
+      fail-fast: false
+      matrix:
+        language: [csharp, actions]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: CodeQL 初始化
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+
+      - name: 安装 .NET
+        if: matrix.language == 'csharp'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # 不用 autobuild：本仓的解决方案是 .slnx（新格式），自动构建认不出来；
+      # 而且显式构建更贴近真实产物（与「构建」流水线同一条命令）。
+      - name: 构建（供 C# 扫描使用）
+        if: matrix.language == 'csharp'
+        run: dotnet build IslandHub.slnx -c Release --nologo
+
+      - name: 分析并上传结果
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
