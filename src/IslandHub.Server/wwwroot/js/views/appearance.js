@@ -16,19 +16,20 @@
  * 本页的「外观（本机）」。</para>
  */
 
-import { api } from '../core/api.js?v=128';
+import { api } from '../core/api.js?v=133';
 import {
   h, clear, field, select, loadingBlock, toast, confirmDialog,
-} from '../core/ui.js?v=128';
+} from '../core/ui.js?v=133';
 import {
   THEMES, DENSITIES, ACCENTS, FONTS, RADII,
   getTheme, applyTheme, getDensity, setDensity,
   getAccent, setAccent, getFont, setFont, getRadius, setRadius,
-} from '../core/prefs.js?v=128';
+} from '../core/prefs.js?v=133';
+import { t } from '../core/i18n.js?v=133';
 
 export const meta = {
-  title: '页面设置',
-  subtitle: '品牌 / 登录页 / 外观',
+  title: t('appearance.title'),
+  subtitle: t('appearance.subtitle'),
 };
 
 export async function render(container) {
@@ -92,10 +93,10 @@ async function confirmBrokenImages(entries) {
   }
   if (broken.length === 0) return false;
 
-  const ok = await confirmDialog('这些图片打不开',
-    `${broken.join('、')} 加载失败，保存后界面上仍会显示成文字或默认图标。`
-    + '常见原因：地址写错、图床需要登录、图床禁止外链（防盗链）。仍要保存吗？',
-    '仍然保存');
+  const ok = await confirmDialog(t('appearance.brokenImagesTitle'),
+    t('appearance.imagesFailed', { list: broken.join('、') })
+    + t('appearance.brokenImagesHint'),
+    t('appearance.saveAnyway'));
   return !ok;
 }
 
@@ -130,14 +131,14 @@ function imageField(label, initial, desc, options = {}) {
   const input = h('input', {
     type: 'text',
     value: initial || '',
-    placeholder: 'https://… 或点右侧「选择本地图片」',
+    placeholder: t('appearance.imagePlaceholder'),
   });
 
   const file = h('input', { type: 'file', accept: 'image/*', style: { display: 'none' } });
   const preview = h('div.image-field-preview');
   const status = h('span.image-field-status');
 
-  const pickBtn = h('button.btn.btn-sm', { type: 'button', onClick: () => file.click() }, '选择本地图片');
+  const pickBtn = h('button.btn.btn-sm', { type: 'button', onClick: () => file.click() }, t('appearance.pickLocalImage'));
   const clearBtn = h('button.btn.btn-sm', {
     type: 'button',
     onClick: () => {
@@ -145,7 +146,7 @@ function imageField(label, initial, desc, options = {}) {
       paint();
       options.onChange?.('');
     },
-  }, '清除');
+  }, t('appearance.clear'));
 
   function paint() {
     const url = input.value.trim();
@@ -159,14 +160,14 @@ function imageField(label, initial, desc, options = {}) {
 
     preview.hidden = false;
     const img = h('img', {
-      alt: '预览',
+      alt: t('appearance.preview'),
       src: url,
       style: { maxHeight: options.previewHeight || '72px' },
     });
     img.addEventListener('error', () => {
       // 「打不开」是最需要当场知道的事：地址写错、要登录、图床防盗链，现象全一样。
       clear(preview);
-      status.textContent = '这张图打不开（地址写错、需要登录，或图床禁止外链）';
+      status.textContent = t('appearance.imageBroken');
       status.classList.add('is-bad');
     });
     preview.appendChild(img);
@@ -183,17 +184,17 @@ function imageField(label, initial, desc, options = {}) {
     if (!picked) return;
 
     status.classList.remove('is-bad');
-    status.textContent = '上传中…';
+    status.textContent = t('appearance.uploading');
     pickBtn.disabled = true;
     try {
       const saved = await uploadImage(picked);
       input.value = saved.url;
       paint();
-      status.textContent = `已上传 ${Math.round(saved.size / 1024)}KB（存本站，不依赖外部图床）`;
+      status.textContent = t('appearance.uploadedSize', { size: Math.round(saved.size / 1024) });
       options.onChange?.(saved.url);
     } catch (err) {
       status.classList.add('is-bad');
-      status.textContent = err.message || '上传失败';
+      status.textContent = err.message || t('appearance.uploadFailed');
     } finally {
       pickBtn.disabled = false;
     }
@@ -243,7 +244,7 @@ function loginPreview() {
       bg.style.backgroundImage = background ? `url("${background}")` : '';
       dim.style.opacity = String(Math.min(0.9, Math.max(0, Number(dimValue) || 0) / 100));
       scrim.style.opacity = background ? '1' : '0';
-      heroTitle.textContent = title || '站点名称';
+      heroTitle.textContent = title || t('appearance.siteName');
       node.dataset.layout = layout === 'centered' ? 'centered' : 'split';
     },
   };
@@ -253,19 +254,19 @@ function loginPreview() {
 
 function renderBrandCard(branding) {
   const siteInput = h('input', { type: 'text', value: branding.siteName || '' });
-  const logoImage = imageField('Logo 图片', branding.logoImage,
-    '留空则用下面的「Logo 文字」。**填了就用图片**（登录页顶栏、登录卡片、站内顶栏都会换）。',
+  const logoImage = imageField(t('appearance.logoImage'), branding.logoImage,
+    t('appearance.logoImageHint'),
     { previewHeight: '48px' });
   const logoTextInput = h('input', { type: 'text', value: branding.logoText || '', placeholder: 'CI' });
-  const favicon = imageField('浏览器标签图标', branding.favicon, '小尺寸图（32×32 左右）最合适。',
+  const favicon = imageField(t('appearance.favicon'), branding.favicon, t('appearance.faviconHint'),
     { previewHeight: '32px' });
 
   return h('div.card',
-    h('h3', '品牌'),
-    scopeNote('这些设置**全站生效**（含登录页与管理界面），保存后刷新可见。'),
+    h('h3', t('appearance.brandCard')),
+    scopeNote(t('appearance.brandCardDesc')),
     h('div.form-row',
-      field('站点名称', siteInput, '显示在浏览器标题与界面各处。'),
-      field('Logo 文字', logoTextInput, '没有上传图片时，用这几个字作为标识。'),
+      field(t('appearance.siteName'), siteInput, t('appearance.siteNameHint')),
+      field(t('appearance.logoText'), logoTextInput, t('appearance.logoTextHint')),
     ),
     logoImage.node,
     favicon.node,
@@ -274,8 +275,8 @@ function renderBrandCard(branding) {
         type: 'button',
         onClick: async () => {
           const stop = await confirmBrokenImages([
-            ['Logo 图片', logoImage.input.value.trim()],
-            ['浏览器标签图标', favicon.input.value.trim()],
+            [t('appearance.logoImage'), logoImage.input.value.trim()],
+            [t('appearance.favicon'), favicon.input.value.trim()],
           ]);
           if (stop) return;
 
@@ -286,7 +287,7 @@ function renderBrandCard(branding) {
             favicon: favicon.input.value.trim(),
           });
         },
-      }, '保存品牌')),
+      }, t('appearance.saveBrand'))),
   );
 }
 
@@ -294,25 +295,25 @@ function renderBrandCard(branding) {
 
 function renderLoginCard(branding) {
   const layoutSelect = select([
-    { value: 'split', label: '左右分栏（左品牌 / 右表单）' },
-    { value: 'centered', label: '单列居中（只要一张登录卡）' },
+    { value: 'split', label: t('appearance.layoutSplit') },
+    { value: 'centered', label: t('appearance.layoutCentered') },
   ], branding.loginLayout || 'split', () => paintPreview());
 
-  const titleInput = h('input', { type: 'text', value: branding.loginTitle || '', placeholder: '留空使用站点名称' });
+  const titleInput = h('input', { type: 'text', value: branding.loginTitle || '', placeholder: t('appearance.emptyUsesSiteName') });
   const subtitleInput = h('input', { type: 'text', value: branding.loginSubtitle || '' });
   const descInput = h('textarea', { rows: 2 }, branding.loginDescription || '');
   const featuresInput = h('textarea', {
     rows: 4,
-    placeholder: '每行一条，最多 8 条',
+    placeholder: t('appearance.onePerLineMax8'),
   }, (branding.loginFeatures || []).join('\n'));
-  const footerInput = h('input', { type: 'text', value: branding.footerText || '', placeholder: '例如：智教联盟 · 教务处' });
+  const footerInput = h('input', { type: 'text', value: branding.footerText || '', placeholder: t('appearance.footerPlaceholder') });
 
   const topbarHiddenChk = h('input', { type: 'checkbox' });
   topbarHiddenChk.checked = branding.loginTopbarHidden === true;
   const topbarTitleInput = h('input', {
     type: 'text',
     value: branding.loginTopbarTitle || '',
-    placeholder: '留空使用站点名称',
+    placeholder: t('appearance.emptyUsesSiteName'),
   });
 
   const preview = loginPreview();
@@ -327,12 +328,12 @@ function renderLoginCard(branding) {
       background: bg.input.value.trim(),
       dim: Number(dimInput.value) || 0,
       layout: layoutSelect.value,
-      title: titleInput.value.trim() || branding.siteName || '站点名称',
+      title: titleInput.value.trim() || branding.siteName || t('appearance.siteName'),
     });
   }
 
-  const bg = imageField('背景图', branding.loginBackground,
-    '留空使用默认的蓝紫渐变。也可以直接选本地图片——存在本站，不受外部图床的防盗链与限速影响。',
+  const bg = imageField(t('appearance.backgroundImage'), branding.loginBackground,
+    t('appearance.backgroundImageHint'),
     { previewHeight: '110px', onChange: () => paintPreview() });
   const dimInput = h('input', {
     type: 'number', min: '0', max: '90', value: String(branding.loginBackgroundDim ?? 45),
@@ -342,37 +343,37 @@ function renderLoginCard(branding) {
   paintPreview();
 
   return h('div.card',
-    h('h3', '登录页'),
-    scopeNote('登录页是别人看到的第一屏；这一节同样**全站生效**。'),
-    field('布局', layoutSelect),
+    h('h3', t('appearance.loginCard')),
+    scopeNote(t('appearance.loginCardDesc')),
+    field(t('appearance.layout'), layoutSelect),
     h('div.form-row',
-      field('大标题', titleInput),
-      field('副标题', subtitleInput, '短句，跟在标题右侧/下方。'),
+      field(t('appearance.heading'), titleInput),
+      field(t('appearance.subheading'), subtitleInput, t('appearance.subheadingHint')),
     ),
-    field('描述段落', descInput, '介绍这套系统做什么，留空则隐藏整段。'),
-    field('特性列表', featuresInput, '每行一条（如「一处配置，全网生效」）。'),
-    field('页脚文字', footerInput),
+    field(t('appearance.description'), descInput, t('appearance.descriptionHint')),
+    field(t('appearance.features'), featuresInput, t('appearance.featuresHint')),
+    field(t('appearance.footerText'), footerInput),
 
-    h('div.config-section-title', { style: { marginTop: '14px' } }, '顶栏'),
+    h('div.config-section-title', { style: { marginTop: '14px' } }, t('appearance.topbar')),
     h('label.checkbox-field',
       topbarHiddenChk,
-      h('span', '隐藏登录页顶栏'),
+      h('span', t('appearance.hideTopbar')),
       h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } },
-        '（整页嵌入学校门户时可选）')),
-    field('顶栏文案', topbarTitleInput, '留空使用站点名称；这里可以写完整校名。'),
+        t('appearance.hideTopbarHint'))),
+    field(t('appearance.topbarText'), topbarTitleInput, t('appearance.topbarTextHint')),
 
-    h('div.config-section-title', { style: { marginTop: '14px' } }, '背景'),
+    h('div.config-section-title', { style: { marginTop: '14px' } }, t('appearance.background')),
     bg.node,
-    field('淡化程度', dimInput, '0~90，数值越大背景越淡（保证表单可读）。'),
+    field(t('appearance.dimLevel'), dimInput, t('appearance.dimLevelHint')),
     h('p.card-desc', { style: { margin: '6px 0 8px' } },
-      '下面是登录页的实时示意（左侧品牌区 + 右侧表单）。改地址、改淡化程度、换布局都会立刻反映，不用保存。'),
+      t('appearance.livePreviewHint')),
     preview.node,
 
     h('div.card-actions',
       h('button.btn.btn-primary', {
         type: 'button',
         onClick: async () => {
-          const stop = await confirmBrokenImages([['登录页背景图', bg.input.value.trim()]]);
+          const stop = await confirmBrokenImages([[t('appearance.loginBackground'), bg.input.value.trim()]]);
           if (stop) return;
 
           await saveBranding({
@@ -388,7 +389,7 @@ function renderLoginCard(branding) {
             loginBackgroundDim: Math.min(90, Math.max(0, Number(dimInput.value) || 45)),
           });
         },
-      }, '保存登录页设置')),
+      }, t('appearance.saveLogin'))),
   );
 }
 
@@ -406,22 +407,22 @@ function renderAppearanceCard() {
   // 强调色的第一项是「跟随全站」：它不是「不设置」，而是明确地把控制权交回
   // 全站主题色（见 prefs.applyAccent 的取值顺序：本机优先、全站兜底）。
   const accentSelect = select(
-    [{ value: '', label: '跟随全站设置' }, ...ACCENTS.map((a) => ({ value: a.value, label: a.label }))],
+    [{ value: '', label: t('appearance.followSite') }, ...ACCENTS.map((a) => ({ value: a.value, label: a.label }))],
     getAccent(), (v) => setAccent(v));
 
   return h('div.card',
-    h('h3', '外观（本机）'),
-    scopeNote('只影响**这台电脑的浏览器**。办公室电脑与教室大屏的偏好常常不同，'
-      + '所以这类设置不跟随账号同步——各调各的更省事。'),
+    h('h3', t('appearance.localCard')),
+    scopeNote(t('appearance.localCardDesc1')
+      + t('appearance.localCardDesc2')),
     h('div.form-row',
-      field('明暗主题', themeSelect, '「跟随系统」会随操作系统的深色模式切换。'),
-      field('界面密度', densitySelect, '紧凑模式一屏能多看几行。'),
+      field(t('appearance.theme'), themeSelect, t('appearance.themeHint')),
+      field(t('appearance.density'), densitySelect, t('appearance.densityHint')),
     ),
     h('div.form-row',
-      field('强调色', accentSelect, '「跟随全站设置」表示用下面「高级」里配的那个颜色；选了具体颜色则只改这台电脑。'),
-      field('字体', fontSelect, '换一套中文字体有时比调整字号更管用。'),
+      field(t('appearance.accent'), accentSelect, t('appearance.accentHint')),
+      field(t('appearance.font'), fontSelect, t('appearance.fontHint')),
     ),
-    field('圆角', radiusSelect, '直角看起来更硬朗；圆润在大屏上观感更柔和。'),
+    field(t('appearance.radius'), radiusSelect, t('appearance.radiusHint')),
   );
 }
 
@@ -439,29 +440,29 @@ function renderAdvancedCard(branding) {
   });
 
   const glassSelect = select([
-    { value: 'subtle', label: '轻（内容优先，低配机友好）' },
-    { value: 'standard', label: '标准' },
-    { value: 'strong', label: '强（质感优先）' },
+    { value: 'subtle', label: t('appearance.glassLight') },
+    { value: 'standard', label: t('appearance.glassStandard') },
+    { value: 'strong', label: t('appearance.glassStrong') },
   ], branding.glassLevel || 'standard', () => { });
   const shineChk = h('input', { type: 'checkbox' });
   shineChk.checked = branding.enableShine !== false;
-  const cssInput = h('textarea', { rows: 6, placeholder: '/* 追加的 CSS */' }, branding.customCss || '');
+  const cssInput = h('textarea', { rows: 6, placeholder: t('appearance.cssPlaceholder') }, branding.customCss || '');
 
   return h('div.card',
-    h('h3', '高级（全站）'),
-    scopeNote('改动会影响**所有人**。这两项是「高度自定义」的兜底口子，不确定时保持默认。'),
+    h('h3', t('appearance.advancedCard')),
+    scopeNote(t('appearance.advancedCardDesc')),
     h('label.checkbox-field',
       accentDefaultChk,
-      h('span', '主题色用默认蓝'),
-      h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } }, '（取消勾选后可自选颜色）')),
-    field('全站主题色', accentInput, '所有人的默认强调色；个人可在上面的「外观（本机）」里改成只对自己生效的颜色。'),
-    field('玻璃材质强度', glassSelect, '低配机或投影场景建议打「轻」。'),
+      h('span', t('appearance.useDefaultAccent')),
+      h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } }, t('appearance.useDefaultAccentHint'))),
+    field(t('appearance.siteAccent'), accentInput, t('appearance.siteAccentHint')),
+    field(t('appearance.glassLevel'), glassSelect, t('appearance.glassLevelHint')),
     h('label.checkbox-field',
       shineChk,
-      h('span', '启用鼠标跟随高光'),
-      h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } }, '（关掉可省一点显卡开销）')),
-    field('自定义 CSS', cssInput,
-      '追加到管理界面与登录页（上限 20000 字符）。改坏了可以清空这里恢复。'),
+      h('span', t('appearance.enableShine')),
+      h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } }, t('appearance.enableShineHint'))),
+    field(t('appearance.customCss'), cssInput,
+      t('appearance.customCssHint')),
     h('div.card-actions',
       h('button.btn.btn-primary', {
         type: 'button',
@@ -475,19 +476,19 @@ function renderAdvancedCard(branding) {
             customCss: cssInput.value,
           });
         },
-      }, '保存高级设置')),
+      }, t('appearance.saveAdvanced'))),
 
-    h('div.config-section-title', { style: { marginTop: '16px' } }, '更多自定义'),
-    h('p.card-desc', '下面两项与具体页面相关，在各自页面里调整更顺手（这里给个直达入口）：'),
+    h('div.config-section-title', { style: { marginTop: '16px' } }, t('appearance.moreCard')),
+    h('p.card-desc', t('appearance.moreCardDesc')),
     h('div.card-actions',
       h('button.btn.btn-sm', {
         type: 'button',
         onClick: () => { window.location.hash = '#/dashboard'; },
-      }, '仪表盘模块显隐与排序'),
+      }, t('appearance.dashboardLayout')),
       h('button.btn.btn-sm', {
         type: 'button',
         onClick: () => { window.location.hash = '#/devices'; },
-      }, '设备表格列显隐'),
+      }, t('appearance.deviceColumns')),
     ),
   );
 }
@@ -501,7 +502,7 @@ function renderAdvancedCard(branding) {
 async function saveBranding(patch) {
   const current = await api('/admin/branding');
   await api('/admin/branding', { method: 'PUT', body: { ...current, ...patch } });
-  toast('ok', '已保存', '刷新页面后可见（外观类改动需要重载才完全生效）。');
+  toast('ok', t('appearance.saved'), t('appearance.savedDesc'));
   // 让界面上的即时类改动（主题色等）马上能看到：重载最稳，
   // 因为品牌设置同时作用于 CSS 变量、登录页与 favicon，逐处同步反而容易漏。
   setTimeout(() => window.location.reload(), 900);

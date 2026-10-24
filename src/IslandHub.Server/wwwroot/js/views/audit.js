@@ -2,26 +2,27 @@
  * 审计日志视图：记录管理员操作与设备同步事件，便于排查与追溯。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=128';
-import { toastError } from '../core/errors.js?v=128';
+import { api, fetchBlob } from '../core/api.js?v=133';
+import { toastError } from '../core/errors.js?v=133';
 import {
   h, clear, formatDateTime, toast, loadingBlock, emptyState,
-} from '../core/ui.js?v=128';
+} from '../core/ui.js?v=133';
+import { t } from '../core/i18n.js?v=133';
 
 export const meta = {
-  title: '审计日志',
-  subtitle: '管理员操作与设备同步记录',
+  title: t('audit.title'),
+  subtitle: t('audit.subtitle'),
 };
 
 const PAGE_SIZE = 50;
 
 /** 精细筛选的输入提示：动作前缀是这一排里最有用的一项（按类别看）。 */
 const FILTER_HINTS = {
-  actor: '操作者（精确）',
-  action: '动作前缀，如 device.',
-  ip: '来源 IP',
-  from: '起始日期',
-  to: '结束日期',
+  actor: t('audit.filterActorExact'),
+  action: t('audit.filterActionHint'),
+  ip: t('audit.filterIp'),
+  from: t('audit.filterFrom'),
+  to: t('audit.filterTo'),
 };
 
 // 筛选条件：与 /admin/audit/export 共用同一套参数，保证「屏幕上看到的就是导出的」。
@@ -58,9 +59,9 @@ async function exportAudit() {
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    toast('ok', '已导出', '来源 IP 已脱敏，筛选条件与当前页面一致。');
+    toast('ok', t('audit.exported'), t('audit.exportedDesc'));
   } catch (err) {
-    toastError(err, '导出失败');
+    toastError(err, t('audit.exportFailed'));
   }
 }
 
@@ -79,13 +80,13 @@ export async function render(container) {
     h('div.card',
       h('div.card-head',
         h('div',
-          h('h3', `操作记录（共 ${result.total} 条）`),
-          h('p.card-desc', '包含客户端注册、配置下发、设备调整等操作。日志按保留策略自动清理。'),
+          h('h3', t('audit.listTitle', { total: result.total })),
+          h('p.card-desc', t('audit.listDesc')),
         ),
         h('div.card-actions',
           h('input', {
             type: 'text',
-            placeholder: '搜索操作人 / 动作 / 内容…',
+            placeholder: t('audit.searchPlaceholder'),
             value: query.search,
             style: { width: '200px' },
             onChange: (e) => {
@@ -100,8 +101,8 @@ export async function render(container) {
               query = { page: 1, search: '', actor: '', action: '', ip: '', from: '', to: '' };
               render(document.getElementById('content'));
             },
-          }, '重置'),
-          h('button.btn.btn-sm', { type: 'button', onClick: exportAudit }, '导出 CSV'),
+          }, t('audit.reset')),
+          h('button.btn.btn-sm', { type: 'button', onClick: exportAudit }, t('audit.exportCsv')),
         ),
       ),
       // 精细筛选：动作前缀按类别看（device. 设备类 / admin.login 登录 / apikey. 密钥），
@@ -120,16 +121,16 @@ export async function render(container) {
         })),
       ),
       result.items.length === 0
-        ? emptyState('clipboard', '没有匹配的记录', query.search ? '尝试调整搜索关键词。' : '系统还没有产生任何操作记录。')
+        ? emptyState('clipboard', t('audit.emptyTitle'), query.search ? t('audit.emptySearchHint') : t('audit.emptyHint'))
         : h('div', h('div.table-wrap',
           h('table.data',
             h('thead', h('tr',
-              h('th', { style: { width: '170px' } }, '时间'),
-              h('th', { style: { width: '150px' } }, '操作人'),
-              h('th', { style: { width: '170px' } }, '动作'),
-              h('th', { style: { width: '150px' } }, '目标'),
-              h('th', '详情'),
-              h('th', { style: { width: '130px' } }, '来源 IP'),
+              h('th', { style: { width: '170px' } }, t('audit.colTime')),
+              h('th', { style: { width: '150px' } }, t('audit.colActor')),
+              h('th', { style: { width: '170px' } }, t('audit.colAction')),
+              h('th', { style: { width: '150px' } }, t('audit.colTarget')),
+              h('th', t('audit.colDetail')),
+              h('th', { style: { width: '130px' } }, t('audit.filterIp')),
             )),
             h('tbody', ...result.items.map((item) => h('tr',
               h('td', { style: { fontSize: '12px', color: 'var(--text-faint)' } }, formatDateTime(item.timestamp)),
@@ -156,9 +157,9 @@ export async function render(container) {
             query.page -= 1;
             render(document.getElementById('content'));
           },
-        }, '上一页'),
+        }, t('audit.prev')),
         h('span', { style: { fontSize: '12.5px', color: 'var(--text-dim)' } },
-          `第 ${query.page} / ${totalPages} 页`),
+          t('audit.pageInfo', { page: query.page, total: totalPages })),
         h('button.btn.btn-sm', {
           type: 'button',
           disabled: query.page >= totalPages,
@@ -166,7 +167,7 @@ export async function render(container) {
             query.page += 1;
             render(document.getElementById('content'));
           },
-        }, '下一页'),
+        }, t('audit.next')),
       )
       : null,
   ));

@@ -11,21 +11,22 @@
  *   - 条形图用 div 宽度实现，不引图表库：形态简单，几百 KB 的依赖不值当。
  */
 
-import { api } from '../core/api.js?v=128';
-import { h, clear, formatDateTime, loadingBlock } from '../core/ui.js?v=128';
-import { errorBlock } from '../core/errors.js?v=128';
-import { auditActionLabel } from '../core/audit-actions.js?v=128';
+import { api } from '../core/api.js?v=133';
+import { h, clear, formatDateTime, loadingBlock } from '../core/ui.js?v=133';
+import { errorBlock } from '../core/errors.js?v=133';
+import { auditActionLabel } from '../core/audit-actions.js?v=133';
+import { t } from '../core/i18n.js?v=133';
 
 export const meta = {
-  title: '报表',
-  subtitle: '在线率 / 指令执行 / 操作热点',
+  title: t('reports.title'),
+  subtitle: t('reports.subtitle'),
 };
 
 /** 时间范围（与后端 90 天上限一致）。 */
 const RANGES = [
-  { days: 7, label: '最近 7 天' },
-  { days: 30, label: '最近 30 天' },
-  { days: 90, label: '最近 90 天' },
+  { days: 7, label: t('reports.range7') },
+  { days: 30, label: t('reports.range30') },
+  { days: 90, label: t('reports.range90') },
 ];
 
 export async function render(container) {
@@ -83,15 +84,15 @@ export async function render(container) {
       }
 
       clear(body);
-      body.appendChild(errorBlock(err, { title: '读取报表失败', onRetry: load }));
+      body.appendChild(errorBlock(err, { title: t('reports.loadFailed'), onRetry: load }));
     }
   }
 
   container.appendChild(h('div.card',
     h('div.card-head',
       h('div',
-        h('h3', '报表'),
-        h('p.card-desc', '数据来自已经发生的事实；要看单条明细请去审计日志或指令历史。')),
+        h('h3', t('reports.title')),
+        h('p.card-desc', t('reports.dataNote'))),
       h('div.card-actions', ...rangeButtons)),
     h('div.card-actions', { style: { gap: '6px', marginTop: '4px' } }, ...tabButtons),
     body,
@@ -105,31 +106,31 @@ export async function render(container) {
 const TABS = [
   {
     key: 'online',
-    label: '设备在线率',
+    label: t('reports.onlineRate'),
     load: (days) => api('/admin/reports/online', { query: { days } }),
     render: renderOnline,
   },
   {
     key: 'commands',
-    label: '指令执行',
+    label: t('reports.commands'),
     load: (days) => api('/admin/reports/commands', { query: { days } }),
     render: renderCommands,
   },
   {
     key: 'sync',
-    label: '配置同步',
+    label: t('reports.sync'),
     load: (days) => api('/admin/reports/sync', { query: { days } }),
     render: renderSync,
   },
   {
     key: 'operations',
-    label: '操作热点',
+    label: t('reports.hotspots'),
     load: (days) => api('/admin/reports/operations', { query: { days } }),
     render: renderOperations,
   },
   {
     key: 'notifications',
-    label: '通知到达',
+    label: t('reports.noticeDelivery'),
     load: (days) => api('/admin/reports/notifications', { query: { days } }),
     render: renderNotifications,
   },
@@ -150,25 +151,25 @@ function renderNotifications(data) {
     return h('div',
       h('div.notice.notice-info', { style: { marginTop: '12px' } },
         h('span.notice-icon', 'i'),
-        h('div', '这个范围内还没有通知记录。发一条通知后，这里会显示'
-          + '「教室端有多少台真的把通知显示出来了」。')),
+        h('div', t('reports.noNotices1')
+          + t('reports.noNotices2'))),
     );
   }
 
   return h('div',
     h('div', { style: { display: 'flex', gap: '10px', flexWrap: 'wrap', margin: '12px 0 4px' } },
-      metric('通知条数', data.totalNotifications, `${data.range.from} ~ ${data.range.to}`),
+      metric(t('reports.noticeCount'), data.totalNotifications, `${data.range.from} ~ ${data.range.to}`),
       // 目标数为 0 时显示「—」：写成 0% 会被读成「全部没到」，与事实相反。
-      metric('整体到达率', data.totalTargets > 0 ? asPercent(data.overallRate) : '—',
-        `${data.totalShown} / ${data.totalTargets} 台次`),
-      metric('覆盖设备', data.totalTargets, '按下发目标累加')),
-    section('按日到达', barList(data.daily, {
+      metric(t('reports.overallRate'), data.totalTargets > 0 ? asPercent(data.overallRate) : '—',
+        t('reports.shownOfTargets', { shown: data.totalShown, total: data.totalTargets })),
+      metric(t('reports.coveredDevices'), data.totalTargets, t('reports.summedByTargets'))),
+    section(t('reports.dailyDelivery'), barList(data.daily, {
       value: (row) => row.count,
-      format: (row) => `${row.extra} / ${row.count} 台次 · ${asPercent(row.rate)}`,
+      format: (row) => t('reports.rowDeliveries', { extra: row.extra, count: row.count, rate: asPercent(row.rate) }),
       color: (row) => (row.rate >= 0.99 ? 'var(--ok)' : (row.rate >= 0.8 ? 'var(--warn)' : 'var(--danger)')),
-      empty: '范围内没有通知。',
+      empty: t('reports.noNotices'),
     })),
-    section('逐条通知（新的在前）',
+    section(t('reports.noticeList'),
       h('div', { style: { marginTop: '2px' } }, ...data.notifications.map(renderNotificationRow))),
   );
 }
@@ -190,7 +191,7 @@ function renderNotificationRow(item) {
   h('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '12.5px' } },
     h('span', {
       style: { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-    }, `${formatDateTime(item.issuedAt)} · ${item.title || '（无标题）'}`),
+    }, t('reports.noticeItem', { at: formatDateTime(item.issuedAt), title: item.title || t('reports.untitled') })),
     h('span', {
       style: { flex: 'none', color: tone, fontVariantNumeric: 'tabular-nums' },
     }, `${item.shownCount} / ${item.targetCount} · ${asPercent(rate)}`)),
@@ -198,8 +199,8 @@ function renderNotificationRow(item) {
     ? h('span', {
       style: { color: 'var(--warn)', fontSize: '11.5px' },
       title: item.pendingDevices.join('、'),
-    }, `未回报：${item.pendingDevices.slice(0, 6).join('、')}`
-      + (item.pendingDevices.length > 6 ? ` 等 ${item.pendingDevices.length} 台` : ''))
+    }, t('reports.pendingDevices', { list: item.pendingDevices.slice(0, 6).join('、') })
+      + (item.pendingDevices.length > 6 ? t('reports.pendingMore', { count: item.pendingDevices.length }) : ''))
     : null);
 }
 
@@ -237,7 +238,7 @@ function barList(rows, options) {
   const list = rows || [];
   if (list.length === 0) {
     return h('p.card-desc', { style: { margin: '4px 0' } },
-      options.empty || '这个范围内没有数据。');
+      options.empty || t('reports.noData'));
   }
 
   const max = Math.max(1, ...list.map((row) => options.value(row)));
@@ -250,7 +251,7 @@ function barList(rows, options) {
           h('span', {
             style: { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
             title: row.label,
-          }, row.label || '（未记录）'),
+          }, row.label || t('reports.notRecorded')),
           h('span', {
             style: { flex: 'none', color: 'var(--text-faint)', fontVariantNumeric: 'tabular-nums' },
           }, options.format ? options.format(row) : value)),
@@ -285,27 +286,27 @@ function renderOnline(data) {
     noData
       ? h('div.notice.notice-info', { style: { marginTop: '10px' } },
         h('span.notice-icon', 'i'),
-        h('div', '还没有采样数据。在线率由服务端每分钟采样一次——服务刚启动、或刚升级到带此功能的版本时，这里会先是空的，'
-          + '过上几分钟再回来刷新即可。'))
+        h('div', t('reports.noSamples1')
+          + t('reports.noSamples2')))
       : null,
     h('div', { style: { display: 'flex', gap: '10px', flexWrap: 'wrap', margin: '12px 0 4px' } },
-      metric('整体在线率', asPercent(data.overallRate),
-        noData ? '等待采样' : `基于 ${data.sampleCount} 轮采样`),
-      metric('设备数', data.deviceCount, '未停用的设备'),
-      metric('采样轮次', data.sampleCount, '每分钟一轮'),
-      metric('最近采样', data.lastSampledDate || '—', '看统计是否还在跑')),
-    section('按日在线率', barList(data.daily, {
+      metric(t('reports.overallOnline'), asPercent(data.overallRate),
+        noData ? t('reports.waitingSamples') : t('reports.basedOnSamples', { count: data.sampleCount })),
+      metric(t('reports.deviceCount'), data.deviceCount, t('reports.notRevoked')),
+      metric(t('reports.sampleRounds'), data.sampleCount, t('reports.onePerMinute')),
+      metric(t('reports.lastSample'), data.lastSampledDate || '—', t('reports.lastSampleHint'))),
+    section(t('reports.dailyOnline'), barList(data.daily, {
       value: (row) => row.rate,
-      format: (row) => `${asPercent(row.rate)}（${row.extra} 轮）`,
+      format: (row) => t('reports.rateWithRounds', { rate: asPercent(row.rate), rounds: row.extra }),
       color: (row) => rateColor(row.rate),
     })),
-    section('在线率最低的设备', barList(data.byDevice, {
+    section(t('reports.lowestDevices'), barList(data.byDevice, {
       value: (row) => row.rate,
-      format: (row) => `${asPercent(row.rate)}（在线 ${Math.round(row.count / 60)} 分钟）`,
+      format: (row) => t('reports.rateWithMinutes', { rate: asPercent(row.rate), minutes: Math.round(row.count / 60) }),
       color: (row) => rateColor(row.rate),
-      empty: '没有可统计的设备。',
+      empty: t('reports.noDevices'),
     })),
-    section('按分组', barList(data.byGroup, {
+    section(t('reports.byGroup'), barList(data.byGroup, {
       value: (row) => row.rate,
       format: (row) => `${asPercent(row.rate)}`,
       color: (row) => rateColor(row.rate),
@@ -318,33 +319,42 @@ function renderOnline(data) {
 function renderCommands(data) {
   return h('div',
     h('div', { style: { display: 'flex', gap: '10px', flexWrap: 'wrap', margin: '12px 0 4px' } },
-      metric('指令总数', data.total, '范围内下发'),
-      metric('成功率', asPercent(data.successRate), '不含未完成的'),
-      metric('成功', data.done, '设备已回报成功'),
-      metric('失败', data.failed, '设备回报失败'),
-      metric('作废', data.expired, '排队超时未取走'),
-      metric('未完成', data.unfinished, '排队中或已派发未回')),
-    section('按日', barList(data.daily, {
+      metric(t('reports.commandTotal'), data.total, t('reports.issuedInRange')),
+      metric(t('reports.successRate'), asPercent(data.successRate), t('reports.excludesIncomplete')),
+      metric(t('reports.succeeded'), data.done, t('reports.succeededHint')),
+      metric(t('reports.failed'), data.failed, t('reports.failedHint')),
+      metric(t('reports.voided'), data.expired, t('reports.voidedHint')),
+      metric(t('reports.incomplete'), data.unfinished, t('reports.incompleteHint'))),
+    section(t('reports.byDay'), barList(data.daily, {
       value: (row) => row.count,
-      format: (row) => `${row.count} 条${row.extra ? `（失败/作废 ${row.extra}）` : ''}`,
+      format: (row) => t('reports.dailyCommands', {
+        count: row.count,
+        suffix: row.extra ? t('reports.failedSuffix', { count: row.extra }) : '',
+      }),
       color: (row) => (row.extra > 0 ? 'var(--warn)' : 'var(--accent)'),
     })),
-    section('按指令类型', barList(data.byKind, {
+    section(t('reports.byCommandKind'), barList(data.byKind, {
       value: (row) => row.count,
-      format: (row) => `${row.count} 条${row.extra ? `（失败/作废 ${row.extra}）` : ''}`,
+      format: (row) => t('reports.dailyCommands', {
+        count: row.count,
+        suffix: row.extra ? t('reports.failedSuffix', { count: row.extra }) : '',
+      }),
       color: (row) => (row.extra > 0 ? 'var(--warn)' : 'var(--accent)'),
-      empty: '范围内没有下发过指令。',
+      empty: t('reports.noCommands'),
     })),
-    section('失败 / 作废最多的设备', barList(data.byDevice, {
+    section(t('reports.worstDevices'), barList(data.byDevice, {
       value: (row) => row.count,
-      format: (row) => `${row.count} 条${row.extra ? ` / 共 ${row.extra} 条` : ''}`,
+      format: (row) => t('reports.dailyCommands', {
+        count: row.count,
+        suffix: row.extra ? t('reports.sharedSuffix', { count: row.extra }) : '',
+      }),
       color: () => 'var(--danger)',
-      empty: '范围期内没有失败或作废的指令。',
+      empty: t('reports.noFailures'),
     })),
-    section('失败原因', barList(data.failures, {
+    section(t('reports.failReasons'), barList(data.failures, {
       value: (row) => row.count,
       color: () => 'var(--danger)',
-      empty: '没有失败记录。',
+      empty: t('reports.noFailureRecords'),
     })),
   );
 }
@@ -356,29 +366,29 @@ function renderSync(data) {
     return h('div',
       h('div.notice.notice-info', { style: { marginTop: '12px' } },
         h('span.notice-icon', 'i'),
-        h('div', '这个范围内还没有配置下发记录。下发一次配置后，这里会显示'
-          + '「这一批发给了多少台、有多少台真的跟上了、平均用了多久」。')),
+        h('div', t('reports.noPushes1')
+          + t('reports.noPushes2'))),
     );
   }
 
   return h('div',
     h('div', { style: { display: 'flex', gap: '10px', flexWrap: 'wrap', margin: '12px 0 4px' } },
-      metric('下发批次', data.pushCount, `${data.range.from} ~ ${data.range.to}`),
+      metric(t('reports.pushBatches'), data.pushCount, `${data.range.from} ~ ${data.range.to}`),
       // 可统计数为 0（目标全被停用/删除）时显示「—」：写成 0% 会被读成「全部失败」，与事实相反。
-      metric('整体覆盖率', data.totalTargets > 0 ? asPercent(data.overallRate) : '—',
-        `${data.totalSynced} / ${data.totalTargets} 台次`),
-      metric('完全到位', data.fullySyncedPushes, `共 ${data.pushCount} 批`)),
-    section('按日下发次数', barList(data.daily, {
+      metric(t('reports.overallCoverage'), data.totalTargets > 0 ? asPercent(data.overallRate) : '—',
+        t('reports.syncedOfTargets', { synced: data.totalSynced, total: data.totalTargets })),
+      metric(t('reports.fullySynced'), data.fullySyncedPushes, t('reports.totalBatches', { count: data.pushCount }))),
+    section(t('reports.dailyPushes'), barList(data.daily, {
       value: (row) => row.count,
-      format: (row) => `${row.count} 次`,
+      format: (row) => t('reports.timesCount', { count: row.count }),
     })),
-    section('反复没跟上的教室', barList(data.stuckDevices, {
+    section(t('reports.laggingRooms'), barList(data.stuckDevices, {
       value: (row) => row.count,
-      format: (row) => `有 ${row.count} 批没跟上`,
+      format: (row) => t('reports.laggingCount', { count: row.count }),
       color: () => 'var(--danger)',
-      empty: '没有反复落后的教室 —— 配置都下发到位了。',
+      empty: t('reports.noLagging'),
     })),
-    section('批次明细（新的在前）',
+    section(t('reports.pushDetails'),
       h('div', { style: { marginTop: '2px' } }, ...data.pushes.map(renderPushRow))),
   );
 }
@@ -412,8 +422,8 @@ function renderPushRow(push) {
     }, (push.countable > 0
       // 可统计数为 0 说明这一批的目标全被停用/删掉了：显示「—」而不是 0/0，更不做成 0%。
       ? `${push.synced}/${push.countable}`
-      : '—（目标已全部停用）')
-      + (push.averageSeconds ? ` · 平均 ${Math.round(push.averageSeconds)} 秒` : ''))),
+      : t('reports.allTargetsDisabled'))
+      + (push.averageSeconds ? t('reports.averageSeconds', { seconds: Math.round(push.averageSeconds) }) : ''))),
   h('div', {
     style: {
       display: 'flex', height: '6px', borderRadius: '3px',
@@ -425,10 +435,10 @@ function renderPushRow(push) {
   push.offline ? h('div', { style: { width: width(push.offline), background: 'var(--text-faint)' } }) : null),
   h('div', { style: { color: 'var(--text-faint)', fontSize: '11.5px' } },
     [
-      `${push.createdBy || '（未知发起人）'} 发起`,
-      `配置版本 #${push.revision}`,
-      push.excluded ? `${push.excluded} 台已停用 / 已删除（不计入覆盖率）` : '',
-      push.message ? `附言：${push.message}` : '',
+      t('reports.pushedBy', { name: push.createdBy || t('reports.unknownActor') }),
+      t('reports.pushRevision', { revision: push.revision }),
+      push.excluded ? t('reports.pushExcluded', { count: push.excluded }) : '',
+      push.message ? t('reports.pushMessage', { message: push.message }) : '',
     ].filter(Boolean).join(' · ')));
 }
 
@@ -437,34 +447,34 @@ function renderPushRow(push) {
 function renderOperations(data) {
   return h('div',
     h('div', { style: { display: 'flex', gap: '10px', flexWrap: 'wrap', margin: '12px 0 4px' } },
-      metric('操作总数', data.total, '审计条数'),
-      metric('参与账号', data.actorCount, '至少操作过一次'),
-      metric('日均操作', data.range.days > 0 ? Math.round(data.total / data.range.days) : 0,
+      metric(t('reports.actionTotal'), data.total, t('reports.auditCount')),
+      metric(t('reports.activeAccounts'), data.actorCount, t('reports.activeAccountsHint')),
+      metric(t('reports.dailyAverage'), data.range.days > 0 ? Math.round(data.total / data.range.days) : 0,
         `${data.range.from} ~ ${data.range.to}`)),
-    section('按日操作量', barList(data.daily, {
+    section(t('reports.dailyActions'), barList(data.daily, {
       value: (row) => row.count,
-      format: (row) => `${row.count} 次`,
+      format: (row) => t('reports.timesCount', { count: row.count }),
     })),
-    section('按类别', barList(data.byCategory, {
+    section(t('reports.byCategory'), barList(data.byCategory, {
       value: (row) => row.count,
-      format: (row) => `${row.count} 次`,
-      empty: '范围内没有操作记录。',
+      format: (row) => t('reports.timesCount', { count: row.count }),
+      empty: t('reports.noActions'),
     })),
-    section('最活跃的账号', barList(data.byActor, {
+    section(t('reports.topAccounts'), barList(data.byActor, {
       value: (row) => row.count,
-      format: (row) => `${row.count} 次`,
+      format: (row) => t('reports.timesCount', { count: row.count }),
     })),
     // 动作码在列表里显示中文（复用 #42 那份映射），键名仍附在后面方便对照文档。
-    section('最频繁的动作', barList(
+    section(t('reports.topActions'), barList(
       (data.topActions || []).map((row) => ({ ...row, label: auditActionLabel(row.key) })),
       {
         value: (row) => row.count,
-        format: (row) => `${row.count} 次　${row.key}`,
+        format: (row) => t('reports.rankRow', { count: row.count, key: row.key }),
       },
     )),
-    section('被操作最多的对象', barList(data.topTargets, {
+    section(t('reports.topTargets'), barList(data.topTargets, {
       value: (row) => row.count,
-      format: (row) => `${row.count} 次`,
+      format: (row) => t('reports.timesCount', { count: row.count }),
     })),
   );
 }

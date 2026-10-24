@@ -8,23 +8,24 @@
  * 按钮是否显示由服务端给的 `canDecide` 决定，不在前端猜角色：
  * 超管的权限在服务端是「展开成全选」的，前端拿不到角色时判断不准，猜错就是「能点但一点就 403」。
  */
-import { api } from '../core/api.js?v=128';
+import { api } from '../core/api.js?v=133';
 import { toastError } from '../core/errors.js';
 import {
   h, clear, formatDateTime, toast, loadingBlock, confirmDialog,
-} from '../core/ui.js?v=128';
+} from '../core/ui.js?v=133';
+import { t } from '../core/i18n.js?v=133';
 
 export const meta = {
-  title: '操作审批',
-  subtitle: '危险操作需要超级管理员确认后才执行',
+  title: t('approvals.title'),
+  subtitle: t('approvals.subtitle'),
 };
 
 const STATUS_TEXT = {
-  pending: '待审批',
-  approved: '已通过',
-  rejected: '已驳回',
-  failed: '执行失败',
-  cancelled: '已撤回',
+  pending: t('approvals.statusPending'),
+  approved: t('approvals.statusApproved'),
+  rejected: t('approvals.statusRejected'),
+  failed: t('approvals.statusFailed'),
+  cancelled: t('approvals.statusCancelled'),
 };
 
 const STATUS_TONE = {
@@ -35,7 +36,7 @@ const STATUS_TONE = {
 };
 
 const KIND_TEXT = {
-  'backup.restore': '恢复备份',
+  'backup.restore': t('approvals.kindBackupRestore'),
 };
 
 export async function render(container) {
@@ -54,7 +55,7 @@ export async function render(container) {
       const query = state.status === 'all' ? '' : `?status=${state.status}`;
       data = await api(`/admin/approvals${query}`);
     } catch (e) {
-      toastError(e, '载入审批列表失败');
+      toastError(e, t('approvals.loadFailed'));
       body.replaceChildren();
       return;
     }
@@ -63,21 +64,21 @@ export async function render(container) {
     if (items.length === 0) {
       body.replaceChildren(h('div.notice',
         h('div', state.status === 'pending'
-          ? '当前没有待审批的申请。'
-          : '还没有审批记录。')));
+          ? t('approvals.emptyPending')
+          : t('approvals.emptyAll'))));
       return;
     }
 
     body.replaceChildren(h('div.table-wrap',
       h('table.table',
         h('thead', h('tr',
-          h('th', '操作'),
-          h('th', '内容'),
-          h('th', '发起人'),
-          h('th', '时间'),
-          h('th', '状态'),
-          h('th', '结果 / 意见'),
-          data.canDecide ? h('th', '处理') : null)),
+          h('th', t('approvals.colKind')),
+          h('th', t('approvals.colTitle')),
+          h('th', t('approvals.colRequester')),
+          h('th', t('approvals.colTime')),
+          h('th', t('approvals.colStatus')),
+          h('th', t('approvals.colResult')),
+          data.canDecide ? h('th', t('approvals.colActions')) : null)),
         h('tbody', ...items.map((item) => h('tr',
           h('td', KIND_TEXT[item.kind] || item.kind),
           h('td', { style: { maxWidth: '380px' } }, item.title),
@@ -100,40 +101,42 @@ export async function render(container) {
     const approve = h('button.btn.btn-sm.btn-primary', {
       type: 'button',
       onClick: async () => {
-        if (!await confirmDialog('通过审批', `确认执行「${item.title}」吗？`, '通过')) {
+        if (!await confirmDialog(t('approvals.approveTitle'),
+          t('approvals.approveConfirm', { title: item.title }), t('approvals.approve'))) {
           return;
         }
 
         approve.disabled = true;
         try {
           const done = await api(`/admin/approvals/${encodeURIComponent(item.id)}/approve`, { method: 'POST', body: {} });
-          toast('ok', '已通过并执行', done.result || '');
+          toast('ok', t('approvals.approved'), done.result || '');
           await repaint();
         } catch (e) {
-          toastError(e, '审批失败');
+          toastError(e, t('approvals.approveFailed'));
           approve.disabled = false;
         }
       },
-    }, '通过');
+    }, t('approvals.approve'));
 
     const reject = h('button.btn.btn-sm', {
       type: 'button',
       onClick: async () => {
-        if (!await confirmDialog('驳回审批', `确认驳回「${item.title}」吗？驳回后不会执行。`, '驳回', true)) {
+        if (!await confirmDialog(t('approvals.rejectTitle'),
+          t('approvals.rejectConfirm', { title: item.title }), t('approvals.reject'), true)) {
           return;
         }
 
         reject.disabled = true;
         try {
           await api(`/admin/approvals/${encodeURIComponent(item.id)}/reject`, { method: 'POST', body: {} });
-          toast('ok', '已驳回', '这条申请不会执行。');
+          toast('ok', t('approvals.statusRejected'), t('approvals.rejectedHint'));
           await repaint();
         } catch (e) {
-          toastError(e, '驳回失败');
+          toastError(e, t('approvals.rejectFailed'));
           reject.disabled = false;
         }
       },
-    }, '驳回');
+    }, t('approvals.reject'));
 
     return [approve, reject];
   };
@@ -148,16 +151,16 @@ export async function render(container) {
   };
 
   host.appendChild(h('div.toolbar',
-    h('span.toolbar-label', '状态'),
+    h('span.toolbar-label', t('approvals.colStatus')),
     h('div.segmented',
-      ...[['pending', '待审批'], ['all', '全部']].map(([value, label]) => h('button', {
+      ...[['pending', t('approvals.statusPending')], ['all', t('approvals.filterAll')]].map(([value, label]) => h('button', {
         type: 'button',
         class: state.status === value ? 'active' : '',
         dataset: { approvalStatus: value },
         onClick: () => pickStatus(value),
       }, label))),
     h('div.spacer'),
-    h('button.btn.btn-sm', { type: 'button', onClick: paint }, '刷新'),
+    h('button.btn.btn-sm', { type: 'button', onClick: paint }, t('approvals.refresh')),
   ));
   host.appendChild(body);
 

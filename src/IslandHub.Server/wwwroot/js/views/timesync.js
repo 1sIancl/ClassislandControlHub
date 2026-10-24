@@ -9,14 +9,15 @@
  * 不是随导航走的），所以这一页只对有系统设置权限的账号出现。</para>
  */
 
-import { api, hasPermission } from '../core/api.js?v=128';
+import { api, hasPermission } from '../core/api.js?v=133';
 import {
   h, clear, formatDateTime, toast, loadingBlock, field, kvRow,
-} from '../core/ui.js?v=128';
+} from '../core/ui.js?v=133';
+import { t } from '../core/i18n.js?v=133';
 
 export const meta = {
-  title: '时间偏移',
-  subtitle: '服务器授时校准，可按校区（分组）分别叠加后下发给对应教室终端',
+  title: t('tsync.title'),
+  subtitle: t('tsync.subtitle'),
 };
 
 export async function render(container) {
@@ -29,7 +30,7 @@ export async function render(container) {
     clear(container);
     container.appendChild(h('div.notice.notice-warn',
       h('span.notice-icon', '!'),
-      h('div', '当前账号没有「系统设置」权限，看不到授时配置。')));
+      h('div', t('tsync.noPermission'))));
     return;
   }
 
@@ -62,33 +63,33 @@ function renderTimeCard(timeOffset, refresh) {
 
   const save = async (body, message) => {
     await api('/admin/time-offset', { method: 'PUT', body });
-    toast('ok', '已保存', message);
+    toast('ok', t('tsync.saved'), message);
     await refresh();
   };
 
   return h('div.card', { style: { marginTop: '16px' } },
     h('div.card-head',
       h('div',
-        h('h3', '时间偏移（授时）'),
-        h('p.card-desc', '设定后，服务器会在 NTP 授时基础上叠加这些偏移，再下发给所有教室终端。'),
+        h('h3', t('tsync.cardGlobal')),
+        h('p.card-desc', t('tsync.cardGlobalDesc')),
       ),
     ),
     h('div', { style: { display: 'grid', gap: '10px', fontSize: '13px', marginBottom: '14px' } },
-      kvRow('固定偏移', `${timeOffset.offsetSeconds ?? 0} 秒`),
-      kvRow('每日漂移', `${timeOffset.dailyDriftSeconds ?? 0} 秒/天`),
-      kvRow('已累计', `${timeOffset.driftDays ?? 0} 天 → ${(timeOffset.driftCompensationSeconds ?? 0).toFixed(1)} 秒`),
-      kvRow('NTP 校正偏移', `${timeOffset.ntpOffsetSeconds ?? 0} 秒`),
-      kvRow('当前授时时间', formatDateTime(timeOffset.serverTime)),
-      kvRow('授时状态', timeOffset.lastSyncStatus || '—'),
+      kvRow(t('tsync.fixedOffset'), t('tsync.secondsValue', { value: timeOffset.offsetSeconds ?? 0 })),
+      kvRow(t('tsync.dailyDrift'), t('tsync.secondsPerDay', { value: timeOffset.dailyDriftSeconds ?? 0 })),
+      kvRow(t('tsync.accumulated'), t('tsync.driftAccumulated', { days: timeOffset.driftDays ?? 0, seconds: (timeOffset.driftCompensationSeconds ?? 0).toFixed(1) })),
+      kvRow(t('tsync.ntpOffset'), t('tsync.secondsValue', { value: timeOffset.ntpOffsetSeconds ?? 0 })),
+      kvRow(t('tsync.currentTime'), formatDateTime(timeOffset.serverTime)),
+      kvRow(t('tsync.status'), timeOffset.lastSyncStatus || '—'),
     ),
 
-    field('固定偏移（秒，正值 = 整体提前）', offsetInput,
-      '一次性校正。例如填 180 让所有终端快 3 分钟；填 -60 慢 1 分钟。范围 ±86400 秒。'),
+    field(t('tsync.fixedOffsetLabel'), offsetInput,
+      t('tsync.fixedOffsetHint')),
 
-    field('每日漂移（秒/天，正值 = 每天变快）', driftInput,
-      '用于补偿「设备时钟每天稳定快/慢几秒」——这种偏差用固定偏移修不好，'
-      + '今天校准了明天又偏。填了之后，系统按天数累计补偿（只算整天，'
-      + '避免一天之内时间慢慢爬）。范围 ±600 秒/天。改动会把累计起点重置为今天。'),
+    field(t('tsync.driftLabel'), driftInput,
+      t('tsync.driftHint1')
+      + t('tsync.driftHint2')
+      + t('tsync.driftHint3')),
 
     h('div.card-actions',
       h('button.btn.btn-primary.btn-sm', {
@@ -96,37 +97,37 @@ function renderTimeCard(timeOffset, refresh) {
         onClick: async () => {
           const seconds = Number(offsetInput.value);
           if (Number.isNaN(seconds)) {
-            toast('warn', '请输入有效数字');
+            toast('warn', t('tsync.invalidNumber'));
             return;
           }
 
-          await save({ offsetSeconds: seconds }, '固定偏移已生效，将叠加到后续授时中。');
+          await save({ offsetSeconds: seconds }, t('tsync.fixedSaved'));
         },
-      }, '保存固定偏移'),
+      }, t('tsync.saveFixed')),
       h('button.btn.btn-sm', {
         type: 'button',
         onClick: async () => {
           const drift = Number(driftInput.value);
           if (Number.isNaN(drift)) {
-            toast('warn', '请输入有效数字');
+            toast('warn', t('tsync.invalidNumber'));
             return;
           }
 
           await save({ offsetSeconds: Number(offsetInput.value) || 0, dailyDriftSeconds: drift },
-            `每日漂移 ${drift} 秒/天已生效，累计起点重置为今天。`);
+            t('tsync.driftSaved', { drift }));
         },
-      }, '保存每日漂移'),
+      }, t('tsync.saveDrift')),
       h('button.btn.btn-sm.btn-ghost', {
         type: 'button',
         onClick: async () => {
           await save({ offsetSeconds: Number(offsetInput.value) || 0, resetDriftAnchor: true },
-            '累计起点已重置为今天（漂移值保留）。');
+            t('tsync.driftReset'));
         },
-      }, '重置累计起点'),
+      }, t('tsync.resetStart')),
     ),
     h('p.card-desc', { style: { marginTop: '8px' } },
-      '「重置累计起点」的用法：给教室设备做过一次人工校准之后点它，'
-      + '让累计从今天重新开始——否则之前累计出来的量会继续叠加上去。'),
+      t('tsync.resetHint1')
+      + t('tsync.resetHint2')),
   );
 }
 
@@ -145,29 +146,29 @@ function renderGroupCard(state, refresh) {
   return h('div.card', { style: { marginTop: '16px' } },
     h('div.card-head',
       h('div',
-        h('h3', '分组（校区）时间偏移'),
+        h('h3', t('tsync.groupTitle')),
         h('p.card-desc',
-          '这里的值叠加在上面那张卡的全局偏移之上：某间校区的教室整体慢 2 分钟，'
-          + '就给它的分组填 120。设备取自己所属分组配的值；分组没配就沿上级分组就近继承；'
-          + '一路都没配则只叠加全局偏移。'),
+          t('tsync.groupHint1')
+          + t('tsync.groupHint2')
+          + t('tsync.groupHint3')),
         h('p.card-desc',
-          '教室端是从服务器内置 NTP 取时间的（UDP 123），报文里没有设备身份，'
-          + '因此这里按设备的来源地址判定归属——设备要先接入 IslandHub、上报过地址才会生效。'),
+          t('tsync.ntpHint1')
+          + t('tsync.ntpHint2')),
       ),
     ),
 
     groups.length === 0
       ? h('div.notice.notice-info',
           h('span.notice-icon', 'i'),
-          h('div', '还没有任何分组，所以只能设全局偏移。'
-            + '先在「设备」页建好校区 / 楼栋分组、把教室放进去，这里才会出现对应的一行。'))
+          h('div', t('tsync.noGroups')
+            + t('tsync.noGroupsHint')))
       : h('table.data',
           h('thead', h('tr',
-            h('th', '分组'),
-            h('th', '设备'),
-            h('th', '本组偏移（秒）'),
-            h('th', '当前生效'),
-            h('th', '操作'))),
+            h('th', t('tsync.colGroup')),
+            h('th', t('tsync.colDevices')),
+            h('th', t('tsync.colOffset')),
+            h('th', t('tsync.colEffective')),
+            h('th', t('tsync.colActions')))),
           h('tbody', groups.map((group) => renderGroupRow(group, refresh)))),
   );
 }
@@ -176,29 +177,29 @@ function renderGroupRow(group, refresh) {
   const input = h('input', {
     type: 'number', step: '1', style: { width: '110px' },
     value: group.offsetSeconds ?? '',
-    placeholder: '继承上级',
+    placeholder: t('tsync.inherit'),
   });
 
   const effective = group.effectiveSeconds ?? 0;
   const stateText = group.offsetSeconds === null
-    ? (effective === 0 ? '未配 · 只叠加全局偏移' : `未配 · 继承出 ${effective} 秒`)
-    : '本组已单独配置';
+    ? (effective === 0 ? t('tsync.notSetGlobalOnly') : t('tsync.inheritedValue', { value: effective }))
+    : t('tsync.configured');
 
   const save = async (body, message) => {
     await api('/admin/time-offset', { method: 'PUT', body });
-    toast('ok', '已保存', message);
+    toast('ok', t('tsync.saved'), message);
     await refresh();
   };
 
   return h('tr', { dataset: { groupId: group.id } },
     h('td',
       h('div', { style: { fontWeight: '600' } }, group.name),
-      h('div.cell-sub', group.parentName ? `上级：${group.parentName}` : '顶层分组')),
-    h('td', `${group.deviceCount ?? 0} 台`),
+      h('div.cell-sub', group.parentName ? t('tsync.parentName', { name: group.parentName }) : t('tsync.topLevel'))),
+    h('td', t('tsync.deviceCount', { count: group.deviceCount ?? 0 })),
     h('td', h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center' } },
-      input, h('span.cell-sub', '秒'))),
+      input, h('span.cell-sub', t('tsync.unitSeconds')))),
     h('td',
-      h('div', effective === 0 ? '—' : `${effective} 秒`),
+      h('div', effective === 0 ? '—' : t('tsync.secondsValue', { value: effective })),
       h('div.cell-sub', stateText)),
     h('td',
       h('div', { style: { display: 'flex', gap: '6px' } },
@@ -207,26 +208,26 @@ function renderGroupRow(group, refresh) {
           onClick: async () => {
             const raw = input.value.trim();
             if (raw === '') {
-              toast('warn', '请输入秒数', '要取消这一组的偏移，请点右边的「清除」。');
+              toast('warn', t('tsync.enterSeconds'), t('tsync.clearHint'));
               return;
             }
 
             const seconds = Number(raw);
             if (Number.isNaN(seconds)) {
-              toast('warn', '请输入有效数字');
+              toast('warn', t('tsync.invalidNumber'));
               return;
             }
 
             await save({ groupId: group.id, groupOffsetSeconds: seconds },
-              `分组「${group.name}」偏移 ${seconds} 秒已生效。`);
+              t('tsync.groupSaved', { name: group.name, seconds }));
           },
-        }, '保存'),
+        }, t('tsync.save')),
         h('button.btn.btn-sm.btn-ghost', {
           type: 'button',
           onClick: async () => {
             await save({ groupId: group.id, groupOffsetSeconds: null },
-              `分组「${group.name}」的偏移已清除，改为继承上级。`);
+              t('tsync.groupCleared', { name: group.name }));
           },
-        }, '清除'))),
+        }, t('tsync.clear')))),
   );
 }

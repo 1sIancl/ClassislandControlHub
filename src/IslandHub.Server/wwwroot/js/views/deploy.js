@@ -2,16 +2,17 @@
  * 配置下发视图：查看绑定关系、按范围推送，并跟踪客户端同步进度。
  */
 
-import { api, session } from '../core/api.js?v=128';
-import { toastError } from '../core/errors.js?v=128';
+import { api, session } from '../core/api.js?v=133';
+import { toastError } from '../core/errors.js?v=133';
 import {
   h, clear, relativeTime, toast, loadingBlock, modal, field, select,
   emptyState, confirmDialog, deviceStateBadge, syncBadge,
-} from '../core/ui.js?v=128';
+} from '../core/ui.js?v=133';
+import { t } from '../core/i18n.js?v=133';
 
 export const meta = {
-  title: '配置下发',
-  subtitle: '定向推送新配置并跟踪客户端同步进度',
+  title: t('deploy.title'),
+  subtitle: t('deploy.subtitle'),
 };
 
 export async function render(container) {
@@ -50,14 +51,14 @@ function renderProgress(info, devices, pending) {
   return h('div.card',
     h('div.card-head',
       h('div',
-        h('h3', '同步进度'),
-        h('p.card-desc', `当前全局配置版本 #${info.revision}，客户端会在收到通知后数秒内自动拉取。`),
+        h('h3', t('deploy.progress')),
+        h('p.card-desc', t('deploy.revisionLine', { revision: info.revision })),
       ),
-      h('span.badge.badge-accent', `在线 ${online} / ${active}`),
+      h('span.badge.badge-accent', t('deploy.onlineRatio', { online, active })),
     ),
     h('div', { style: { marginBottom: '10px', display: 'flex', justifyContent: 'space-between', fontSize: '13px' } },
-      h('span', `已同步 ${synced} 台`),
-      h('span', { style: { color: 'var(--text-faint)' } }, `待同步 ${pending.length} 台 · ${percent}%`),
+      h('span', t('deploy.syncedCount', { count: synced })),
+      h('span', { style: { color: 'var(--text-faint)' } }, t('deploy.pendingCount', { count: pending.length, percent })),
     ),
     h('div.progress', h('span', { style: { width: `${percent}%` } })),
   );
@@ -67,27 +68,27 @@ function renderAssignments(assignments) {
   return h('div.card',
     h('div.card-head',
       h('div',
-        h('h3', `绑定关系（${assignments.length}）`),
-        h('p.card-desc', '设备与分组的档案绑定。设备单独绑定优先于所属分组。'),
+        h('h3', t('deploy.bindingsTitle', { count: assignments.length })),
+        h('p.card-desc', t('deploy.bindingsDesc')),
       ),
-      h('a', { href: '#/devices', class: 'btn btn-sm', style: { textDecoration: 'none' } }, '调整绑定'),
+      h('a', { href: '#/devices', class: 'btn btn-sm', style: { textDecoration: 'none' } }, t('deploy.adjustBindings')),
     ),
     assignments.length === 0
-      ? emptyState('link', '还没有绑定关系',
-        '所有设备当前都使用全局默认档案。可在「设备管理」或「分组管理」中指定具体档案。')
+      ? emptyState('link', t('deploy.noBindings'),
+        t('deploy.noBindingsDesc'))
       : h('div.table-wrap',
         h('table.data',
           h('thead', h('tr',
-            h('th', '目标'),
-            h('th', '类型'),
-            h('th', '配置档案'),
+            h('th', t('deploy.colTarget')),
+            h('th', t('deploy.colKind')),
+            h('th', t('deploy.colProfile')),
           )),
           h('tbody', ...assignments.map((a) => h('tr',
             h('td', h('div.cell-main', a.targetName || a.targetId)),
             h('td', a.targetType === 'group'
-              ? h('span.badge.badge-info', '分组默认')
-              : h('span.badge.badge-neutral', '设备指定')),
-            h('td', a.profileName || h('span', { style: { color: 'var(--danger)' } }, '档案已删除')),
+              ? h('span.badge.badge-info', t('deploy.kindGroup'))
+              : h('span.badge.badge-neutral', t('deploy.kindDevice'))),
+            h('td', a.profileName || h('span', { style: { color: 'var(--danger)' } }, t('deploy.profileDeleted'))),
           ))),
         ),
       ),
@@ -96,13 +97,13 @@ function renderAssignments(assignments) {
 
 function renderPushPanel(groups, profiles, devices) {
   const scopeSelect = select([
-    { value: 'all', label: '全部在线设备' },
-    { value: 'group', label: '指定分组' },
-    { value: 'device', label: '指定设备' },
+    { value: 'all', label: t('deploy.scopeAll') },
+    { value: 'group', label: t('deploy.scopeGroup') },
+    { value: 'device', label: t('deploy.scopeDevices') },
   ], 'all', () => repaintTarget());
 
   const targetHost = h('div');
-  const messageInput = h('input', { type: 'text', placeholder: '可选，客户端会在界面上提示该消息' });
+  const messageInput = h('input', { type: 'text', placeholder: t('deploy.messagePlaceholder') });
 
   function repaintTarget() {
     clear(targetHost);
@@ -110,30 +111,30 @@ function renderPushPanel(groups, profiles, devices) {
 
     if (scope === 'group') {
       if (groups.length === 0) {
-        targetHost.appendChild(h('div', { style: { fontSize: '12.5px', color: 'var(--text-faint)' } }, '尚未创建任何分组。'));
+        targetHost.appendChild(h('div', { style: { fontSize: '12.5px', color: 'var(--text-faint)' } }, t('deploy.noGroups')));
         return;
       }
-      targetHost.appendChild(field('目标分组',
+      targetHost.appendChild(field(t('deploy.targetGroup'),
         h('div', { style: { display: 'grid', gap: '6px' } },
           ...groups.map((g) => {
             const box = h('input', { type: 'checkbox', dataset: { targetId: g.id } });
-            return h('label.checkbox-field', box, `${g.name}（${g.deviceCount} 台设备）`);
+            return h('label.checkbox-field', box, t('deploy.groupOption', { name: g.name, count: g.deviceCount }));
           }),
         )),
       );
     } else if (scope === 'device') {
       const active = devices.filter((d) => !d.revoked);
       if (active.length === 0) {
-        targetHost.appendChild(h('div', { style: { fontSize: '12.5px', color: 'var(--text-faint)' } }, '尚未接入任何设备。'));
+        targetHost.appendChild(h('div', { style: { fontSize: '12.5px', color: 'var(--text-faint)' } }, t('deploy.noDevices')));
         return;
       }
-      targetHost.appendChild(field('目标设备',
+      targetHost.appendChild(field(t('deploy.targetDevice'),
         h('div', {
           style: { display: 'grid', gap: '6px', maxHeight: '200px', overflowY: 'auto', padding: '4px 0' },
         },
           ...active.map((d) => {
             const box = h('input', { type: 'checkbox', dataset: { targetId: d.id } });
-            return h('label.checkbox-field', box, `${d.name}${d.online ? '' : '（离线）'}`);
+            return h('label.checkbox-field', box, d.online ? d.name : t('deploy.deviceOption', { name: d.name }));
           }),
         )),
       );
@@ -142,7 +143,7 @@ function renderPushPanel(groups, profiles, devices) {
 
   repaintTarget();
 
-  const pushButton = h('button.btn.btn-primary', { type: 'button' }, '立即推送');
+  const pushButton = h('button.btn.btn-primary', { type: 'button' }, t('deploy.pushNow'));
   pushButton.addEventListener('click', async () => {
     const scope = scopeSelect.value;
     let targetIds = [];
@@ -154,12 +155,12 @@ function renderPushPanel(groups, profiles, devices) {
         .filter(Boolean);
 
       if (targetIds.length === 0) {
-        toast('warn', '请选择推送目标');
+        toast('warn', t('deploy.needTarget'));
         return;
       }
     }
 
-    const scopeText = scope === 'all' ? '全部在线设备' : `${scope === 'group' ? '分组' : '设备'}（${targetIds.length} 个）`;
+    const scopeText = scope === 'all' ? t('deploy.scopeAll') : t('deploy.scopeSummary', { count: targetIds.length, scope: scope === 'group' ? t('deploy.wordGroup') : t('deploy.wordDevice') });
 
     const push = async () => {
       pushButton.disabled = true;
@@ -168,10 +169,10 @@ function renderPushPanel(groups, profiles, devices) {
           method: 'POST',
           body: { scope, targetIds, force: false, message: messageInput.value.trim() },
         });
-        toast('ok', '推送已发出', `影响 ${result.affected} 台设备，当前版本 #${result.revision}。`);
+        toast('ok', t('deploy.pushed'), t('deploy.pushedToast', { count: result.affected, revision: result.revision }));
         await render(document.getElementById('content'));
       } catch (err) {
-        toastError(err, '推送失败');
+        toastError(err, t('deploy.pushFailed'));
       } finally {
         pushButton.disabled = false;
       }
@@ -188,8 +189,8 @@ function renderPushPanel(groups, profiles, devices) {
       return;
     }
 
-    const ok = await confirmDialog('确认推送',
-      `将立即通知 ${scopeText} 重新拉取当前配置。确定继续吗？`, '推送');
+    const ok = await confirmDialog(t('deploy.confirmTitle'),
+      t('deploy.confirmMessage', { scope: scopeText }), t('deploy.confirmButton'));
     if (!ok) return;
     await push();
   });
@@ -197,13 +198,13 @@ function renderPushPanel(groups, profiles, devices) {
   return h('div.card',
     h('div.card-head',
       h('div',
-        h('h3', '立即推送'),
-        h('p.card-desc', '推送只改变生效时机，不修改内容。内容变更（保存档案）本身也会自动触发同步。'),
+        h('h3', t('deploy.pushNow')),
+        h('p.card-desc', t('deploy.pushHint')),
       ),
     ),
-    field('推送范围', scopeSelect),
+    field(t('deploy.scope'), scopeSelect),
     targetHost,
-    field('附带消息', messageInput, '客户端同步成功后可在插件界面看到该提示，10 分钟内有效。'),
+    field(t('deploy.message'), messageInput, t('deploy.messageHint')),
     h('div.card-actions', pushButton),
   );
 }
@@ -241,14 +242,14 @@ function openDiffDialog(diffs, scopeText, onConfirm) {
   const changed = diffs.filter((d) => d.changes > 0).length;
 
   return modal({
-    title: '下发前差异预览',
+    title: t('deploy.diffTitle'),
     width: 'wide',
-    confirmText: '确认推送',
+    confirmText: t('deploy.confirmTitle'),
     body: h('div',
       h('div.notice.notice-info',
         h('span.notice-icon', 'i'),
-        h('div', `即将推送给${scopeText}。已对比 ${diffs.length} 台设备，其中 ${changed} 台的配置内容会发生变化；`
-          + '内容未变化的设备只会刷新一次同步时间。')),
+        h('div', t('deploy.previewIntro', { scope: scopeText, compared: diffs.length, changed })
+          + t('deploy.diffHint'))),
       h('div.cmd-list', { style: { marginTop: '12px' } }, ...diffs.map(diffBlock)),
     ),
     onConfirm,
@@ -263,16 +264,16 @@ function diffBlock(entry) {
   return h('div.cmd-row',
     h('div.cmd-head',
       h('span.cmd-kind', entry.deviceName),
-      h('span.log-level.' + (entry.hasBaseline ? 'warn' : 'info'), entry.hasBaseline ? '对比基线' : '首次下发'),
+      h('span.log-level.' + (entry.hasBaseline ? 'warn' : 'info'), entry.hasBaseline ? t('deploy.diffBaseline') : t('deploy.diffFirst')),
       h('span.log-time', `${entry.appliedProfileName || '—'} → ${entry.targetProfileName || '—'}`),
     ),
     entry.note ? h('div.shot-note', entry.note) : null,
     ...sections.flatMap((s) => [
       h('div.shot-note', { style: { color: 'var(--text)', fontWeight: '600' } },
-        `${s.section}：改动 ${s.added.length + s.removed.length + s.changed.length} 项`),
-      ...s.added.map((x) => h('div.shot-note', { style: { color: 'var(--ok, #1a7f37)' } }, `+ 新增 ${x}`)),
-      ...s.changed.map((x) => h('div.shot-note', { style: { color: 'var(--warn, #b26a00)' } }, `~ 修改 ${x}`)),
-      ...s.removed.map((x) => h('div.shot-note', { style: { color: 'var(--danger)' } }, `- 删除 ${x}`)),
+        t('deploy.sectionChanges', { section: s.section, count: s.added.length + s.removed.length + s.changed.length })),
+      ...s.added.map((x) => h('div.shot-note', { style: { color: 'var(--ok, #1a7f37)' } }, t('deploy.diffAdded', { text: x }))),
+      ...s.changed.map((x) => h('div.shot-note', { style: { color: 'var(--warn, #b26a00)' } }, t('deploy.diffChanged', { text: x }))),
+      ...s.removed.map((x) => h('div.shot-note', { style: { color: 'var(--danger)' } }, t('deploy.diffRemoved', { text: x }))),
     ]),
   );
 }
@@ -282,7 +283,7 @@ function renderPending(pending) {
     return h('div.card', { style: { marginTop: '16px' } },
       h('div.notice.notice-ok', { style: { margin: 0 } },
         h('span.notice-icon', '✓'),
-        h('div', '所有设备均已同步到最新配置。'),
+        h('div', t('deploy.allSynced')),
       ),
     );
   }
@@ -290,41 +291,41 @@ function renderPending(pending) {
   return h('div.card', { style: { marginTop: '16px' } },
     h('div.card-head',
       h('div',
-        h('h3', `待同步设备（${pending.length}）`),
-        h('p.card-desc', '离线设备会在下次上线后自动补齐，无需人工干预。'),
+        h('h3', t('deploy.pendingTitle', { count: pending.length })),
+        h('p.card-desc', t('deploy.pendingHint')),
       ),
       h('button.btn.btn-sm.btn-primary', {
         type: 'button',
         onClick: async () => {
           const offlineOnly = pending.every((d) => !d.online);
           if (offlineOnly) {
-            toast('warn', '设备当前离线', '离线设备将在重新上线后自动同步，请稍后再查看。');
+            toast('warn', t('deploy.deviceOffline'), t('deploy.deviceOfflineDesc'));
             return;
           }
           const result = await api('/admin/push', {
             method: 'POST',
             body: { scope: 'device', targetIds: pending.map((d) => d.id), force: true, message: '' },
           });
-          toast('ok', '已重新推送', `影响 ${result.affected} 台设备。`);
+          toast('ok', t('deploy.repushed'), t('deploy.repushedToast', { count: result.affected }));
           await render(document.getElementById('content'));
         },
-      }, '对未同步设备重新推送'),
+      }, t('deploy.repush')),
     ),
     h('div.table-wrap',
       h('table.data',
         h('thead', h('tr',
-          h('th', '设备'),
-          h('th', '分组'),
-          h('th', '状态'),
-          h('th', '已应用版本'),
-          h('th', '最近心跳'),
+          h('th', t('deploy.wordDevice')),
+          h('th', t('deploy.wordGroup')),
+          h('th', t('deploy.colState')),
+          h('th', t('deploy.colApplied')),
+          h('th', t('deploy.colLastSeen')),
         )),
         h('tbody', ...pending.map((d) => h('tr',
           h('td',
             h('div.cell-main', d.name),
             h('div.cell-sub', d.machineName || ''),
           ),
-          h('td', d.groupName || '未分组'),
+          h('td', d.groupName || t('deploy.ungrouped')),
           h('td', deviceStateBadge(d)),
           h('td', syncBadge(d)),
           h('td', { style: { fontSize: '12px', color: 'var(--text-faint)' } }, relativeTime(d.lastSeenAt)),

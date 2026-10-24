@@ -7,10 +7,10 @@
  *   · 带「看板模式」：隐藏侧栏与顶栏，整屏都留给数据；
  *   · 页面切走自动停表（本仓的视图没有 unmount 钩子，靠 `container.isConnected` 自清）。
  */
-import { api, hasPermission } from '../core/api.js?v=128';
-import { toastError } from '../core/errors.js?v=128';
-import { h, clear, formatDateTime } from '../core/ui.js?v=128';
-import { t } from '../core/i18n.js?v=128';
+import { api, hasPermission } from '../core/api.js?v=133';
+import { toastError } from '../core/errors.js?v=133';
+import { h, clear, formatDateTime } from '../core/ui.js?v=133';
+import { t } from '../core/i18n.js?v=133';
 
 export const meta = {
   title: t('board.title'),
@@ -122,7 +122,7 @@ function stopTimers() {
 function renderHeader(data, reload) {
   return h('div.board-head',
     h('div.board-brand',
-      h('span.board-server', data.info?.serverName || 'IslandHub 服务器'),
+      h('span.board-server', data.info?.serverName || t('board.serverFallback')),
       h('span.board-version', t('board.uptime', {
         version: data.info?.version || '—',
         uptime: formatUptime(data.info?.uptimeSeconds),
@@ -143,7 +143,7 @@ function renderHeader(data, reload) {
           try {
             await reload();
           } catch (e) {
-            toastError(e, '刷新失败');
+            toastError(e, t('board.refreshFailed'));
           }
         },
       }, t('board.refreshNow')),
@@ -244,7 +244,12 @@ function formatUptime(seconds) {
   const days = Math.floor(seconds / 86400);
   const hours = Math.floor((seconds % 86400) / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-  return days > 0 ? `${days} 天 ${hours} 小时` : (hours > 0 ? `${hours} 小时 ${minutes} 分` : `${minutes} 分钟`);
+  // 复用全站统一的时长文案（`ui.duration*`），别在这儿再维护一份中文与英文。
+  return days > 0
+    ? t('ui.durationDays', { days, hours })
+    : (hours > 0
+      ? t('ui.durationHours', { hours, minutes })
+      : t('ui.durationMinutes', { minutes, seconds: 0 }));
 }
 
 function truncate(text, max) {

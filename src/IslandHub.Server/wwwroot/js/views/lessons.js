@@ -11,15 +11,16 @@
  * 效果与在教室大屏上手动换课一致，适合「现在就改这一节」。</para>
  */
 
-import { api } from '../core/api.js?v=128';
-import { errorBlock } from '../core/errors.js?v=128';
+import { api } from '../core/api.js?v=133';
+import { errorBlock } from '../core/errors.js?v=133';
 import {
   h, clear, toast, loadingBlock, field, select, confirmDialog,
-} from '../core/ui.js?v=128';
+} from '../core/ui.js?v=133';
+import { t } from '../core/i18n.js?v=133';
 
 export const meta = {
-  title: '快捷换课',
-  subtitle: '教室端实时课表、临时调整某节课与调休',
+  title: t('lessons.title'),
+  subtitle: t('lessons.subtitle'),
 };
 
 /** 倒计时定时器（离开页面时自动停）。 */
@@ -60,13 +61,16 @@ function paintTargets(sel, preferred) {
   clear(sel);
 
   for (const device of live.devices) {
-    sel.appendChild(h('option', { value: device.deviceId },
-      `${device.deviceName}${device.groupName ? ` · ${device.groupName}` : ''}${device.isOnline ? '' : '（离线）'}`));
+    sel.appendChild(h('option', { value: device.deviceId }, t('lessons.deviceOption', {
+      name: device.deviceName,
+      group: device.groupName ? t('lessons.deviceOptionGroup', { group: device.groupName }) : '',
+      offline: device.isOnline ? '' : t('lessons.offlineSuffix'),
+    })));
   }
 
   // 「全部设备」放在最后并写明「慎用」：它是给「整栋楼同一处调整」用的，
   // 日常只想改一个班时顺手选错，代价是整个学校一起变。
-  sel.appendChild(h('option', { value: ALL_TARGETS }, '全部设备（慎用）'));
+  sel.appendChild(h('option', { value: ALL_TARGETS }, t('lessons.allDevices')));
 
   if (keep && [...sel.options].some((o) => o.value === keep)) {
     sel.value = keep;
@@ -89,7 +93,7 @@ export async function render(container) {
   live = await api('/admin/lessons/live').catch(() => null);
   if (!live) {
     clear(container);
-    container.appendChild(errorBlock('读取课表状态失败', '请确认服务端在运行，然后刷新页面。'));
+    container.appendChild(errorBlock(t('lessons.loadFailed'), t('lessons.loadFailedHint')));
     return;
   }
 
@@ -112,12 +116,12 @@ function renderLiveCard() {
   return h('div.card',
     h('div.card-head',
       h('div',
-        h('h3', '教室实时课表'),
-        h('p.card-desc', `共 ${live.devices.length} 台未停用设备，其中 ${online} 台在线。`
-          + '「下节课」的科目与时间来自教室端 ClassIsland 自己算出的结果。'),
+        h('h3', t('lessons.liveCard')),
+        h('p.card-desc', t('lessons.liveSummary', { total: live.devices.length, online })
+          + t('lessons.liveCardDesc')),
       ),
       h('div.card-actions',
-        h('button.btn.btn-sm', { type: 'button', onClick: () => refreshLive() }, '刷新'),
+        h('button.btn.btn-sm', { type: 'button', onClick: () => refreshLive() }, t('lessons.refresh')),
       ),
     ),
     h('div#lessonLiveHost', renderDeviceRows()),
@@ -126,7 +130,7 @@ function renderLiveCard() {
 
 function renderDeviceRows() {
   if (live.devices.length === 0) {
-    return h('p.card-desc', '还没有接入的设备。');
+    return h('p.card-desc', t('lessons.noDevices'));
   }
 
   return h('div.config-panel', ...live.devices.map((device) => {
@@ -147,16 +151,16 @@ function renderDeviceRows() {
               // 多周轮换的「现在第几周」只有教室端算得准（它按宿主的轮换起点 / 偏移算），
               // 这里照它上报的原样显示，不做二次推算。
               + (lesson.rotationWeeks >= 2 && lesson.rotationWeek >= 1
-                ? ` · 第 ${lesson.rotationWeek} 周（${lesson.rotationWeeks} 周一轮）`
+                ? t('lessons.rotationWeek', { week: lesson.rotationWeek, weeks: lesson.rotationWeeks })
                 : '')
-            : '还没有上报课表信息（需要教室端插件更新到 1.3.8+）'),
+            : t('lessons.noLessonReport')),
       ),
       h('span', { style: { marginLeft: 'auto', flex: 'none', display: 'flex', alignItems: 'center', gap: '14px' } },
         lesson
           ? h('span', { style: { fontSize: '12.5px', color: 'var(--text-dim)', textAlign: 'right' } },
             lesson.state === 'onClass'
-              ? `正在上：${lesson.currentSubject || '—'}`
-              : `下节：${lesson.nextSubject || '—'} ${lesson.nextStartAt || ''}`)
+              ? t('lessons.nowInClass', { subject: lesson.currentSubject || '—' })
+              : t('lessons.nextClass', { subject: lesson.nextSubject || '—', at: lesson.nextStartAt || '' }))
           : null,
         left !== null
           ? h('span.lesson-countdown', {
@@ -167,7 +171,7 @@ function renderDeviceRows() {
             },
           }, formatLeft(left))
           : null,
-        h('span.badge' + (device.isOnline ? '' : '.badge-neutral'), device.isOnline ? '在线' : '离线'),
+        h('span.badge' + (device.isOnline ? '' : '.badge-neutral'), device.isOnline ? t('lessons.online') : t('lessons.offline')),
       ),
     );
   }));
@@ -224,14 +228,14 @@ function renderSwapCard() {
     }
   });
   const modeSelect = select([
-    { value: 'replace', label: '换成别的科目' },
-    { value: 'swap', label: '与另一节对调' },
+    { value: 'replace', label: t('lessons.modeSwapSubject') },
+    { value: 'swap', label: t('lessons.modeSwapPeriod') },
   ], 'replace', () => paintSwapFields());
   const subjectSelect = h('select');
   const swapWithSelect = h('select');
 
-  const subjectField = field('换成', subjectSelect, '教室端档案里的科目。');
-  const swapField = field('与哪一节对调', swapWithSelect, '两节课的科目互换（与教室端「换课模式」一致）。');
+  const subjectField = field(t('lessons.subjectLabel'), subjectSelect, t('lessons.subjectHint'));
+  const swapField = field(t('lessons.swapWithLabel'), swapWithSelect, t('lessons.swapWithHint'));
 
   function paintSwapFields() {
     subjectField.hidden = modeSelect.value !== 'replace';
@@ -244,18 +248,22 @@ function renderSwapCard() {
     clear(swapWithSelect);
 
     if (!catalog) {
-      slotSelect.appendChild(h('option', { value: '' }, '先点「读取课表」'));
-      subjectSelect.appendChild(h('option', { value: '' }, '先点「读取课表」'));
-      swapWithSelect.appendChild(h('option', { value: '' }, '先点「读取课表」'));
+      slotSelect.appendChild(h('option', { value: '' }, t('lessons.readFirst')));
+      subjectSelect.appendChild(h('option', { value: '' }, t('lessons.readFirst')));
+      swapWithSelect.appendChild(h('option', { value: '' }, t('lessons.readFirst')));
       return;
     }
 
     for (const slot of catalog.slots) {
       slotSelect.appendChild(h('option', { value: String(slot.index) },
-        `第 ${slot.number} 节 ${slot.startAt}${slot.subjectName ? ` · ${slot.subjectName}` : ''}`
-        + `${slot.isChanged ? '（已换过）' : ''}`));
+        t('lessons.slotOption', {
+          number: slot.number,
+          at: slot.startAt,
+          subject: slot.subjectName ? t('lessons.slotSubject', { subject: slot.subjectName }) : '',
+          changed: slot.isChanged ? t('lessons.slotChanged') : '',
+        })));
       swapWithSelect.appendChild(h('option', { value: String(slot.index) },
-        `第 ${slot.number} 节 ${slot.startAt}`));
+        t('lessons.slotLabel', { number: slot.number, at: slot.startAt })));
     }
 
     for (const subject of catalog.subjects) {
@@ -273,34 +281,34 @@ function renderSwapCard() {
   const card = h('div.card', { style: { marginTop: '16px' } },
     h('div.card-head',
       h('div',
-        h('h3', '临时换课'),
-        h('p.card-desc', '直接改教室端 ClassIsland 的临时层课表：教室大屏上的换课界面会显示同一份结果，'
-          + '点「恢复原课表」即可原样还原。'),
+        h('h3', t('lessons.changeCard')),
+        h('p.card-desc', t('lessons.changeCardDesc1')
+          + t('lessons.changeCardDesc2')),
       ),
       h('div.card-actions',
-        h('button.btn.btn-sm', { type: 'button', onClick: () => readCatalog(targetSelect.value) }, '读取课表'),
+        h('button.btn.btn-sm', { type: 'button', onClick: () => readCatalog(targetSelect.value) }, t('lessons.readTimetable')),
         h('button.btn.btn-sm', {
           type: 'button',
           onClick: async () => {
-            if (!await confirmDialog('恢复原课表',
-              `将撤销 ${dateInput.value} 的临时换课（临时层课表），教室立刻回到原课表。确定继续吗？`,
-              '恢复', true)) {
+            if (!await confirmDialog(t('lessons.restore'),
+              t('lessons.restoreConfirmMessage', { date: dateInput.value }),
+              t('lessons.restoreConfirm'), true)) {
               return;
             }
 
             await dispatch('/admin/lessons/swap', { swap: { restore: true, date: dateInput.value } },
-              '已下发恢复', { deviceIds: targetsOf(targetSelect) });
+              t('lessons.restoreSent'), { deviceIds: targetsOf(targetSelect) });
           },
-        }, '恢复原课表'),
+        }, t('lessons.restore')),
       ),
     ),
     h('div.form-row',
-      field('目标教室', targetSelect, '只发给选中的教室。整栋楼统一调整请用「配置档案 → 临时换课」。'),
-      field('日期', dateInput, '默认教室端的今天；可以提前把某天调好。'),
+      field(t('lessons.targetRoom'), targetSelect, t('lessons.targetRoomHint')),
+      field(t('lessons.date'), dateInput, t('lessons.dateHint')),
     ),
     h('div.form-row',
-      field('哪一节', slotSelect, '节次按教室端当天课表的顺序（下拉内容就是目标教室读来的那份）。'),
-      field('方式', modeSelect, '「对调」是 ClassIsland 的默认换课模式。'),
+      field(t('lessons.period'), slotSelect, t('lessons.periodHint')),
+      field(t('lessons.mode'), modeSelect, t('lessons.modeHint')),
     ),
     swapField,
     subjectField,
@@ -317,10 +325,10 @@ function renderSwapCard() {
             subjectName: subjectSelect.options[subjectSelect.selectedIndex]?.textContent || '',
           };
 
-          await dispatch('/admin/lessons/swap', { swap: body }, '已下发换课',
+          await dispatch('/admin/lessons/swap', { swap: body }, t('lessons.changeSent'),
             { deviceIds: targetsOf(targetSelect) });
         },
-      }, '下发换课'),
+      }, t('lessons.sendChange')),
     ),
   );
 
@@ -340,37 +348,37 @@ function renderAdjustCard() {
       await loadCatalogFor(value);
     }
   });
-  planSelect.appendChild(h('option', { value: '' }, '先点上面的「读取课表」'));
+  planSelect.appendChild(h('option', { value: '' }, t('lessons.readFirstAbove')));
 
   const card = h('div.card', { style: { marginTop: '16px' } },
     h('div.card-head',
       h('div',
-        h('h3', '调休'),
-        h('p.card-desc', '让某一天按另一张课表上课（例如「周六按周三的课表上」）。'
-          + '与在教室端课表设置里手动指定完全一致，次日不需要谁去清理。'),
+        h('h3', t('lessons.makeupCard')),
+        h('p.card-desc', t('lessons.makeupDesc1')
+          + t('lessons.makeupDesc2')),
       ),
       h('div.card-actions',
         h('button.btn.btn-sm', {
           type: 'button',
           onClick: async () => {
-            if (!await confirmDialog('撤销调休',
-              `将取消 ${dateInput.value} 的课表指定，那天回到按星期几的正常课表。确定继续吗？`,
-              '撤销', true)) {
+            if (!await confirmDialog(t('lessons.cancelMakeup'),
+              t('lessons.cancelMakeupMessage', { date: dateInput.value }),
+              t('lessons.cancelConfirm'), true)) {
               return;
             }
 
             await dispatch('/admin/lessons/adjust', { adjust: { date: dateInput.value, restore: true } },
-              '已撤销调休', { deviceIds: targetsOf(targetSelect) });
+              t('lessons.makeupCancelled'), { deviceIds: targetsOf(targetSelect) });
           },
-        }, '撤销调休'),
+        }, t('lessons.cancelMakeup')),
       ),
     ),
     h('div.form-row',
-      field('目标教室', targetSelect, '只发给选中的教室；整栋楼一起调休请选「全部设备」。'),
-      field('哪一天', dateInput, '例如本周六。'),
+      field(t('lessons.targetRoom'), targetSelect, t('lessons.makeupTargetHint')),
+      field(t('lessons.whichDay'), dateInput, t('lessons.whichDayHint')),
     ),
     h('div.form-row',
-      field('按哪张课表上', planSelect, '来自教室端档案里的课表。'),
+      field(t('lessons.whichTimetable'), planSelect, t('lessons.whichTimetableHint')),
     ),
     h('div.card-actions',
       h('button.btn.btn-primary.btn-sm', {
@@ -382,16 +390,16 @@ function renderAdjustCard() {
               classPlanId: planSelect.value,
               classPlanName: planSelect.options[planSelect.selectedIndex]?.textContent || '',
             },
-          }, '已下发调休', { deviceIds: targetsOf(targetSelect) });
+          }, t('lessons.makeupSent'), { deviceIds: targetsOf(targetSelect) });
         },
-      }, '应用调休'),
+      }, t('lessons.sendMakeup')),
     ),
   );
 
   adjustFill = (catalog) => {
     clear(planSelect);
     if (!catalog || catalog.classPlans.length === 0) {
-      planSelect.appendChild(h('option', { value: '' }, '教室端没有可选的课表'));
+      planSelect.appendChild(h('option', { value: '' }, t('lessons.noTimetables')));
       return;
     }
 
@@ -401,7 +409,7 @@ function renderAdjustCard() {
       }
 
       planSelect.appendChild(h('option', { value: plan.id },
-        plan.name + (plan.isEnabled ? '' : '（默认停用）')));
+        plan.name + (plan.isEnabled ? '' : t('lessons.disabledByDefault'))));
     }
   };
 
@@ -439,12 +447,12 @@ async function readCatalog(deviceId) {
   // 「全部设备」没有单一份课表可读（各班的课表本来就不同），退回优先在线的那台。
   const target = deviceId && deviceId !== ALL_TARGETS ? deviceId : catalogDeviceId();
   if (!target) {
-    toast('warn', '没有可读取的设备', '先接入一台教室设备。');
+    toast('warn', t('lessons.noReadableDevices'), t('lessons.noReadableDevicesHint'));
     return;
   }
 
   // 「读取课表」是**指令**：教室端读完主动回报，所以要下发之后等一会儿再来取结果。
-  await dispatch('/admin/lessons/catalog', { deviceIds: [target] }, '已请求教室端上报课表', { silent: true });
+  await dispatch('/admin/lessons/catalog', { deviceIds: [target] }, t('lessons.reportRequested'), { silent: true });
 
   for (let i = 0; i < 12; i += 1) {
     await new Promise((r) => setTimeout(r, 1000));
@@ -452,12 +460,12 @@ async function readCatalog(deviceId) {
       .catch(() => null);
     if (catalog) {
       applyCatalog(catalog);
-      toast('ok', '已读取课表', `今天 ${catalog.slots.length} 节、${catalog.subjects.length} 个科目。`);
+      toast('ok', t('lessons.timetableRead'), t('lessons.catalogSummary', { periods: catalog.slots.length, subjects: catalog.subjects.length }));
       return;
     }
   }
 
-  toast('warn', '还没收到课表', '教室端可能不在线，或插件版本低于 1.3.8。');
+  toast('warn', t('lessons.notReceived'), t('lessons.notReceivedHint'));
 }
 
 /** 把目录填进两个表单（换课与调休的下拉框由各自的卡片负责填充）。 */
@@ -477,19 +485,19 @@ function applyCatalog(catalog) {
 async function dispatch(path, body, okTitle, options = {}) {
   const payload = { deviceIds: options.deviceIds ?? [], ...body };
   if (payload.deviceIds.length === 0) {
-    toast('warn', '请先选择目标教室', '当前没有可用设备，或者还没有选择要发给哪些教室。');
+    toast('warn', t('lessons.pickTarget'), t('lessons.pickTargetHint'));
     return;
   }
 
   try {
     const affected = await api(path, { method: 'POST', body: payload });
     if (!options.silent) {
-      toast('ok', okTitle, `已下发给 ${affected} 台设备，教室端执行结果见「远程管理 → 指令历史」。`);
+      toast('ok', okTitle, t('lessons.sentTo', { count: affected }));
     }
 
     await refreshLive();
   } catch (err) {
-    toast('error', '下发失败', err.message || '请稍后重试。');
+    toast('error', t('lessons.sendFailed'), err.message || t('lessons.retryLater'));
   }
 }
 
@@ -517,10 +525,10 @@ function formatLeft(seconds) {
 
 function stateLabel(lesson) {
   switch (lesson.state) {
-    case 'onClass': return '上课中';
-    case 'prepare': return '预备铃';
-    case 'breaking': return '课间';
-    case 'afterSchool': return '已放学';
-    default: return '未上课';
+    case 'onClass': return t('lessons.stateInClass');
+    case 'prepare': return t('lessons.statePreparing');
+    case 'breaking': return t('lessons.stateBreak');
+    case 'afterSchool': return t('lessons.stateFinished');
+    default: return t('lessons.stateNotStarted');
   }
 }
