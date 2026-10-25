@@ -80,7 +80,7 @@ function reportHandlerError(err) {
   // 控制台也留一条：toast 会自己消失，而 `ReferenceError: modal is not defined` 这类
   // **纯前端编程错误**本该在开发/诊断时一眼看到——插件市场的「详情」与「安装到教室」
   // 两个弹窗就因此静默坏了很久，用户只看到一句「操作失败」。
-  console.error('[ui] 操作失败：', err);
+  console.error('[ui] handler failed:', err);
 
   // 这里是所有「没被单独接住」的操作的实际出口，光转述服务端原文不够用（#51）：
   // 按错误码补一句「怎么办」，带建议的多停留一会儿。
