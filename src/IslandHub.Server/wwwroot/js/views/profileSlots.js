@@ -5,10 +5,10 @@
  * 后台每 30 秒对一次点，只在「该换」时才改档案并下发；这里提供配置入口与「立即对齐」。
  */
 
-import { api } from '../core/api.js?v=146';
-import { toastError } from '../core/errors.js?v=146';
-import { h, clear, toast, loadingBlock, field, select, modal, formatDateTime } from '../core/ui.js?v=146';
-import { t } from '../core/i18n.js?v=146';
+import { api } from '../core/api.js?v=147';
+import { toastError } from '../core/errors.js?v=147';
+import { h, clear, toast, loadingBlock, field, select, modal, formatDateTime } from '../core/ui.js?v=147';
+import { t } from '../core/i18n.js?v=147';
 
 export const meta = {
   title: t('slots.title'),

@@ -2,21 +2,24 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=146';
-import { toastError } from './core/errors.js?v=146';
-import { h, clear, toast, icon } from './core/ui.js?v=146';
-import { t, applyStatic, mountLocalePicker } from './core/i18n.js?v=146';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=147';
+import { toastError } from './core/errors.js?v=147';
+import { h, clear, toast, icon } from './core/ui.js?v=147';
+import { t, applyStatic, mountLocalePicker } from './core/i18n.js?v=147';
+// 个人外观（#127）：先用本地缓存铺上，避免"先白底再变色"闪一下。
+// ⚠️ 别名：`prefs.js` 也导出一个 `applyAppearance`（那是全站主题/密度），同名会冲突。
+import { bootstrapAppearance, applyAppearance as applyUiAppearance } from './core/appearance.js?v=147';
 import {
   initTheme,
   getSidebarCollapsed, setSidebarCollapsed,
   applyDensity,
   applyAppearance, setBrandingAccent,
   applyRemotePrefs, applySchedScale,
-} from './core/prefs.js?v=146';
-import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=146';
-import { initGlassHighlight } from './core/glass.js?v=146';
-import { initTopbar } from './topbar.js?v=146';
-import { openSearch } from './core/search.js?v=146';
+} from './core/prefs.js?v=147';
+import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=147';
+import { initGlassHighlight } from './core/glass.js?v=147';
+import { initTopbar } from './topbar.js?v=147';
+import { openSearch } from './core/search.js?v=147';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -140,6 +143,10 @@ for (const group of NAV) {
 applyStatic();
 mountLocalePicker(document.getElementById('localePicker'));
 
+// 个人外观（#127）：登录页也要跟着变，所以放在模块顶层、任何渲染之前——
+// 先按 localStorage 缓存铺上（同步、不闪），登录后再用服务端那份校正。
+bootstrapAppearance();
+
 /**
  * 旧链接重定向：改过导航之后，别人收藏的旧地址不能变成 404。
  * <para>只做**同一目标**的别名，不做「功能搬迁」——搬迁该由用户重新养成习惯，
@@ -155,34 +162,34 @@ const ROUTE_ALIASES = {
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=146'),
-  devices: () => import('./views/devices.js?v=146'),
+  dashboard: () => import('./views/dashboard.js?v=147'),
+  devices: () => import('./views/devices.js?v=147'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=146'),
-  profiles: () => import('./views/profiles.js?v=146'),
-  profileEditor: () => import('./views/profileEditor.js?v=146'),
-  deploy: () => import('./views/deploy.js?v=146'),
-  remote: () => import('./views/remote.js?v=146'),
-  reminders: () => import('./views/reminders.js?v=146'),
-  examMode: () => import('./views/examMode.js?v=146'),
-  weather: () => import('./views/weather.js?v=146'),
-  profileSlots: () => import('./views/profileSlots.js?v=146'),
-  audit: () => import('./views/audit.js?v=146'),
-  reports: () => import('./views/reports.js?v=146'),
-  appearance: () => import('./views/appearance.js?v=146'),
+  groups: () => import('./views/devices.js?v=147'),
+  profiles: () => import('./views/profiles.js?v=147'),
+  profileEditor: () => import('./views/profileEditor.js?v=147'),
+  deploy: () => import('./views/deploy.js?v=147'),
+  remote: () => import('./views/remote.js?v=147'),
+  reminders: () => import('./views/reminders.js?v=147'),
+  examMode: () => import('./views/examMode.js?v=147'),
+  weather: () => import('./views/weather.js?v=147'),
+  profileSlots: () => import('./views/profileSlots.js?v=147'),
+  audit: () => import('./views/audit.js?v=147'),
+  reports: () => import('./views/reports.js?v=147'),
+  appearance: () => import('./views/appearance.js?v=147'),
   // 「系统设置」拆成四页（原 settings.js 已按此拆分，见各文件头部说明）。
-  accounts: () => import('./views/accounts.js?v=146'),
-  server: () => import('./views/server.js?v=146'),
-  integrations: () => import('./views/integrations.js?v=146'),
-  maintenance: () => import('./views/maintenance.js?v=146'),
-  board: () => import('./views/board.js?v=146'),
-  approvals: () => import('./views/approvals.js?v=146'),
-  timesync: () => import('./views/timesync.js?v=146'),
-  lessons: () => import('./views/lessons.js?v=146'),
-  plugins: () => import('./views/pluginMarket.js?v=146'),
+  accounts: () => import('./views/accounts.js?v=147'),
+  server: () => import('./views/server.js?v=147'),
+  integrations: () => import('./views/integrations.js?v=147'),
+  maintenance: () => import('./views/maintenance.js?v=147'),
+  board: () => import('./views/board.js?v=147'),
+  approvals: () => import('./views/approvals.js?v=147'),
+  timesync: () => import('./views/timesync.js?v=147'),
+  lessons: () => import('./views/lessons.js?v=147'),
+  plugins: () => import('./views/pluginMarket.js?v=147'),
   // 首次使用引导（#126）：**故意不进 NAV**——它只在部署后第一次进来时出现，
   // 以及「页面设置 → 重新播放引导」时进入；放进侧边栏反而会变成一个"日常页面"。
-  welcome: () => import('./views/welcome.js?v=146'),
+  welcome: () => import('./views/welcome.js?v=147'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -712,7 +719,7 @@ async function handleApply(event) {
  */
 async function shouldShowWelcome() {
   try {
-    const { shouldShowWelcome: check } = await import('./views/welcome.js?v=146');
+    const { shouldShowWelcome: check } = await import('./views/welcome.js?v=147');
     return await check();
   } catch {
     // 视图模块加载失败（网络/缓存）时不要拦人。
@@ -729,6 +736,9 @@ async function showApp() {
   // 先把账号里的布局偏好铺到本机（#40）：必须在下面路由渲染之前，
   // 否则会先闪一下默认布局再跳成自定义布局。未登录 / 无偏好时此调用是空操作。
   applyRemotePrefs(me.uiPreferences);
+
+  // 外观：登录响应里已带 `appearance`，直接用服务端这份覆盖缓存（服务端才是准的）。
+  applyUiAppearance(me.uiPreferences?.appearance ?? {});
 
   document.getElementById('userName').textContent = me.displayName || me.username || t('app.adminRole');
   document.getElementById('userAvatar').textContent = (me.displayName || me.username || 'A').slice(0, 1).toUpperCase();
@@ -752,7 +762,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=146');
+    const { startTour } = await import('./core/tour.js?v=147');
     startTour({
       onFinish: async (skipped) => {
         try {

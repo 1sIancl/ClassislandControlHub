@@ -16,17 +16,21 @@
  * 本页的「外观（本机）」。</para>
  */
 
-import { api } from '../core/api.js?v=146';
-import { toastError } from '../core/errors.js?v=146';
+import { api } from '../core/api.js?v=147';
+import { toastError } from '../core/errors.js?v=147';
 import {
   h, clear, field, select, loadingBlock, toast, confirmDialog,
-} from '../core/ui.js?v=146';
+} from '../core/ui.js?v=147';
 import {
   THEMES, DENSITIES, ACCENTS, FONTS, RADII,
   getTheme, applyTheme, getDensity, setDensity,
   getAccent, setAccent, getFont, setFont, getRadius, setRadius,
-} from '../core/prefs.js?v=146';
-import { t } from '../core/i18n.js?v=146';
+} from '../core/prefs.js?v=147';
+import { t } from '../core/i18n.js?v=147';
+// 个人外观（#127）：背景 / 透明度 / 磨砂 / 色调，只影响当前账号。
+import {
+  applyAppearance, saveAppearance, readCachedAppearance, DEFAULT_APPEARANCE,
+} from '../core/appearance.js?v=147';
 
 export const meta = {
   title: t('appearance.title'),
@@ -45,7 +49,119 @@ export async function render(container) {
     renderLoginCard(branding),
     renderAppearanceCard(),
     renderAdvancedCard(branding),
+    renderMyAppearanceCard(),
   ));
+}
+
+/**
+ * 「我的界面」卡片（#127）：背景 / 玻璃透明度 / 磨砂 / 色调。
+ *
+ * <p>与上面几张卡的差别要一眼看出来：那些是**全站**设置（存服务端、所有人一样），
+ * 这一张是**只对当前账号**的个人偏好，且不下发教室端。</p>
+ *
+ * <p>拖动滑块时直接改 CSS 变量做实时预览，**不写库**；点「保存」才 PUT。</p>
+ */
+function renderMyAppearanceCard() {
+  const current = readCachedAppearance() ?? DEFAULT_APPEARANCE;
+  const draft = { ...current };
+
+  const backgroundSelect = select([
+    { value: 'default', label: t('myLook.bgDefault') },
+    { value: 'aurora', label: t('myLook.bgAurora') },
+    { value: 'sunset', label: t('myLook.bgSunset') },
+    { value: 'night', label: t('myLook.bgNight') },
+    { value: 'minimal', label: t('myLook.bgMinimal') },
+  ], draft.background, (value) => {
+    draft.background = value;
+    preview();
+  });
+
+  const opacityInput = h('input', {
+    type: 'range', min: '30', max: '100', step: '1',
+    value: String(Math.round(draft.glassOpacity * 100)),
+  });
+  const opacityValue = h('span.look-value', `${Math.round(draft.glassOpacity * 100)}%`);
+
+  const blurInput = h('input', {
+    type: 'range', min: '0', max: '40', step: '1', value: String(draft.glassBlur),
+  });
+  const blurValue = h('span.look-value', `${draft.glassBlur}px`);
+
+  const tintSelect = select([
+    { value: 'none', label: t('myLook.tintNone') },
+    { value: 'primary', label: t('myLook.tintPrimary') },
+    { value: 'warm', label: t('myLook.tintWarm') },
+    { value: 'cool', label: t('myLook.tintCool') },
+  ], draft.glassTint, (value) => {
+    draft.glassTint = value;
+    preview();
+  });
+
+  const warn = h('div', { hidden: true, style: { marginTop: '8px' } });
+
+  const preview = () => {
+    draft.glassOpacity = Number(opacityInput.value) / 100;
+    draft.glassBlur = Number(blurInput.value);
+    opacityValue.textContent = `${opacityInput.value}%`;
+    blurValue.textContent = `${blurInput.value}px`;
+
+    // 实时预览：只改 CSS 变量，不落库。
+    applyAppearance(draft);
+
+    // 两条提示：透明度过低伤可读性、磨砂过高吃性能（都不阻止保存）。
+    const notes = [];
+    if (draft.glassOpacity < 0.4) notes.push(t('myLook.warnOpacity'));
+    if (draft.glassBlur > 30) notes.push(t('myLook.warnBlur'));
+    warn.hidden = notes.length === 0;
+    warn.replaceChildren(...notes.map((text) => h('div.notice.notice-warn', { style: { margin: 0 } },
+      h('span.notice-icon', '!'), h('div', text))));
+  };
+
+  opacityInput.addEventListener('input', preview);
+  blurInput.addEventListener('input', preview);
+
+  return h('div.card', { style: { marginTop: '16px' } },
+    h('div.card-head',
+      h('div',
+        h('h3', t('myLook.title')),
+        h('p.card-desc', t('myLook.desc'))),
+      h('div.card-actions',
+        h('button.btn.btn-sm', {
+          type: 'button',
+          onClick: () => {
+            Object.assign(draft, DEFAULT_APPEARANCE);
+            backgroundSelect.value = DEFAULT_APPEARANCE.background;
+            opacityInput.value = String(Math.round(DEFAULT_APPEARANCE.glassOpacity * 100));
+            blurInput.value = String(DEFAULT_APPEARANCE.glassBlur);
+            tintSelect.value = DEFAULT_APPEARANCE.glassTint;
+            preview();
+          },
+        }, t('myLook.reset')),
+        h('button.btn.btn-primary.btn-sm', {
+          type: 'button',
+          onClick: async (event) => {
+            const button = event.currentTarget;
+            button.disabled = true;
+            try {
+              await saveAppearance(draft);
+              toast('ok', t('myLook.saved'));
+            } catch (err) {
+              toastError(err, t('myLook.saveFailed'));
+            } finally {
+              button.disabled = false;
+            }
+          },
+        }, t('myLook.save'))),
+    ),
+    h('div.config-panel',
+      h('label.config-item', h('span', t('myLook.background')), h('span', { style: { marginLeft: 'auto', width: '180px' } }, backgroundSelect)),
+      h('label.config-item', h('span', t('myLook.opacity')), opacityInput, opacityValue),
+      h('label.config-item', h('span', t('myLook.blur')), blurInput, blurValue),
+      h('label.config-item', h('span', t('myLook.tint')), h('span', { style: { marginLeft: 'auto', width: '180px' } }, tintSelect)),
+    ),
+    warn,
+    h('p.card-desc', { style: { marginTop: '10px' } }, t('myLook.scopeNote')),
+  );
 }
 
 /** 一行说明文字（用来标注生效范围这类容易混淆的信息）。 */

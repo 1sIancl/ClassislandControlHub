@@ -537,12 +537,25 @@ body.dense table.data td {
 }
 
 /* ────────────────────────── 卡片 ────────────────────────── */
+/* 卡片底色走 `--glass-alpha`（#127 外观自定义）：没自定义时是 1，等于原来的纯色；
+   用户调低后变成半透明 + 磨砂，背景（若有）透出来。`color-mix` 保留了明暗两套主题自己的底色。 */
 .card {
-  background: var(--bg-panel);
+  background-color: color-mix(in srgb, var(--bg-panel) calc(var(--glass-alpha, 1) * 100%), transparent);
+  background-image: linear-gradient(var(--glass-tint, transparent), var(--glass-tint, transparent));
+  backdrop-filter: blur(var(--glass-blur, 0px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 0px));
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 18px 20px;
   box-shadow: var(--shadow-sm);
+}
+
+/* 自定义背景铺在 body 上（`--app-background` 由 core/appearance.js 设置）。
+   没设置时这条保持无效，body 仍用主题底色。 */
+body {
+  background-image: var(--app-background, none);
+  background-attachment: fixed;
+  background-size: cover;
 }
 .card + .card {
   margin-top: 16px;

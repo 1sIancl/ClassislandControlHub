@@ -341,7 +341,13 @@ public static class AdminEndpoints
         return ApiResult<UiPreferencesDto>.Success(preferences);
     }
 
-    /// <summary>保存当前账号的界面偏好（覆盖式）。</summary>
+    /// <summary>
+    /// 保存当前账号的界面偏好（布局覆盖式；外观只在**传了**的时候覆盖）。
+    /// <para>
+    /// 为什么外观要区分"没传"：布局那条保存路径（`prefs.js`）不会带外观，
+    /// 如果也当覆盖处理，调一次布局就把外观清空了。
+    /// </para>
+    /// </summary>
     private static async Task<ApiResult<UiPreferencesDto>> SetUiPreferencesAsync(
         UiPreferencesDto request,
         HttpContext http,
@@ -350,9 +356,43 @@ public static class AdminEndpoints
     {
         var session = http.RequireAdminSession();
         ValidateUiPreferences(request);
+
+        if (request.Appearance is null)
+        {
+            // 保留已有外观，只改布局。
+            var existing = await store.GetUiPreferencesAsync(session.UserId, cancellationToken);
+            request.Appearance = existing.Appearance;
+        }
+        else
+        {
+            ClampAppearance(request.Appearance);
+        }
+
         await store.SetUiPreferencesAsync(session.UserId, request, cancellationToken);
         return ApiResult<UiPreferencesDto>.Success(request);
     }
+
+    /// <summary>把外观数值夹到安全范围（超范围不报错，直接夹——用户拖滑块不该看到 400）。</summary>
+    private static void ClampAppearance(UiAppearanceDto appearance)
+    {
+        appearance.Background = UiBackgrounds.Contains(appearance.Background ?? string.Empty)
+            ? appearance.Background!
+            : "default";
+
+        appearance.GlassOpacity = Math.Clamp(appearance.GlassOpacity, 0.30, 1.0);
+        appearance.GlassBlur = Math.Clamp(appearance.GlassBlur, 0, 40);
+        appearance.GlassTint = UiTints.Contains(appearance.GlassTint ?? string.Empty)
+            ? appearance.GlassTint!
+            : "none";
+    }
+
+    /// <summary>可选背景预设（与前端 `core/appearance.js` 一一对应）。</summary>
+    private static readonly HashSet<string> UiBackgrounds =
+        new(StringComparer.Ordinal) { "default", "aurora", "sunset", "minimal", "night" };
+
+    /// <summary>可选玻璃色调。</summary>
+    private static readonly HashSet<string> UiTints =
+        new(StringComparer.Ordinal) { "none", "primary", "warm", "cool" };
 
     /// <summary>校验界面偏好：区域白名单、条目数、键格式与重复、整体大小。违规**直接拒绝**，不静默裁剪。</summary>
     private static void ValidateUiPreferences(UiPreferencesDto preferences)

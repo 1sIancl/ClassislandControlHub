@@ -250,6 +250,31 @@ public sealed class UiPreferencesDto
 {
     /// <summary>区域（scope）→ 布局项数组；数组顺序即展示顺序。</summary>
     public Dictionary<string, List<UiLayoutItemDto>> Layouts { get; set; } = [];
+
+    /// <summary>
+    /// 界面外观（背景 / 玻璃透明度 / 磨砂 / 色调）。<c>null</c> 表示"这次不改"——
+    /// 布局那条保存路径不传它，免得把外观设置清空。
+    /// </summary>
+    public UiAppearanceDto? Appearance { get; set; }
+}
+
+/// <summary>
+/// 管理界面外观（按账号存的个人偏好，不下发教室端）。
+/// <para>只影响当前账号看到的样式：换台电脑登录同一账号会跟着走，其他管理员不受影响。</para>
+/// </summary>
+public sealed class UiAppearanceDto
+{
+    /// <summary>背景预设：<c>default</c> / <c>aurora</c> / <c>sunset</c> / <c>minimal</c> / <c>night</c>。</summary>
+    public string Background { get; set; } = "default";
+
+    /// <summary>玻璃层不透明度（0.3 ~ 1.0）。越低越透，越低越容易看不清字。</summary>
+    public double GlassOpacity { get; set; } = 1.0;
+
+    /// <summary>磨砂强度（0 ~ 40 px）。0 表示不模糊；过高在低配机上会掉帧。</summary>
+    public int GlassBlur { get; set; }
+
+    /// <summary>玻璃色调：<c>none</c> / <c>primary</c> / <c>warm</c> / <c>cool</c>。</summary>
+    public string GlassTint { get; set; } = "none";
 }
 
 /// <summary>布局中的一项（模块 / 列）。</summary>
