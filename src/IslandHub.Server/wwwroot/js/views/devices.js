@@ -4,21 +4,22 @@
  * 并可切换到列表视图查看完整状态明细。注册码管理一并放在本页。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=137';
-import { toastError, errorBlock } from '../core/errors.js?v=137';
+import { api, fetchBlob } from '../core/api.js?v=138';
+import { toastError, errorBlock } from '../core/errors.js?v=138';
 import {
   h, clear, formatDateTime, relativeTime, toast, loadingBlock, skeletonRows,
   modal, confirmDialog, deviceStateBadge, syncBadge,
   emptyState, field, select, copyText, append, undoBar,
-} from '../core/ui.js?v=137';
-import { showContextMenu } from '../core/contextmenu.js?v=137';
-import { getLayout, saveLayout } from '../core/prefs.js?v=137';
-import { auditTimelineSection } from '../core/audit-timeline.js?v=137';
-import { selectionSummary } from '../core/batch-summary.js?v=137';
+} from '../core/ui.js?v=138';
+import { showContextMenu } from '../core/contextmenu.js?v=138';
+import { getLayout, saveLayout } from '../core/prefs.js?v=138';
+import { auditTimelineSection } from '../core/audit-timeline.js?v=138';
+import { selectionSummary } from '../core/batch-summary.js?v=138';
+import { t } from './../core/i18n.js?v=138';
 
 export const meta = {
-  title: '设备管理',
-  subtitle: '按楼栋 / 楼层 / 教室查看归属，拖拽即可调整',
+  title: t('devices.title'),
+  subtitle: t('devices.subtitle'),
 };
 
 /** 分组标识色调色板，与服务端 DeviceEndpoints.GroupColors 保持一致。 */
@@ -40,25 +41,25 @@ const selection = new Set();
 // ── 设备表格列定义（支持显隐配置，操作列固定） ──
 const COLUMN_DEFS = [
   {
-    key: 'name', label: '教室 / 设备',
+    key: 'name', label: t('devices.colRoom'),
     cell: (d) => h('td',
       h('div.cell-main', d.name),
       h('div.cell-sub', [d.machineName, d.ipAddress].filter(Boolean).join(' · ') || d.id.slice(0, 8)),
-      d.remark ? h('div.cell-sub', { style: { color: 'var(--text-faint)' } }, `备注：${d.remark}`) : null,
+      d.remark ? h('div.cell-sub', { style: { color: 'var(--text-faint)' } }, t('devices.remarkLine', { remark: d.remark })) : null,
     ),
   },
   {
-    key: 'group', label: '楼栋 / 楼层',
+    key: 'group', label: t('devices.colLocation'),
     cell: (d) => h('td', groupPathBadge(d)),
   },
   {
-    key: 'tags', label: '标签',
+    key: 'tags', label: t('devices.colTags'),
     cell: (d) => h('td', (d.tags || []).length
       ? h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: '4px' } }, ...d.tags.map(tagBadge))
       : h('span', { style: { color: 'var(--text-faint)' } }, '—')),
   },
   {
-    key: 'state', label: '状态',
+    key: 'state', label: t('devices.colState'),
     cell: (d) => h('td',
       deviceStateBadge(d),
       d.lastError ? h('div', {
@@ -72,28 +73,28 @@ const COLUMN_DEFS = [
     ),
   },
   {
-    key: 'sync', label: '配置同步',
+    key: 'sync', label: t('devices.colSync'),
     cell: (d) => h('td', syncBadge(d),
       h('div', { style: { fontSize: '11px', color: 'var(--text-faint)', marginTop: '3px' } },
-        `档案版本 ${d.serverRevision}`)),
+        t('devices.profileRevision', { revision: d.serverRevision }))),
   },
   {
-    key: 'plan', label: '当前课表',
+    key: 'plan', label: t('devices.colTimetable'),
     cell: (d) => h('td', d.currentClassPlanName || h('span', { style: { color: 'var(--text-faint)' } }, '—')),
   },
   {
-    key: 'version', label: '版本信息',
+    key: 'version', label: t('devices.colVersion'),
     cell: (d) => h('td',
       h('div', { style: { fontSize: '12px' } }, `CI ${d.classIslandVersion || '—'}`),
-      h('div', { style: { fontSize: '11px', color: 'var(--text-faint)' } }, `插件 ${d.pluginVersion || '—'}`),
+      h('div', { style: { fontSize: '11px', color: 'var(--text-faint)' } }, t('devices.pluginVersionLine', { version: d.pluginVersion || '—' })),
     ),
   },
   {
-    key: 'heartbeat', label: '最近心跳',
+    key: 'heartbeat', label: t('devices.colLastSeen'),
     cell: (d) => h('td',
       h('div', { style: { fontSize: '12.5px' } }, relativeTime(d.lastSeenAt)),
       h('div', { style: { fontSize: '11px', color: 'var(--text-faint)' } },
-        d.lastSyncAt ? `同步 ${relativeTime(d.lastSyncAt)}` : '尚未同步'),
+        d.lastSyncAt ? t('devices.syncedAgo', { at: relativeTime(d.lastSyncAt) }) : t('devices.neverSynced')),
     ),
   },
 ];
@@ -168,9 +169,9 @@ function groupFamilyIds(groupId) {
 
 /** 拖拽目标里可选的楼层（含「楼栋整体」「未分组」）。 */
 function assignmentOptions() {
-  const options = [{ value: '', label: '（未分组）' }];
+  const options = [{ value: '', label: t('devices.ungroupedParent') }];
   for (const { root, floors } of buildTree()) {
-    options.push({ value: root.id, label: `${root.name} · 整栋` });
+    options.push({ value: root.id, label: t('devices.wholeBuilding', { name: root.name }) });
     for (const floor of floors) {
       options.push({ value: floor.id, label: `${root.name} / ${floor.name}` });
     }
@@ -183,7 +184,7 @@ function assignmentOptions() {
 function groupPathBadge(device) {
   const group = groupOf(device);
   if (!group) {
-    return h('span.badge.badge-neutral', '未分组');
+    return h('span.badge.badge-neutral', t('devices.ungrouped'));
   }
 
   const parent = group.parentId ? cache.groups.find((g) => g.id === group.parentId) : null;
@@ -200,7 +201,7 @@ function groupPathBadge(device) {
 function tagBadge(tag) {
   const color = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(tag.color) ? tag.color : '';
   return h('span.badge.tag-badge', {
-    title: `标签：${tag.name}`,
+    title: t('devices.tagLine', { name: tag.name }),
     style: color
       // 8 位十六进制（后两位是透明度）——比再去算 rgba 简单，现代浏览器都支持。
       ? { borderColor: color, color, background: `${color}22` }
@@ -221,7 +222,7 @@ function tagPicker(selection) {
 
     if (!cache.tags || cache.tags.length === 0) {
       box.appendChild(h('p.card-desc', { style: { margin: '0 0 6px' } },
-        '还没有标签。在下面新建一个，比如「高考考场」「待维修」。'));
+        t('devices.noTags')));
     } else {
       box.appendChild(h('div.tag-picker-list', ...cache.tags.map((tag) => {
         const input = h('input', { type: 'checkbox' });
@@ -241,14 +242,14 @@ function tagPicker(selection) {
     // 就地新建：打标签时最自然的动作就是「没有我要的那个 → 现在建一个」，
     // 让人为此跑去另一个页面是本末倒置。
     const nameInput = h('input', {
-      type: 'text', placeholder: '新建标签…', maxlength: '24',
+      type: 'text', placeholder: t('devices.newTagPlaceholder'), maxlength: '24',
     });
     const addButton = h('button.btn.btn-sm', {
       type: 'button',
       onClick: async () => {
         const name = nameInput.value.trim();
         if (!name) {
-          toast('warn', '请先填标签名');
+          toast('warn', t('devices.tagNameRequired'));
           return;
         }
 
@@ -260,12 +261,12 @@ function tagPicker(selection) {
           selection.add(tag.id);
           nameInput.value = '';
           paint();
-          toast('ok', '已新建标签', `「${tag.name}」已勾选，点「保存」后生效。`);
+          toast('ok', t('devices.tagCreatedTitle'), t('devices.tagCreated', { name: tag.name }));
         } catch (err) {
-          toastError(err, '新建标签失败');
+          toastError(err, t('devices.tagCreateFailed'));
         }
       },
-    }, '新建');
+    }, t('devices.create'));
 
     box.appendChild(h('div.tag-picker-new', nameInput, addButton));
   }
@@ -284,12 +285,12 @@ function deviceStateKey(device) {
 }
 
 const STATE_LABEL = {
-  online: '在线',
-  syncing: '同步中',
-  pending: '待同步',
-  error: '异常',
-  offline: '离线',
-  off: '已停用',
+  online: t('devices.stateOnline'),
+  syncing: t('devices.stateSyncing'),
+  pending: t('devices.statePending'),
+  error: t('devices.stateError'),
+  offline: t('devices.stateOffline'),
+  off: t('devices.stateRevoked'),
 };
 
 // ── 页面 ────────────────────────────────────────────────────────────────
@@ -343,7 +344,7 @@ function renderToolbar() {
       type: 'text',
       // class 供键盘快捷键「/」定位搜索框（见 core/shortcuts.js）
       class: 'toolbar-search',
-      placeholder: '搜索教室名 / 机器名 / IP…',
+      placeholder: t('devices.searchPlaceholder'),
       value: filter.keyword,
       onInput: (e) => {
         filter.keyword = e.target.value.trim();
@@ -354,7 +355,7 @@ function renderToolbar() {
     // 标签筛选（#10）：标签多起来之后，靠这一项就能落到「高考考场那批」。
     cache.tags && cache.tags.length > 0
       ? select([
-        { value: '', label: '全部标签' },
+        { value: '', label: t('devices.allTags') },
         ...cache.tags.map((t) => ({ value: t.id, label: `${t.name}（${t.deviceCount}）` })),
       ], filter.tagId, (v) => {
         filter.tagId = v;
@@ -368,15 +369,15 @@ function renderToolbar() {
       })
       : null,
     h('div.spacer'),
-    h('button.btn.btn-sm', { type: 'button', onClick: exportDevices }, '导出 CSV'),
-    h('button.btn.btn-sm', { type: 'button', onClick: openImportDialog }, '批量导入'),
+    h('button.btn.btn-sm', { type: 'button', onClick: exportDevices }, t('devices.exportCsv')),
+    h('button.btn.btn-sm', { type: 'button', onClick: openImportDialog }, t('devices.bulkImport')),
     view === 'groups' && tree.length > 0
       ? h('div.segmented',
         h('button', {
           class: `segmented-item${filter.buildingId === '' ? ' active' : ''}`,
           type: 'button',
           onClick: () => switchBuilding(''),
-        }, '全部'),
+        }, t('devices.filterAll')),
         ...tree.map(({ root }) => h('button', {
           class: `segmented-item${filter.buildingId === root.id ? ' active' : ''}`,
           type: 'button',
@@ -386,7 +387,7 @@ function renderToolbar() {
           class: `segmented-item${filter.buildingId === NO_BUILDING ? ' active' : ''}`,
           type: 'button',
           onClick: () => switchBuilding(NO_BUILDING),
-        }, '未分组'),
+        }, t('devices.ungrouped')),
       )
       : null,
     h('div.segmented',
@@ -394,18 +395,18 @@ function renderToolbar() {
         class: `segmented-item${view === 'groups' ? ' active' : ''}`,
         type: 'button',
         onClick: () => switchView('groups'),
-      }, '看板视图'),
+      }, t('devices.viewBoard')),
       h('button', {
         class: `segmented-item${view === 'list' ? ' active' : ''}`,
         type: 'button',
         onClick: () => switchView('list'),
-      }, '列表视图'),
+      }, t('devices.viewList')),
     ),
-    h('button.btn.btn-sm.btn-primary', { type: 'button', onClick: () => openGroupDialog(null) }, '+ 新建楼栋'),
+    h('button.btn.btn-sm.btn-primary', { type: 'button', onClick: () => openGroupDialog(null) }, t('devices.newBuilding')),
     view === 'list'
-      ? h('button.btn.btn-sm', { type: 'button', onClick: openColumnCustomize }, '列设置')
+      ? h('button.btn.btn-sm', { type: 'button', onClick: openColumnCustomize }, t('devices.columnSettings'))
       : null,
-    h('button.btn.btn-sm', { type: 'button', onClick: () => refresh(true) }, '刷新'),
+    h('button.btn.btn-sm', { type: 'button', onClick: () => refresh(true) }, t('devices.refresh')),
   );
 }
 
@@ -451,7 +452,7 @@ async function refresh(showToast = false) {
   cache = { devices, groups, profiles, codes, tags };
   repaintAll();
 
-  if (showToast) toast('ok', '已刷新');
+  if (showToast) toast('ok', t('devices.refreshed'));
 }
 
 /**
@@ -472,12 +473,12 @@ function matchesState(device, state) {
 
 /** 状态计数条可选的状态（顺序即展示顺序：常见问题靠前）。 */
 const STATE_TABS = [
-  { value: '', label: '全部' },
-  { value: 'online', label: '在线' },
-  { value: 'pending', label: '待同步' },
-  { value: 'error', label: '异常' },
-  { value: 'offline', label: '离线' },
-  { value: 'revoked', label: '已停用' },
+  { value: '', label: t('devices.filterAll') },
+  { value: 'online', label: t('devices.stateOnline') },
+  { value: 'pending', label: t('devices.statePending') },
+  { value: 'error', label: t('devices.stateError') },
+  { value: 'offline', label: t('devices.stateOffline') },
+  { value: 'revoked', label: t('devices.stateRevoked') },
 ];
 
 /**
@@ -490,7 +491,7 @@ function statusTabs() {
     ...STATE_TABS.map((tab) => h('button', {
       type: 'button',
       class: `status-tab${filter.state === tab.value ? ' active' : ''}`,
-      title: tab.value ? `只看「${tab.label}」的设备` : '显示全部设备',
+      title: tab.value ? t('devices.tabFilter', { label: tab.label }) : t('devices.showAll'),
       onClick: () => {
         filter.state = tab.value;
         // 选中态画在工具栏上，所以要整页重画而不只是看板。
@@ -551,9 +552,9 @@ function renderBoardTree() {
     // 批量条：看板视图也要有，否则「选中」是死功能——勾了台设备却发现没地方执行操作。
     h('div#boardSelectionHost', selectionBar()),
     tree.length === 0
-      ? emptyState('folder', '还没有楼栋',
-        '按「楼栋 → 楼层 → 教室」组织：先建一栋楼，再往楼里加楼层，最后把教室设备拖进对应楼层。',
-        h('button.btn.btn-primary', { type: 'button', onClick: () => openGroupDialog(null) }, '新建楼栋'))
+      ? emptyState('folder', t('devices.noBuildings'),
+        t('devices.noBuildingsHint'),
+        h('button.btn.btn-primary', { type: 'button', onClick: () => openGroupDialog(null) }, t('devices.newBuildingTitle')))
       : h('div.board-stack', ...blocks),
   );
 }
@@ -567,12 +568,12 @@ function overviewBar(tree) {
   const allBuildings = tree.length > 0 && tree.every((b) => b.root.kind === 'building');
 
   return h('div.board-overview',
-    h('div.ov-stat', h('b', String(tree.length)), h('span', allBuildings ? '栋' : '个顶层分组')),
-    h('div.ov-stat', h('b', String(floors)), h('span', '层')),
-    h('div.ov-stat', h('b', String(total)), h('span', '间教室')),
+    h('div.ov-stat', h('b', String(tree.length)), h('span', allBuildings ? t('devices.unitBuilding') : t('devices.unitTopGroups'))),
+    h('div.ov-stat', h('b', String(floors)), h('span', t('devices.unitFloor'))),
+    h('div.ov-stat', h('b', String(total)), h('span', t('devices.unitRooms'))),
     h('div.ov-online',
       h('div.ov-online-head',
-        h('span', '在线设备'),
+        h('span', t('devices.onlineDevices')),
         h('b', `${online} / ${total}`)),
       h('div.ov-bar', h('i', { style: { width: `${rate}%` } })),
     ),
@@ -602,24 +603,24 @@ function buildingBlock({ root, floors }, devices) {
       h('span.gcard-badge', (root.name || '?').slice(0, 1)),
       h('div.bblock-title',
         h('span.bblock-name', root.name,
-          h('em.bblock-kind', root.kind === 'building' ? '楼栋' : '分组')),
+          h('em.bblock-kind', root.kind === 'building' ? t('devices.building') : t('devices.group'))),
         h('span.gcard-meta',
-          `${floors.length} 层 · ${all.length} 间 · 在线 ${online}`
+          t('devices.buildingStats', { floors: floors.length, rooms: all.length, online })
           + (profile ? ` · ${profile.name}` : '')),
       ),
       h('div.gcard-actions',
-        h('button.gcard-act', { type: 'button', title: '让该楼栋设备立即重新拉取配置', onClick: () => pushGroup(root) }, '下发'),
-        h('button.gcard-act', { type: 'button', title: '编辑楼栋', onClick: () => openGroupDialog(root) }, '编辑'),
-        h('button.gcard-act.danger', { type: 'button', title: '删除楼栋（连同楼层）', onClick: () => removeGroup(root) }, '删除'),
+        h('button.gcard-act', { type: 'button', title: t('devices.deployBuildingHint'), onClick: () => pushGroup(root) }, t('devices.deploy')),
+        h('button.gcard-act', { type: 'button', title: t('devices.editBuilding'), onClick: () => openGroupDialog(root) }, t('devices.edit')),
+        h('button.gcard-act.danger', { type: 'button', title: t('devices.deleteBuildingHint'), onClick: () => removeGroup(root) }, t('devices.delete')),
       ),
     ),
     h('div.bblock-floors',
       ...cards,
       h('button.floor-add', {
         type: 'button',
-        title: `在「${root.name}」下新增楼层`,
+        title: t('devices.addFloorUnder', { name: root.name }),
         onClick: () => openGroupDialog(null, { parent: root }),
-      }, '＋ 添加楼层'),
+      }, t('devices.addFloor')),
     ),
   );
 }
@@ -635,23 +636,26 @@ function floorCard(building, floor, members) {
 
   const body = h('div.fcard-body');
   if (members.length === 0) {
-    body.appendChild(h('div.fcard-empty', isBare ? '暂无未分层设备' : '把教室拖到这里'));
+    body.appendChild(h('div.fcard-empty', isBare ? t('devices.noUnfloored') : t('devices.dragRoomHere')));
   } else {
     body.append(...members.map((d) => deviceChip(d)));
   }
 
   // 楼栋还没有楼层时，这张卡片直接叫「本栋教室」，避免出现「未分层」这种别扭的说法。
   const hasFloors = cache.groups.some((g) => g.parentId === building.id);
-  const bareTitle = hasFloors ? '未分层' : '本栋教室';
+  const bareTitle = hasFloors ? t('devices.unfloored') : t('devices.thisBuildingRooms');
 
   const head = h('div.fcard-head',
     h('span.fcard-name', isBare ? bareTitle : floor.name),
-    h('span.fcard-meta', `${members.length} 间${online > 0 ? ` · 在线 ${online}` : ''}`),
+    h('span.fcard-meta', t('devices.floorMeta', {
+      count: members.length,
+      online: online > 0 ? t('devices.floorOnlineSuffix', { count: online }) : '',
+    })),
     isBare
       ? null
       : h('div.fcard-actions',
-        h('button.fcard-act', { type: 'button', title: '编辑楼层', onClick: () => openGroupDialog(floor) }, '编辑'),
-        h('button.fcard-act.danger', { type: 'button', title: '删除楼层', onClick: () => removeGroup(floor) }, '删除'),
+        h('button.fcard-act', { type: 'button', title: t('devices.editFloor'), onClick: () => openGroupDialog(floor) }, t('devices.edit')),
+        h('button.fcard-act.danger', { type: 'button', title: t('devices.deleteFloor'), onClick: () => removeGroup(floor) }, t('devices.delete')),
       ),
   );
 
@@ -664,15 +668,15 @@ function floorCard(building, floor, members) {
 function ungroupedBlock(members) {
   const body = h('div.fcard-body');
   if (members.length === 0) {
-    body.appendChild(h('div.fcard-empty', '没有未分组的设备'));
+    body.appendChild(h('div.fcard-empty', t('devices.noUngroupedDevices')));
   } else {
     body.append(...members.map((d) => deviceChip(d)));
   }
 
   const card = h('div.fcard.bare',
     h('div.fcard-head',
-      h('span.fcard-name', '未分组设备'),
-      h('span.fcard-meta', `${members.length} 间`),
+      h('span.fcard-name', t('devices.ungroupedDevices')),
+      h('span.fcard-meta', t('devices.roomsCount', { count: members.length })),
     ),
     body);
   bindDropTarget(card, body, '');
@@ -681,8 +685,8 @@ function ungroupedBlock(members) {
     h('div.bblock-head',
       h('span.gcard-badge', '—'),
       h('div.bblock-title',
-        h('span.bblock-name', '未归入楼栋'),
-        h('span.gcard-meta', '把教室拖到这里即可移出分组'),
+        h('span.bblock-name', t('devices.notInBuilding')),
+        h('span.gcard-meta', t('devices.dragToUngroup')),
       ),
     ),
     h('div.bblock-floors', card),
@@ -861,8 +865,8 @@ function bindListSelectionShortcuts() {
     for (const id of ids) selection.add(id);
     lastPickedId = ids[0];
     repaintAll();
-    toast('info', `已选中 ${ids.length} 台`,
-      `底部批量条可以下发配置 / 发通知 / 重启；按 Shift + 点击可只选其中一段。`, 4000);
+    toast('info', t('devices.selectedCount', { count: ids.length }),
+      t('devices.batchHint'), 4000);
   });
 }
 
@@ -924,21 +928,21 @@ async function moveDevice(deviceId, groupId) {
 
     Object.assign(device, updated);
     const target = groupId ? cache.groups.find((g) => g.id === groupId) : null;
-    toast('ok', '已调整归属', `${device.name} → ${target ? groupPathLabel(target) : '未分组'}`);
+    toast('ok', t('devices.moved'), `${device.name} → ${target ? groupPathLabel(target) : t('devices.ungrouped')}`);
     repaintBoard();
   } catch (err) {
-    toastError(err, '调整归属失败');
+    toastError(err, t('devices.moveFailed'));
   }
 }
 
 function groupPathLabel(group) {
   const parent = group.parentId ? cache.groups.find((g) => g.id === group.parentId) : null;
-  return parent ? `${parent.name} / ${group.name}` : `${group.name} · 整栋`;
+  return parent ? `${parent.name} / ${group.name}` : t('devices.groupWholeBuilding', { name: group.name });
 }
 
 async function pushGroup(group) {
-  if (!await confirmDialog('下发到分组',
-    `将立即通知「${group.name}」及其下楼层里的在线设备重新拉取配置。确定继续吗？`, '下发')) {
+  if (!await confirmDialog(t('devices.deployToGroup'),
+    t('devices.deployGroupConfirm', { name: group.name }), t('devices.deploy'))) {
     return;
   }
 
@@ -947,9 +951,9 @@ async function pushGroup(group) {
       method: 'POST',
       body: { scope: 'group', targetIds: [group.id], force: false, message: '' },
     });
-    toast('ok', '下发已发出', `影响 ${result.affected} 台设备。`);
+    toast('ok', t('devices.deploySent'), t('devices.affectedDevices', { count: result.affected }));
   } catch (err) {
-    toastError(err, '下发失败');
+    toastError(err, t('devices.deployFailed'));
   }
 }
 
@@ -966,21 +970,21 @@ function openGroupDialog(group, options = {}) {
   const nameInput = h('input', {
     type: 'text',
     value: group?.name || '',
-    placeholder: isFloor ? '例如：3 层' : '例如：一号教学楼',
+    placeholder: isFloor ? t('devices.floorPlaceholder') : t('devices.buildingPlaceholder'),
   });
-  const descInput = h('input', { type: 'text', value: group?.description || '', placeholder: '可选' });
+  const descInput = h('input', { type: 'text', value: group?.description || '', placeholder: t('devices.optional') });
 
   // 上级：顶层 = 楼栋；选中某个楼栋 = 楼层。
   const roots = buildTree().map((b) => b.root).filter((r) => r.id !== group?.id);
   const parentSelect = select(
-    [{ value: '', label: '（顶层：楼栋 / 独立分组）' }, ...roots.map((r) => ({ value: r.id, label: r.name }))],
+    [{ value: '', label: t('devices.topLevelOption') }, ...roots.map((r) => ({ value: r.id, label: r.name }))],
     parentOfSelf,
   );
 
   const profileSelect = select(
     [
-      { value: '', label: '（不指定，向上回退到楼栋 / 全局默认档案）' },
-      ...cache.profiles.map((p) => ({ value: p.id, label: `${p.name}（内容版本 ${p.revision}）` })),
+      { value: '', label: t('devices.inheritProfileOption') },
+      ...cache.profiles.map((p) => ({ value: p.id, label: t('devices.profileOption', { name: p.name, revision: p.revision }) })),
     ],
     group?.defaultProfileId || '',
   );
@@ -993,7 +997,7 @@ function openGroupDialog(group, options = {}) {
 
   const paintSwatches = () => {
     badgePreview.dataset.color = chosen.color;
-    badgePreview.textContent = (nameInput.value.trim() || '新').slice(0, 1);
+    badgePreview.textContent = (nameInput.value.trim() || t('devices.badgeNew')).slice(0, 1);
     swatches.replaceChildren(...GROUP_COLORS.map((key) => h('button', {
       class: `color-swatch${key === chosen.color ? ' active' : ''}`,
       type: 'button',
@@ -1018,9 +1022,9 @@ function openGroupDialog(group, options = {}) {
     if (parentId) {
       const parent = cache.groups.find((g) => g.id === parentId);
       hint.lastChild.textContent =
-        `将作为「${parent ? parent.name : ''}」下的楼层。教室设备直接拖进楼层即可。`;
+        t('devices.floorUnderHint', { parent: parent ? parent.name : '' });
     } else {
-      hint.lastChild.textContent = '顶层分组按「楼栋」呈现；不填上级时它就是一棵独立的楼栋 / 分组。';
+      hint.lastChild.textContent = t('devices.topLevelHint');
     }
   };
 
@@ -1028,19 +1032,19 @@ function openGroupDialog(group, options = {}) {
   updateHint();
 
   modal({
-    title: group ? `编辑 · ${group.name}` : (options.parent ? `在「${options.parent.name}」下新增楼层` : '新建楼栋'),
+    title: group ? t('devices.editGroupTitle', { name: group.name }) : (options.parent ? t('devices.addFloorTitle', { name: options.parent.name }) : t('devices.newBuildingTitle')),
     width: 'wide',
     body: h('div',
-      field('名称', nameInput),
-      field('备注', descInput, '仅用于管理端展示。'),
-      field('上级', parentSelect, '层级最多两层：楼栋 → 楼层；教室不再建分组，直接用设备表示。'),
+      field(t('devices.fieldName'), nameInput),
+      field(t('devices.fieldRemark'), descInput, t('devices.fieldRemarkHint')),
+      field(t('devices.fieldParent'), parentSelect, t('devices.fieldParentHint')),
       hint,
-      field('标识色', h('div.color-row', badgePreview, swatches),
-        '楼栋用这个颜色标识，楼层默认沿用所属楼栋的颜色。'),
-      field('默认配置档案', profileSelect,
-        '留空时楼层会回退到所属楼栋的默认档案，再回退到全局默认档案。'),
+      field(t('devices.fieldColor'), h('div.color-row', badgePreview, swatches),
+        t('devices.fieldColorHint')),
+      field(t('devices.fieldProfile'), profileSelect,
+        t('devices.fieldProfileHint')),
     ),
-    confirmText: group ? '保存' : '创建',
+    confirmText: group ? t('devices.save') : t('devices.createGroup'),
     onConfirm: async () => {
       const body = {
         name: nameInput.value.trim(),
@@ -1052,20 +1056,20 @@ function openGroupDialog(group, options = {}) {
       };
 
       if (!body.name) {
-        toast('warn', '请填写名称');
+        toast('warn', t('devices.nameRequired'));
         return false;
       }
 
       try {
         if (group) {
           await api(`/admin/groups/${group.id}`, { method: 'PUT', body });
-          toast('ok', '已保存', '该分组下的设备会立即重新拉取配置。');
+          toast('ok', t('devices.saved'), t('devices.savedDeployHint'));
         } else {
           await api('/admin/groups', { method: 'POST', body });
-          toast('ok', body.parentId ? '楼层已创建' : '楼栋已创建');
+          toast('ok', body.parentId ? t('devices.floorCreated') : t('devices.buildingCreated'));
         }
       } catch (err) {
-        toastError(err, '保存失败');
+        toastError(err, t('devices.saveFailed'));
         return false;
       }
 
@@ -1082,18 +1086,18 @@ async function removeGroup(group) {
 
   let message;
   if (floors.length > 0) {
-    message = `删除「${group.name}」会连同其下 ${floors.length} 个楼层一起删除，`
-      + `其中 ${affected.length} 台设备将变为未分组。确定继续吗？`;
+    message = t('devices.deleteBuildingLine1', { name: group.name, floors: floors.length })
+      + t('devices.deleteBuildingLine2', { count: affected.length });
   } else if (affected.length > 0) {
-    message = `删除「${group.name}」后，其中 ${affected.length} 台设备会变为未分组（并回退到楼栋 / 全局默认档案）。确定继续吗？`;
+    message = t('devices.deleteFloorConfirm', { name: group.name, count: affected.length });
   } else {
-    message = `确定删除「${group.name}」吗？`;
+    message = t('devices.deleteGroupConfirm', { name: group.name });
   }
 
-  if (!await confirmDialog('删除分组', message, '删除', true)) return;
+  if (!await confirmDialog(t('devices.deleteGroupTitle'), message, t('devices.delete'), true)) return;
 
   await api(`/admin/groups/${group.id}`, { method: 'DELETE' });
-  toast('ok', '已删除');
+  toast('ok', t('devices.deleted'));
   await refresh();
 }
 
@@ -1106,11 +1110,11 @@ function renderTable() {
     // 首次使用的空状态：只说「没有设备」没用，要告诉人**接下来做什么**，
     // 否则他会以为这页坏了（下方「注册码」区块就是入口）。
     return h('div.card',
-      emptyState('monitor', '还没有设备接入',
-        '三步接入第一台教室电脑（下方「注册码」区块可随时生成）。', null, [
-          '生成一个注册码并复制',
-          '在教室电脑的 ClassIsland 里安装 IslandHub 插件，填入该注册码',
-          '设备会自动出现在本页，再拖到对应的楼层即可',
+      emptyState('monitor', t('devices.noDevices'),
+        t('devices.noDevicesHint'), null, [
+          t('devices.step1'),
+          t('devices.step2'),
+          t('devices.step3'),
         ]),
     );
   }
@@ -1118,7 +1122,7 @@ function renderTable() {
   if (devices.length === 0) {
     // 筛选结果为空时给一个出口：否则用户只能自己回想「我刚才是按什么筛的」。
     return h('div.card',
-      emptyState('search', '没有匹配的设备', '试试放宽条件或换个关键词。',
+      emptyState('search', t('devices.noMatches'), t('devices.noMatchesHint'),
         h('button.btn.btn-sm', {
           type: 'button',
           onClick: () => {
@@ -1127,14 +1131,14 @@ function renderTable() {
             filter.groupId = '';
             repaintAll();
           },
-        }, '清空筛选')),
+        }, t('devices.clearFilters'))),
     );
   }
 
   const allSelected = devices.length > 0 && devices.every((d) => selection.has(d.id));
   const headBox = h('input', { type: 'checkbox' });
   headBox.checked = allSelected;
-  headBox.title = '全选当前筛选结果';
+  headBox.title = t('devices.selectAllFiltered');
   headBox.addEventListener('change', () => {
     if (headBox.checked) {
       devices.forEach((d) => selection.add(d.id));
@@ -1151,7 +1155,7 @@ function renderTable() {
         h('thead', h('tr',
           h('th', { style: { width: '34px' } }, headBox),
           ...visibleColumns().map((c) => h('th', c.label)),
-          h('th', { style: { textAlign: 'right' } }, '操作'),
+          h('th', { style: { textAlign: 'right' } }, t('devices.colActions')),
         )),
         h('tbody', ...devices.map((d) => {
           const box = h('input', { type: 'checkbox' });
@@ -1177,14 +1181,14 @@ function renderTable() {
             h('td', box),
             ...visibleColumns().map((c) => c.cell(d)),
             h('td.actions',
-              h('button.btn.btn-sm', { type: 'button', onClick: () => openDeviceDialog(d) }, '编辑'),
+              h('button.btn.btn-sm', { type: 'button', onClick: () => openDeviceDialog(d) }, t('devices.edit')),
               ' ',
-              h('button.btn.btn-sm', { type: 'button', onClick: () => openLogsDialog(d) }, '日志'),
+              h('button.btn.btn-sm', { type: 'button', onClick: () => openLogsDialog(d) }, t('devices.logs')),
               ' ',
               h('button.btn.btn-sm', {
                 type: 'button',
                 onClick: () => toggleRevoke(d),
-              }, d.revoked ? '恢复' : '停用'),
+              }, d.revoked ? t('devices.restore') : t('devices.disable')),
             ),
           );
         })),
@@ -1218,17 +1222,17 @@ document.addEventListener('contextmenu', (event) => {
 
   event.preventDefault();
   showContextMenu(event.clientX, event.clientY, [
-    { label: '查看详情', action: () => openDeviceDialog(device) },
-    { label: '发送通知', action: () => bulkNotify([id]) },
-    { label: '查看日志', action: () => openLogsDialog(device) },
+    { label: t('devices.openDetail'), action: () => openDeviceDialog(device) },
+    { label: t('devices.sendNotice'), action: () => bulkNotify([id]) },
+    { label: t('devices.openLogs'), action: () => openLogsDialog(device) },
     '-',
-    { label: '唤醒（开机）', action: () => bulkWake([id]) },
-    { label: '重启 ClassIsland', action: () => bulkRestart([id]) },
+    { label: t('devices.wakeUp'), action: () => bulkWake([id]) },
+    { label: t('devices.restartClassIsland'), action: () => bulkRestart([id]) },
     {
-      label: '关机',
+      label: t('devices.shutdown'),
       danger: true,
-      action: () => bulkPower([id], 'power.shutdown', '关机',
-        '计算机会立即关机，未保存的工作会丢失。'),
+      action: () => bulkPower([id], 'power.shutdown', t('devices.shutdown'),
+        t('devices.shutdownConfirm')),
     },
   ]);
 });
@@ -1243,15 +1247,15 @@ function selectionBar() {
   const active = () => ids.filter((id) => cache.devices.some((d) => d.id === id && !d.revoked));
 
   return h('div.bulk-bar',
-    h('span.bulk-text', `已选 ${ids.length} 台`),
+    h('span.bulk-text', t('devices.selectedCountShort', { count: ids.length })),
     h('button.btn.btn-sm', {
       type: 'button',
       onClick: async () => {
         const targets = active();
-        if (targets.length === 0) { toast('warn', '所选设备均已被停用'); return; }
-        if (!await confirmDialog('批量下发配置',
+        if (targets.length === 0) { toast('warn', t('devices.allSelectedDisabled')); return; }
+        if (!await confirmDialog(t('devices.batchDeploy'),
           `将通知 ${targets.length} 台设备立即重新拉取配置。\n`
-          + `${selectionSummary(cache.devices, ids)}\n\n确定继续吗？`, '下发')) {
+          + `${selectionSummary(cache.devices, ids)}\n\n确定继续吗？`, t('devices.deploy'))) {
           return;
         }
 
@@ -1259,39 +1263,39 @@ function selectionBar() {
           method: 'POST',
           body: { scope: 'device', targetIds: targets, force: true, message: '' },
         });
-        toast('ok', '已下发', `影响 ${r.affected} 台设备。`);
+        toast('ok', t('devices.deploySentShort'), t('devices.affectedDevicesShort', { count: r.affected }));
         selection.clear();
         await refresh();
       },
-    }, '批量下发配置'),
+    }, t('devices.batchDeploy')),
     h('button.btn.btn-sm', {
       type: 'button',
       onClick: () => bulkNotify(active()),
-    }, '发送通知'),
+    }, t('devices.sendNotice')),
     h('button.btn.btn-sm', {
       type: 'button',
       onClick: () => bulkWake(active()),
-    }, '唤醒'),
+    }, t('devices.wakeShort')),
     h('button.btn.btn-sm', {
       type: 'button',
       onClick: () => bulkRestart(active()),
-    }, '重启 ClassIsland'),
+    }, t('devices.restartClassIsland')),
     h('button.btn.btn-sm.btn-danger', {
       type: 'button',
-      onClick: () => bulkPower(active(), 'power.restart', '重启计算机', '计算机将立即重启，未保存的工作会丢失。'),
-    }, '重启计算机'),
+      onClick: () => bulkPower(active(), 'power.restart', t('devices.restartComputer'), t('devices.restartConfirm')),
+    }, t('devices.restartComputer')),
     h('button.btn.btn-sm.btn-danger', {
       type: 'button',
-      onClick: () => bulkPower(active(), 'power.shutdown', '关机', '计算机会立即关机，未保存的工作会丢失。'),
-    }, '关机'),
+      onClick: () => bulkPower(active(), 'power.shutdown', t('devices.shutdown'), t('devices.shutdownConfirm')),
+    }, t('devices.shutdown')),
     h('button.btn.btn-sm', {
       type: 'button',
-      onClick: () => bulkPower(active(), 'power.sleep', '睡眠', '计算机将进入睡眠，按任意键或电源键即可唤醒。'),
-    }, '睡眠'),
+      onClick: () => bulkPower(active(), 'power.sleep', t('devices.sleep'), t('devices.sleepConfirm')),
+    }, t('devices.sleep')),
     h('button.btn.btn-sm.btn-ghost', {
       type: 'button',
       onClick: () => { selection.clear(); repaintAll(); },
-    }, '取消选择'),
+    }, t('devices.clearSelection')),
   );
 }
 
@@ -1308,7 +1312,7 @@ async function downloadFromApi(path, fileName, okMessage) {
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  if (okMessage) toast('ok', '已下载', okMessage);
+  if (okMessage) toast('ok', t('devices.downloaded'), okMessage);
 }
 
 /** 导出设备清单为 CSV：默认脱敏内网 IP —— 导出文件常被当附件转发，默认脱敏比事后追责划算。 */
@@ -1316,9 +1320,9 @@ async function exportDevices() {
   try {
     await downloadFromApi('/admin/devices/export',
       `devices-${new Date().toISOString().slice(0, 10)}.csv`,
-      '文件里的内网 IP 已脱敏；需要完整地址请用接口加 mask=false。');
+      t('devices.exportMasked'));
   } catch (err) {
-    toastError(err, '导出失败');
+    toastError(err, t('devices.exportFailed'));
   }
 }
 
@@ -1329,15 +1333,15 @@ async function exportDevices() {
 function openImportDialog() {
   const csvBox = h('textarea', {
     rows: '9',
-    placeholder: '粘贴 CSV 内容（需含表头）。可以先「导出 CSV」拿一份改，或用下方「下载模板」。',
+    placeholder: t('devices.csvPasteHint'),
     style: { width: '100%', fontFamily: 'ui-monospace, Consolas, monospace', fontSize: '12.5px' },
   });
   const result = h('div', { style: { marginTop: '12px' } });
 
   const run = async (dryRun) => {
-    if (!csvBox.value.trim()) { toast('warn', '请先粘贴 CSV 内容'); return; }
+    if (!csvBox.value.trim()) { toast('warn', t('devices.csvEmpty')); return; }
     clear(result);
-    result.appendChild(loadingBlock(dryRun ? '正在预演…' : '正在导入…'));
+    result.appendChild(loadingBlock(dryRun ? t('devices.dryRunning') : t('devices.importing')));
     try {
       const report = await api('/admin/devices/import', {
         method: 'POST',
@@ -1353,24 +1357,24 @@ function openImportDialog() {
   };
 
   return modal({
-    title: '批量导入设备（CSV）',
+    title: t('devices.importTitle'),
     width: 'xwide',
     hideFooter: true,
     body: h('div',
       h('div.notice.notice-info',
         h('span.notice-icon', 'i'),
-        h('div', '先用「预演」看一遍逐行结果，确认无误后再正式导入。'
-          + '分组与配置档案按**名称**匹配，名字写错的那一行会报错并跳过；'
-          + '更新已有设备时，空单元格表示「这一项不改」。')),
+        h('div', t('devices.importIntro')
+          + t('devices.importMatchHint')
+          + t('devices.importEmptyCellHint'))),
       h('div', { style: { marginTop: '12px' } }, csvBox),
       h('div', { style: { display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' } },
-        h('button.btn', { type: 'button', onClick: () => run(true) }, '预演（不写入）'),
-        h('button.btn.btn-primary', { type: 'button', onClick: () => run(false) }, '正式导入'),
+        h('button.btn', { type: 'button', onClick: () => run(true) }, t('devices.dryRun')),
+        h('button.btn.btn-primary', { type: 'button', onClick: () => run(false) }, t('devices.importForReal')),
         h('div.spacer'),
         h('button.btn.btn-ghost', {
           type: 'button',
           onClick: () => downloadFromApi('/admin/devices/import/template', 'devices-import-template.csv'),
-        }, '下载模板'),
+        }, t('devices.downloadTemplate')),
       ),
       result,
     ),
@@ -1380,59 +1384,59 @@ function openImportDialog() {
 /** 逐行结果表：把「哪几行会新增、哪几行报错」直接摊开，避免盲导。 */
 function renderImportReport(report, dryRun) {
   const head = h('div', { style: { fontSize: '12.5px', marginBottom: '6px' } },
-    `${dryRun ? '预演结果' : '导入结果'}：`,
-    h('b', `${report.created}`), ' 台预注册，',
-    h('b', `${report.updated}`), ' 台更新，',
-    report.failed > 0 ? h('span', { style: { color: 'var(--danger)' } }, `${report.failed} 行出错`) : '0 行出错');
+    t('devices.importResultLine', { kind: dryRun ? t('devices.dryRunResult') : t('devices.importResult') }),
+    h('b', `${report.created}`), t('devices.importCreated'),
+    h('b', `${report.updated}`), t('devices.importUpdated'),
+    report.failed > 0 ? h('span', { style: { color: 'var(--danger)' } }, t('devices.importFailedRows', { count: report.failed })) : t('devices.importNoErrors'));
 
   if (report.rows.length === 0) {
-    return h('div', head, '没有可处理的数据行。');
+    return h('div', head, t('devices.importNoRows'));
   }
 
   const table = h('div.table-wrap', { style: { maxHeight: '260px', overflowY: 'auto' } },
     h('table.table',
-      h('thead', h('tr', h('th', '行'), h('th', '动作'), h('th', '设备'), h('th', '说明'))),
+      h('thead', h('tr', h('th', t('devices.colRow')), h('th', t('devices.colAction')), h('th', t('devices.colDevice')), h('th', t('devices.colNote')))),
       h('tbody', ...report.rows.map((row) => h('tr',
         h('td', `${row.line}`),
-        h('td', h('span.badge' + (row.action === '错误' ? '.badge-danger' : '.badge-info'), row.action)),
+        h('td', h('span.badge' + (row.action === t('devices.colError') ? '.badge-danger' : '.badge-info'), row.action)),
         h('td', row.deviceName || '—'),
         h('td', { style: { fontSize: '12px' } }, row.message || '—'),
       )))));
 
   return h('div', head, table, dryRun
     ? h('div', { style: { marginTop: '8px', fontSize: '12px', color: 'var(--text-dim)' } },
-      '这只是预演，还没有写入任何数据。确认无误后点「正式导入」。')
+      t('devices.dryRunNotice'))
     : null);
 }
 
 /** 批量通知：填一次内容，向选中的多台设备统一下发（离线设备不排队，通知讲时效）。 */
 function bulkNotify(ids) {
-  if (ids.length === 0) { toast('warn', '所选设备均已被停用'); return; }
+  if (ids.length === 0) { toast('warn', t('devices.allSelectedDisabled')); return; }
 
-  const titleInput = h('input', { type: 'text', placeholder: '例如：紧急通知' });
-  const msgInput = h('textarea', { placeholder: '提醒内容…', style: { minHeight: '80px' } });
+  const titleInput = h('input', { type: 'text', placeholder: t('devices.noticeTitlePlaceholder') });
+  const msgInput = h('textarea', { placeholder: t('devices.noticeBodyPlaceholder'), style: { minHeight: '80px' } });
   const speakChk = h('input', { type: 'checkbox' });
 
   modal({
-    title: `向 ${ids.length} 台设备发送通知`,
+    title: t('devices.noticeTitleWithCount', { count: ids.length }),
     body: h('div',
       // 通知是「讲时效」的：离线设备不排队——等它上线再收到这条通知，内容往往已经没意义了（#52）。
       h('div.notice.notice-info',
         h('span.notice-icon', 'i'),
         h('div', selectionSummary(cache.devices, [...selection], {
-          offlineNote: '不会收到（通知不排队：等它上线，这条内容通常已经过时）',
+          offlineNote: t('devices.noticeOfflineNote'),
         }))),
-      field('标题', titleInput, '可留空，只发正文。支持变量：{教室名} {机器名} {分组} {IP} {时间} {日期}'),
-      field('内容', msgInput, '同样支持上面那组变量，按各教室自动替换——例如「请 {教室名} 于 {时间} 关闭投影」。'),
+      field(t('devices.noticeTitle'), titleInput, t('devices.noticeTitleHint')),
+      field(t('devices.noticeBody'), msgInput, t('devices.noticeBodyHint')),
       h('label.checkbox-field', speakChk,
-        h('span', '语音播报'),
-        h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } }, '（教室大屏会朗读这条内容）')),
+        h('span', t('devices.noticeSpeech')),
+        h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } }, t('devices.noticeSpeechHint'))),
     ),
-    confirmText: '发送',
+    confirmText: t('devices.send'),
     onConfirm: async () => {
       const title = titleInput.value.trim();
       const message = msgInput.value.trim();
-      if (!title && !message) { toast('warn', '请填写通知内容'); return false; }
+      if (!title && !message) { toast('warn', t('devices.noticeBodyRequired')); return false; }
 
       const r = await api('/admin/devices/command', {
         method: 'POST',
@@ -1443,7 +1447,7 @@ function bulkNotify(ids) {
           includeOffline: false,
         },
       });
-      toast('ok', '已发送', broadcastSummary(r));
+      toast('ok', t('devices.sent'), broadcastSummary(r));
       selection.clear();
       await refresh();
       return true;
@@ -1453,22 +1457,22 @@ function bulkNotify(ids) {
 
 /** 批量重启 ClassIsland 进程（不动 Windows 本身，大屏会自动恢复）。 */
 async function bulkRestart(ids) {
-  if (ids.length === 0) { toast('warn', '所选设备均已被停用'); return; }
-  if (!await confirmDialog('重启 ClassIsland',
+  if (ids.length === 0) { toast('warn', t('devices.allSelectedDisabled')); return; }
+  if (!await confirmDialog(t('devices.restartClassIsland'),
     `将重启 ${ids.length} 台设备上的 ClassIsland 进程（大屏会短暂黑屏后自动恢复）。\n`
-    + `${selectionSummary(cache.devices, [...selection])}\n\n确定继续吗？`, '重启')) {
+    + `${selectionSummary(cache.devices, [...selection])}\n\n确定继续吗？`, t('devices.restart'))) {
     return;
   }
 
-  await sendGuardedCommand({ kind: 'restart', deviceIds: ids, includeOffline: false }, '重启 ClassIsland');
+  await sendGuardedCommand({ kind: 'restart', deviceIds: ids, includeOffline: false }, t('devices.restartClassIsland'));
   selection.clear();
   await refresh();
 }
 
 /** 批量电源操作：关机 / 重启 / 睡眠（仅 Windows 终端，二次确认后立即执行，不可撤销）。 */
 async function bulkPower(ids, kind, label, warning) {
-  if (ids.length === 0) { toast('warn', '所选设备均已被停用'); return; }
-  if (!await confirmDialog(`批量${label}`,
+  if (ids.length === 0) { toast('warn', t('devices.allSelectedDisabled')); return; }
+  if (!await confirmDialog(t('devices.batchAction', { label }),
     `将对 ${ids.length} 台设备执行「${label}」。\n`
     + `${selectionSummary(cache.devices, [...selection])}\n`
     + `${warning}\n\n该操作不可撤销，确定继续吗？`,
@@ -1476,7 +1480,7 @@ async function bulkPower(ids, kind, label, warning) {
     return;
   }
 
-  await sendGuardedCommand({ kind, deviceIds: ids, includeOffline: false }, `批量${label}`);
+  await sendGuardedCommand({ kind, deviceIds: ids, includeOffline: false }, t('devices.batchAction', { label }));
   selection.clear();
   await refresh();
 }
@@ -1488,13 +1492,13 @@ async function bulkPower(ids, kind, label, warning) {
  * 「没上报 MAC」「不在同一广播域」这些都不是重试能解决的，含糊一句"部分失败"帮不上忙。</para>
  */
 async function bulkWake(ids) {
-  if (ids.length === 0) { toast('warn', '所选设备均已被停用'); return; }
-  if (!await confirmDialog('批量唤醒',
+  if (ids.length === 0) { toast('warn', t('devices.allSelectedDisabled')); return; }
+  if (!await confirmDialog(t('devices.batchWake'),
     `将向 ${ids.length} 台设备发送唤醒魔术包（Wake-on-LAN）。\n`
     + `${selectionSummary(cache.devices, ids)}\n`
-    + '前提：教室机已在 BIOS / 网卡里启用「网络唤醒」，且 A 端与教室处于同一广播域'
-    + '（跨 VLAN 需要在交换机上开 WoL 中继）。',
-    '唤醒')) {
+    + t('devices.wakePrereq1')
+    + t('devices.wakePrereq2'),
+    t('devices.wakeShort'))) {
     return;
   }
 
@@ -1502,14 +1506,14 @@ async function bulkWake(ids) {
     const r = await api('/admin/devices/wake', { method: 'POST', body: { deviceIds: ids } });
     const skipped = r?.skipped ?? [];
     if (skipped.length === 0) {
-      toast('ok', '已发送唤醒包', `已向 ${r?.sent ?? 0} 台设备发送。`);
+      toast('ok', t('devices.wakeSent'), t('devices.wakeSentCount', { count: r?.sent ?? 0 }));
     } else {
-      toast('warn', `已向 ${r?.sent ?? 0} 台发送，${skipped.length} 台跳过`,
+      toast('warn', t('devices.wakeSentSkipped', { sent: r?.sent ?? 0, skipped: skipped.length }),
         skipped.slice(0, 3).map((s) => `${s.deviceName}：${s.reason}`).join('；')
-        + (skipped.length > 3 ? ` …等 ${skipped.length} 台` : ''));
+        + (skipped.length > 3 ? t('devices.wakeSkippedMore', { count: skipped.length }) : ''));
     }
   } catch (e) {
-    toastError(e, '唤醒失败');
+    toastError(e, t('devices.wakeFailed'));
   }
 
   selection.clear();
@@ -1525,23 +1529,23 @@ async function sendGuardedCommand(body, label) {
     method: 'POST',
     body: { ...body, delaySeconds: 15 },
   });
-  toast('ok', '已下发', `${broadcastSummary(r)}将在 15 秒后执行。`);
-  undoBar(`${label}将在 15 秒后执行`, 15, async () => {
+  toast('ok', t('devices.deploySentShort'), t('devices.willRunIn15', { summary: broadcastSummary(r) }));
+  undoBar(t('devices.willRunIn15Short', { label }), 15, async () => {
     const canceled = await api('/admin/devices/commands/cancel', {
       method: 'POST',
       body: { ids: r.commandIds || [] },
     });
-    toast('ok', '已撤销', canceled > 0 ? `取消了 ${canceled} 条指令。` : '指令已派发或已结束，无法撤销。');
+    toast('ok', t('devices.cancelled'), canceled > 0 ? t('devices.cancelledCount', { count: canceled }) : t('devices.cancelTooLate'));
   });
   return r;
 }
 
 /** 批量操作结果的统一文案（不同接口返回字段略有差异）。 */
 function broadcastSummary(result) {
-  if (typeof result === 'number') return `影响 ${result} 台设备。`;
-  if (result && typeof result.affected === 'number') return `影响 ${result.affected} 台设备。`;
-  if (result && typeof result.queued === 'number') return `已排队 ${result.queued} 条指令。`;
-  return '指令已下发。';
+  if (typeof result === 'number') return t('devices.affectedDevicesRaw', { count: result });
+  if (result && typeof result.affected === 'number') return t('devices.affectedDevices', { count: result.affected });
+  if (result && typeof result.queued === 'number') return t('devices.queuedCount', { count: result.queued });
+  return t('devices.commandSent');
 }
 
 /** 「列」配置面板：勾选设备表格要显示的列。 */
@@ -1578,9 +1582,9 @@ function openColumnCustomize() {
   rerender();
 
   modal({
-    title: '自定义设备表格列',
+    title: t('devices.columnsTitle'),
     body: container,
-    confirmText: '完成',
+    confirmText: t('devices.done'),
     onConfirm: () => {
       repaintBoard();
       return true;
@@ -1590,21 +1594,21 @@ function openColumnCustomize() {
 
 /** 指令类型 → 中文名。未列出的类型直接显示原文，不猜。 */
 const COMMAND_KIND_LABELS = {
-  shell: '执行命令',
-  notify: '提醒通知',
-  'appearance.apply': '下发外观',
-  'plugin.refresh': '刷新插件列表',
-  'automation.list': '查询自动化信号',
-  'automation.trigger': '触发自动化',
-  screenshot: '屏幕截图',
-  restart: '重启 ClassIsland',
-  shutdown: '关机',
-  'power.off': '关机',
-  'power.reboot': '重启设备',
+  shell: t('devices.cmdRun'),
+  notify: t('devices.cmdNotice'),
+  'appearance.apply': t('devices.cmdAppearance'),
+  'plugin.refresh': t('devices.cmdRefreshPlugins'),
+  'automation.list': t('devices.cmdAutomationQuery'),
+  'automation.trigger': t('devices.cmdAutomationTrigger'),
+  screenshot: t('devices.cmdScreenshot'),
+  restart: t('devices.restartClassIsland'),
+  shutdown: t('devices.shutdown'),
+  'power.off': t('devices.shutdown'),
+  'power.reboot': t('devices.cmdRestart'),
 };
 
 function commandKindLabel(kind) {
-  if (!kind) return '（未知指令）';
+  if (!kind) return t('devices.cmdUnknown');
   return COMMAND_KIND_LABELS[kind] ? `${COMMAND_KIND_LABELS[kind]}（${kind}）` : kind;
 }
 
@@ -1614,10 +1618,10 @@ function shortDuration(seconds) {
   const days = Math.floor(s / 86400);
   const hours = Math.floor((s % 86400) / 3600);
   const minutes = Math.floor((s % 3600) / 60);
-  if (days > 0) return `${days} 天 ${hours} 小时`;
-  if (hours > 0) return `${hours} 小时 ${minutes} 分`;
-  if (minutes > 0) return `${minutes} 分 ${s % 60} 秒`;
-  return `${s} 秒`;
+  if (days > 0) return t('ui.durationDays', { days, hours });
+  if (hours > 0) return t('ui.durationHours', { hours, minutes });
+  if (minutes > 0) return t('ui.durationMinutes', { minutes, seconds: s % 60 });
+  return t('ui.durationSeconds', { seconds: s });
 }
 
 /**
@@ -1629,9 +1633,9 @@ function countdownText(iso, kind) {
   const diff = new Date(iso).getTime() - Date.now();
   const text = shortDuration(Math.abs(diff) / 1000);
   if (kind === 'expires') {
-    return diff <= 0 ? '已到期' : `还剩 ${text}`;
+    return diff <= 0 ? t('devices.expired') : t('devices.remaining', { text });
   }
-  return diff <= 0 ? '已到时间' : `${text}后生效`;
+  return diff <= 0 ? t('devices.dueNow') : t('devices.takesEffectIn', { text });
 }
 
 /**
@@ -1654,30 +1658,30 @@ function pendingCommandsSection(device) {
   }
 
   function renderQueue(rows, reload) {
-    const title = h('div.config-section-title', '待执行指令');
+    const title = h('div.config-section-title', t('devices.pendingCommands'));
 
     if (rows.length === 0) {
       return h('div',
         title,
         h('p.card-desc', { style: { margin: '0 0 4px' } }, device.online
-          ? '队列是空的：已下发的指令都已经派发给这台设备。'
-          : '队列是空的。这台设备当前离线，新下发的指令会先排队，等它上线后自动派发。'),
+          ? t('devices.queueEmpty')
+          : t('devices.queueEmptyOffline')),
       );
     }
 
     return h('div',
       title,
       h('p.card-desc', { style: { margin: '0 0 8px' } },
-        `有 ${rows.length} 条指令还没派发`
-        + `${device.online ? '' : '（设备当前离线，上线后会自动派发）'}。`
-        + '过期未派发的会自动作废，也可以在这里手动取消。'),
+        t('devices.pendingCount', { count: rows.length })
+        + `${device.online ? '' : t('devices.offlineQueueNote')}。`
+        + t('devices.queueExpiryHint')),
       h('div.config-panel', ...rows.map((row) => {
         const pendingNotBefore = row.notBefore && new Date(row.notBefore).getTime() > Date.now();
         return h('div.config-item',
           h('div', { style: { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 } },
             h('span', { style: { fontWeight: '600', fontSize: '13px' } }, commandKindLabel(row.kind)),
             h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } },
-              `${row.issuedBy || '—'} 于 ${formatDateTime(row.issuedAt)} 下发`),
+              t('devices.issuedBy', { by: row.issuedBy || '—', at: formatDateTime(row.issuedAt) })),
           ),
           h('span', {
             style: {
@@ -1694,26 +1698,26 @@ function pendingCommandsSection(device) {
                 style: { color: 'var(--text-faint)', fontSize: '12px', fontVariantNumeric: 'tabular-nums' },
                 dataset: { countdown: row.expiresAt, countdownKind: 'expires' },
               }, countdownText(row.expiresAt, 'expires'))
-              : h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } }, '长期有效'),
+              : h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } }, t('devices.noExpiry')),
             h('button.btn.btn-sm.btn-danger', {
               type: 'button',
-              title: '取消这条指令（设备尚未取走）',
+              title: t('devices.cancelCommandHint'),
               onClick: async () => {
-                if (!await confirmDialog('取消指令',
-                  `取消这条「${commandKindLabel(row.kind)}」？设备还没取走，取消后不会执行。`,
-                  '取消指令', true)) {
+                if (!await confirmDialog(t('devices.cancelCommand'),
+                  t('devices.cancelCommandConfirm', { kind: commandKindLabel(row.kind) }),
+                  t('devices.cancelCommand'), true)) {
                   return;
                 }
 
                 try {
                   await api(`/admin/devices/commands/${row.id}`, { method: 'DELETE' });
-                  toast('ok', '已取消');
+                  toast('ok', t('devices.cancelledShort'));
                   await reload();
                 } catch (err) {
-                  toastError(err, '取消失败');
+                  toastError(err, t('devices.cancelFailed'));
                 }
               },
-            }, '取消'),
+            }, t('devices.cancel')),
           ),
         );
       })),
@@ -1722,7 +1726,7 @@ function pendingCommandsSection(device) {
 
   async function load() {
     clear(box);
-    box.appendChild(h('p.card-desc', '正在读取待执行指令…'));
+    box.appendChild(h('p.card-desc', t('devices.loadingCommands')));
     try {
       const rows = await api(`/admin/devices/${device.id}/commands/queue`);
       clear(box);
@@ -1730,7 +1734,7 @@ function pendingCommandsSection(device) {
       tick();
     } catch (err) {
       clear(box);
-      box.appendChild(errorBlock(err, { title: '读取待执行指令失败', onRetry: load }));
+      box.appendChild(errorBlock(err, { title: t('devices.loadCommandsFailed'), onRetry: load }));
     }
   }
 
@@ -1746,15 +1750,15 @@ function openDeviceDialog(device) {
   const remarkInput = h('input', {
     type: 'text',
     value: device.remark || '',
-    placeholder: '例如：三楼东侧 / 班主任 张老师',
+    placeholder: t('devices.remarkPlaceholder'),
   });
 
   const groupSelect = select(assignmentOptions(), device.groupId || '');
 
   const profileSelect = select(
     [
-      { value: '', label: '（继承楼层 / 楼栋 / 默认档案）' },
-      ...cache.profiles.map((p) => ({ value: p.id, label: `${p.name}（内容版本 ${p.revision}）` })),
+      { value: '', label: t('devices.inheritProfile') },
+      ...cache.profiles.map((p) => ({ value: p.id, label: t('devices.profileOption', { name: p.name, revision: p.revision }) })),
     ],
     device.profileId || '',
   );
@@ -1768,66 +1772,66 @@ function openDeviceDialog(device) {
   const auditTimeline = auditTimelineSection(device.name);
 
   modal({
-    title: `教室 · ${device.name}`,
+    title: t('devices.detailTitle', { name: device.name }),
     width: 'wide',
     body: h('div',
       h('div.device-summary',
         h('div.summary-line', deviceStateBadge(device), syncBadge(device)),
         h('div.summary-line',
-          h('span.summary-key', '机器名'), device.machineName || '—',
+          h('span.summary-key', t('devices.machineName')), device.machineName || '—',
           h('span.summary-key', 'IP'), device.ipAddress || '—'),
         // 网卡地址单独一行并写明用途：点「唤醒」失败时，第一个要查的就是它有没有上报（#20）。
         h('div.summary-line',
-          h('span.summary-key', '网卡（唤醒用）'),
-          device.macAddress || '未上报——用 1.3.9.0 及以上的插件在线一次即可'),
+          h('span.summary-key', t('devices.macAddress')),
+          device.macAddress || t('devices.macNotReported')),
         // 离线原因诊断：在线时不显示，离线时给出可行动的原因（从未连接 / 离线多久 / 最近报错）。
         device.offlineReason
           ? h('div.summary-line', { style: { color: 'var(--text-dim)' } },
-            h('span.summary-key', '离线原因'), device.offlineReason)
+            h('span.summary-key', t('devices.offlineReason')), device.offlineReason)
           : null,
         h('div.summary-line',
           h('span.summary-key', 'ClassIsland'), device.classIslandVersion || '—',
-          h('span.summary-key', '插件'), device.pluginVersion || '—'),
+          h('span.summary-key', t('devices.plugin')), device.pluginVersion || '—'),
         h('div.summary-line',
-          h('span.summary-key', '当前课表'), d0(device.currentClassPlanName)),
+          h('span.summary-key', t('devices.colTimetable')), d0(device.currentClassPlanName)),
         h('div.summary-line',
-          h('span.summary-key', '最近心跳'), relativeTime(device.lastSeenAt),
-          h('span.summary-key', '注册时间'), formatDateTime(device.createdAt)),
+          h('span.summary-key', t('devices.colLastSeen')), relativeTime(device.lastSeenAt),
+          h('span.summary-key', t('devices.enrolledAt')), formatDateTime(device.createdAt)),
       ),
-      field('教室 / 设备名称', nameInput, '显示在管理界面与客户端中的名称，例如「高一(3)班」。'),
-      field('所属楼栋 / 楼层', groupSelect, '也可以在看板里直接把设备拖到目标楼层。'),
-      field('指定配置档案', profileSelect,
-        '优先级：设备指定 → 所属楼层 → 所属楼栋 → 全局默认。'),
-      field('备注', remarkInput, '仅管理端可见，用于在列表里快速认出这台设备。'),
-      field('标签', tagPicker(tagSelection),
-        '标签与「楼栋 / 楼层」是两回事：分组说明它在哪，标签说明它是什么（如「高考考场」「待维修」）。'
-        + '一台设备可以有多个标签，也可以用标签批量挑设备。'),
+      field(t('devices.nameField'), nameInput, t('devices.nameFieldHint')),
+      field(t('devices.locationField'), groupSelect, t('devices.locationFieldHint')),
+      field(t('devices.profileField'), profileSelect,
+        t('devices.profileFieldHint')),
+      field(t('devices.fieldRemark'), remarkInput, t('devices.remarkFieldHint')),
+      field(t('devices.colTags'), tagPicker(tagSelection),
+        t('devices.tagsFieldHint1')
+        + t('devices.tagsFieldHint2')),
       pendingCommands.el,
       auditTimeline.el,
       h('div.card-actions',
-        h('button.btn.btn-sm', { type: 'button', onClick: () => openLogsDialog(device) }, '查看日志'),
+        h('button.btn.btn-sm', { type: 'button', onClick: () => openLogsDialog(device) }, t('devices.openLogs')),
         h('button.btn.btn-sm', {
           type: 'button',
           onClick: async () => {
             await toggleRevoke(device);
           },
-        }, device.revoked ? '恢复设备' : '停用设备'),
+        }, device.revoked ? t('devices.restoreDevice') : t('devices.disableDevice')),
         h('button.btn.btn-sm.btn-danger', {
           type: 'button',
           onClick: async () => {
-            if (!await confirmDialog('删除设备',
-              `删除「${device.name}」后，该设备需要重新用注册码接入。确定继续吗？`, '删除', true)) {
+            if (!await confirmDialog(t('devices.deleteDevice'),
+              t('devices.deleteDeviceConfirm', { name: device.name }), t('devices.delete'), true)) {
               return;
             }
 
             await api(`/admin/devices/${device.id}`, { method: 'DELETE' });
-            toast('ok', '已删除');
+            toast('ok', t('devices.deleted'));
             await refresh();
           },
-        }, '删除设备'),
+        }, t('devices.deleteDevice')),
       ),
     ),
-    confirmText: '保存',
+    confirmText: t('devices.save'),
     onClose: () => pendingCommands.stop(),
     onConfirm: async () => {
       await api(`/admin/devices/${device.id}`, {
@@ -1846,7 +1850,7 @@ function openDeviceDialog(device) {
         body: { tagIds: [...tagSelection] },
       });
 
-      toast('ok', '已保存', `${nameInput.value.trim()} 的配置已更新。`);
+      toast('ok', t('devices.saved'), t('devices.updatedToast', { name: nameInput.value.trim() }));
       await refresh();
       return true;
     },
@@ -1861,9 +1865,9 @@ function d0(value) {
 async function toggleRevoke(device) {
   const revoking = !device.revoked;
   if (revoking) {
-    const ok = await confirmDialog('停用设备',
-      `停用后「${device.name}」将无法再连接 IslandHub 服务器，也不会收到新配置。确定继续吗？`,
-      '停用', true);
+    const ok = await confirmDialog(t('devices.disableDevice'),
+      t('devices.disableConfirm', { name: device.name }),
+      t('devices.disable'), true);
     if (!ok) return;
   }
 
@@ -1871,16 +1875,16 @@ async function toggleRevoke(device) {
     method: 'POST',
     body: { revoked: revoking },
   });
-  toast('ok', revoking ? '已停用' : '已恢复', device.name);
+  toast('ok', revoking ? t('devices.stateRevoked') : t('devices.restored'), device.name);
   await refresh();
 }
 
 async function openLogsDialog(device) {
   const dialog = modal({
-    title: `运行日志 · ${device.name}`,
+    title: t('devices.logsTitle', { name: device.name }),
     width: 'xwide',
     hideFooter: true,
-    body: loadingBlock('正在读取日志…'),
+    body: loadingBlock(t('devices.loadingLogs')),
   });
 
   const bodyEl = dialog.bodyEl;
@@ -1896,21 +1900,21 @@ async function openLogsDialog(device) {
   }
 
   const toolbar = h('div.toolbar',
-    h('span', { style: { fontSize: '12.5px', color: 'var(--text-dim)' } }, `共 ${logs.length} 条`),
+    h('span', { style: { fontSize: '12.5px', color: 'var(--text-dim)' } }, t('devices.logsCount', { count: logs.length })),
     h('div.spacer'),
     h('button.btn.btn-sm', {
       type: 'button',
       onClick: async () => {
-        if (!await confirmDialog('清空日志', `确定清空「${device.name}」的全部上报日志吗？`, '清空', true)) return;
+        if (!await confirmDialog(t('devices.clearLogs'), t('devices.clearLogsConfirm', { name: device.name }), t('devices.clear'), true)) return;
         await api(`/admin/devices/${device.id}/logs`, { method: 'DELETE' });
-        toast('ok', '已清空');
+        toast('ok', t('devices.cleared'));
         dialog.close();
       },
-    }, '清空日志'),
+    }, t('devices.clearLogs')),
   );
 
   const list = logs.length === 0
-    ? emptyState('profiles', '暂无日志', '客户端会在同步或异常时上报日志。')
+    ? emptyState('profiles', t('devices.noLogs'), t('devices.noLogsHint'))
     : h('div.log-list', ...logs.map((l) => h('div.log-line',
       h('span.log-time', formatDateTime(l.timestamp)),
       h(`span.log-level.${l.level}`, l.level.toUpperCase()),
@@ -1928,23 +1932,23 @@ function renderEnrollCodes() {
   return h('div.card', { style: { marginTop: '16px' } },
     h('div.card-head',
       h('div',
-        h('h3', '设备注册码'),
-        h('p.card-desc', '把注册码填入客户端的 IslandHub 插件设置中即可完成接入；注册码可限制使用次数与有效期。'),
+        h('h3', t('devices.enrollCodesTitle')),
+        h('p.card-desc', t('devices.enrollCodesDesc')),
       ),
-      h('button.btn.btn-primary.btn-sm', { type: 'button', onClick: openCreateCodeDialog }, '+ 生成注册码'),
+      h('button.btn.btn-primary.btn-sm', { type: 'button', onClick: openCreateCodeDialog }, t('devices.newEnrollCode')),
     ),
     codes.length === 0
-      ? emptyState('key', '还没有注册码', '生成一个注册码用于新设备接入。',
-        h('button.btn.btn-primary', { type: 'button', onClick: openCreateCodeDialog }, '生成注册码'))
+      ? emptyState('key', t('devices.noEnrollCodes'), t('devices.noEnrollCodesHint'),
+        h('button.btn.btn-primary', { type: 'button', onClick: openCreateCodeDialog }, t('devices.generateEnrollCode')))
       : h('div.table-wrap',
         h('table.data',
           h('thead', h('tr',
-            h('th', '注册码'),
-            h('th', '备注'),
-            h('th', '使用情况'),
-            h('th', '有效期'),
-            h('th', '创建时间'),
-            h('th', { style: { textAlign: 'right' } }, '操作'),
+            h('th', t('devices.enrollCode')),
+            h('th', t('devices.fieldRemark')),
+            h('th', t('devices.usage')),
+            h('th', t('devices.validity')),
+            h('th', t('devices.createdAt')),
+            h('th', { style: { textAlign: 'right' } }, t('devices.colActions')),
           )),
           h('tbody', ...codes.map(renderCodeRow)),
         ),
@@ -1953,7 +1957,7 @@ function renderEnrollCodes() {
 }
 
 function renderCodeRow(code) {
-  const remaining = code.remainingUses < 0 ? '不限' : code.remainingUses;
+  const remaining = code.remainingUses < 0 ? t('devices.unlimited') : code.remainingUses;
   const expired = code.expiresAt && new Date(code.expiresAt) < new Date();
   const exhausted = code.remainingUses === 0;
   const unavailable = code.available === false;
@@ -1965,64 +1969,64 @@ function renderCodeRow(code) {
       h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
         unavailable
           ? [
-            h('span.badge.badge-danger', '不可用'),
+            h('span.badge.badge-danger', t('devices.unavailable')),
             h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } },
-              `加密密钥已更换，${code.reference}（请重新生成）`),
+              t('devices.codeKeyChanged', { ref: code.reference })),
           ]
           : [
             h('code', { style: { fontSize: '14px', letterSpacing: '1.5px', fontWeight: '700' } }, code.code),
             h('button.btn.btn-ghost.btn-sm', {
               type: 'button',
-              title: '复制注册码',
-              onClick: () => copyText(code.code, '注册码已复制'),
-            }, '复制'),
+              title: t('devices.copyEnrollCode'),
+              onClick: () => copyText(code.code, t('devices.enrollCodeCopied')),
+            }, t('devices.copy')),
           ],
       ),
     ),
     h('td', code.note || h('span', { style: { color: 'var(--text-faint)' } }, '—')),
     h('td',
-      h('span', `已用 ${code.usedCount} / 剩余 ${remaining}`),
+      h('span', t('devices.codeUsage', { used: code.usedCount, left: remaining })),
     ),
     h('td',
-      expired ? h('span.badge.badge-danger', '已过期')
-        : exhausted ? h('span.badge.badge-danger', '次数已用尽')
+      expired ? h('span.badge.badge-danger', t('devices.expiredShort'))
+        : exhausted ? h('span.badge.badge-danger', t('devices.usesExhausted'))
           : code.expiresAt
             ? h('span', { style: { fontSize: '12px' } }, formatDateTime(code.expiresAt))
-            : h('span.badge.badge-ok', '长期有效'),
+            : h('span.badge.badge-ok', t('devices.noExpiry')),
     ),
     h('td', { style: { fontSize: '12px', color: 'var(--text-faint)' } }, formatDateTime(code.createdAt)),
     h('td.actions',
-      h('button.btn.btn-sm', { type: 'button', onClick: () => openEditCodeDialog(code) }, '编辑'),
+      h('button.btn.btn-sm', { type: 'button', onClick: () => openEditCodeDialog(code) }, t('devices.edit')),
       ' ',
       h('button.btn.btn-sm.btn-danger', {
         type: 'button',
         onClick: async () => {
-          if (!await confirmDialog('删除注册码', `确定删除注册码 ${target} 吗？已注册的设备不受影响。`, '删除', true)) return;
+          if (!await confirmDialog(t('devices.deleteEnrollCode'), t('devices.deleteCodeConfirm', { target }), t('devices.delete'), true)) return;
           await api(`/admin/enroll-codes/${encodeURIComponent(target)}`, { method: 'DELETE' });
-          toast('ok', '已删除');
+          toast('ok', t('devices.deleted'));
           await refresh();
         },
-      }, '删除'),
+      }, t('devices.delete')),
     ),
   );
 }
 
 function openCreateCodeDialog() {
-  const noteInput = h('input', { type: 'text', placeholder: '例如：高一（3）班' });
+  const noteInput = h('input', { type: 'text', placeholder: t('devices.enrollNotePlaceholder') });
   const maxUsesInput = h('input', { type: 'number', value: '1', min: '0' });
   const hoursInput = h('input', { type: 'number', value: '72', min: '0' });
 
   modal({
-    title: '生成注册码',
+    title: t('devices.generateEnrollCode'),
     width: 'wide',
     body: h('div',
-      field('备注', noteInput, '仅用于管理端识别，不会下发给客户端。'),
+      field(t('devices.fieldRemark'), noteInput, t('devices.enrollNoteHint')),
       h('div.form-row',
-        field('可注册次数', maxUsesInput, '填 0 表示不限次数（适合整班批量部署）。'),
-        field('有效小时数', hoursInput, '填 0 表示长期有效。'),
+        field(t('devices.maxUses'), maxUsesInput, t('devices.maxUsesHint')),
+        field(t('devices.validHours'), hoursInput, t('devices.validHoursHint')),
       ),
     ),
-    confirmText: '生成',
+    confirmText: t('devices.generate'),
     onConfirm: async () => {
       const result = await api('/admin/enroll-codes', {
         method: 'POST',
@@ -2035,20 +2039,20 @@ function openCreateCodeDialog() {
 
       await refresh();
       modal({
-        title: '注册码已生成',
+        title: t('devices.enrollCodeGenerated'),
         width: 'wide',
         hideFooter: true,
         body: h('div',
           h('p', { style: { marginTop: '0', color: 'var(--text-dim)' } },
-            '请把下面的注册码填入客户端的 IslandHub 插件设置中：'),
+            t('devices.enrollCodeGeneratedHint')),
           h('div.copy-row',
             h('div.code-block', result.code),
-            h('button.btn', { type: 'button', onClick: () => copyText(result.code, '注册码已复制') }, '复制'),
+            h('button.btn', { type: 'button', onClick: () => copyText(result.code, t('devices.enrollCodeCopied')) }, t('devices.copy')),
           ),
           h('div.notice.notice-info', { style: { marginTop: '14px' } },
             h('span.notice-icon', 'i'),
-            h('div', `可用次数：${result.maxUses === 0 ? '不限' : result.maxUses}；`
-              + `有效期：${result.expiresAt ? formatDateTime(result.expiresAt) : '长期有效'}`),
+            h('div', t('devices.codeMaxUses', { value: result.maxUses === 0 ? t('devices.unlimited') : result.maxUses })
+              + t('devices.codeValidity', { value: result.expiresAt ? formatDateTime(result.expiresAt) : t('devices.noExpiry') })),
           ),
         ),
       });
@@ -2065,20 +2069,20 @@ function openEditCodeDialog(code) {
   const target = unavailable ? code.reference : code.code;
 
   modal({
-    title: unavailable ? `编辑注册码 · ${code.reference}（不可用）` : `编辑注册码 · ${code.code}`,
+    title: unavailable ? t('devices.editCodeUnavailable', { ref: code.reference }) : t('devices.editCode', { code: code.code }),
     width: 'wide',
     body: h('div',
-      field('备注', noteInput),
+      field(t('devices.fieldRemark'), noteInput),
       h('div.form-row',
-        field('可注册次数', maxUsesInput, '填 0 表示不限。'),
-        field('重置有效期（小时）', hoursInput, '从当前时间起重新计算，填 0 表示长期有效。'),
+        field(t('devices.maxUses'), maxUsesInput, t('devices.zeroUnlimited')),
+        field(t('devices.resetValidity'), hoursInput, t('devices.resetValidityHint')),
       ),
       h('div.notice.notice-warn',
         h('span.notice-icon', '!'),
-        h('div', '保存会重置有效期，已使用次数保持不变。'),
+        h('div', t('devices.resetValidityWarn')),
       ),
     ),
-    confirmText: '保存',
+    confirmText: t('devices.save'),
     onConfirm: async () => {
       await api(`/admin/enroll-codes/${encodeURIComponent(target)}`, {
         method: 'PUT',
@@ -2088,7 +2092,7 @@ function openEditCodeDialog(code) {
           validHours: Number(hoursInput.value) || 0,
         },
       });
-      toast('ok', '已保存');
+      toast('ok', t('devices.saved'));
       await refresh();
       return true;
     },
