@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>IslandHub：把几十间教室的 ClassIsland 收进一个网页</title>
+<style>
+  body { max-width: 760px; margin: 40px auto; padding: 0 20px;
+         font: 16px/1.8 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; color: #222; }
+  h1 { font-size: 26px; line-height: 1.4; }
+  h2 { font-size: 19px; margin-top: 32px; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th, td { border: 1px solid #ddd; padding: 8px 10px; font-size: 14px; text-align: left; }
+  ul { padding-left: 22px; }
+  code { background: #f4f4f6; padding: 1px 4px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<h1>IslandHub：把几十间教室的 ClassIsland 收进一个网页</h1>
+<p>项目地址：https://github.com/1sIancl/ClassislandControlHub（GPL-3.0 开源）</p>
+<h2>它解决什么</h2>
+<p>作息改了要在四十台机器上各改一遍；某间教室时间慢两分钟得跑过去看；新装两间教室要把课表、作息、科目挨个配。</p>
+<p>ClassIsland 本身够用，缺的是「批量」和「看得见」。</p>
+<p>IslandHub 就做这两件事：一处配置下发到全部教室；一处界面看到每台教室的状态。</p>
+<h2>组成</h2>
+<tr><td>部分</td><td>装在哪</td><td>做什么</td></tr>
+<tr><td>A 端（服务器）</td><td>学校内网任意一台机器（Windows / Linux）</td><td>网页后台：课表、作息、科目、外观的统一管理与下发</td></tr>
+<tr><td>B 端（教室端）</td><td>教室机 ClassIsland 里的插件</td><td>连上 A 端，自动接收并应用配置</td></tr>
+<p>两者走 HTTP + JSON，支持 UDP 局域网自动发现（教室端不用手填 IP）。数据都在本机 SQLite，不经过云。</p>
+<h2>三步上手</h2>
+<p>1. 起服务端：Linux 一条命令（自动装 .NET 10、编译、注册 systemd）；Windows 解压运行，或一键注册成服务。</p>
+<p>2. 生成注册码：「设备管理 → 生成注册码」，可设次数与有效期。</p>
+<p>3. 教室端填码：教室里装插件（市场搜「IslandHub 接收端」，或把 .cipx 放进插件目录），</p>
+<p>填注册码后「立即同步」。设备随即出现，配置几秒生效。</p>
+<p>&gt; 同一版本有两种 A 端包：「框架依赖」与「自带运行时」（约 48 MB，解压即跑），功能一致。</p>
+<p>&gt; 换包保留 data/ 即可，设备不用重新注册。</p>
+<p>（图 1：登录页 / 仪表盘）</p>
+<h2>能做什么</h2>
+<tr><td>功能</td><td>说明</td></tr>
+<tr><td>配置下发</td><td>档案（课表 + 作息 + 科目）按楼栋 / 楼层 / 教室下发，推送前可看差异</td></tr>
+<tr><td>设备管理</td><td>楼栋 → 楼层 → 教室分组，支持拖拽、标签、CSV 批量导入导出</td></tr>
+<tr><td>远程管理</td><td>重启 / 关机 / 唤醒 / 音量亮度 / 截图 / 前台进程 / 远程命令</td></tr>
+<tr><td>定时提醒</td><td>按时间或设备上线触发，支持变量替换</td></tr>
+<tr><td>考试模式</td><td>一键切考试档案，结束后自动还原</td></tr>
+<tr><td>走班制</td><td>按星期与时段自动切档案</td></tr>
+<tr><td>临时换课</td><td>换科目、两节对调、调休，按日期生效</td></tr>
+<tr><td>大屏看板</td><td>值班室整屏：在线率、课表、最近事件、天气</td></tr>
+<tr><td>通知与集成</td><td>企业微信 / 钉钉 / 飞书 Webhook；AI 辅助导入课表</td></tr>
+<tr><td>账号与审计</td><td>多账号、权限矩阵、两步验证、操作审计与审批</td></tr>
+<tr><td>备份与回滚</td><td>快照、加密导出导入、更新前自动备份、一键回滚程序</td></tr>
+<p>（图 2：设备管理；图 3：配置下发的差异预览）</p>
+<h2>要求与注意</h2>
+<ul>
+<li>教室端：Windows 上的 ClassIsland 2.1.1.1 及以上（插件 apiVersion 2.1.1.1）。</li>
+<li>A 端：需要 .NET 10 运行时；不想在服务器上装就用「自带运行时」包。</li>
+<li>设计给校园内网使用；要公网访问请自己加反代与 HTTPS。</li>
+<li>远程唤醒要求教室机在 BIOS 与网卡里开启网络唤醒，且与 A 端在同一广播域。</li>
+<li>教室端装插件需要重启 ClassIsland 才生效，建议排在课间。</li>
+</ul>
+<h2>链接</h2>
+<ul>
+<li>仓库与 Release：https://github.com/1sIancl/ClassislandControlHub</li>
+<li>使用说明、接口、部署与故障排查：仓库内 README.md / USAGE.md / docs/</li>
+</ul>
+</body>
+</html>

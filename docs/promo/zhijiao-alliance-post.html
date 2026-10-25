@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>教室大屏怎么统一管：一个网页下发全部班级的课表与作息</title>
+<style>
+  body { max-width: 760px; margin: 40px auto; padding: 0 20px;
+         font: 16px/1.8 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; color: #222; }
+  h1 { font-size: 26px; line-height: 1.4; }
+  h2 { font-size: 19px; margin-top: 32px; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th, td { border: 1px solid #ddd; padding: 8px 10px; font-size: 14px; text-align: left; }
+  ul { padding-left: 22px; }
+  code { background: #f4f4f6; padding: 1px 4px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<h1>教室大屏怎么统一管：一个网页下发全部班级的课表与作息</h1>
+<p>项目地址：https://github.com/1sIancl/ClassislandControlHub（GPL-3.0 开源）</p>
+<h2>背景</h2>
+<p>学校用 ClassIsland 做大屏之后，常见的问题是「一台一台改」：</p>
+<ul>
+<li>作息调整，几十个班要各改一次，改到后面记不清哪些改过；</li>
+<li>有班级反馈时间不对、课表是上周的，只能跑过去看；</li>
+<li>新装教室要配课表、作息、科目、主题，容易漏项。</li>
+</ul>
+<p>IslandHub 是给这些事做的：一处配置，全部教室生效；每台教室的状态在一个页面里看得见。</p>
+<h2>怎么组成</h2>
+<tr><td>部分</td><td>装在哪</td><td>做什么</td></tr>
+<tr><td>A 端（服务器）</td><td>内网一台机器（Windows / Linux）</td><td>网页后台：统一管课表、作息、科目、外观并下发</td></tr>
+<tr><td>B 端（教室端）</td><td>教室机 ClassIsland 里的插件</td><td>连上 A 端，自动接收并应用配置</td></tr>
+<p>局域网内支持自动发现，教室端不用手输 IP；数据存在学校自己的机器上（单文件 SQLite）。</p>
+<h2>上手</h2>
+<p>1. 起服务端（Linux 一条命令 / Windows 解压运行，或注册成系统服务）。</p>
+<p>2. 「设备管理 → 生成注册码」。</p>
+<p>3. 教室机装插件（市场搜「IslandHub 接收端」）→ 填码 → 立即同步。</p>
+<p>（图 1：仪表盘）</p>
+<h2>教学场景里常用的几项</h2>
+<tr><td>场景</td><td>怎么做</td></tr>
+<tr><td>临时换课 / 调休</td><td>「快捷换课」按日期改某几节，或整班按另一张课表上课</td></tr>
+<tr><td>期中考试</td><td>「考试模式」一键切考试档案，考完自动还原</td></tr>
+<tr><td>走班制</td><td>按星期与时段自动切档案</td></tr>
+<tr><td>通知与提醒</td><td>定时或设备上线触发；也可发到企业微信 / 钉钉 / 飞书群</td></tr>
+<tr><td>教室里出问题</td><td>远程看截图、前台进程、日志，不必跑到教室</td></tr>
+<tr><td>到点开关机</td><td>定时关机 / 网络唤醒（需在 BIOS 与网卡开启 WoL）</td></tr>
+<p>（图 2：设备管理；图 3：快捷换课）</p>
+<h2>要求</h2>
+<ul>
+<li>教室端：Windows 上的 ClassIsland 2.1.1.1 及以上。</li>
+<li>A 端：.NET 10 运行时，或用「自带运行时」安装包（约 48 MB，解压即跑）。</li>
+<li>面向校园内网；公网访问请自行加反向代理与 HTTPS。</li>
+</ul>
+<h2>链接</h2>
+<ul>
+<li>仓库：https://github.com/1sIancl/ClassislandControlHub</li>
+<li>文档：仓库内 README.md / USAGE.md / docs/</li>
+</ul>
+</body>
+</html>

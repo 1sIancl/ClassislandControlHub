@@ -1,0 +1,35 @@
+{
+  "csvHeader": "设备名称,设备ID,分组,配置档案,备注",
+  "profileNamePattern": "示例档案*",
+  "buildings": [
+    {
+      "name": "教学楼A",
+      "floors": [
+        { "key": "A1", "name": "教学楼A-1层" },
+        { "key": "A2", "name": "教学楼A-2层" }
+      ]
+    },
+    {
+      "name": "教学楼B",
+      "floors": [
+        { "key": "B1", "name": "教学楼B-1层" }
+      ]
+    }
+  ],
+  "classes": [
+    { "floor": "A1", "name": "高一(1)班", "remark": "东侧靠窗" },
+    { "floor": "A1", "name": "高一(2)班", "remark": "东侧" },
+    { "floor": "A1", "name": "高一(3)班", "remark": "楼道口" },
+    { "floor": "A1", "name": "高一(4)班", "remark": "西侧" },
+    { "floor": "A1", "name": "高一(5)班", "remark": "西侧靠窗" },
+    { "floor": "A2", "name": "高二(1)班", "remark": "东侧" },
+    { "floor": "A2", "name": "高二(2)班", "remark": "东侧靠窗" },
+    { "floor": "A2", "name": "高二(3)班", "remark": "楼道口" },
+    { "floor": "A2", "name": "高二(4)班", "remark": "西侧" },
+    { "floor": "B1", "name": "高三(1)班", "remark": "备考班" },
+    { "floor": "B1", "name": "高三(2)班", "remark": "备考班" },
+    { "floor": "B1", "name": "高三(3)班", "remark": "东侧" },
+    { "floor": "B1", "name": "高三(4)班", "remark": "西侧" },
+    { "floor": "B1", "name": "高三(5)班", "remark": "靠楼梯" }
+  ]
+}
