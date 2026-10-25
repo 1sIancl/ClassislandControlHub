@@ -3,11 +3,13 @@
  * 提醒按账号隔离：这里只会看到、也只能改到自己创建的提醒；到点由服务端调度器推送到教室大屏。
  */
 
-import { api } from '../core/api.js?v=139';
+import { api } from '../core/api.js?v=140';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, select,
   emptyState, formatDateTime, relativeTime, hintIcon,
-} from '../core/ui.js?v=139';
+} from '../core/ui.js?v=140';
+// 富内容预览（#11）：与插件详情页共用同一个安全渲染器（先转义再套结构）。
+import { createRichPreview } from '../core/markdown.js?v=140';
 
 export const meta = {
   title: '定时提醒',
@@ -392,10 +394,15 @@ function openEditor(container, reminder) {
     repaintAction();
   });
   const actionHint = h('div');
+  // 富内容预览（#11）：边写边看，省得发出去才发现排版不对。
+  const preview = createRichPreview(() => contentInput.value);
+  contentInput.addEventListener('input', preview.refresh);
   // 模板变量（#11 的一部分）：提示写在这儿，比写进文档更容易被看到。
-  const contentField = field('内容', contentInput,
+  const contentField = field('内容', h('div', contentInput, preview.element),
     '可用变量：{time}（时刻）、{date}（日期）、{datetime}（日期时刻）、{targets}（推送到哪）、'
-    + '{count}（本次台数）——都在发送那一刻替换。');
+    + '{count}（本次台数）——都在发送那一刻替换。'
+    + '支持少量富文本：**粗体**、`代码`、[链接](https://…)、- 列表；'
+    + 'HTML 标签会按文字显示（不会被当作标签执行）。');
 
   // 触发方式（#12）：按时间 / 设备上线 / 配置同步完成。
   draft.triggerKind = reminder?.triggerKind || 'time';

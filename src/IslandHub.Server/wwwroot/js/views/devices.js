@@ -4,18 +4,20 @@
  * 并可切换到列表视图查看完整状态明细。注册码管理一并放在本页。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=139';
-import { toastError, errorBlock } from '../core/errors.js?v=139';
+import { api, fetchBlob } from '../core/api.js?v=140';
+import { toastError, errorBlock } from '../core/errors.js?v=140';
 import {
   h, clear, formatDateTime, relativeTime, toast, loadingBlock, skeletonRows,
   modal, confirmDialog, deviceStateBadge, syncBadge,
   emptyState, field, select, copyText, append, undoBar,
-} from '../core/ui.js?v=139';
-import { showContextMenu } from '../core/contextmenu.js?v=139';
-import { getLayout, saveLayout } from '../core/prefs.js?v=139';
-import { auditTimelineSection } from '../core/audit-timeline.js?v=139';
-import { selectionSummary } from '../core/batch-summary.js?v=139';
-import { t } from './../core/i18n.js?v=139';
+} from '../core/ui.js?v=140';
+import { showContextMenu } from '../core/contextmenu.js?v=140';
+import { getLayout, saveLayout } from '../core/prefs.js?v=140';
+import { auditTimelineSection } from '../core/audit-timeline.js?v=140';
+// 富内容预览（#11）：通知正文支持少量 Markdown，这里给它一个实时预览。
+import { createRichPreview } from '../core/markdown.js?v=140';
+import { selectionSummary } from '../core/batch-summary.js?v=140';
+import { t } from './../core/i18n.js?v=140';
 
 export const meta = {
   title: t('devices.title'),
@@ -1417,6 +1419,10 @@ function bulkNotify(ids) {
   const msgInput = h('textarea', { placeholder: t('devices.noticeBodyPlaceholder'), style: { minHeight: '80px' } });
   const speakChk = h('input', { type: 'checkbox' });
 
+  // 富内容预览（#11）：与定时提醒共用同一套安全渲染器，边写边看排版。
+  const preview = createRichPreview(() => msgInput.value);
+  msgInput.addEventListener('input', preview.refresh);
+
   modal({
     title: t('devices.noticeTitleWithCount', { count: ids.length }),
     body: h('div',
@@ -1427,7 +1433,7 @@ function bulkNotify(ids) {
           offlineNote: t('devices.noticeOfflineNote'),
         }))),
       field(t('devices.noticeTitle'), titleInput, t('devices.noticeTitleHint')),
-      field(t('devices.noticeBody'), msgInput, t('devices.noticeBodyHint')),
+      field(t('devices.noticeBody'), h('div', msgInput, preview.element), t('devices.noticeBodyHint')),
       h('label.checkbox-field', speakChk,
         h('span', t('devices.noticeSpeech')),
         h('span', { style: { color: 'var(--text-faint)', fontSize: '12px' } }, t('devices.noticeSpeechHint'))),

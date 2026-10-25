@@ -739,6 +739,28 @@ table.data td.actions {
   line-height: 1.75;
 }
 
+/* 富内容预览（#11）：贴在文本框下面的一小块，样式要"看得出是预览"——
+   虚线与浅底，避免和真正的内容区混淆。 */
+.md-preview {
+  margin-top: 8px;
+  padding: 10px 12px;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle, rgba(127, 127, 127, 0.06));
+}
+
+.md-preview::before {
+  content: attr(data-label);
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
 .md-body h3,
 .md-body h4,
 .md-body h5,

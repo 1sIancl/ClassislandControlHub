@@ -427,6 +427,7 @@ export default {
   'err.loadFailed': "Load failed",
   'err.retry': "Retry",
   'err.howToFix': "What to do: {hint}",
+  'md.previewLabel': "Preview",
   'md.view': "View",
   'md.image': "Image",
   'md.imageLink': "Image: <a href=\"{url}\" target=\"_blank\" rel=\"noopener noreferrer\">{label}</a>",

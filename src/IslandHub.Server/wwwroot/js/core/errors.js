@@ -10,9 +10,9 @@
  * 本模块只被视图层使用；`ui.js` 的通用兜底走 `error-hints.js`，避免循环依赖。
  */
 
-import { h, toast } from './ui.js?v=139';
-import { describeError, formatErrorText, hasErrorHint } from './error-hints.js?v=139';
-import { t } from '../core/i18n.js?v=139';
+import { h, toast } from './ui.js?v=140';
+import { describeError, formatErrorText, hasErrorHint } from './error-hints.js?v=140';
+import { t } from '../core/i18n.js?v=140';
 
 /**
  * 弹一个带「怎么办」的错误提示。

@@ -427,6 +427,7 @@ export default {
   'err.loadFailed': "加载失败",
   'err.retry': "重试",
   'err.howToFix': "怎么办：{hint}",
+  'md.previewLabel': "预览",
   'md.view': "查看",
   'md.image': "图片",
   'md.imageLink': "图片：<a href=\"{url}\" target=\"_blank\" rel=\"noopener noreferrer\">查看</a>",

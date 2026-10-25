@@ -10,7 +10,7 @@
  * `rel="noopener noreferrer"`、`target="_blank"`。</para>
  */
 
-import { t } from './i18n.js?v=139';
+import { t } from './i18n.js?v=140';
 
 /** HTML 转义（所有进入 innerHTML 的文本都必须先过这里）。 */
 function escapeHtml(text) {
@@ -58,6 +58,36 @@ function inlineHtml(escaped) {
   }
 
   return html;
+}
+
+/**
+ * 管理端「富文本预览」（#11）：输入时实时渲染提醒 / 通知的正文。
+ *
+ * <p>
+ * 为什么单独做一个函数而不是让调用方自己拼：**安全规则必须和最终渲染完全一致**。
+ * 预览要是比真渲染"更宽松"，用户就会以为自己能写的东西其实发不出去；
+ * 反过来"更严格"则会让人反复试。所以两者共用同一个 <see cref="renderMarkdown"/>。
+ * </p>
+ *
+ * @param {() => string} getText 取当前输入文本。
+ * @returns {{ element: HTMLElement, refresh: () => void }} 预览容器与手动刷新函数。
+ */
+export function createRichPreview(getText) {
+  const host = document.createElement('div');
+  host.className = 'md-preview';
+  // 标签靠 CSS ::before 显示（不占 DOM 文本，读屏与截图都不会重复念一遍）。
+  host.dataset.label = t('md.previewLabel');
+  host.hidden = true;
+
+  const refresh = () => {
+    const text = typeof getText === 'function' ? (getText() || '') : '';
+    // 空内容不显示空壳（会让人以为"预览坏了"）。
+    host.hidden = text.trim().length === 0;
+    host.replaceChildren(renderMarkdown(text));
+  };
+
+  refresh();
+  return { element: host, refresh };
 }
 
 /**
