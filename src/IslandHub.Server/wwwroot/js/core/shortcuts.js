@@ -9,8 +9,9 @@
  *   - `?` 打开帮助面板：**快捷键必须能被发现**，否则等于没做——侧边栏每个页面也带悬停提示。
  */
 
-import { h, modal, toast } from './ui.js?v=133';
-import { openSearch } from './search.js?v=133';
+import { h, modal, toast } from './ui.js?v=136';
+import { openSearch } from './search.js?v=136';
+import { t } from '../core/i18n.js?v=136';
 
 /**
  * 由 app.js 注入的「当前账号可见的页面清单」。
@@ -27,18 +28,18 @@ export function setPageLister(fn) {
 
 /** 快捷键清单：帮助面板与侧边栏提示共用这一处，避免两边写得不一致。 */
 const SHORTCUTS = [
-  { keys: 'Ctrl + K', desc: '命令与搜索面板：空闲时列出命令，输入后同时搜命令与设备 / 分组 / 档案 / 账号' },
-  { keys: 'Alt + 1 … 9', desc: '跳到侧边栏第 N 个页面（只算你当前有权限的页面）' },
-  { keys: 'N', desc: '发送通知（跳到设备管理并预置「在线」筛选）' },
-  { keys: 'P', desc: '下发配置' },
-  { keys: '/', desc: '聚焦本页搜索框（设备管理 / 审计日志）' },
-  { keys: 'J / K', desc: '在当前列表里上下移动（设备卡片、设备表格行）' },
-  { keys: 'X', desc: '勾选 / 取消勾选当前行（配合底部批量操作条）' },
-  { keys: 'Ctrl + A', desc: '设备列表里全选「当前筛选结果」；按住 Shift 再点某一台可选整段' },
-  { keys: 'Enter', desc: '打开当前行（设备详情 / 编辑）' },
-  { keys: '?', desc: '打开这份快捷键帮助（Shift + /）' },
-  { keys: 'Esc', desc: '关闭弹窗、取消当前操作' },
-  { keys: 'Enter', desc: '在弹出的对话框里确认（跟「确定」按钮等效）' },
+  { keys: 'Ctrl + K', desc: t('shortcuts.searchPanel') },
+  { keys: 'Alt + 1 … 9', desc: t('shortcuts.jumpPage') },
+  { keys: 'N', desc: t('shortcuts.notify') },
+  { keys: 'P', desc: t('tour.deploy') },
+  { keys: '/', desc: t('shortcuts.focusSearch') },
+  { keys: 'J / K', desc: t('shortcuts.moveList') },
+  { keys: 'X', desc: t('shortcuts.toggleRow') },
+  { keys: 'Ctrl + A', desc: t('shortcuts.selectAll') },
+  { keys: 'Enter', desc: t('shortcuts.openRow') },
+  { keys: '?', desc: t('shortcuts.openHelp') },
+  { keys: 'Esc', desc: t('shortcuts.closeModal') },
+  { keys: 'Enter', desc: t('shortcuts.confirmModal') },
 ];
 
 /** 当前可见的导航项（顺序与侧边栏一致）。 */
@@ -62,7 +63,7 @@ function modalOpen() {
 /** `?`：快捷键帮助面板。 */
 export function openShortcutHelp() {
   modal({
-    title: '键盘快捷键',
+    title: t('shortcuts.title'),
     width: 'wide',
     hideFooter: true,
     body: h('div',
@@ -72,7 +73,7 @@ export function openShortcutHelp() {
       ))),
       h('div.notice.notice-info', { style: { marginTop: '14px' } },
         h('span.notice-icon', 'i'),
-        h('div', '侧边栏每个页面也带快捷键提示，鼠标悬停即可看到。'),
+        h('div', t('shortcuts.sidebarHint')),
       ),
     ),
   });
@@ -80,9 +81,11 @@ export function openShortcutHelp() {
 
 /** `/`：聚焦本页搜索框。找不到就如实说一声，别让人以为快捷键坏了。 */
 function focusSearch() {
-  const box = document.querySelector('.toolbar-search, input[type="search"], input[type="text"][placeholder*="搜索"]');
+  // ⚠️ 不要用「placeholder 里含『搜索』」来定位：文案抽资源后英文界面里就没有这两个字了，
+  //    快捷键会悄悄失效。统一用 `.toolbar-search` 类（各页搜索框都带）或 `input[type=search]`。
+  const box = document.querySelector('.toolbar-search, input[type="search"]');
   if (!box || box.offsetParent === null) {
-    toast('info', '本页没有搜索框', '设备管理、审计日志页可以用 / 直接定位搜索框。', 4000);
+    toast('info', t('shortcuts.noSearchBox'), t('shortcuts.noSearchBoxHint'), 4000);
     return;
   }
   box.focus();

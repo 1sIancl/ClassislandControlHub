@@ -9,6 +9,8 @@
  * 批量操作本来就基于用户刚看到的那份列表，摘要和界面对得上才可信。
  */
 
+import { t } from './i18n.js?v=136';
+
 /**
  * 统计所选设备的口径。
  * @param {Array} devices 当前设备列表（需含 `online` / `revoked`）。
@@ -42,23 +44,23 @@ export function summarizeSelection(devices, ids) {
  */
 export function selectionSummary(devices, ids, options = {}) {
   const s = summarizeSelection(devices, ids);
-  const offlineNote = options.offlineNote || '不会收到（批量操作不排队）';
+  const offlineNote = options.offlineNote || t('batch.notDelivered');
 
-  const parts = [`共 ${s.total} 台`];
+  const parts = [t('batch.total', { count: s.total })];
   if (s.online > 0) {
-    parts.push(`在线 ${s.online} 台会立即执行`);
+    parts.push(t('batch.online', { count: s.online }));
   }
 
   if (s.offline > 0) {
-    parts.push(`离线 ${s.offline} 台${offlineNote}`);
+    parts.push(t('batch.offline', { count: s.offline, note: offlineNote }));
   }
 
   if (s.revoked > 0) {
-    parts.push(`已停用 ${s.revoked} 台会被跳过`);
+    parts.push(t('batch.revoked', { count: s.revoked }));
   }
 
   if (s.missing > 0) {
-    parts.push(`${s.missing} 台已不在列表中`);
+    parts.push(t('batch.missing', { count: s.missing }));
   }
 
   return `${parts.join('；')}。`;

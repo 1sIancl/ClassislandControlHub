@@ -13,7 +13,8 @@
  * 对它们的要求往往不同，同步过去反而是打扰。
  */
 
-import { api, session } from './api.js?v=133';
+import { api, session } from './api.js?v=136';
+import { t } from '../core/i18n.js?v=136';
 
 const PREFIX = 'controlhub.ui.';
 
@@ -41,9 +42,9 @@ const mqLight = window.matchMedia('(prefers-color-scheme: light)');
 // ────────────────────────────── 主题 ──────────────────────────────
 
 export const THEMES = [
-  { key: 'system', label: '跟随系统', icon: 'auto' },
-  { key: 'light', label: '浅色', icon: 'sun' },
-  { key: 'dark', label: '深色', icon: 'moon' },
+  { key: 'system', label: t('prefs.themeSystem'), icon: 'auto' },
+  { key: 'light', label: t('prefs.themeLight'), icon: 'sun' },
+  { key: 'dark', label: t('prefs.themeDark'), icon: 'moon' },
 ];
 
 export function getTheme() {
@@ -85,8 +86,8 @@ export function setSidebarCollapsed(value) {
 }
 
 export const DENSITIES = [
-  { key: 'comfort', label: '舒适' },
-  { key: 'dense', label: '紧凑' },
+  { key: 'comfort', label: t('prefs.densityComfortable') },
+  { key: 'dense', label: t('prefs.densityCompact') },
 ];
 
 export function getDensity() {
@@ -198,13 +199,13 @@ async function pushLayouts() {
   // 未登录（登录页 / 免登录外壳首屏）时不发请求：本机照常生效，登录后再同步。
   if (pushing || !session.me) return;
   pushing = true;
-  notifySync({ state: 'syncing', message: '正在同步到账号…' });
+  notifySync({ state: 'syncing', message: t('prefs.syncing') });
   try {
     await api('/admin/ui-preferences', { method: 'PUT', body: { layouts: collectLayouts() } });
     store.set(SYNC_PENDING_KEY, []);
-    notifySync({ state: 'ok', message: '已同步到账号' });
+    notifySync({ state: 'ok', message: t('prefs.synced') });
   } catch (err) {
-    notifySync({ state: 'error', message: `未能同步到账号（已保存在本机，下次登录会重试）：${err.message || '请求失败'}` });
+    notifySync({ state: 'error', message: t('prefs.syncFailed', { message: err.message || t('prefs.requestFailed') }) });
   } finally {
     pushing = false;
   }
@@ -227,7 +228,7 @@ export function applyRemotePrefs(preferences) {
   if (pendingScopes().length > 0) {
     void pushLayouts();
   } else if (lastSync.state === 'idle') {
-    notifySync({ state: 'ok', message: '已从账号载入布局偏好' });
+    notifySync({ state: 'ok', message: t('prefs.loadedFromAccount') });
   }
 }
 
@@ -237,8 +238,8 @@ export function applyRemotePrefs(preferences) {
 // 不像仪表盘布局那样需要跨设备一致（也就没必要进服务端的偏好白名单）。
 
 export const SCHED_SCALES = [
-  { key: 'comfort', label: '宽松', hint: '格子大、看得清（默认）' },
-  { key: 'compact', label: '紧凑', hint: '一屏能看更多节次' },
+  { key: 'comfort', label: t('prefs.gridLoose'), hint: t('prefs.gridLooseHint') },
+  { key: 'compact', label: t('prefs.densityCompact'), hint: t('prefs.gridTightHint') },
 ];
 
 export function getSchedScale() {
@@ -257,25 +258,25 @@ export function setSchedScale(value) {
 // ────────────────────────── 外观（强调色 / 字体 / 圆角） ──────────────────────────
 
 export const ACCENTS = [
-  { key: 'dodger', label: 'DodgerBlue（CI 默认）', value: '#1e90ff' },
-  { key: 'purple', label: '紫罗兰', value: '#7c5cff' },
-  { key: 'green', label: '青竹', value: '#16b364' },
-  { key: 'orange', label: '暖橙', value: '#f0883e' },
-  { key: 'pink', label: '樱粉', value: '#e8578f' },
-  { key: 'graphite', label: '石墨', value: '#64748b' },
+  { key: 'dodger', label: t('prefs.accentDodgerBlue'), value: '#1e90ff' },
+  { key: 'purple', label: t('prefs.accentViolet'), value: '#7c5cff' },
+  { key: 'green', label: t('prefs.accentBamboo'), value: '#16b364' },
+  { key: 'orange', label: t('prefs.accentOrange'), value: '#f0883e' },
+  { key: 'pink', label: t('prefs.accentSakura'), value: '#e8578f' },
+  { key: 'graphite', label: t('prefs.accentGraphite'), value: '#64748b' },
 ];
 
 export const FONTS = [
-  { key: 'default', label: '系统默认', value: '' },
-  { key: 'yahei', label: '微软雅黑', value: '"Microsoft YaHei UI", "Microsoft YaHei"' },
-  { key: 'pingfang', label: '苹方 / 思源黑体', value: '"PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC"' },
-  { key: 'mono', label: '等宽字体', value: '"Cascadia Mono", Consolas, "Courier New", monospace' },
+  { key: 'default', label: t('prefs.fontSystem'), value: '' },
+  { key: 'yahei', label: t('prefs.fontYaHei'), value: '"Microsoft YaHei UI", "Microsoft YaHei"' },
+  { key: 'pingfang', label: t('prefs.fontPingFang'), value: '"PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC"' },
+  { key: 'mono', label: t('prefs.fontMono'), value: '"Cascadia Mono", Consolas, "Courier New", monospace' },
 ];
 
 export const RADII = [
-  { key: 'sharp', label: '直角' },
-  { key: 'default', label: '默认' },
-  { key: 'round', label: '圆润' },
+  { key: 'sharp', label: t('prefs.radiusSquare') },
+  { key: 'default', label: t('prefs.radiusDefault') },
+  { key: 'round', label: t('prefs.radiusRound') },
 ];
 
 export function getAccent() {

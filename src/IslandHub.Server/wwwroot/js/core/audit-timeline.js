@@ -10,10 +10,11 @@
  * 注意 `target` 存的是**当时的名称**：对象改过名，改名前的那段历史查不到（界面里会说明）。
  */
 
-import { api } from './api.js?v=133';
-import { h, clear, formatDateTime, relativeTime, modal } from './ui.js?v=133';
-import { errorBlock } from './errors.js?v=133';
-import { auditActionLabel } from './audit-actions.js?v=133';
+import { api } from './api.js?v=136';
+import { h, clear, formatDateTime, relativeTime, modal } from './ui.js?v=136';
+import { errorBlock } from './errors.js?v=136';
+import { auditActionLabel } from './audit-actions.js?v=136';
+import { t } from '../core/i18n.js?v=136';
 
 /** 时间线默认取多少条（够看清近期改动，又不至于把弹窗撑爆）。 */
 const DEFAULT_LIMIT = 30;
@@ -29,7 +30,7 @@ export async function fetchTimeline(target, limit = DEFAULT_LIMIT) {
 /** 渲染成一行行的时间线（时间 · 操作者 · 动作 · 详情）。 */
 function renderRows(items) {
   if (items.length === 0) {
-    return h('p.card-desc', { style: { margin: '0' } }, '还没有以这个名称记录的操作。');
+    return h('p.card-desc', { style: { margin: '0' } }, t('timeline.empty'));
   }
 
   return h('div.config-panel', ...items.map((item) => h('div.config-item',
@@ -57,22 +58,22 @@ export function auditTimelineSection(target) {
   // 否则 `clear(box)` 会把标题一起清掉（本轮实测就是踩了这个：有记录、没标题）。
   const listBox = h('div');
   const box = h('div',
-    h('div.config-section-title', '操作历史'),
+    h('div.config-section-title', t('timeline.title')),
     h('p.card-desc', { style: { margin: '0 0 8px' } },
-      '只显示以当前名称记录的操作；改过名的话，更早的历史请到「审计日志」里查。'),
+      t('timeline.titleHint')),
     listBox,
   );
 
   const load = async () => {
     clear(listBox);
-    listBox.appendChild(h('p.card-desc', '正在读取操作历史…'));
+    listBox.appendChild(h('p.card-desc', t('timeline.loading')));
     try {
       const items = await fetchTimeline(target);
       clear(listBox);
       listBox.appendChild(renderRows(items));
     } catch (err) {
       clear(listBox);
-      listBox.appendChild(errorBlock(err, { title: '读取操作历史失败', onRetry: load }));
+      listBox.appendChild(errorBlock(err, { title: t('timeline.loadFailed'), onRetry: load }));
     }
   };
 
@@ -87,26 +88,26 @@ export function openAuditTimeline(title, target) {
 
   const load = async () => {
     clear(box);
-    box.appendChild(h('p.card-desc', '正在读取操作历史…'));
+    box.appendChild(h('p.card-desc', t('timeline.loading')));
     try {
       const items = await fetchTimeline(target);
       clear(box);
       box.appendChild(renderRows(items));
     } catch (err) {
       clear(box);
-      box.appendChild(errorBlock(err, { title: '读取操作历史失败', onRetry: load }));
+      box.appendChild(errorBlock(err, { title: t('timeline.loadFailed'), onRetry: load }));
     }
   };
 
   load();
 
   modal({
-    title: `操作历史 · ${title}`,
+    title: t('timeline.titleWith', { title }),
     width: 'wide',
     hideFooter: true,
     body: h('div',
       h('p.card-desc', { style: { margin: '0 0 10px' } },
-        '只显示以当前名称记录的操作；改过名的话，更早的历史请到「审计日志」里查。'),
+        t('timeline.titleHint')),
       box,
     ),
   });

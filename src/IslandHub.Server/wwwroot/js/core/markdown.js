@@ -10,6 +10,8 @@
  * `rel="noopener noreferrer"`、`target="_blank"`。</para>
  */
 
+import { t } from './i18n.js?v=136';
+
 /** HTML 转义（所有进入 innerHTML 的文本都必须先过这里）。 */
 function escapeHtml(text) {
   return text
@@ -37,12 +39,12 @@ function inlineHtml(escaped) {
     // 这里处理的是**转义后**的文本，所以标签长得像 `&lt;img src="..."&gt;`。
     text = text.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (match, alt, url) =>
       /^https?:\/\//i.test(url.replaceAll('&amp;', '&'))
-        ? `图片：<a href="${url}" target="_blank" rel="noopener noreferrer">${alt || '查看'}</a>`
-        : (alt || '图片'));
+        ? t('md.imageLink', { url, label: alt || t('md.view') })
+        : (alt || t('md.image')));
     text = text.replace(/&lt;img[^&]*?src="([^"]+)"[\s\S]*?&gt;/gi, (match, url) =>
       /^https?:\/\//i.test(url.replaceAll('&amp;', '&'))
-        ? `图片：<a href="${url}" target="_blank" rel="noopener noreferrer">查看</a>`
-        : '图片');
+        ? t('md.imageLink', { url, label: t('md.view') })
+        : t('md.image'));
 
     text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
     text = text.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, label, url) => {

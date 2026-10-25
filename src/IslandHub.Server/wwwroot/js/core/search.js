@@ -12,18 +12,19 @@
  * 面板最大的价值是「不知道功能在哪」时也能用。</para>
  */
 
-import { api } from './api.js?v=133';
-import { h, clear, modal, icon } from './ui.js?v=133';
+import { api } from './api.js?v=136';
+import { h, clear, modal, icon } from './ui.js?v=136';
+import { t } from '../core/i18n.js?v=136';
 
 /** 类别标签：与后端 `SearchItemDto.Kind` 对应；后三个是本面板自己造的类别。 */
 const KIND_LABELS = {
-  device: '设备',
-  group: '分组',
-  profile: '档案',
-  account: '账号',
-  action: '命令',
-  command: '页面',
-  found: '搜索结果',
+  device: t('search.catDevice'),
+  group: t('search.catGroup'),
+  profile: t('search.catProfile'),
+  account: t('search.catAccount'),
+  action: t('search.catCommand'),
+  command: t('search.catPage'),
+  found: t('search.catResults'),
 };
 
 /**
@@ -38,31 +39,31 @@ const KIND_LABELS = {
 const ACTION_COMMANDS = [
   {
     id: 'act-notify',
-    label: '发送通知',
+    label: t('search.cmdNotify'),
     keys: ['N'],
-    hint: '挑设备后批量推送文字或图片',
+    hint: t('search.cmdNotifyHint'),
     // 落到设备管理并预置「在线」筛选：通知讲时效，离线的设备发过去也没人看。
     run: () => { window.location.hash = '#/devices?status=online'; },
   },
   {
     id: 'act-deploy',
-    label: '下发配置',
+    label: t('search.cmdDeploy'),
     keys: ['P'],
-    hint: '把配置档案推送到设备',
+    hint: t('search.cmdDeployHint'),
     run: () => { window.location.hash = '#/deploy'; },
   },
   {
     id: 'act-remote',
-    label: '远程管理',
+    label: t('search.cmdRemote'),
     keys: [],
-    hint: '指令、插件、外观与诊断',
+    hint: t('search.cmdRemoteHint'),
     run: () => { window.location.hash = '#/remote'; },
   },
   {
     id: 'act-reminders',
-    label: '定时提醒',
+    label: t('search.cmdReminder'),
     keys: [],
-    hint: '按日期与周期自动推送到大屏',
+    hint: t('search.cmdReminderHint'),
     run: () => { window.location.hash = '#/reminders'; },
   },
 ];
@@ -86,7 +87,7 @@ export function openSearch(navItems = []) {
 
   const input = h('input.search-input', {
     type: 'search',
-    placeholder: '搜设备 / 分组 / 档案 / 账号，或输入命令…',
+    placeholder: t('search.placeholder'),
     spellcheck: 'false',
     autocomplete: 'off',
   });
@@ -102,7 +103,7 @@ export function openSearch(navItems = []) {
   let timer = null;
 
   const dialog = modal({
-    title: '命令与搜索',
+    title: t('search.title'),
     width: 'wide',
     hideFooter: true,
     // 任何关闭路径（✕ / Esc / 点遮罩 / Enter 跳转）都要停掉待发的防抖请求。
@@ -160,7 +161,7 @@ export function openSearch(navItems = []) {
   function allCommands() {
     const pages = (navItems || []).map((item) => ({
       kind: 'command',
-      badge: '页面',
+      badge: t('search.catPage'),
       label: item.label,
       sub: item.groupLabel || '',
       keys: item.keys || [],
@@ -170,7 +171,7 @@ export function openSearch(navItems = []) {
 
     const actions = ACTION_COMMANDS.map((c) => ({
       kind: 'action',
-      badge: '命令',
+      badge: t('search.catCommand'),
       label: c.label,
       sub: c.hint,
       keys: c.keys,
@@ -202,7 +203,7 @@ export function openSearch(navItems = []) {
       items = allCommands();
       active = 0;
       renderResults();
-      hint.textContent = `共 ${items.length} 条命令。↑↓ 选择，Enter 执行，Esc 关闭。`;
+      hint.textContent = t('search.commandsHint', { count: items.length });
       return;
     }
 
@@ -228,7 +229,7 @@ export function openSearch(navItems = []) {
         return;
       }
 
-      hint.textContent = `搜索失败：${err.message || '请求失败'}`;
+      hint.textContent = t('search.failed', { message: err.message || t('search.requestFailed') });
     }
 
     // 命令排前面：输入框里的字是「我要做什么」的概率高于「我要找什么」。
@@ -236,9 +237,9 @@ export function openSearch(navItems = []) {
     active = 0;
     renderResults();
     if (items.length > 0) {
-      hint.textContent = `找到 ${items.length} 条。↑↓ 选择，Enter 打开。`;
+      hint.textContent = t('search.resultsHint', { count: items.length });
     } else if (keyword.length > 0) {
-      hint.textContent = `没有找到与「${keyword}」相关的命令、设备、分组、档案或账号。`;
+      hint.textContent = t('search.empty', { keyword });
     }
   }
 

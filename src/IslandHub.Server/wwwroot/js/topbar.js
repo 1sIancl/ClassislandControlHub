@@ -14,6 +14,8 @@
  * </list>
  */
 
+import { t } from './core/i18n.js?v=136';
+
 /**
  * 是否处于「窄屏需要抽屉」的状态。与 topbar.css 的断点保持一致。
  * <para>720px（不是 900px）：900px 会在「笔记本窗口没开满」「高 DPI 缩放」
@@ -89,7 +91,7 @@ function syncToggleState(collapsed) {
 
   toggle.classList.toggle('is-active', collapsed);
   toggle.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
-  toggle.title = collapsed ? '显示侧边导航' : '隐藏侧边导航';
+  toggle.title = collapsed ? t('topbar.showNav') : t('topbar.hideNav');
   toggle.setAttribute('aria-label', toggle.title);
 }
 
@@ -109,7 +111,7 @@ export function toggleDrawer() {
   const drawer = document.createElement('div');
   drawer.className = 'nav-drawer';
   drawer.setAttribute('role', 'dialog');
-  drawer.setAttribute('aria-label', '导航菜单');
+  drawer.setAttribute('aria-label', t('topbar.navMenu'));
 
   for (const group of source.querySelectorAll('.nav-group')) {
     const groupBox = document.createElement('div');

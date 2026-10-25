@@ -3,6 +3,8 @@
  * 统一处理鉴权令牌、响应封套（ApiResult）、错误抛出与会话失效。
  */
 
+import { t } from './i18n.js?v=136';
+
 const TOKEN_KEY = 'controlhub.admin.token';
 const API_PREFIX = '/api/v1';
 
@@ -33,7 +35,7 @@ export function saveToken(token) {
 /** 协议错误。 */
 export class ApiError extends Error {
   constructor(code, message, status) {
-    super(message || '请求失败');
+    super(message || t('api.requestFailed'));
     this.name = 'ApiError';
     this.code = code || 'UNKNOWN';
     this.status = status || 0;
@@ -83,7 +85,7 @@ export async function api(path, options = {}) {
       body: body === undefined ? undefined : (isForm ? body : JSON.stringify(body)),
     });
   } catch (networkError) {
-    throw new ApiError('NETWORK', '无法连接到服务器，请检查网络或服务是否已启动。', 0);
+    throw new ApiError('NETWORK', t('api.unreachable'), 0);
   }
 
   let payload = null;
@@ -92,16 +94,16 @@ export async function api(path, options = {}) {
     try {
       payload = JSON.parse(text);
     } catch {
-      throw new ApiError('BAD_RESPONSE', `服务器返回了无法解析的内容（HTTP ${response.status}）。`, response.status);
+      throw new ApiError('BAD_RESPONSE', t('api.unparsable', { status: response.status }), response.status);
     }
   }
 
   if (!payload || typeof payload.ok !== 'boolean') {
     if (response.status === 401) {
       handleExpired();
-      throw new ApiError('AUTH_INVALID', '登录状态已失效，请重新登录。', 401);
+      throw new ApiError('AUTH_INVALID', t('api.sessionExpired'), 401);
     }
-    throw new ApiError('BAD_RESPONSE', `服务器返回格式异常（HTTP ${response.status}）。`, response.status);
+    throw new ApiError('BAD_RESPONSE', t('api.badFormat', { status: response.status }), response.status);
   }
 
   if (!payload.ok) {
@@ -162,18 +164,18 @@ export async function fetchBlob(path, options = {}) {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    throw new ApiError('NETWORK', '无法连接到服务器，请检查网络或服务是否已启动。', 0);
+    throw new ApiError('NETWORK', t('api.unreachable'), 0);
   }
 
   if (response.status === 401) {
     handleExpired();
-    throw new ApiError('AUTH_INVALID', '登录状态已失效，请重新登录。', 401);
+    throw new ApiError('AUTH_INVALID', t('api.sessionExpired'), 401);
   }
 
   if (!response.ok) {
     // 失败时服务端返回的是 JSON 而不是文件（例如「口令至少 6 位」）：
     // 把里面的可读原因取出来，否则用户只会看到一句「读取失败（HTTP 400）」。
-    let message = `读取失败（HTTP ${response.status}）。`;
+    let message = t('api.loadFailedHttp', { status: response.status });
     try {
       const payload = await response.json();
       if (payload?.error?.message) {

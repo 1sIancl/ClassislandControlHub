@@ -2,12 +2,12 @@
  * 审计日志视图：记录管理员操作与设备同步事件，便于排查与追溯。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=133';
-import { toastError } from '../core/errors.js?v=133';
+import { api, fetchBlob } from '../core/api.js?v=136';
+import { toastError } from '../core/errors.js?v=136';
 import {
   h, clear, formatDateTime, toast, loadingBlock, emptyState,
-} from '../core/ui.js?v=133';
-import { t } from '../core/i18n.js?v=133';
+} from '../core/ui.js?v=136';
+import { t } from '../core/i18n.js?v=136';
 
 export const meta = {
   title: t('audit.title'),
@@ -86,6 +86,8 @@ export async function render(container) {
         h('div.card-actions',
           h('input', {
             type: 'text',
+            // 带上 `.toolbar-search`：「/」快捷键靠这个类定位本页搜索框（不靠中文 placeholder）。
+            class: 'toolbar-search',
             placeholder: t('audit.searchPlaceholder'),
             value: query.search,
             style: { width: '200px' },

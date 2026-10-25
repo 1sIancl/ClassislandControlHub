@@ -9,7 +9,8 @@
  * 「这个功能在侧栏的哪个位置」）。</para>
  */
 
-import { h, clear } from './ui.js?v=133';
+import { h, clear } from './ui.js?v=136';
+import { t } from '../core/i18n.js?v=126';
 
 /** 二级侧栏里某一项（当前分组下才会渲染，所以必须先切页）。 */
 const sideItem = (key) => document.querySelector(`#sideNavList .nav-item[data-key="${key}"]`);
@@ -22,56 +23,56 @@ const sideItem = (key) => document.querySelector(`#sideNavList .nav-item[data-ke
  */
 const STEPS = [
   {
-    title: '欢迎使用 IslandHub',
-    text: '这是一套面向教室大屏的集中管理系统。接下来用一分钟带你走一遍主要流程，随时可以点「跳过」。',
+    title: t('tour.welcomeTitle'),
+    text: t('tour.welcomeText'),
     route: '#/dashboard',
     target: () => document.querySelector('.topbar-brand'),
   },
   {
-    title: '配置档案',
-    text: '课表、作息时间表与科目都在这里维护。可以用「新建示例档案」一键生成标准作息，也可以从 CSES 文件或 AI 导入现成课表。',
+    title: t('tour.profiles'),
+    text: t('tour.profilesText'),
     route: '#/profiles',
     target: () => sideItem('profiles'),
   },
   {
-    title: '设备管理',
-    text: '按「楼栋 → 楼层 → 教室」组织教室终端：先建楼栋，再往楼里加楼层，最后把教室设备放进对应楼层。',
+    title: t('tour.devices'),
+    text: t('tour.devicesText'),
     route: '#/devices',
     target: () => sideItem('devices'),
   },
   {
-    title: '配置下发',
-    text: '把配置档案绑定到设备、分组或全局默认，并查看「哪些教室还没取到最新配置」，可一键重新推送。',
+    title: t('deploy.title'),
+    text: t('tour.deployText'),
     route: '#/deploy',
     target: () => sideItem('deploy'),
   },
   {
-    title: '远程管理',
-    text: '远程命令行、插件启停、外观下发与即时提醒都在这里；指令是一次性派发的，不会重复执行。',
+    title: t('tour.remote'),
+    text: t('tour.remoteText'),
     route: '#/remote',
     target: () => sideItem('remote'),
   },
   {
-    title: '定时提醒',
-    text: '设置「每周一 8:00 提醒各班开晨会」这类定时任务，到点自动推送到教室大屏，可选语音播报。提醒按账号隔离，互不干扰。',
+    title: t('tour.reminders'),
+    text: t('tour.remindersText'),
     route: '#/reminders',
     target: () => sideItem('reminders'),
   },
   {
-    title: '时间偏移（授时）',
-    text: '教室设备「每天快几秒」用固定偏移修不好，在这里填每日漂移，系统按天累计补偿后再下发给所有终端。',
+    title: t('tour.timesync'),
+    text: t('tour.timesyncText'),
     route: '#/timesync',
     target: () => sideItem('timesync'),
   },
   {
-    title: '账号与权限',
-    text: '换密码、开两步验证，以及（超级管理员）新建账号并按模块勾选权限、发放注册邀请码。',
+    title: t('tour.accounts'),
+    text: t('tour.accountsText'),
     route: '#/accounts',
     target: () => sideItem('accounts'),
   },
   {
-    title: '准备开始',
-    text: '顶栏的「搜索」按钮就是命令面板（Ctrl + K），输入关键词可以直接跳到某个设备或某份档案；鼠标停在侧栏的页面上还能看到 Alt + 数字的跳页快捷键。',
+    title: t('tour.readyTitle'),
+    text: t('tour.readyText'),
     route: '#/dashboard',
     target: () => document.getElementById('searchBtn'),
   },
@@ -134,14 +135,14 @@ export function startTour(options = {}) {
   function paintCard(step) {
     clear(card);
     card.append(
-      h('div.tour-step', `第 ${index + 1} / ${steps.length} 步`),
+      h('div.tour-step', t('tour.stepOf', { index: index + 1, total: steps.length })),
       h('h3.tour-title', step.title),
       h('p.tour-text', step.text),
       h('div.tour-actions',
-        h('button.btn.btn-sm', { type: 'button', onClick: () => finish(true) }, '跳过'),
+        h('button.btn.btn-sm', { type: 'button', onClick: () => finish(true) }, t('tour.skip')),
         h('div.spacer'),
         index > 0
-          ? h('button.btn.btn-sm', { type: 'button', onClick: () => { index--; paint(); } }, '上一步')
+          ? h('button.btn.btn-sm', { type: 'button', onClick: () => { index--; paint(); } }, t('tour.prev'))
           : null,
         h('button.btn.btn-sm.btn-primary', {
           type: 'button',
@@ -153,7 +154,7 @@ export function startTour(options = {}) {
               finish(false);
             }
           },
-        }, index < steps.length - 1 ? '下一步' : '开始使用'),
+        }, index < steps.length - 1 ? t('tour.next') : t('tour.start')),
       ),
     );
   }

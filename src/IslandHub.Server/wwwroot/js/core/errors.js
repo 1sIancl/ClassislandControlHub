@@ -10,15 +10,16 @@
  * 本模块只被视图层使用；`ui.js` 的通用兜底走 `error-hints.js`，避免循环依赖。
  */
 
-import { h, toast } from './ui.js?v=133';
-import { describeError, formatErrorText, hasErrorHint } from './error-hints.js?v=133';
+import { h, toast } from './ui.js?v=136';
+import { describeError, formatErrorText, hasErrorHint } from './error-hints.js?v=136';
+import { t } from '../core/i18n.js?v=136';
 
 /**
  * 弹一个带「怎么办」的错误提示。
  * @param {any} err 错误对象。
  * @param {string} [title] 标题，例如「下发失败」。省略时用「操作失败」。
  */
-export function toastError(err, title = '操作失败') {
+export function toastError(err, title = t('err.actionFailed')) {
   // 带建议的多留一会儿：读完一句话再判断要做什么，默认的 3.6 秒不够。
   toast('error', title, formatErrorText(err), hasErrorHint(err) ? 8000 : 4200);
 }
@@ -34,17 +35,17 @@ export function errorBlock(err, options = {}) {
   return h('div.notice.notice-danger',
     h('span.notice-icon', '!'),
     h('div', { style: { minWidth: 0 } },
-      h('div', { style: { fontWeight: '600' } }, options.title || '加载失败'),
+      h('div', { style: { fontWeight: '600' } }, options.title || t('err.loadFailed')),
       info.message ? h('div', { style: { marginTop: '4px' } }, info.message) : null,
       info.hint
-        ? h('div', { style: { marginTop: '4px', color: 'var(--text-faint)' } }, `怎么办：${info.hint}`)
+        ? h('div', { style: { marginTop: '4px', color: 'var(--text-faint)' } }, t('err.howToFix', { hint: info.hint }))
         : null,
       options.onRetry
         ? h('button.btn.btn-sm', {
           type: 'button',
           style: { marginTop: '8px' },
           onClick: options.onRetry,
-        }, '重试')
+        }, t('err.retry'))
         : null,
     ),
   );
