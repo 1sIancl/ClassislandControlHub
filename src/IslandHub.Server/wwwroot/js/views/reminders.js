@@ -3,13 +3,13 @@
  * 提醒按账号隔离：这里只会看到、也只能改到自己创建的提醒；到点由服务端调度器推送到教室大屏。
  */
 
-import { api } from '../core/api.js?v=148';
+import { api } from '../core/api.js?v=149';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, select,
   emptyState, formatDateTime, relativeTime, hintIcon,
-} from '../core/ui.js?v=148';
+} from '../core/ui.js?v=149';
 // 富内容预览（#11）：与插件详情页共用同一个安全渲染器（先转义再套结构）。
-import { createRichPreview } from '../core/markdown.js?v=148';
+import { createRichPreview } from '../core/markdown.js?v=149';
 
 export const meta = {
   title: '定时提醒',
