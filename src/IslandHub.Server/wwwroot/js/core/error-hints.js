@@ -16,7 +16,7 @@
 // 文案资源（#48）：`i18n.js` **不依赖任何模块**（只 import 两个语言包），所以这里引它
 // 不会造成 `ui.js → error-hints.js → ui.js` 那种循环——文件头那句「刻意不 import」
 // 针对的是 ui.js / errors.js 这类会回指本文件的模块。
-import { t } from './i18n.js?v=151';
+import { t } from './i18n.js?v=152';
 
 const ERROR_HINTS = {
   // ── 认证 / 账号 ──

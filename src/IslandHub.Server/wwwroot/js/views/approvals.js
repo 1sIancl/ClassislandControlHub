@@ -8,12 +8,12 @@
  * 按钮是否显示由服务端给的 `canDecide` 决定，不在前端猜角色：
  * 超管的权限在服务端是「展开成全选」的，前端拿不到角色时判断不准，猜错就是「能点但一点就 403」。
  */
-import { api } from '../core/api.js?v=151';
+import { api } from '../core/api.js?v=152';
 import { toastError } from '../core/errors.js';
 import {
   h, clear, formatDateTime, toast, loadingBlock, confirmDialog,
-} from '../core/ui.js?v=151';
-import { t } from '../core/i18n.js?v=151';
+} from '../core/ui.js?v=152';
+import { t } from '../core/i18n.js?v=152';
 
 export const meta = {
   title: t('approvals.title'),

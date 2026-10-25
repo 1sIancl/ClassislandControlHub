@@ -10,25 +10,26 @@
  * 每一步都写明「要不要重启」，卸载 / 启停也复用同一套下发与进度。</para>
  */
 
-import { api, hasPermission } from '../core/api.js?v=151';
-import { toastError, errorBlock } from '../core/errors.js?v=151';
-import { hintForCode } from '../core/error-hints.js?v=151';
-import { renderMarkdown } from '../core/markdown.js?v=151';
+import { api, hasPermission } from '../core/api.js?v=152';
+import { toastError, errorBlock } from '../core/errors.js?v=152';
+import { hintForCode } from '../core/error-hints.js?v=152';
+import { renderMarkdown } from '../core/markdown.js?v=152';
 import {
   h, clear, toast, loadingBlock, field, select, modal, confirmDialog, emptyState,
   formatDateTime, relativeTime, hintIcon,
-} from '../core/ui.js?v=151';
+} from '../core/ui.js?v=152';
+import { t } from './../core/i18n.js?v=152';
 
 export const meta = {
-  title: '插件管理',
-  subtitle: '从 ClassIsland 插件市场缓存插件包，批量安装到教室终端',
+  title: t('pluginMarket.title'),
+  subtitle: t('pluginMarket.subtitle'),
 };
 
 const TABS = [
-  { key: 'market', label: '插件市场' },
-  { key: 'installed', label: '已安装' },
-  { key: 'deployments', label: '下发记录' },
-  { key: 'settings', label: '市场设置' },
+  { key: 'market', label: t('pluginMarket.tabMarket') },
+  { key: 'installed', label: t('pluginMarket.tabInstalled') },
+  { key: 'deployments', label: t('pluginMarket.tabDeployments') },
+  { key: 'settings', label: t('pluginMarket.tabSettings') },
 ];
 
 /** 页面状态（局部重画用）。 */
@@ -63,7 +64,7 @@ export async function render(container) {
     await loadAll();
   } catch (err) {
     clear(container);
-    container.appendChild(errorBlock(err, { title: '读取插件市场失败' }));
+    container.appendChild(errorBlock(err, { title: t('pluginMarket.loadFailed') }));
     return;
   }
 
@@ -116,23 +117,23 @@ function renderHeaderCard() {
 
     h('div.card-head',
       h('div',
-        h('h3', '插件市场索引'),
+        h('h3', t('pluginMarket.indexTitle')),
         h('p.card-desc', last
-          ? `上次同步：${formatDateTime(last)}（${relativeTime(last)}）。`
-          : '还没有同步过索引——点右侧「同步索引」从 ClassIsland 官方插件市场取一次。'),
+          ? t('pluginMarket.lastSync', { time: formatDateTime(last), ago: relativeTime(last) })
+          : t('pluginMarket.neverSynced')),
       ),
       h('div.card-actions',
         canWrite()
-          ? h('button.btn.btn-sm', { type: 'button', onClick: () => syncNow() }, '同步索引')
+          ? h('button.btn.btn-sm', { type: 'button', onClick: () => syncNow() }, t('pluginMarket.syncIndex'))
           : null,
-        h('button.btn.btn-sm', { type: 'button', onClick: () => refresh() }, '刷新页面数据'),
+        h('button.btn.btn-sm', { type: 'button', onClick: () => refresh() }, t('pluginMarket.refreshHint')),
       ),
     ),
 
     error
       ? h('div.notice.notice-warn',
         h('span.notice-icon', '!'),
-        h('div', `上次同步失败：${error}`))
+        h('div', t('pluginMarket.lastSyncFailed', { error })))
       : null,
   );
 }
@@ -141,12 +142,12 @@ async function syncNow() {
   try {
     const result = await api('/admin/plugin-market/sync', { method: 'POST' });
     if (result.ok) {
-      toast('ok', '索引已同步', `共 ${result.count} 个插件。`);
+      toast('ok', t('pluginMarket.indexSynced'), t('pluginMarket.indexSyncedCount', { count: result.count }));
     } else {
-      toast('error', '同步失败', result.error ?? '未知原因');
+      toast('error', t('pluginMarket.syncFailed'), result.error ?? t('pluginMarket.unknownReason'));
     }
   } catch (err) {
-    toastError(err, '同步失败');
+    toastError(err, t('pluginMarket.syncFailed'));
   }
 
   await refresh();
@@ -156,7 +157,7 @@ async function refresh() {
   try {
     await loadAll();
   } catch (err) {
-    toastError(err, '刷新失败');
+    toastError(err, t('pluginMarket.refreshFailed'));
     return;
   }
 
@@ -184,7 +185,7 @@ function renderMarketCard() {
 
   const search = h('input', {
     type: 'search',
-    placeholder: '搜索插件名称 / ID / 作者',
+    placeholder: t('pluginMarket.searchPlaceholder'),
     value: state.query,
     onInput: (e) => {
       state.query = e.target.value;
@@ -202,53 +203,53 @@ function renderMarketCard() {
   return h('div.card',
     h('div.card-head',
       h('div',
-        h('h3', '插件市场'),
-        h('p.card-desc', `索引里共 ${state.items.length} 个插件`
+        h('h3', t('pluginMarket.tabMarket')),
+        h('p.card-desc', t('pluginMarket.indexCount', { count: state.items.length })
           + (incompatible.length > 0
-            ? `，其中 ${incompatible.length} 个要求的 API 高于教室端最低版本（${baseline.text}）`
+            ? t('pluginMarket.incompatibleCount', { count: incompatible.length, baseline: baseline.text })
             : '')
-          + '；「缓存」是把 .cipx 取到 A 端本地，教室端安装时只从 A 端下载，不需要外网。'),
+          + t('pluginMarket.cacheHint')),
       ),
       h('div.card-actions',
         h('div', { style: { width: '220px' } }, search),
         incompatible.length > 0
           ? h('label.checkbox-field', compatBox,
-            h('span', '只看兼容的',
-              hintIcon('兼容＝插件要求的宿主 API 下限 ≤ 教室里**最低**的那台 ClassIsland 版本。'
-                + '教室端装的时候还会再校验一次（版本不够会直接拒绝），这里只是提前把装不了的挑出来。')))
+            h('span', t('pluginMarket.compatibleOnly'),
+              hintIcon(t('pluginMarket.compatibleHint')
+                + t('pluginMarket.compatibleHint2'))))
           : null,
       ),
     ),
     h('div#marketBody', renderMarketRows(items)),
     h('div.notice.notice-info',
       h('span.notice-icon', 'i'),
-      h('div', '插件由第三方作者提供，装了它就在教室机上运行别人的代码；'
-        + '只装确实需要的，并留意索引里的「要求 API」是否高于教室端的 ClassIsland 版本。')),
+      h('div', t('pluginMarket.noticeLead')
+        + t('pluginMarket.noticeTail'))),
   );
 }
 
 function renderMarketRows(items) {
   if (state.items.length === 0) {
-    return emptyState('database', '索引还是空的',
-      '点上方「同步索引」从 ClassIsland 官方插件市场取一份；如果同步失败，多半是 A 端访问不了外网。');
+    return emptyState('database', t('pluginMarket.indexEmpty'),
+      t('pluginMarket.indexEmptyHint'));
   }
 
   if (items.length === 0) {
     return h('div.table-wrap', h('table.data',
-      h('thead', h('tr', h('th', '插件'))),
-      h('tbody', h('tr', h('td', '没有匹配的插件。'))),
+      h('thead', h('tr', h('th', t('pluginMarket.plugin')))),
+      h('tbody', h('tr', h('td', t('pluginMarket.noMatches')))),
     ));
   }
 
   return h('div.table-wrap', h('table.data',
     h('thead', h('tr',
-      h('th', '插件'),
-      h('th', '版本'),
-      h('th', '要求 API'),
-      h('th', '作者'),
-      h('th', '下载量'),
-      h('th', '缓存状态'),
-      h('th', { style: { width: '210px' } }, '操作'),
+      h('th', t('pluginMarket.plugin')),
+      h('th', t('pluginMarket.version')),
+      h('th', t('pluginMarket.requiredApi')),
+      h('th', t('pluginMarket.author')),
+      h('th', t('pluginMarket.downloads')),
+      h('th', t('pluginMarket.cacheState')),
+      h('th', { style: { width: '210px' } }, t('pluginMarket.actions')),
     )),
     h('tbody', ...items.map((item) => h('tr',
       h('td',
@@ -260,7 +261,7 @@ function renderMarketRows(items) {
             // 名称可点开详情（role/tabindex 是为了键盘也能用——列表里的可点文字必须能 Tab 到）。
             h('button.plugin-name', {
               type: 'button',
-              title: '查看详情与自述文件',
+              title: t('pluginMarket.detailHint'),
               onClick: () => openDetailDialog(item),
             }, item.name),
             h('div', { style: { fontSize: '12px', color: 'var(--text-dim)' } }, item.id),
@@ -282,30 +283,30 @@ function renderMarketRows(items) {
       h('td', h('div.row-actions',
         h('button.btn.btn-sm', {
           type: 'button',
-          title: '看元信息与作者的自述文件',
+          title: t('pluginMarket.detailHint2'),
           onClick: () => openDetailDialog(item),
-        }, '详情'),
+        }, t('pluginMarket.detail')),
         canWrite()
           ? h('button.btn.btn-sm', {
             type: 'button',
-            title: '推荐 / 弃用标记，以及上架自检',
+            title: t('pluginMarket.opsHint'),
             onClick: () => openOpsDialog(item),
-          }, '运营')
+          }, t('pluginMarket.ops'))
           : null,
         canWrite()
           ? h('button.btn.btn-sm', {
             type: 'button',
-            title: item.cached ? '重新从镜像取一次这个包' : '把 .cipx 取到 A 端本地',
+            title: item.cached ? t('pluginMarket.recacheHint') : t('pluginMarket.cacheHint2'),
             onClick: (e) => cachePackage(item, e.currentTarget),
-          }, item.cached ? '重新缓存' : '缓存')
+          }, item.cached ? t('pluginMarket.recache') : t('pluginMarket.cache'))
           : null,
         canWrite()
           ? h('button.btn.btn-sm.btn-primary', {
             type: 'button',
             disabled: !item.cached,
-            title: item.cached ? '下发安装到教室端' : '先缓存，再下发',
+            title: item.cached ? t('pluginMarket.installHint') : t('pluginMarket.installHint2'),
             onClick: () => openDeployDialog(item),
-          }, '安装到教室')
+          }, t('pluginMarket.installToClassroom'))
           : null,
       )),
     ))),
@@ -371,7 +372,7 @@ function hostBaseline() {
     .filter((v) => parseVersion(v));
 
   if (versions.length === 0) {
-    return { version: '2.1.1.1', text: '2.1.1.1（文档下限，暂无设备上报）' };
+    return { version: '2.1.1.1', text: t('pluginMarket.baselineFallback') };
   }
 
   const lowest = versions.reduce((min, v) => (compareVersions(v, min) === true ? v : min), versions[0]);
@@ -391,7 +392,7 @@ function compatInfo(item, baseline) {
   }
 
   return older
-    ? { ok: false, reason: `要求 API ${item.apiVersion}，高于教室端最低版本 ${baseline.text}` }
+    ? { ok: false, reason: t('pluginMarket.requiresNewer', { required: item.apiVersion, baseline: baseline.text }) }
     : { ok: true };
 }
 
@@ -404,7 +405,7 @@ function renderApiCell(item) {
 
   return h('div',
     h('span.badge.badge-warn', item.apiVersion),
-    h('div', { style: { fontSize: '11.5px', color: 'var(--warn)', marginTop: '2px' } }, '不兼容本机教室端'),
+    h('div', { style: { fontSize: '11.5px', color: 'var(--warn)', marginTop: '2px' } }, t('pluginMarket.incompatible')),
     h('div', { style: { fontSize: '11px', color: 'var(--text-dim)' } }, info.reason),
   );
 }
@@ -444,7 +445,7 @@ function upgradeInfo(item) {
 
   return {
     devices: outdated.reduce((sum, [, names]) => sum + names.length, 0),
-    detail: outdated.map(([version, names]) => `${version}（${names.length} 台）`).join('、'),
+    detail: outdated.map(([version, names]) => t('pluginMarket.versionWithDevices', { version, count: names.length })).join('、'),
   };
 }
 
@@ -455,7 +456,7 @@ function renderUpgradeBadge(item) {
   }
 
   return h('div', { style: { marginTop: '2px' } },
-    h('span.badge.badge-warn', { title: `已装 ${info.detail}` }, `可升级 ${info.devices} 台`));
+    h('span.badge.badge-warn', { title: t('pluginMarket.installedDetail', { detail: info.detail }) }, t('pluginMarket.upgradable', { count: info.devices })));
 }
 
 function renderCacheCell(item) {
@@ -463,17 +464,17 @@ function renderCacheCell(item) {
     // 索引里这一版没缓存，但可能缓存过别的版本——这正说明「有新版本可用」。
     const others = (item.cachedVersions ?? []).filter((v) => v !== item.version);
     return h('div',
-      h('span.badge.badge-neutral', '未缓存'),
+      h('span.badge.badge-neutral', t('pluginMarket.notCached')),
       others.length > 0
         ? h('div', { style: { fontSize: '12px', color: 'var(--text-dim)', marginTop: '2px' } },
-          `本地有：${others.join(' / ')}`)
+          t('pluginMarket.localVersions', { list: others.join(' / ') }))
         : null,
     );
   }
 
   const size = item.sizeBytes ? `${(item.sizeBytes / 1024).toFixed(0)} KB` : '';
   return h('div',
-    h('span.badge.badge-ok', '已缓存'),
+    h('span.badge.badge-ok', t('pluginMarket.cached')),
     h('div', { style: { fontSize: '12px', color: 'var(--text-dim)', marginTop: '2px' } },
       `${size}${item.cachedAt ? ` · ${relativeTime(item.cachedAt)}` : ''}`),
     h('div', { style: { fontSize: '11px', color: 'var(--text-dim)', fontFamily: 'var(--mono)' } },
@@ -495,8 +496,8 @@ function renderOpsBadge(item) {
   return h('div', { style: { marginTop: '4px' } },
     h('span', {
       class: recommended ? 'badge badge-ok' : 'badge badge-warn',
-      title: ops.note || (recommended ? '本校推荐安装' : '本校已标记为不推荐'),
-    }, recommended ? '推荐' : '已弃用'));
+      title: ops.note || (recommended ? t('pluginMarket.recommendedHint') : t('pluginMarket.deprecatedHint')),
+    }, recommended ? t('pluginMarket.recommended') : t('pluginMarket.deprecated')));
 }
 
 /**
@@ -508,25 +509,25 @@ function renderOpsBadge(item) {
 function openOpsDialog(item) {
   const current = state.ops.get(item.id) || { status: 'normal', note: '' };
   const statusSelect = select([
-    { value: 'normal', label: '普通' },
-    { value: 'recommended', label: '推荐' },
-    { value: 'deprecated', label: '已弃用' },
+    { value: 'normal', label: t('pluginMarket.opsNormal') },
+    { value: 'recommended', label: t('pluginMarket.recommended') },
+    { value: 'deprecated', label: t('pluginMarket.deprecated') },
   ], current.status || 'normal', () => {});
   const noteInput = h('input', {
     type: 'text',
     value: current.note || '',
-    placeholder: '例如：1.4.8 实测可用 / 与本机宿主不兼容，别装',
+    placeholder: t('pluginMarket.opsNotePlaceholder'),
   });
   const checkBox = h('div', { style: { marginTop: '12px' } });
 
   const runCheck = async () => {
     clear(checkBox);
-    checkBox.appendChild(h('div', { style: { fontSize: '12px', color: 'var(--text-dim)' } }, '正在自检…'));
+    checkBox.appendChild(h('div', { style: { fontSize: '12px', color: 'var(--text-dim)' } }, t('pluginMarket.checking')));
     try {
       const result = await api(`/admin/plugin-ops/${encodeURIComponent(item.id)}/submission`);
       clear(checkBox);
       checkBox.appendChild(h('div.config-section-title',
-        result.ready ? '✓ 可以提交到官方索引' : '⚠ 还差几项，补齐再提交'));
+        result.ready ? t('pluginMarket.checkReady') : t('pluginMarket.checkMissing')));
       checkBox.appendChild(h('div.config-panel', ...result.items.map((row) => h('div.config-item',
         // 不通过的行直接标红：清单式的自检要能一眼扫到"还差哪几项"。
         h('span', { style: row.ok ? {} : { color: 'var(--danger)' } },
@@ -537,20 +538,20 @@ function openOpsDialog(item) {
           },
         }, row.detail)))));
     } catch (err) {
-      toastError(err, '自检失败');
+      toastError(err, t('pluginMarket.checkFailed'));
     }
   };
 
   modal({
-    title: `运营 · ${item.name}`,
+    title: t('pluginMarket.opsTitle', { name: item.name }),
     width: 'wide',
     body: h('div',
-      field('运营状态', statusSelect, '「推荐」会显示在插件名下方，「已弃用」用来提醒同事别再装——比在群里说一句管用。'),
-      field('备注', noteInput, '写给后来的自己：为什么这么标、上次验证是哪天。'),
+      field(t('pluginMarket.opsStatus'), statusSelect, t('pluginMarket.opsStatusHint')),
+      field(t('pluginMarket.opsNote'), noteInput, t('pluginMarket.opsNoteHint')),
       h('div.card-actions', { style: { marginTop: '12px' } },
-        h('button.btn.btn-sm', { type: 'button', onClick: runCheck }, '上架自检')),
+        h('button.btn.btn-sm', { type: 'button', onClick: runCheck }, t('pluginMarket.submissionCheck'))),
       checkBox),
-    confirmText: '保存',
+    confirmText: t('pluginMarket.save'),
     onConfirm: async () => {
       try {
         await api(`/admin/plugin-ops/${encodeURIComponent(item.id)}`, {
@@ -559,10 +560,10 @@ function openOpsDialog(item) {
         });
         await loadAll();
         paint();
-        toast('ok', '运营标记已保存');
+        toast('ok', t('pluginMarket.opsSaved'));
         return true;
       } catch (err) {
-        toastError(err, '保存失败');
+        toastError(err, t('pluginMarket.saveFailed'));
         return false;
       }
     },
@@ -571,7 +572,7 @@ function openOpsDialog(item) {
 
 function openDetailDialog(item) {
   const readmeBox = h('div.md-holder',
-    h('div', { style: { color: 'var(--text-dim)', fontSize: '12.5px' } }, '正在取作者的自述文件…'));
+    h('div', { style: { color: 'var(--text-dim)', fontSize: '12.5px' } }, t('pluginMarket.readmeLoading')));
 
   const metaRow = (label, value) => h('div.plugin-meta-row',
     h('span.plugin-meta-key', label),
@@ -584,7 +585,7 @@ function openDetailDialog(item) {
   if (item.repositoryUrl) {
     links.push(h('a', {
       href: item.repositoryUrl, target: '_blank', rel: 'noopener noreferrer',
-    }, '源码仓库'));
+    }, t('pluginMarket.repo')));
   }
 
   if (item.readmeLocalUrl) {
@@ -599,18 +600,18 @@ function openDetailDialog(item) {
         clear(readmeBox);
         readmeBox.appendChild(h('div.notice.notice-warn',
           h('span.notice-icon', '!'),
-          h('div', `取不到自述文件（${err.message}）——多半是 A 端访问不了外网。`,
+          h('div', t('pluginMarket.readmeFailed', { message: err.message }),
             item.repositoryUrl
               ? h('a', {
                 href: item.repositoryUrl, target: '_blank', rel: 'noopener noreferrer',
                 style: { marginLeft: '4px' },
-              }, '去仓库看 →')
+              }, t('pluginMarket.gotoRepo'))
               : null)));
       });
   } else {
     clear(readmeBox);
     readmeBox.appendChild(h('div', { style: { color: 'var(--text-dim)', fontSize: '12.5px' } },
-      '索引里这个插件没有登记自述文件。'));
+      t('pluginMarket.noReadme')));
   }
 
   modal({
@@ -618,31 +619,31 @@ function openDetailDialog(item) {
     width: 'xwide',
     body: h('div',
       h('div.plugin-meta',
-        metaRow('插件 ID', h('code', item.id)),
-        metaRow('版本', item.version || '—'),
-        metaRow('要求 API', compat.ok
+        metaRow(t('pluginMarket.pluginId'), h('code', item.id)),
+        metaRow(t('pluginMarket.version'), item.version || '—'),
+        metaRow(t('pluginMarket.requiredApi'), compat.ok
           ? (item.apiVersion || '—')
           : h('span', { style: { color: 'var(--warn)' } }, `${item.apiVersion}（${compat.reason}）`)),
-        metaRow('作者', item.author || '—'),
-        metaRow('下载量 / 星标', `${item.downloadCount ?? 0} / ${item.starsCount ?? 0}`),
-        metaRow('支持平台',
-          (item.supportedOSPlatforms ?? []).length > 0 ? item.supportedOSPlatforms.join(' / ') : '未声明'),
-        metaRow('本地缓存', item.cached
-          ? `已缓存 ${(item.sizeBytes / 1024).toFixed(0)} KB，SHA256 ${(item.sha256 ?? '').slice(0, 16)}…`
+        metaRow(t('pluginMarket.author'), item.author || '—'),
+        metaRow(t('pluginMarket.downloadsStars'), `${item.downloadCount ?? 0} / ${item.starsCount ?? 0}`),
+        metaRow(t('pluginMarket.platforms'),
+          (item.supportedOSPlatforms ?? []).length > 0 ? item.supportedOSPlatforms.join(' / ') : t('pluginMarket.notDeclared')),
+        metaRow(t('pluginMarket.localCache'), item.cached
+          ? t('pluginMarket.cachedDetail', { size: (item.sizeBytes / 1024).toFixed(0), hash: (item.sha256 ?? '').slice(0, 16) })
           : (item.cachedVersions ?? []).length > 0
-            ? `未缓存当前版本（本地有 ${item.cachedVersions.join(' / ')}）`
-            : '未缓存'),
+            ? t('pluginMarket.notCachedCurrent', { list: item.cachedVersions.join(' / ') })
+            : t('pluginMarket.notCached')),
         upgrade
-          ? metaRow('教室端', h('span', { style: { color: 'var(--warn)' } },
-            `有 ${upgrade.devices} 台装的不是当前版本（${upgrade.detail}）`))
+          ? metaRow(t('pluginMarket.classrooms'), h('span', { style: { color: 'var(--warn)' } },
+            t('pluginMarket.upgradeDetail', { count: upgrade.devices, detail: upgrade.detail })))
           : null,
-        links.length > 0 ? metaRow('相关链接', h('div', ...links)) : null,
+        links.length > 0 ? metaRow(t('pluginMarket.links'), h('div', ...links)) : null,
       ),
       h('div.md-section',
-        h('h4', '自述文件'),
+        h('h4', t('pluginMarket.readme')),
         readmeBox),
     ),
-    confirmText: '关闭',
+    confirmText: t('pluginMarket.close'),
     onConfirm: () => true,
   });
 }
@@ -650,7 +651,7 @@ function openDetailDialog(item) {
 async function cachePackage(item, button) {
   if (button) {
     button.disabled = true;
-    button.textContent = '缓存中…';
+    button.textContent = t('pluginMarket.caching');
   }
 
   try {
@@ -658,9 +659,9 @@ async function cachePackage(item, button) {
       method: 'POST',
       body: { pluginId: item.id, version: item.version },
     });
-    toast('ok', '已缓存', `${item.name} ${result.version}（SHA256 ${String(result.sha256).slice(0, 12)}…）`);
+    toast('ok', t('pluginMarket.cached'), `${item.name} ${result.version}（SHA256 ${String(result.sha256).slice(0, 12)}…）`);
   } catch (err) {
-    toastError(err, '缓存失败');
+    toastError(err, t('pluginMarket.cacheFailed'));
   }
 
   await refresh();
@@ -699,8 +700,9 @@ function openDeployDialog(item) {
   const targetList = h('div.checkbox-list',
     ...deviceBoxes.map(({ device, box }) => h('label.checkbox-field',
       box,
-      h('span', `${device.deviceName}${device.online ? '' : '（离线）'}`
-        + `${device.revoked ? '（已停用）' : ''}`),
+      h('span', `${device.deviceName}`
+        + `${device.online ? '' : t('pluginMarket.offlineSuffix')}`
+        + `${device.revoked ? t('pluginMarket.revokedSuffix') : ''}`),
     )),
   );
 
@@ -718,38 +720,38 @@ function openDeployDialog(item) {
   syncPickedState();
 
   modal({
-    title: `下发安装 · ${item.name} ${item.version}`,
+    title: t('pluginMarket.deployTitle', { name: item.name, version: item.version }),
     width: 'wide',
-    confirmText: '下发安装',
+    confirmText: t('pluginMarket.deployInstall'),
     body: h('div',
       h('div.notice.notice-warn',
         h('span.notice-icon', '!'),
-        h('div', '安装会在教室机上放一份第三方代码，重启 ClassIsland 后才真正生效；'
-          + '上课期间重启会让大屏短暂黑屏，建议避开上课时间。')),
+        h('div', t('pluginMarket.deployWarnLead')
+          + t('pluginMarket.deployWarnTail'))),
 
       // 把"现在到底有几台能装"摆出来：默认范围选错时，用户点下去会毫无反应。
       h('p.card-desc', { style: { marginTop: '-4px' } },
-        `当前在线 ${onlineCount} 台 / 共 ${deployableCount} 台可下发。`),
+        t('pluginMarket.deployScopeCount', { online: onlineCount, total: deployableCount })),
       nobodyOnline
         ? h('div.notice.notice-info',
           h('span.notice-icon', 'i'),
-          h('div', '当前没有在线设备，已默认选中「全部设备」并勾选「包含离线设备」——'
-            + '指令会排队，等教室上线后自动执行。'))
+          h('div', t('pluginMarket.deployNobodyOnlineLead')
+            + t('pluginMarket.deployNobodyOnlineTail')))
         : null,
 
-      field('范围',
+      field(t('pluginMarket.scope'),
         h('div',
-          h('label.checkbox-field', allOnline, h('span', `全部在线设备（${onlineCount} 台）`)),
-          h('label.checkbox-field', allDevices, h('span', '全部设备（含离线，排队等它们上线）')),
-          h('label.checkbox-field', picked, h('span', '指定设备（在下面勾选）')),
+          h('label.checkbox-field', allOnline, h('span', t('pluginMarket.scopeOnline', { count: onlineCount }))),
+          h('label.checkbox-field', allDevices, h('span', t('pluginMarket.scopeAll'))),
+          h('label.checkbox-field', picked, h('span', t('pluginMarket.scopePicked'))),
         )),
 
-      field('包含离线设备', includeOffline, '离线设备会把指令排队，等它上线后再执行。'),
-      field(h('span', '安装后顺带重启', hintIcon(
-      'ClassIsland 只在**启动时**扫描待安装目录里的 .cipx——不重启，插件就只是「躺在那里」。'
-      + '勾上＝下发完紧跟一条重启指令（会打断正在进行的课，建议排到课间）；'
-      + '不勾＝你自己挑时间批量重启。')), restartAfter),
-      field('指定设备', targetList),
+      field(t('pluginMarket.includeOffline'), includeOffline, t('pluginMarket.includeOfflineHint')),
+      field(h('span', t('pluginMarket.restartAfter'), hintIcon(
+      t('pluginMarket.restartAfterHint')
+      + t('pluginMarket.restartAfterHint2')
+      + t('pluginMarket.restartAfterHint3'))), restartAfter),
+      field(t('pluginMarket.pickDevices'), targetList),
     ),
     onConfirm: async () => {
       let scope = 'online';
@@ -764,7 +766,7 @@ function openDeployDialog(item) {
         : [];
 
       if (scope === 'picked' && deviceIds.length === 0) {
-        toast('warn', '没有选设备', '请至少勾选一台设备，或改成「全部在线设备」。');
+        toast('warn', t('pluginMarket.noDevicePicked'), t('pluginMarket.noDevicePickedHint'));
         return false;
       }
 
@@ -783,18 +785,21 @@ function openDeployDialog(item) {
 
         const skipped = result.skipped ?? 0;
         if (result.affected === 0) {
-          toast('warn', '没有可下发的设备', (result.skips ?? []).map((s) => s.reason).join('；')
-            || '所有目标都被跳过了。');
+          toast('warn', t('pluginMarket.noTargets'), (result.skips ?? []).map((s) => s.reason).join('；')
+            || t('pluginMarket.allSkipped'));
         } else {
-          toast('ok', '已下发',
-            `${result.affected} 台设备开始安装${skipped > 0 ? `，跳过 ${skipped} 台` : ''}。`
-            + '安装完成后需要重启才会生效。');
+          toast('ok', t('pluginMarket.sent'),
+            t('pluginMarket.installStarted', {
+              count: result.affected,
+              skipped: skipped > 0 ? t('pluginMarket.skippedSuffix', { count: skipped }) : '',
+            }),
+            t('pluginMarket.installStartedHint'));
         }
 
         state.tab = 'deployments';
         state.expanded.add(result.deploymentId);
       } catch (err) {
-        toastError(err, '下发失败');
+        toastError(err, t('pluginMarket.deployFailed'));
         return false;
       }
 
@@ -850,79 +855,86 @@ function renderInstalledCard() {
   return h('div.card',
     h('div.card-head',
       h('div',
-        h('h3', '已安装的插件'),
-        h('p.card-desc', `共 ${state.inventory.length} 台设备，其中 ${rows.length} 台装过第三方插件。`
-          + '清单来自教室端上一次上报，可能不是最新的。'),
+        h('h3', t('pluginMarket.installedTitle')),
+        h('p.card-desc', t('pluginMarket.installedSummary', { total: state.inventory.length, withPlugins: rows.length })
+          + t('pluginMarket.inventoryStale')),
       ),
       h('div.card-actions',
         canWrite()
-          ? h('button.btn.btn-sm', { type: 'button', onClick: () => refreshInventory() }, '让教室端重新上报')
+          ? h('button.btn.btn-sm', { type: 'button', onClick: () => refreshInventory() }, t('pluginMarket.refreshInventory'))
           : null,
       ),
     ),
 
-    h('div', { style: { fontSize: '13px', color: 'var(--text-dim)', margin: '4px 0 8px' } }, '按插件'),
+    h('div', { style: { fontSize: '13px', color: 'var(--text-dim)', margin: '4px 0 8px' } }, t('pluginMarket.byPlugin')),
     h('div.table-wrap', h('table.data',
       h('thead', h('tr',
-        h('th', '插件'),
-        h('th', '版本'),
-        h('th', '已安装'),
-        h('th', { style: { width: '190px' } }, '操作'),
+        h('th', t('pluginMarket.plugin')),
+        h('th', t('pluginMarket.version')),
+        h('th', t('pluginMarket.tabInstalled')),
+        h('th', { style: { width: '190px' } }, t('pluginMarket.actions')),
       )),
       h('tbody', ...[...byPlugin.values()].map((entry) => h('tr',
         h('td', h('div', { style: { fontWeight: '600' } }, entry.name),
           h('div', { style: { fontSize: '12px', color: 'var(--text-dim)' } }, entry.id)),
         h('td', [...entry.versions].join(' / ')),
-        h('td', `${entry.devices.length} 台${entry.disabled > 0 ? `（禁用 ${entry.disabled}）` : ''}`),
+        h('td', t('pluginMarket.installedDeviceCount', {
+          count: entry.devices.length,
+          disabled: entry.disabled > 0 ? t('pluginMarket.disabledSuffix', { count: entry.disabled }) : '',
+        })),
         h('td', h('div.row-actions',
           canWrite()
             ? h('button.btn.btn-sm', {
               type: 'button',
-              onClick: () => deployQuick(entry.id, '', 'uninstall', `卸载 ${entry.name}`),
-            }, '批量卸载')
+              onClick: () => deployQuick(entry.id, '', 'uninstall', t('pluginMarket.uninstallPlugin', { name: entry.name })),
+            }, t('pluginMarket.bulkUninstall'))
             : null,
           canWrite()
             ? h('button.btn.btn-sm', {
               type: 'button',
-              onClick: () => deployQuick(entry.id, '', 'disable', `禁用 ${entry.name}`),
-            }, '批量禁用')
+              onClick: () => deployQuick(entry.id, '', 'disable', t('pluginMarket.disablePlugin', { name: entry.name })),
+            }, t('pluginMarket.bulkDisable'))
             : null,
           canWrite()
             ? h('button.btn.btn-sm', {
               type: 'button',
-              onClick: () => deployQuick(entry.id, '', 'enable', `启用 ${entry.name}`),
-            }, '批量启用')
+              onClick: () => deployQuick(entry.id, '', 'enable', t('pluginMarket.enablePlugin', { name: entry.name })),
+            }, t('pluginMarket.bulkEnable'))
             : null,
         )),
       ))),
     )),
 
-    h('div', { style: { fontSize: '13px', color: 'var(--text-dim)', margin: '14px 0 8px' } }, '按设备'),
+    h('div', { style: { fontSize: '13px', color: 'var(--text-dim)', margin: '14px 0 8px' } }, t('pluginMarket.byDevice')),
     h('div.table-wrap', h('table.data',
       h('thead', h('tr',
-        h('th', '设备'),
-        h('th', '状态'),
+        h('th', t('pluginMarket.device')),
+        h('th', t('pluginMarket.state')),
         h('th', 'ClassIsland'),
-        h('th', '已装插件'),
-        h('th', '上报时间'),
+        h('th', t('pluginMarket.pluginsInstalled')),
+        h('th', t('pluginMarket.reportedAt')),
       )),
       h('tbody', ...state.inventory.map((device) => h('tr',
         h('td', device.deviceName),
         h('td', device.revoked
-          ? h('span.badge.badge-danger', '已停用')
+          ? h('span.badge.badge-danger', t('pluginMarket.revoked'))
           : device.online
-            ? h('span.badge.badge-ok', '在线')
-            : h('span.badge.badge-neutral', '离线')),
+            ? h('span.badge.badge-ok', t('pluginMarket.online'))
+            : h('span.badge.badge-neutral', t('pluginMarket.offline'))),
         h('td', h('div',
           h('div', device.classislandVersion || '—'),
           h('div', { style: { fontSize: '12px', color: 'var(--text-dim)' } },
-            device.pluginVersion ? `IslandHub 插件 ${device.pluginVersion}` : 'IslandHub 插件版本未知'),
+            device.pluginVersion ? t('pluginMarket.pluginVersion', { version: device.pluginVersion }) : t('pluginMarket.pluginVersionUnknown')),
         )),
         h('td', (device.plugins ?? []).length === 0
-          ? h('span', { style: { color: 'var(--text-dim)' } }, '（无）')
+          ? h('span', { style: { color: 'var(--text-dim)' } }, t('pluginMarket.none'))
           : h('div', ...(device.plugins ?? []).map((p) => h('span.badge.badge-info',
             { style: { marginRight: '4px' } },
-            `${p.name} ${p.version}${p.isEnabled ? '' : '（禁用）'}`)))),
+            t('pluginMarket.pluginBadge', {
+              name: p.name,
+              version: p.version,
+              disabled: p.isEnabled ? '' : t('pluginMarket.disabledBadge'),
+            }))))),
         h('td', device.reportedAt ? relativeTime(device.reportedAt) : '—'),
       ))),
     )),
@@ -932,18 +944,18 @@ function renderInstalledCard() {
 async function refreshInventory() {
   try {
     const count = await api('/admin/plugin-inventory/refresh', { method: 'POST' });
-    toast('ok', '已请求上报', `已通知 ${count} 台在线设备；稍等几秒再刷新即可看到新清单。`);
+    toast('ok', t('pluginMarket.reportRequested'), t('pluginMarket.reportRequestedHint', { count }));
   } catch (err) {
-    toastError(err, '请求上报失败');
+    toastError(err, t('pluginMarket.reportRequestFailed'));
   }
 }
 
 async function deployQuick(pluginId, version, action, label) {
   const online = state.inventory.filter((d) => d.online && !d.revoked).length;
   const ok = await confirmDialog(label,
-    `将向 ${online} 台在线设备下发「${label}」。`
-    + (action === 'uninstall' ? '卸载后需要重启教室端才生效。' : '启停需要重启教室端才生效。'),
-    '下发');
+    t('pluginMarket.bulkConfirm', { count: online, action: label })
+    + (action === 'uninstall' ? t('pluginMarket.uninstallRestartHint') : t('pluginMarket.toggleRestartHint')),
+    t('pluginMarket.send'));
   if (!ok) {
     return;
   }
@@ -953,12 +965,15 @@ async function deployQuick(pluginId, version, action, label) {
       method: 'POST',
       body: { action, pluginId, version, deviceIds: [], includeOffline: false, restartAfter: false },
     });
-    toast('ok', '已下发', `${result.affected} 台设备${result.skipped > 0 ? `，跳过 ${result.skipped} 台` : ''}。`);
+    toast('ok', t('pluginMarket.sent'), t('pluginMarket.pluginActionSent', {
+      count: result.affected,
+      skipped: result.skipped > 0 ? t('pluginMarket.skippedSuffix', { count: result.skipped }) : '',
+    }));
     state.tab = 'deployments';
     await refresh();
     pollDeployments();
   } catch (err) {
-    toastError(err, '下发失败');
+    toastError(err, t('pluginMarket.deployFailed'));
   }
 }
 
@@ -966,26 +981,26 @@ async function deployQuick(pluginId, version, action, label) {
 
 /** 指令状态 → 文案（与「远程管理」里的指令历史同一套词，别再自创一套）。 */
 const STATUS_LABELS = {
-  pending: '排队中',
-  dispatched: '已派发',
-  done: '已完成',
-  failed: '失败',
-  expired: '已过期',
-  canceled: '已撤销',
+  pending: t('pluginMarket.stateQueued'),
+  dispatched: t('pluginMarket.stateDispatched'),
+  done: t('pluginMarket.stateDone'),
+  failed: t('pluginMarket.stateFailed'),
+  expired: t('pluginMarket.stateExpired'),
+  canceled: t('pluginMarket.stateCancelled'),
 };
 
 function renderDeploymentsCard() {
   if (state.deployments.length === 0) {
     return h('div.card',
-      h('div.card-head', h('div', h('h3', '下发记录'), h('p.card-desc', '还没有下发过插件。'))),
+      h('div.card-head', h('div', h('h3', t('pluginMarket.tabDeployments')), h('p.card-desc', t('pluginMarket.noDeployments')))),
     );
   }
 
   return h('div.card',
     h('div.card-head',
       h('div',
-        h('h3', '下发记录'),
-        h('p.card-desc', '逐台结果直接来自教室端回报（安装成功的下一步通常是重启）。'),
+        h('h3', t('pluginMarket.tabDeployments')),
+        h('p.card-desc', t('pluginMarket.deploymentsHint')),
       ),
     ),
     h('div#deploymentBody', ...state.deployments.map((d) => renderDeployment(d))),
@@ -1009,7 +1024,7 @@ function renderDeployment(deployment) {
       ),
       h('div.card-actions',
         h('span', { style: { fontSize: '12.5px', color: 'var(--text-dim)' } },
-          `成功 ${done} · 失败 ${failed} · 进行中 ${deployment.pending}`),
+          t('pluginMarket.deploySummary', { done, failed, pending: deployment.pending })),
         h('button.btn.btn-sm', {
           type: 'button',
           onClick: () => {
@@ -1021,13 +1036,13 @@ function renderDeployment(deployment) {
 
             paint();
           },
-        }, expanded ? '收起' : '逐台明细'),
+        }, expanded ? t('pluginMarket.collapse') : t('pluginMarket.perDevice')),
       ),
     ),
     h('div.progress', h('span', { style: { width: `${percent}%` } })),
     expanded
       ? h('div.table-wrap', h('table.data',
-        h('thead', h('tr', h('th', '设备'), h('th', '状态'), h('th', '结果'))),
+        h('thead', h('tr', h('th', t('pluginMarket.device')), h('th', t('pluginMarket.state')), h('th', t('pluginMarket.result')))),
         h('tbody', ...(deployment.items ?? []).map((item) => {
           const hint = item.errorCode ? hintForCode(item.errorCode) : '';
           return h('tr',
@@ -1043,7 +1058,7 @@ function renderDeployment(deployment) {
               h('div', { style: { fontSize: '12.5px' } }, item.output || '—'),
               hint
                 ? h('div', { style: { fontSize: '12px', color: 'var(--text-dim)', marginTop: '2px' } },
-                  `怎么办：${hint}`)
+                  t('pluginMarket.howToFix', { hint }))
                 : null,
             ),
           );
@@ -1055,10 +1070,10 @@ function renderDeployment(deployment) {
 
 function actionLabel(action) {
   return {
-    install: '安装',
-    uninstall: '卸载',
-    enable: '启用',
-    disable: '禁用',
+    install: t('pluginMarket.actionInstall'),
+    uninstall: t('pluginMarket.actionUninstall'),
+    enable: t('pluginMarket.actionEnable'),
+    disable: t('pluginMarket.actionDisable'),
   }[action] ?? action;
 }
 
@@ -1066,7 +1081,7 @@ function actionLabel(action) {
 
 function renderSettingsCard() {
   const indexInput = h('input', { type: 'text', value: state.settings.indexUrl ?? '' });
-  const mirrorOptions = [{ value: '-', label: '自动（代理镜像优先，失败换下一个）' }];
+  const mirrorOptions = [{ value: '-', label: t('pluginMarket.mirrorAuto') }];
   for (const name of Object.keys(state.settings.mirrors ?? {})) {
     mirrorOptions.push({ value: name, label: `${name}（${state.settings.mirrors[name]}）` });
   }
@@ -1076,18 +1091,18 @@ function renderSettingsCard() {
   return h('div.card',
     h('div.card-head',
       h('div',
-        h('h3', '市场设置'),
-        h('p.card-desc', '索引地址默认是 ClassIsland 官方的插件索引（一个 zip 包）；'
-          + '镜像决定插件包从哪里下载，留「自动」时会优先走代理镜像。'),
+        h('h3', t('pluginMarket.tabSettings')),
+        h('p.card-desc', t('pluginMarket.settingsLead')
+          + t('pluginMarket.settingsMirrorHint')),
       ),
     ),
 
-    field('索引地址', indexInput, '含 {time} 占位符会自动替换成时间戳（用于穿透 CDN 缓存）；'
-      + '留空不改，填 - 恢复官方默认。'),
-    field(h('span', '首选镜像', hintIcon(
-      '插件包与图标都从镜像根地址取（索引里给的几个：GitHub 直连、ghproxy、moeyy 等）。'
-      + '选「自动」时按上面的顺序试探，某个镜像返回错误页会自动换下一个——所以坏包不会留在本地。'
-      + '国内校园网通常保持「自动」即可。')), mirrorSelect),
+    field(t('pluginMarket.indexUrl'), indexInput, t('pluginMarket.indexUrlHint')
+      + t('pluginMarket.indexUrlHint2')),
+    field(h('span', t('pluginMarket.preferredMirror'), hintIcon(
+      t('pluginMarket.mirrorHint')
+      + t('pluginMarket.mirrorHint2')
+      + t('pluginMarket.mirrorHint3'))), mirrorSelect),
 
     canWrite()
       ? h('div.card-actions',
@@ -1099,19 +1114,19 @@ function renderSettingsCard() {
                 method: 'PUT',
                 body: { indexUrl: indexInput.value, preferredMirror: mirrorSelect.value },
               });
-              toast('ok', '已保存');
+              toast('ok', t('pluginMarket.saved'));
               await refresh();
             } catch (err) {
-              toastError(err, '保存失败');
+              toastError(err, t('pluginMarket.saveFailed'));
             }
           },
-        }, '保存设置'),
+        }, t('pluginMarket.saveSettings')),
       )
       : null,
 
     h('div.notice.notice-info',
       h('span.notice-icon', 'i'),
-      h('div', 'A 端只在这里取一次索引与插件包；教室端安装时从 A 端下载，'
-        + '所以教室机没有外网也能装插件。缓存目录与数据库同级（data/plugin-cache）。')),
+      h('div', t('pluginMarket.offlineLead')
+        + t('pluginMarket.offlineTail'))),
   );
 }

@@ -13,7 +13,7 @@
  * </p>
  */
 
-import { api } from './api.js?v=151';
+import { api } from './api.js?v=152';
 
 /** 缓存键：与账号偏好互为备份（缓存只用于首屏不闪，服务端才是准的）。 */
 const CACHE_KEY = 'controlhub.ui.appearance';
