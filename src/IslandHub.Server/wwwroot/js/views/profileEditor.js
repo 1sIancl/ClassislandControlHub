@@ -3,29 +3,30 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=150';
-import { toastError } from '../core/errors.js?v=150';
+import { api } from '../core/api.js?v=151';
+import { toastError } from '../core/errors.js?v=151';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, icon, select,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=150';
-import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=150';
+} from '../core/ui.js?v=151';
+import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=151';
+import { t } from './../core/i18n.js?v=151';
 
 export const meta = {
-  title: '编辑配置档案',
+  title: t('profiles.editor.title'),
   subtitle: '',
 };
 
 const TABS = [
-  { key: 'timeLayouts', label: '时间表' },
-  { key: 'classPlans', label: '课表' },
-  { key: 'subjects', label: '科目' },
-  { key: 'settings', label: '自定义设置' },
+  { key: 'timeLayouts', label: t('profiles.editor.tabLayouts') },
+  { key: 'classPlans', label: t('profiles.editor.tabTimetable') },
+  { key: 'subjects', label: t('profiles.editor.tabSubjects') },
+  { key: 'settings', label: t('profiles.editor.tabCustom') },
 ];
 
 /** 时间点类型：点击单元格上的类型标签可循环切换，避免使用下拉框。 */
 const TIME_KIND_ORDER = ['class', 'break', 'separator', 'action'];
-const TIME_KIND_LABEL = { class: '上课', break: '课间', separator: '分割线', action: '行动' };
+const TIME_KIND_LABEL = { class: t('profiles.editor.kindClass'), break: t('profiles.editor.kindBreak'), separator: t('profiles.editor.kindSeparator'), action: t('profiles.editor.kindAction') };
 
 /** 生成唯一 ID：优先 crypto.randomUUID，非安全上下文（HTTP）回退到手写 UUID v4。 */
 function genId() {
@@ -42,7 +43,7 @@ function genId() {
 /** 分段选择器：一排扁平按钮，替代下拉框。 */
 function segmented(items, currentId, onPick, emptyLabel) {
   if (!items || items.length === 0) {
-    return h('span.segmented-empty', emptyLabel || '（暂无）');
+    return h('span.segmented-empty', emptyLabel || t('profiles.editor.none'));
   }
   return h('div.segmented',
     ...items.map((item) => h('button', {
@@ -71,7 +72,7 @@ let state = {
 
 export async function render(container, params) {
   clear(container);
-  container.appendChild(loadingBlock('正在读取档案内容…'));
+  container.appendChild(loadingBlock(t('profiles.editor.loading')));
 
   const profile = await api(`/admin/profiles/${params.id}`);
   state = {
@@ -176,7 +177,10 @@ function clonePlanForWeek(plan, week, weeks) {
   return {
     ...plan,
     id: genId(),
-    name: `${stripWeekSuffix(plan.name) || '课表'}（第 ${week} 周）`,
+    name: t('profiles.editor.planWeekName', {
+      name: stripWeekSuffix(plan.name) || t('profiles.editor.timetableFallback'),
+      week,
+    }),
     weekInterval: weeks,
     weekOffset: week - 1,
     slots: (plan.slots || []).map((s) => ({ ...s })),
@@ -220,9 +224,9 @@ function setRotationWeeks(weeks) {
       state.rotationWeek = 1;
       markDirty();
       repaintTab();
-      toast('ok', '已关闭多周轮换', doomed.length > 0
-        ? `第 2 周及以后的 ${doomed.length} 张课表已删除，剩下的改为「每周生效」。`
-        : '所有课表改为「每周生效」。');
+      toast('ok', t('profiles.editor.rotationOff'), doomed.length > 0
+        ? t('profiles.editor.rotationOffDone', { count: doomed.length })
+        : t('profiles.editor.rotationOffAll'));
     };
 
     if (doomed.length === 0) {
@@ -230,10 +234,10 @@ function setRotationWeeks(weeks) {
       return;
     }
 
-    confirmDialog('关闭多周轮换',
-      `第 2 周及以后还有 ${doomed.length} 张课表。关掉轮换后同一天会变成两份课表，它们将被删除；`
-      + '第 1 周的课表保留下来、改为「每周生效」。确定继续吗？',
-      '删除并关闭', true).then((ok) => { if (ok) run(); });
+    confirmDialog(t('profiles.editor.disableRotation'),
+      t('profiles.editor.disableRotationLead', { count: doomed.length })
+      + t('profiles.editor.disableRotationTail'),
+      t('profiles.editor.deleteAndDisable'), true).then((ok) => { if (ok) run(); });
     return;
   }
 
@@ -287,16 +291,16 @@ function setRotationWeeks(weeks) {
 
     markDirty();
     repaintTab();
-    toast('ok', `已按 ${weeks} 周轮换`,
+    toast('ok', t('profiles.editor.rotationOnDone', { weeks }),
       copied > 0
-        ? `从第 1 周补齐了 ${copied} 张课表，接着切换周次、只改需要轮换的那几周即可。`
-        : '切换周次逐周核对一遍再保存。');
+        ? t('profiles.editor.rotationOnHint', { count: copied })
+        : t('profiles.editor.rotationOnHint2'));
   };
 
   if (dropped > 0) {
-    confirmDialog('缩短轮换周期',
-      `第 ${weeks + 1} 周及以后还有 ${dropped} 张课表，会被删除（它们对应的天在第 1 周里已有课表）。确定继续吗？`,
-      '删除并继续', true).then((ok) => { if (ok) run(); });
+    confirmDialog(t('profiles.editor.shortenRotation'),
+      t('profiles.editor.shortenRotationConfirm', { week: weeks + 1, count: dropped }),
+      t('profiles.editor.deleteAndContinue'), true).then((ok) => { if (ok) run(); });
     return;
   }
 
@@ -311,7 +315,7 @@ function renderRotationBar() {
   const weekSelect = select(
     Array.from({ length: MAX_ROTATION_WEEKS }, (_, i) => ({
       value: String(i + 1),
-      label: i === 0 ? '不轮换（每周同一张）' : `${i + 1} 周轮换`,
+      label: i === 0 ? t('profiles.editor.noRotation') : t('profiles.editor.rotationWeeks', { n: i + 1 }),
     })),
     String(weeks),
     (v) => setRotationWeeks(Number(v)),
@@ -346,20 +350,20 @@ function renderRotationBar() {
   return h('div.card', { style: { marginBottom: '14px' } },
     h('div.card-head',
       h('div',
-        h('h3', '多周轮换'),
-        h('p.card-desc', '轮换由 ClassIsland 原生执行：这里定「几周一个循环」，'
-          + '再到「课表」页逐周排课。轮换起点是「第 1 周从哪天算起」；'
-          + '手动偏移用于临时整体平移进度（例如运动会占掉一周）。')),
+        h('h3', t('profiles.editor.rotation')),
+        h('p.card-desc', t('profiles.editor.rotationLead')
+          + t('profiles.editor.rotationBody')
+          + t('profiles.editor.rotationOffsetHint'))),
       h('div.card-actions',
         h('span.badge' + (weeks < 2 ? '.badge-neutral' : '.badge-accent'),
-          weeks < 2 ? '未启用' : `${weeks} 周一轮`)),
+          weeks < 2 ? t('profiles.editor.notEnabled') : t('profiles.editor.rotationSummary', { weeks }))),
     ),
     h('div.form-row', { style: { flexWrap: 'wrap' } },
-      field('轮换周期', weekSelect),
-      field('轮换起点（第 1 周的第一天）', startInput,
-        '一般填开学第一周的周日——ClassIsland 默认以周日为周起点。留空则由各教室自身的设置决定。'),
-      field('手动偏移（周）', offsetInput,
-        '正数表示轮换提前。例如运动会占掉一周，就填 1 把进度推回去。'),
+      field(t('profiles.editor.rotationCycle'), weekSelect),
+      field(t('profiles.editor.rotationStart'), startInput,
+        t('profiles.editor.rotationStartHint')),
+      field(t('profiles.editor.rotationOffset'), offsetInput,
+        t('profiles.editor.rotationOffsetHint2')),
     ),
   );
 }
@@ -413,7 +417,7 @@ function syncDirtyFlag() {
   const flag = document.getElementById('dirtyFlag');
   if (!flag) return;
   clear(flag);
-  if (state.dirty) flag.appendChild(h('span.badge.badge-warn', '有未保存修改'));
+  if (state.dirty) flag.appendChild(h('span.badge.badge-warn', t('profiles.editor.unsaved')));
 }
 
 /** 输入类编辑用：只刷新未保存标记，不重建 DOM，避免打断输入。 */
@@ -444,33 +448,33 @@ function renderHeader() {
     h('div', { style: { flex: '1 1 260px' } },
       h('div', { style: { display: 'flex', alignItems: 'center', gap: '9px', flexWrap: 'wrap' } },
         h('strong', { style: { fontSize: '15px' } }, state.profile.name),
-        state.profile.isDefault ? h('span.badge.badge-accent', '全局默认') : null,
-        h('span.badge.badge-neutral', `内容版本 ${state.profile.revision}`),
+        state.profile.isDefault ? h('span.badge.badge-accent', t('profiles.editor.globalDefault')) : null,
+        h('span.badge.badge-neutral', t('profiles.editor.contentRevision', { revision: state.profile.revision })),
         h('span#dirtyFlag'),
       ),
       h('div', { style: { fontSize: '12px', color: 'var(--text-faint)', marginTop: '3px' } },
-        `最后更新 ${formatDateTime(state.profile.updatedAt)}`),
+        t('profiles.editor.lastUpdated', { time: formatDateTime(state.profile.updatedAt) })),
     ),
     h('div.card-actions',
       h('button.btn.btn-sm', {
         type: 'button',
         onClick: () => window.location.hash = '#/profiles',
-      }, '返回列表'),
+      }, t('profiles.editor.back')),
       h('button.btn.btn-sm', {
         type: 'button',
         disabled: !state.dirty,
         onClick: () => discard(),
-      }, '放弃修改'),
+      }, t('profiles.editor.discard')),
       h('button.btn.btn-sm.btn-primary', {
         type: 'button',
         onClick: () => save(),
-      }, '保存并下发'),
+      }, t('profiles.editor.saveAndDeploy')),
     ),
   );
 }
 
 function discard() {
-  confirmDialog('放弃修改', '当前未保存的修改将会丢失，确定继续吗？', '放弃', true).then((ok) => {
+  confirmDialog(t('profiles.editor.discard'), t('profiles.editor.discardConfirm'), t('profiles.editor.discardYes'), true).then((ok) => {
     if (ok) render(document.getElementById('content'), { id: state.profileId });
   });
 }
@@ -498,18 +502,18 @@ async function save() {
     state.dirty = false;
 
     const notes = result.notes || [];
-    toast('ok', '保存成功', notes.length > 0
-      ? `服务器自动处理了 ${notes.length} 项内容问题，配置版本已更新为 ${result.revision}。`
-      : `全局配置版本已更新为 ${result.revision}，客户端将在数秒内自动同步。`);
+    toast('ok', t('profiles.editor.saveOk'), notes.length > 0
+      ? t('profiles.editor.saveOkNotes', { count: notes.length, revision: result.revision })
+      : t('profiles.editor.saveOkRevision', { revision: result.revision }));
 
     if (notes.length > 0) {
       modal({
-        title: '内容自动处理说明',
+        title: t('profiles.editor.autoFixTitle'),
         width: 'wide',
         hideFooter: true,
         body: h('div',
           h('p', { style: { marginTop: 0, color: 'var(--text-dim)' } },
-            '保存时发现以下内容需要修正，服务器已自动处理：'),
+            t('profiles.editor.autoFixLead')),
           h('ul', { style: { margin: 0, paddingLeft: '20px', fontSize: '12.5px', lineHeight: '1.9' } },
             ...notes.map((n) => h('li', n))),
         ),
@@ -518,7 +522,7 @@ async function save() {
 
     paint(document.getElementById('content'));
   } catch (err) {
-    toastError(err, '保存失败');
+    toastError(err, t('profiles.editor.saveFailed'));
   }
 }
 
@@ -548,27 +552,27 @@ function renderTimeLayouts() {
 
   return h('div',
     h('div.toolbar',
-      h('span.toolbar-label', '时间表'),
+      h('span.toolbar-label', t('profiles.editor.tabLayouts')),
       segmented(
-        layouts.map((l) => ({ id: l.id, label: `${l.name}（${classCount(l)} 节）` })),
+        layouts.map((l) => ({ id: l.id, label: t('profiles.editor.layoutOption', { name: l.name, count: classCount(l) }) })),
         state.selectedLayoutId,
         (v) => {
           state.selectedLayoutId = v;
           repaintTab();
         },
-        '（还没有时间表）',
+        t('profiles.editor.noLayouts'),
       ),
       h('div.spacer'),
-      h('button.btn.btn-sm.btn-primary', { type: 'button', onClick: addLayout }, '+ 新建时间表'),
-      layout ? h('button.btn.btn-sm', { type: 'button', onClick: () => renameLayout(layout) }, '重命名') : null,
-      layout ? h('button.btn.btn-sm', { type: 'button', onClick: () => generateSchedule(layout) }, '快速生成作息') : null,
-      layout ? h('button.btn.btn-sm', { type: 'button', onClick: () => addItem(layout) }, '+ 添加时间点') : null,
-      layout ? h('button.btn.btn-sm.btn-danger', { type: 'button', onClick: () => removeLayout(layout) }, '删除') : null,
+      h('button.btn.btn-sm.btn-primary', { type: 'button', onClick: addLayout }, t('profiles.editor.newLayout')),
+      layout ? h('button.btn.btn-sm', { type: 'button', onClick: () => renameLayout(layout) }, t('profiles.editor.rename')) : null,
+      layout ? h('button.btn.btn-sm', { type: 'button', onClick: () => generateSchedule(layout) }, t('profiles.editor.quickGenerate')) : null,
+      layout ? h('button.btn.btn-sm', { type: 'button', onClick: () => addItem(layout) }, t('profiles.editor.addPoint')) : null,
+      layout ? h('button.btn.btn-sm.btn-danger', { type: 'button', onClick: () => removeLayout(layout) }, t('profiles.editor.delete')) : null,
     ),
     !layout
-      ? emptyState('clock', '还没有时间表',
-        '时间表定义了一天的作息时间点，课表以它的「上课」时间点为基准。',
-        h('button.btn.btn-primary', { type: 'button', onClick: addLayout }, '新建时间表'))
+      ? emptyState('clock', t('profiles.editor.layoutsEmpty'),
+        t('profiles.editor.layoutsLead'),
+        h('button.btn.btn-primary', { type: 'button', onClick: addLayout }, t('profiles.editor.createLayout')))
       : h('div',
         // 可视化时间轴放在表格**上方**（两个视图同时可见，不需要切来切去）：
         // 拖动色块平移整段时间、拖下边缘改时长，分钟吸附到 5 分钟并自动避让相邻时间点。
@@ -580,7 +584,7 @@ function renderTimeLayouts() {
     layout && layout.items.length === 0
       ? h('div.notice.notice-warn', { style: { marginTop: '14px' } },
         h('span.notice-icon', '!'),
-        h('div', '该时间表还没有任何时间点。点击「快速生成作息」可一次生成完整的一天作息。'))
+        h('div', t('profiles.editor.layoutEmpty')))
       : null,
   );
 }
@@ -595,24 +599,24 @@ function periodCell(layout, item, index) {
 
   const kindButton = h('button.pcell-kind', {
     type: 'button',
-    title: '点击切换类型：上课 → 课间 → 分割线 → 行动',
+    title: t('profiles.editor.kindCycleHint'),
     onClick: () => {
       const next = TIME_KIND_ORDER[(TIME_KIND_ORDER.indexOf(item.kind) + 1) % TIME_KIND_ORDER.length];
       item.kind = next;
       if (next === 'separator' || next === 'action') item.endTime = item.startTime;
       markDirtyValues();
     },
-  }, TIME_KIND_LABEL[item.kind] || '上课');
+  }, TIME_KIND_LABEL[item.kind] || t('profiles.editor.kindClass'));
 
   const flagButton = h('button.pcell-flag', {
     type: 'button',
     class: item.isHideDefault ? 'on' : '',
-    title: '切换该时间点是否默认隐藏',
+    title: t('profiles.editor.hideToggleHint'),
     onClick: () => {
       item.isHideDefault = !item.isHideDefault;
       markDirtyValues();
     },
-  }, item.isHideDefault ? '已隐藏' : '默认显示');
+  }, item.isHideDefault ? t('profiles.editor.hidden') : t('profiles.editor.shown'));
 
   const startInput = timeInput(item.startTime, (v) => {
     item.startTime = v;
@@ -634,7 +638,7 @@ function periodCell(layout, item, index) {
   const nameInput = h('input.pcell-name', {
     type: 'text',
     value: item.breakName || '',
-    placeholder: item.kind === 'break' ? '课间名称（留空显示「课间休息」）' : '备注（可选）',
+    placeholder: item.kind === 'break' ? t('profiles.editor.breakNamePlaceholder') : t('profiles.editor.noteOptional'),
     onInput: (e) => {
       item.breakName = e.target.value.trim() || null;
       markDirtyLight();
@@ -644,14 +648,14 @@ function periodCell(layout, item, index) {
   return h('div', { class: `pcell kind-${item.kind}${item.isHideDefault ? ' hidden-point' : ''}` },
     h('div.pcell-top',
       // 非上课时间点的类型已由类型标签表达，不再重复文字，保持单元格清爽。
-      item.kind === 'class' ? h('span.pcell-no', `第 ${countClassBefore(layout, index) + 1} 节`) : null,
+      item.kind === 'class' ? h('span.pcell-no', t('profiles.editor.periodN', { n: countClassBefore(layout, index) + 1 })) : null,
       kindButton,
       h('div.spacer'),
       flagButton,
       h('button.pcell-del', {
         type: 'button',
-        title: '删除该时间点',
-        'aria-label': '删除该时间点',
+        title: t('profiles.editor.deletePoint'),
+        'aria-label': t('profiles.editor.deletePoint'),
         onClick: () => {
           layout.items.splice(index, 1);
           markDirtyValues();
@@ -806,8 +810,8 @@ function renderLayoutTimeline(layout) {
 
   return h('div.tl-wrap',
     h('div.tl-title',
-      h('span', '时间轴'),
-      h('span.tl-hint', '拖动色块平移整段时间，拖下边缘改时长；分钟吸附到 5 分钟，并自动避让相邻时间点。')),
+      h('span', t('profiles.editor.timeline')),
+      h('span.tl-hint', t('profiles.editor.timelineHint'))),
     h('div.tl-scroll', canvas),
   );
 }
@@ -820,10 +824,21 @@ function timelineBlock(layout, item, index, toY) {
   const blockHeight = isPoint ? 3 : Math.max(6, duration * TL_PX_PER_MIN);
 
   const label = isPoint
-    ? `${TIME_KIND_LABEL[item.kind] || ''} ${tlTime(start).slice(0, 5)}`
-    : `${item.kind === 'class' ? `第 ${countClassBefore(layout, index) + 1} 节 · ` : '课间 · '}`
-      + `${tlTime(start).slice(0, 5)}–${tlTime(start + duration).slice(0, 5)}（${duration} 分）`
-      + (item.breakName && item.kind === 'break' ? ` ${item.breakName}` : '');
+    ? t('profiles.editor.tlPointLabel', {
+      kind: TIME_KIND_LABEL[item.kind] || '',
+      time: tlTime(start).slice(0, 5),
+    }).trim()
+    : t('profiles.editor.tlBlockLabel', {
+      head: item.kind === 'class'
+        ? t('profiles.editor.periodHead', { n: countClassBefore(layout, index) + 1 })
+        : t('profiles.editor.breakHead'),
+      from: tlTime(start).slice(0, 5),
+      to: tlTime(start + duration).slice(0, 5),
+      minutes: duration,
+      name: item.breakName && item.kind === 'break'
+        ? t('profiles.editor.breakNameSuffix', { name: item.breakName })
+        : '',
+    });
 
   const block = h('div', {
     class: `tl-block kind-${item.kind}${item.isHideDefault ? ' hidden-point' : ''}`,
@@ -834,7 +849,7 @@ function timelineBlock(layout, item, index, toY) {
   }, h('span.tl-block-label', label));
 
   if (!isPoint) {
-    block.appendChild(h('div.tl-grip', { title: '拖动改时长' }));
+    block.appendChild(h('div.tl-grip', { title: t('profiles.editor.dragDuration') }));
   }
 
   block.addEventListener('pointerdown', (event) => {
@@ -867,7 +882,7 @@ function startTimelineDrag(event, layout, index, block, mode, toY) {
     const duration = tlDuration(item);
     block.style.top = `${toY(start)}px`;
     block.style.height = isPointKind ? '3px' : `${Math.max(6, duration * TL_PX_PER_MIN)}px`;
-    const text = `${tlTime(start).slice(0, 5)}–${tlTime(start + duration).slice(0, 5)}（${duration} 分）`;
+    const text = t('profiles.editor.tlRange', { from: tlTime(start).slice(0, 5), to: tlTime(start + duration).slice(0, 5), minutes: duration });
     tip.textContent = text;
     block.querySelector('.tl-block-label').textContent = text;
   };
@@ -946,7 +961,7 @@ function addLayout() {
   const id = genId();
   state.content.timeLayouts.push({
     id,
-    name: `新时间表 ${state.content.timeLayouts.length + 1}`,
+    name: t('profiles.editor.newLayoutName', { n: state.content.timeLayouts.length + 1 }),
     items: [],
   });
   state.selectedLayoutId = id;
@@ -956,10 +971,10 @@ function addLayout() {
 function renameLayout(layout) {
   const input = h('input', { type: 'text', value: layout.name });
   modal({
-    title: '重命名时间表',
+    title: t('profiles.editor.renameLayout'),
     width: 'wide',
-    body: field('名称', input),
-    confirmText: '保存',
+    body: field(t('profiles.editor.name'), input),
+    confirmText: t('profiles.editor.save'),
     onConfirm: () => {
       layout.name = input.value.trim() || layout.name;
       markDirtyValues();
@@ -971,10 +986,10 @@ function renameLayout(layout) {
 function removeLayout(layout) {
   const used = state.content.classPlans.filter((p) => p.timeLayoutId === layout.id);
   const message = used.length > 0
-    ? `「${layout.name}」正在被 ${used.length} 张课表使用。删除后这些课表需要重新指定时间表。确定继续吗？`
-    : `确定删除时间表「${layout.name}」吗？`;
+    ? t('profiles.editor.deleteLayoutUsed', { name: layout.name, count: used.length })
+    : t('profiles.editor.deleteLayoutConfirm', { name: layout.name });
 
-  confirmDialog('删除时间表', message, '删除', true).then((ok) => {
+  confirmDialog(t('profiles.editor.deleteLayout'), message, t('profiles.editor.delete'), true).then((ok) => {
     if (!ok) return;
     state.content.timeLayouts = state.content.timeLayouts.filter((l) => l.id !== layout.id);
     state.selectedLayoutId = state.content.timeLayouts[0]?.id || null;
@@ -992,22 +1007,22 @@ function generateSchedule(layout) {
   replaceCheckbox.checked = true;
 
   modal({
-    title: '快速生成作息',
+    title: t('profiles.editor.quickGenerate'),
     width: 'wide',
     body: h('div',
       h('div.form-row',
-        field('第 1 节开始时间', startInput),
-        field('每节时长（分钟）', periodInput),
-        field('课间时长（分钟）', breakInput),
-        field('每天节数', countInput),
+        field(t('profiles.editor.firstStart'), startInput),
+        field(t('profiles.editor.periodMinutes'), periodInput),
+        field(t('profiles.editor.breakMinutes'), breakInput),
+        field(t('profiles.editor.periodsPerDay'), countInput),
       ),
-      h('label.checkbox-field', replaceCheckbox, '清空现有时间点后重新生成'),
+      h('label.checkbox-field', replaceCheckbox, t('profiles.editor.clearBeforeGenerate')),
       h('div.notice.notice-info',
         h('span.notice-icon', 'i'),
-        h('div', '生成规则：每节课后插入一个课间，最后一节后不再追加课间。生成后可继续手动微调。'),
+        h('div', t('profiles.editor.generateHint')),
       ),
     ),
-    confirmText: '生成',
+    confirmText: t('profiles.editor.generate'),
     onConfirm: () => {
       const period = Number(periodInput.value) || 45;
       const gap = Number(breakInput.value) || 0;
@@ -1036,13 +1051,13 @@ function generateSchedule(layout) {
 // ────────────────────────────── 课表 ──────────────────────────────
 
 const GRID_DAYS = [
-  { value: 1, label: '周一' },
-  { value: 2, label: '周二' },
-  { value: 3, label: '周三' },
-  { value: 4, label: '周四' },
-  { value: 5, label: '周五' },
-  { value: 6, label: '周六' },
-  { value: 0, label: '周日' },
+  { value: 1, label: t('profiles.editor.wdMon') },
+  { value: 2, label: t('profiles.editor.wdTue') },
+  { value: 3, label: t('profiles.editor.wdWed') },
+  { value: 4, label: t('profiles.editor.wdThu') },
+  { value: 5, label: t('profiles.editor.wdFri') },
+  { value: 6, label: t('profiles.editor.wdSat') },
+  { value: 0, label: t('profiles.editor.wdSun') },
 ];
 
 function classPlanLayout() {
@@ -1055,34 +1070,34 @@ function renderClassPlans() {
   const layout = classPlanLayout();
 
   const layoutBar = segmented(
-    layouts.map((l) => ({ id: l.id, label: `${l.name}（${classCount(l)} 节）` })),
+    layouts.map((l) => ({ id: l.id, label: t('profiles.editor.layoutOption', { name: l.name, count: classCount(l) }) })),
     state.classPlanLayoutId,
     (v) => {
       state.classPlanLayoutId = v;
       state.scheduleSelection = null;
       repaintTab();
     },
-    layouts.length === 0 ? '（请先创建时间表）' : null,
+    layouts.length === 0 ? t('profiles.editor.needLayout') : null,
   );
 
   if (!layout) {
     return h('div',
-      h('div.toolbar', h('span.toolbar-label', '作息时间表'), layoutBar),
-      emptyState('clock', '还没有时间表',
-        '课程表以时间表的「上课」时间点为基准，横向为周一到周日、纵向为节次。请先创建时间表（作息）。',
+      h('div.toolbar', h('span.toolbar-label', t('profiles.editor.dailyLayout')), layoutBar),
+      emptyState('clock', t('profiles.editor.layoutsEmpty'),
+        t('profiles.editor.gridLead'),
         h('button.btn.btn-sm.btn-primary', {
           type: 'button',
           onClick: () => { state.activeTab = 'timeLayouts'; repaintTab(); },
-        }, '先创建时间表')),
+        }, t('profiles.editor.createLayoutFirst'))),
     );
   }
 
   const periods = layout.items.filter((i) => i.kind === 'class');
   if (periods.length === 0) {
     return h('div',
-      h('div.toolbar', h('span.toolbar-label', '作息时间表'), layoutBar),
-      emptyState('clock', '时间表还没有「上课」时间点',
-        '请先在「时间表」中添加至少一节课（上课类型），再回来排课。'),
+      h('div.toolbar', h('span.toolbar-label', t('profiles.editor.dailyLayout')), layoutBar),
+      emptyState('clock', t('profiles.editor.layoutNoLessons'),
+        t('profiles.editor.layoutNoLessonsHint')),
     );
   }
 
@@ -1096,11 +1111,14 @@ function renderClassPlans() {
   const weeks = profileRotation().weeks;
   const week = currentWeek();
   const weekBar = weeks < 2 ? null : h('div.toolbar',
-    h('span.toolbar-label', '轮换周次'),
+    h('span.toolbar-label', t('profiles.editor.rotationWeek')),
     segmented(
       Array.from({ length: weeks }, (_, i) => ({
         id: i + 1,
-        label: `第 ${i + 1} 周${weekDayCount(layout, i + 1) === 0 ? '（空）' : ''}`,
+        label: t('profiles.editor.weekOption', {
+          n: i + 1,
+          empty: weekDayCount(layout, i + 1) === 0 ? t('profiles.editor.emptySuffix') : '',
+        }),
       })),
       week,
       (v) => {
@@ -1110,30 +1128,30 @@ function renderClassPlans() {
       },
     ),
     h('div.spacer'),
-    h('span.toolbar-hint', `当前编辑第 ${week} 周；这里的课表只在这一周生效。`),
+    h('span.toolbar-hint', t('profiles.editor.editingWeek', { week })),
   );
 
   return h('div',
     weekBar,
     h('div.toolbar',
-      h('span.toolbar-label', '作息时间表'),
+      h('span.toolbar-label', t('profiles.editor.dailyLayout')),
       layoutBar,
       h('div.spacer'),
-      h('span.toolbar-hint', '点格子选中后点科目，或把科目拖进格子；拖动已排课程可调课；双击格子清空'),
+      h('span.toolbar-hint', t('profiles.editor.gridHint')),
       h('button.btn.btn-sm', {
         type: 'button',
-        title: '按节复制 / 批量清空 / 替换科目 / 课表模板',
+        title: t('profiles.editor.batchHint'),
         onClick: () => openBulkOps(layout, periods.length),
-      }, '批量操作'),
+      }, t('profiles.editor.batch')),
     ),
     renderPalette(periods.length),
     h('div.grid-scroll',
       h('div.sched-grid',
-        h('div.sched-head.corner', '节次 / 时间'),
+        h('div.sched-head.corner', t('profiles.editor.periodTime')),
         ...GRID_DAYS.map((d) => h('div.sched-head', d.label)),
         ...periods.flatMap((period, index) => [
           h('div.sched-period',
-            h('span.no', `第 ${index + 1} 节`),
+            h('span.no', t('profiles.editor.periodN', { n: index + 1 })),
             h('span.tm', `${period.startTime.slice(0, 5)}–${period.endTime.slice(0, 5)}`)),
           ...GRID_DAYS.map((d) => schedCell(layout, d.value, index, periods.length)),
         ]),
@@ -1154,11 +1172,11 @@ function renderClassPlans() {
 function openBulkOps(layout, periodCount) {
   const dayOptions = GRID_DAYS.map((d, i) => ({ value: String(i), label: d.label }));
   const periodOptions = Array.from({ length: periodCount }, (_, i) => ({
-    value: String(i), label: `第 ${i + 1} 节`,
+    value: String(i), label: t('profiles.editor.periodN', { n: i + 1 }),
   }));
   const subjectOptions = [
-    { value: '', label: '（请选择科目）' },
-    ...state.content.subjects.map((s) => ({ value: s.id, label: s.name || '（未命名科目）' })),
+    { value: '', label: t('profiles.editor.pickSubject') },
+    ...state.content.subjects.map((s) => ({ value: s.id, label: s.name || t('profiles.editor.unnamedSubject') })),
   ];
 
   const cfg = {
@@ -1362,9 +1380,9 @@ function openBulkOps(layout, periodCount) {
     clear(body);
 
     // 「从别的周复制」只在多周轮换档案里出现——单周档案里它没有意义。
-    const actionKeys = [['copy', '按节复制'], ['clear', '批量清空'], ['replace', '替换科目'], ['template', '课表模板']];
+    const actionKeys = [['copy', t('profiles.editor.copyByPeriod')], ['clear', t('profiles.editor.bulkClear')], ['replace', t('profiles.editor.replaceSubject')], ['template', t('profiles.editor.template')]];
     if (profileRotation().weeks >= 2) {
-      actionKeys.splice(1, 0, ['fromweek', '从别的周复制']);
+      actionKeys.splice(1, 0, ['fromweek', t('profiles.editor.copyFromWeek')]);
     }
 
     body.appendChild(h('div.card-actions', { style: { gap: '6px', marginBottom: '12px' } },
@@ -1375,52 +1393,55 @@ function openBulkOps(layout, periodCount) {
         }, label))));
 
     if (cfg.action === 'copy') {
-      body.appendChild(field('源 · 天', pair(dayOptions, 'srcDayFrom', 'srcDayTo')));
-      body.appendChild(field('源 · 节次', pair(periodOptions, 'srcPeriodFrom', 'srcPeriodTo')));
-      body.appendChild(field('目标 · 天', pair(dayOptions, 'dstDayFrom', 'dstDayTo')));
-      body.appendChild(field('目标 · 节次', pair(periodOptions, 'dstPeriodFrom', 'dstPeriodTo')));
-      body.appendChild(field('方式', select([
-        { value: 'replace', label: '覆盖目标（源里的空格也会照搬）' },
-        { value: 'merge', label: '只填空格（目标已有课的不动）' },
+      body.appendChild(field(t('profiles.editor.sourceDay'), pair(dayOptions, 'srcDayFrom', 'srcDayTo')));
+      body.appendChild(field(t('profiles.editor.sourcePeriod'), pair(periodOptions, 'srcPeriodFrom', 'srcPeriodTo')));
+      body.appendChild(field(t('profiles.editor.targetDay'), pair(dayOptions, 'dstDayFrom', 'dstDayTo')));
+      body.appendChild(field(t('profiles.editor.targetPeriod'), pair(periodOptions, 'dstPeriodFrom', 'dstPeriodTo')));
+      body.appendChild(field(t('profiles.editor.mode'), select([
+        { value: 'replace', label: t('profiles.editor.modeOverwrite') },
+        { value: 'merge', label: t('profiles.editor.modeFillEmpty') },
       ], cfg.mode, (v) => { cfg.mode = v; }),
-      '源与目标重叠也没问题：会先把源整块读出来再写。'));
+      t('profiles.editor.overlapHint')));
     } else if (cfg.action === 'fromweek') {
       const weeks = profileRotation().weeks;
       const here = currentWeek();
-      body.appendChild(field('源 · 周次',
+      body.appendChild(field(t('profiles.editor.sourceWeek'),
         select(
           Array.from({ length: weeks }, (_, i) => ({
             value: String(i + 1),
-            label: `第 ${i + 1} 周${i + 1 === here ? '（当前正在编辑）' : ''}`,
+            label: t('profiles.editor.weekOptionCurrent', {
+              n: i + 1,
+              current: i + 1 === here ? t('profiles.editor.currentSuffix') : '',
+            }),
           })),
           cfg.srcWeek,
           (v) => { cfg.srcWeek = v; },
         ),
-        '复制**到当前正在编辑的那一周**——想换目标周，先在网格上方切换周次。'));
-      body.appendChild(field('源 · 天', pair(dayOptions, 'srcDayFrom', 'srcDayTo')));
-      body.appendChild(field('源 · 节次', pair(periodOptions, 'srcPeriodFrom', 'srcPeriodTo')));
-      body.appendChild(field('方式', select([
-        { value: 'replace', label: '覆盖当前周（源里的空格也会照搬）' },
-        { value: 'merge', label: '只填空格（当前周已有课的不动）' },
+        t('profiles.editor.copyTargetWeekHint')));
+      body.appendChild(field(t('profiles.editor.sourceDay'), pair(dayOptions, 'srcDayFrom', 'srcDayTo')));
+      body.appendChild(field(t('profiles.editor.sourcePeriod'), pair(periodOptions, 'srcPeriodFrom', 'srcPeriodTo')));
+      body.appendChild(field(t('profiles.editor.mode'), select([
+        { value: 'replace', label: t('profiles.editor.modeOverwriteWeek') },
+        { value: 'merge', label: t('profiles.editor.modeFillEmptyWeek') },
       ], cfg.mode, (v) => { cfg.mode = v; }),
-      '轮换课表大多是「整周基本一样、只有几节不同」：先整周抄过来，再改那几节即可。'));
+      t('profiles.editor.copyWeekHint')));
     } else if (cfg.action === 'clear') {
-      body.appendChild(field('范围 · 天', pair(dayOptions, 'srcDayFrom', 'srcDayTo')));
-      body.appendChild(field('范围 · 节次', pair(periodOptions, 'srcPeriodFrom', 'srcPeriodTo')));
+      body.appendChild(field(t('profiles.editor.rangeDay'), pair(dayOptions, 'srcDayFrom', 'srcDayTo')));
+      body.appendChild(field(t('profiles.editor.rangePeriod'), pair(periodOptions, 'srcPeriodFrom', 'srcPeriodTo')));
       body.appendChild(h('p.card-desc', { style: { margin: 0 } },
-        '把这一块里所有已排的课清掉（只影响本档案内存中的内容，点「保存并下发」才生效）。'));
+        t('profiles.editor.clearHint')));
     } else if (cfg.action === 'replace') {
-      body.appendChild(field('把', select(subjectOptions, cfg.replaceFrom,
+      body.appendChild(field(t('profiles.editor.replaceFrom'), select(subjectOptions, cfg.replaceFrom,
         (v) => { cfg.replaceFrom = v; })));
-      body.appendChild(field('换成', select(subjectOptions, cfg.replaceTo,
+      body.appendChild(field(t('profiles.editor.replaceTo'), select(subjectOptions, cfg.replaceTo,
         (v) => { cfg.replaceTo = v; }),
-      '全周范围内所有这个科目都会被换掉，包括禁用的节点。'));
+      t('profiles.editor.replaceHint')));
     } else {
       // 模板：存 / 套用
       const nameInput = h('input', {
-        type: 'text', placeholder: '模板名，例如「夏季作息课表」', maxlength: '32',
+        type: 'text', placeholder: t('profiles.editor.templateNamePlaceholder'), maxlength: '32',
       });
-      body.appendChild(field('存为模板',
+      body.appendChild(field(t('profiles.editor.saveTemplate'),
         h('div.form-row', nameInput, h('button.btn.btn-sm', {
           type: 'button',
           onClick: async () => {
@@ -1433,26 +1454,26 @@ function openBulkOps(layout, periodCount) {
                   periodCount,
                 },
               });
-              toast('ok', '已存为模板', `「${created.name}」之后可以在别的档案里套用。`);
+              toast('ok', t('profiles.editor.templateSaved'), t('profiles.editor.templateSavedHint', { name: created.name }));
               nameInput.value = '';
               await loadTemplates();
               paint();
             } catch (err) {
-              toastError(err, '存为模板失败');
+              toastError(err, t('profiles.editor.templateSaveFailed'));
             }
           },
-        }, '保存')),
-      '模板按**科目名称**记录（不是 ID），因此可以套用到别的档案；'
-      + '那边没有同名科目时会跳过并提示。'));
+        }, t('profiles.editor.save'))),
+      t('profiles.editor.templateLead')
+      + t('profiles.editor.templateTail')));
 
       if (runtime.templates.length === 0) {
-        body.appendChild(h('p.card-desc', { style: { margin: 0 } }, '还没有任何课表模板。'));
+        body.appendChild(h('p.card-desc', { style: { margin: 0 } }, t('profiles.editor.noTemplates')));
       } else {
-        body.appendChild(field('套用模板', select([
-          { value: '', label: '（请选择模板）' },
-          ...runtime.templates.map((t) => ({ value: t.id, label: `${t.name}（${t.periodCount} 节）` })),
+        body.appendChild(field(t('profiles.editor.applyTemplate'), select([
+          { value: '', label: t('profiles.editor.pickTemplate') },
+          ...runtime.templates.map((t) => ({ value: t.id, label: t('profiles.editor.templateOption', { name: t.name, count: t.periodCount }) })),
         ], cfg.templateId, (v) => { cfg.templateId = v; }),
-        '**只填空格，不覆盖已有课程**；想完全照搬，先「批量清空」再套用。'));
+        t('profiles.editor.applyTemplateHint')));
       }
     }
   }
@@ -1468,10 +1489,10 @@ function openBulkOps(layout, periodCount) {
   paint();
 
   modal({
-    title: '课表批量操作',
+    title: t('profiles.editor.batchTitle'),
     width: 'wide',
     body,
-    confirmText: '执行',
+    confirmText: t('profiles.editor.run'),
     onConfirm: async () => {
       const code = () => {
         markDirty();
@@ -1482,60 +1503,60 @@ function openBulkOps(layout, periodCount) {
         const sourceWeek = Number(cfg.srcWeek) || 1;
         const targetWeek = currentWeek();
         if (sourceWeek === targetWeek) {
-          toast('warn', '源周次就是当前周',
-            '请选另一个周次：这个功能是把某一周抄到当前正在编辑的那一周。');
+          toast('warn', t('profiles.editor.sourceIsCurrent'),
+            t('profiles.editor.sourceIsCurrentHint'));
           return false;
         }
 
         const copied = applyCopyFromWeek();
         code();
-        toast('ok', '已复制',
-          `把第 ${sourceWeek} 周写进第 ${targetWeek} 周，共 ${copied.written} 格`
+        toast('ok', t('profiles.editor.copied'),
+          t('profiles.editor.copiedDetail', { source: sourceWeek, target: targetWeek, count: copied.written })
           + `${copied.skipped ? `，跳过 ${copied.skipped} 格（当前周已有课）` : ''}。`
-          + '记得点右上角「保存并下发」才会生效。');
+          + t('profiles.editor.rememberSave'));
         return true;
       }
 
       if (cfg.action === 'copy') {
         const result = applyCopy();
         code();
-        toast('ok', '已复制', `写入 ${result.written} 格`
+        toast('ok', t('profiles.editor.copied'), t('profiles.editor.writtenCells', { count: result.written })
           + `${result.skipped ? `，跳过 ${result.skipped} 格（已有课）` : ''}。`
-          + '记得点右上角「保存并下发」才会生效。');
+          + t('profiles.editor.rememberSave'));
         return true;
       }
 
       if (cfg.action === 'clear') {
         const result = applyClear();
         code();
-        toast('ok', '已清空', `清掉 ${result.cleared} 格。记得点右上角「保存并下发」才会生效。`);
+        toast('ok', t('profiles.editor.cleared'), t('profiles.editor.clearedDetail', { count: result.cleared }));
         return true;
       }
 
       if (cfg.action === 'replace') {
         const result = applyReplace();
         if (result.invalid) {
-          toast('warn', '请选择两个不同的科目');
+          toast('warn', t('profiles.editor.needTwoSubjects'));
           return false;
         }
 
         code();
-        toast('ok', '已替换', `换了 ${result.count} 格。记得点右上角「保存并下发」才会生效。`);
+        toast('ok', t('profiles.editor.replaced'), t('profiles.editor.replacedDetail', { count: result.count }));
         return true;
       }
 
       // 模板：执行 = 套用选中的那个
       const template = runtime.templates.find((t) => t.id === cfg.templateId);
       if (!template) {
-        toast('warn', '请先选择一个模板');
+        toast('warn', t('profiles.editor.needTemplate'));
         return false;
       }
 
       const result = applyTemplate(template);
       code();
-      toast('ok', '已套用模板', `填入 ${result.applied} 格`
+      toast('ok', t('profiles.editor.templateApplied'), t('profiles.editor.appliedCells', { count: result.applied })
         + `${result.missing.length ? `；模板里的「${result.missing.join('、')}」在这套档案里没有同名科目，已跳过` : ''}。`
-        + '记得点右上角「保存并下发」才会生效。');
+        + t('profiles.editor.rememberSave'));
       return true;
     },
   });
@@ -1572,7 +1593,9 @@ function ensureDayPlan(layout, day) {
   const label = GRID_DAYS.find((d) => d.value === day)?.label || String(day);
   plan = {
     id: genId(),
-    name: weeks >= 2 ? `${label}课表（第 ${week} 周）` : `${label}课表`,
+    name: weeks >= 2
+      ? t('profiles.editor.planNameWeek', { label, week })
+      : t('profiles.editor.planName', { label }),
     timeLayoutId: layout.id,
     isEnabled: true,
     daysOfWeek: [day],
@@ -1588,7 +1611,7 @@ function ensureDayPlan(layout, day) {
 function subjectShort(subject) {
   if (subject.initial) return subject.initial;
   if (subject.name) return subject.name.slice(0, 1);
-  return '未命名';
+  return t('profiles.editor.untitled');
 }
 
 /** 读取某一格的课程；空格返回 null。 */
@@ -1647,12 +1670,12 @@ function schedCell(layout, day, index, periodCount) {
     class: classes.join(' '),
     role: 'button',
     tabindex: '0',
-    title: subject ? '拖动可调到其他格子；双击清空该格' : '点击选中后点科目，或把科目拖进来',
+    title: subject ? t('profiles.editor.cellHint') : t('profiles.editor.cellHintEmpty'),
   },
     subject
       ? h('span.sched-initial', subjectShort(subject))
       : h('span.sched-plus', '＋'),
-    subject ? h('span.sched-name', subject.name || '未命名') : null,
+    subject ? h('span.sched-name', subject.name || t('profiles.editor.untitled')) : null,
     subject && subject.teacherName ? h('span.sched-teacher', subject.teacherName) : null,
   );
 
@@ -1751,7 +1774,7 @@ function applyCellDrop(layout, day, index, periodCount) {
 function renderPalette(periodCount) {
   if (state.content.subjects.length === 0) {
     return h('div.sched-palette',
-      h('span.palette-empty', '还没有科目。请先在「科目」标签页添加科目，再回到这里排课。'));
+      h('span.palette-empty', t('profiles.editor.noSubjectsHint')));
   }
 
   return h('div.sched-palette',
@@ -1761,10 +1784,10 @@ function renderPalette(periodCount) {
         class: `sched-chip${armed ? ' armed' : ''}`,
         role: 'button',
         tabindex: '0',
-        title: armed ? '再次点击可取消选中' : '点击选中后点格子排课；也可直接拖到格子',
+        title: armed ? t('profiles.editor.subjectToggleHint') : t('profiles.editor.subjectPickHint'),
       },
         h('b.sched-chip-initial', subjectShort(subject)),
-        h('span.sched-chip-name', subject.name || '未命名'),
+        h('span.sched-chip-name', subject.name || t('profiles.editor.untitled')),
       );
 
       chip.draggable = true;
@@ -1823,15 +1846,15 @@ function renderSubjects() {
       subject.name = v;
       if (!subject.initial) subject.initial = v.slice(0, 1);
       markDirtyLight();
-    }, '例如：语文')),
+    }, t('profiles.editor.subjectPlaceholder'))),
     h('td', textInput(subject.initial, (v) => {
       subject.initial = v;
       markDirtyLight();
-    }, '语')),
+    }, t('profiles.editor.abbrPlaceholder'))),
     h('td', textInput(subject.teacherName, (v) => {
       subject.teacherName = v;
       markDirtyLight();
-    }, '可选')),
+    }, t('profiles.editor.optional'))),
     h('td', { style: { textAlign: 'center' } }, checkbox(subject.isOutDoor, (v) => {
       subject.isOutDoor = v;
       markDirtyLight();
@@ -1839,8 +1862,8 @@ function renderSubjects() {
     h('td', h('button.btn.btn-ghost.btn-sm', {
       type: 'button',
       // 纯图标按钮必须有无障碍名（#49）：屏幕阅读器念的是 aria-label，不是那个 ✕。
-      title: '删除该科目',
-      'aria-label': '删除该科目',
+      title: t('profiles.editor.deleteSubject'),
+      'aria-label': t('profiles.editor.deleteSubject'),
       onClick: () => {
         state.content.subjects.splice(index, 1);
         markDirtyValues();
@@ -1851,7 +1874,7 @@ function renderSubjects() {
   return h('div',
     h('div.toolbar',
       h('span', { style: { fontSize: '12.5px', color: 'var(--text-dim)' } },
-        `共 ${subjects.length} 个科目。回到「课表」即可点选或拖拽科目进行排课。`),
+        t('profiles.editor.subjectsCount', { count: subjects.length })),
       h('div.spacer'),
       h('button.btn.btn-sm.btn-primary', {
         type: 'button',
@@ -1865,17 +1888,17 @@ function renderSubjects() {
           });
           markDirtyValues();
         },
-      }, '+ 添加科目'),
+      }, t('profiles.editor.addSubject')),
     ),
     subjects.length === 0
-      ? emptyState('book', '还没有科目', '先添加科目，才能在课表中安排课程。')
+      ? emptyState('book', t('profiles.editor.subjectsEmpty'), t('profiles.editor.subjectsEmptyHint'))
       : h('div.table-wrap', { style: { maxHeight: '60vh', overflowY: 'auto' } },
         h('table.data',
           h('thead', h('tr',
-            h('th', '科目名称'),
-            h('th', { style: { width: '120px' } }, '简称'),
-            h('th', { style: { width: '170px' } }, '任课教师'),
-            h('th', { style: { width: '92px', textAlign: 'center' } }, '户外'),
+            h('th', t('profiles.editor.subjectName')),
+            h('th', { style: { width: '120px' } }, t('profiles.editor.abbr')),
+            h('th', { style: { width: '170px' } }, t('profiles.editor.teacher')),
+            h('th', { style: { width: '92px', textAlign: 'center' } }, t('profiles.editor.outdoor')),
             h('th', { style: { width: '60px' } }, ''),
           )),
           h('tbody', ...rows),
@@ -1906,7 +1929,7 @@ function renderSettings() {
   const settings = state.content.settings;
 
   const announcementInput = h('textarea', {
-    placeholder: '例如：本周起执行夏季作息，请注意作息变化。',
+    placeholder: t('profiles.editor.noticePlaceholder'),
     onInput: (e) => {
       settings.announcement = e.target.value;
       markDirtyLight();
@@ -1924,7 +1947,7 @@ function renderSettings() {
     h('input', {
       type: 'text',
       value: key,
-      placeholder: '键名，例如 播报.启用',
+      placeholder: t('profiles.editor.customKeyPlaceholder'),
       onChange: (e) => {
         const newKey = e.target.value.trim();
         if (!newKey) return;
@@ -1939,7 +1962,7 @@ function renderSettings() {
     h('input', {
       type: 'text',
       value: value,
-      placeholder: '值',
+      placeholder: t('profiles.editor.customValue'),
       onChange: (e) => {
         settings.values[key] = e.target.value;
         markDirtyLight();
@@ -1947,8 +1970,8 @@ function renderSettings() {
     }),
     h('button.btn.btn-ghost.btn-sm', {
       type: 'button',
-      title: '删除该设置项',
-      'aria-label': '删除该设置项',
+      title: t('profiles.editor.deleteEntry'),
+      'aria-label': t('profiles.editor.deleteEntry'),
       onClick: () => {
         delete settings.values[key];
         markDirtyValues();
@@ -1959,24 +1982,24 @@ function renderSettings() {
   return h('div',
     h('div.notice.notice-info',
       h('span.notice-icon', 'i'),
-      h('div', '自定义配置项会随配置一起下发给客户端插件，插件可按需读取。键名建议使用「命名空间.键名」的形式，避免冲突。'),
+      h('div', t('profiles.editor.customLead')),
     ),
-    field('下发公告', announcementInput, '客户端同步后会读取该文本，可在插件界面中向使用者展示。'),
-    h('label.checkbox-field', lockCheckbox, '锁定客户端本地编辑（插件将提示配置由 IslandHub 统一管理）'),
+    field(t('profiles.editor.notice'), announcementInput, t('profiles.editor.noticeHint')),
+    h('label.checkbox-field', lockCheckbox, t('profiles.editor.lockLocal')),
     h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', margin: '18px 0 10px' } },
-      h('div', { style: { fontSize: '13px', fontWeight: '600' } }, `自定义配置项（${entries.length}）`),
+      h('div', { style: { fontSize: '13px', fontWeight: '600' } }, t('profiles.editor.customTitle', { count: entries.length })),
       h('div', { style: { flex: '1' } }),
       h('button.btn.btn-sm', {
         type: 'button',
         onClick: () => {
-          settings.values[`自定义.键${entries.length + 1}`] = '';
+          settings.values[t('profiles.editor.customKeyDefault', { n: entries.length + 1 })] = '';
           markDirtyValues();
         },
-      }, '+ 添加配置项'),
+      }, t('profiles.editor.addEntry')),
     ),
     entries.length === 0
       ? h('div', { style: { fontSize: '12.5px', color: 'var(--text-faint)', padding: '10px 0' } },
-        '暂无自定义配置项。')
+        t('profiles.editor.customEmpty'))
       : h('div', ...kvRows),
   );
 }
