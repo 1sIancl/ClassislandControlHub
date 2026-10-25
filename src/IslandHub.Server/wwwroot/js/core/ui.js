@@ -1,10 +1,10 @@
 /** 轻量 DOM 构建与通用交互组件，无框架依赖。 */
 
 // 只引「错误码 → 怎么办」的纯映射（#51）：本文件是最底层模块，不能反过来依赖 errors.js。
-import { formatErrorText, hasErrorHint } from './error-hints.js?v=142';
+import { formatErrorText, hasErrorHint } from './error-hints.js?v=144';
 // 文案资源（#48）：本文件是**全站共用**的交互件（弹窗 / 提示 / 徽章），
 // 所以这里的字符串进资源后收益最大——一次覆盖所有页面。
-import { t } from './i18n.js?v=142';
+import { t } from './i18n.js?v=144';
 
 /**
  * 创建元素。
@@ -77,6 +77,11 @@ export function append(parent, children) {
  * 现场只能靠猜；统一弹一次原因，截图即可定位。</para>
  */
 function reportHandlerError(err) {
+  // 控制台也留一条：toast 会自己消失，而 `ReferenceError: modal is not defined` 这类
+  // **纯前端编程错误**本该在开发/诊断时一眼看到——插件市场的「详情」与「安装到教室」
+  // 两个弹窗就因此静默坏了很久，用户只看到一句「操作失败」。
+  console.error('[ui] 操作失败：', err);
+
   // 这里是所有「没被单独接住」的操作的实际出口，光转述服务端原文不够用（#51）：
   // 按错误码补一句「怎么办」，带建议的多停留一会儿。
   toast('error', t('ui.actionFailed'), formatErrorText(err), hasErrorHint(err) ? 8000 : 4200);

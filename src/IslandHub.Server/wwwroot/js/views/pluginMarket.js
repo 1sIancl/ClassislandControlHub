@@ -10,14 +10,14 @@
  * 每一步都写明「要不要重启」，卸载 / 启停也复用同一套下发与进度。</para>
  */
 
-import { api, hasPermission } from '../core/api.js?v=142';
-import { toastError, errorBlock } from '../core/errors.js?v=142';
-import { hintForCode } from '../core/error-hints.js?v=142';
-import { renderMarkdown } from '../core/markdown.js?v=142';
+import { api, hasPermission } from '../core/api.js?v=144';
+import { toastError, errorBlock } from '../core/errors.js?v=144';
+import { hintForCode } from '../core/error-hints.js?v=144';
+import { renderMarkdown } from '../core/markdown.js?v=144';
 import {
-  h, clear, toast, loadingBlock, field, select, confirmDialog, emptyState,
+  h, clear, toast, loadingBlock, field, select, modal, confirmDialog, emptyState,
   formatDateTime, relativeTime, hintIcon,
-} from '../core/ui.js?v=142';
+} from '../core/ui.js?v=144';
 
 export const meta = {
   title: '插件管理',
@@ -685,6 +685,17 @@ function openDeployDialog(item) {
   const includeOffline = h('input', { type: 'checkbox' });
   const restartAfter = h('input', { type: 'checkbox', checked: true });
 
+  // 默认范围要看**当前实际情况**：一台都不在线时，「全部在线设备」等于「一台都不装」，
+  // 用户点完只看到一句"没有可下发的设备"，会以为功能坏了（实测就是这样）。
+  const deployableCount = state.inventory.filter((device) => !device.revoked).length;
+  const onlineCount = state.inventory.filter((device) => device.online && !device.revoked).length;
+  const nobodyOnline = onlineCount === 0 && deployableCount > 0;
+  if (nobodyOnline) {
+    allOnline.checked = false;
+    allDevices.checked = true;
+    includeOffline.checked = true;
+  }
+
   const targetList = h('div.checkbox-list',
     ...deviceBoxes.map(({ device, box }) => h('label.checkbox-field',
       box,
@@ -716,9 +727,19 @@ function openDeployDialog(item) {
         h('div', '安装会在教室机上放一份第三方代码，重启 ClassIsland 后才真正生效；'
           + '上课期间重启会让大屏短暂黑屏，建议避开上课时间。')),
 
+      // 把"现在到底有几台能装"摆出来：默认范围选错时，用户点下去会毫无反应。
+      h('p.card-desc', { style: { marginTop: '-4px' } },
+        `当前在线 ${onlineCount} 台 / 共 ${deployableCount} 台可下发。`),
+      nobodyOnline
+        ? h('div.notice.notice-info',
+          h('span.notice-icon', 'i'),
+          h('div', '当前没有在线设备，已默认选中「全部设备」并勾选「包含离线设备」——'
+            + '指令会排队，等教室上线后自动执行。'))
+        : null,
+
       field('范围',
         h('div',
-          h('label.checkbox-field', allOnline, h('span', '全部在线设备')),
+          h('label.checkbox-field', allOnline, h('span', `全部在线设备（${onlineCount} 台）`)),
           h('label.checkbox-field', allDevices, h('span', '全部设备（含离线，排队等它们上线）')),
           h('label.checkbox-field', picked, h('span', '指定设备（在下面勾选）')),
         )),
