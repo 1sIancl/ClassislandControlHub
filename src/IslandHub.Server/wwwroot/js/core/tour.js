@@ -9,7 +9,7 @@
  * 「这个功能在侧栏的哪个位置」）。</para>
  */
 
-import { h, clear } from './ui.js?v=141';
+import { h, clear } from './ui.js?v=142';
 import { t } from '../core/i18n.js?v=126';
 
 /** 二级侧栏里某一项（当前分组下才会渲染，所以必须先切页）。 */

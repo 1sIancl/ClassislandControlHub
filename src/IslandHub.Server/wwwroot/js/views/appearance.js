@@ -16,17 +16,17 @@
  * 本页的「外观（本机）」。</para>
  */
 
-import { api } from '../core/api.js?v=141';
-import { toastError } from '../core/errors.js?v=141';
+import { api } from '../core/api.js?v=142';
+import { toastError } from '../core/errors.js?v=142';
 import {
   h, clear, field, select, loadingBlock, toast, confirmDialog,
-} from '../core/ui.js?v=141';
+} from '../core/ui.js?v=142';
 import {
   THEMES, DENSITIES, ACCENTS, FONTS, RADII,
   getTheme, applyTheme, getDensity, setDensity,
   getAccent, setAccent, getFont, setFont, getRadius, setRadius,
-} from '../core/prefs.js?v=141';
-import { t } from '../core/i18n.js?v=141';
+} from '../core/prefs.js?v=142';
+import { t } from '../core/i18n.js?v=142';
 
 export const meta = {
   title: t('appearance.title'),

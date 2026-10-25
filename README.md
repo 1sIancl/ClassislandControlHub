@@ -668,6 +668,7 @@ dotnet run --project src/IslandHub.LoadTest -- --server http://127.0.0.1:29800 -
 - [对外 API 指南](docs/api.md)（鉴权、常用接口、监控脚本示例）
 - [通信协议与数据格式](docs/protocol.md)
 - [插件扩展协议（草案）](docs/plugin-protocol.md)
+- [插件市场运营手册](docs/plugin-market-ops.md)（上架自检 / 运营标记 / 维护节奏 / 案例征集模板）
 - [架构与数据模型](docs/architecture.md)
 - [架构决策记录 ADR](docs/adr/README.md)
 

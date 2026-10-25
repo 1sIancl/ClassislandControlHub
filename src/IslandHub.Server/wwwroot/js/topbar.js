@@ -14,7 +14,7 @@
  * </list>
  */
 
-import { t } from './core/i18n.js?v=141';
+import { t } from './core/i18n.js?v=142';
 
 /**
  * 是否处于「窄屏需要抽屉」的状态。与 topbar.css 的断点保持一致。

@@ -10,14 +10,14 @@
  * 每一步都写明「要不要重启」，卸载 / 启停也复用同一套下发与进度。</para>
  */
 
-import { api, hasPermission } from '../core/api.js?v=141';
-import { toastError, errorBlock } from '../core/errors.js?v=141';
-import { hintForCode } from '../core/error-hints.js?v=141';
-import { renderMarkdown } from '../core/markdown.js?v=141';
+import { api, hasPermission } from '../core/api.js?v=142';
+import { toastError, errorBlock } from '../core/errors.js?v=142';
+import { hintForCode } from '../core/error-hints.js?v=142';
+import { renderMarkdown } from '../core/markdown.js?v=142';
 import {
   h, clear, toast, loadingBlock, field, select, confirmDialog, emptyState,
   formatDateTime, relativeTime, hintIcon,
-} from '../core/ui.js?v=141';
+} from '../core/ui.js?v=142';
 
 export const meta = {
   title: '插件管理',
@@ -43,6 +43,8 @@ const state = {
   // 默认只列与本校教室端**兼容**的插件：不兼容的装了也跑不起来（教室端会拒绝），
   // 平铺在列表里只会挤占视线。折叠数量与开关见 renderMarketCard。
   compatOnly: true,
+  /** 运营标记（#104）：插件 id → { status, note, verifiedAt, updatedBy }。 */
+  ops: new Map(),
 };
 
 
@@ -69,11 +71,15 @@ export async function render(container) {
 }
 
 async function loadAll() {
-  const [market, inventory, deployments] = await Promise.all([
+  const [market, inventory, deployments, ops] = await Promise.all([
     api('/admin/plugin-market'),
     api('/admin/plugin-inventory'),
     api('/admin/plugin-deployments'),
+    // 运营标记单独一张表：市场索引每次同步整表替换，这些不能跟着一起被冲掉。
+    api('/admin/plugin-ops').catch(() => []),
   ]);
+
+  state.ops = new Map((Array.isArray(ops) ? ops : []).map((o) => [o.pluginId, o]));
 
   state.items = market.items ?? [];
   state.settings = market.settings ?? {};
@@ -261,6 +267,7 @@ function renderMarketRows(items) {
             item.description
               ? h('div.plugin-desc', item.description)
               : null,
+            renderOpsBadge(item),
           ),
         ),
       ),
@@ -278,6 +285,13 @@ function renderMarketRows(items) {
           title: '看元信息与作者的自述文件',
           onClick: () => openDetailDialog(item),
         }, '详情'),
+        canWrite()
+          ? h('button.btn.btn-sm', {
+            type: 'button',
+            title: '推荐 / 弃用标记，以及上架自检',
+            onClick: () => openOpsDialog(item),
+          }, '运营')
+          : null,
         canWrite()
           ? h('button.btn.btn-sm', {
             type: 'button',
@@ -473,6 +487,88 @@ function renderCacheCell(item) {
  * <para>自述文件由 A 端代理（`readmeLocalUrl`，免鉴权）：索引里的地址指向 GitHub raw，
  * 管理端浏览器直连多半打不开。**首次点开会触发 A 端去取一次**（可能几秒），之后走本地缓存。</para>
  */
+/** 运营标记的徽章（#104）：推荐 / 已弃用。没标记就什么都不显示。 */
+function renderOpsBadge(item) {
+  const ops = state.ops.get(item.id);
+  if (!ops || ops.status === 'normal') return null;
+  const recommended = ops.status === 'recommended';
+  return h('div', { style: { marginTop: '4px' } },
+    h('span', {
+      class: recommended ? 'badge badge-ok' : 'badge badge-warn',
+      title: ops.note || (recommended ? '本校推荐安装' : '本校已标记为不推荐'),
+    }, recommended ? '推荐' : '已弃用'));
+}
+
+/**
+ * 运营对话框（#104）：推荐 / 弃用标记 + 上架自检。
+ *
+ * <p>为什么把「上架自检」放在这里：它和"要不要推荐这个插件"是同一件事的两面——
+ * 运营时既要判断"我们学校该不该用"，也要判断"要不要提交给官方市场"。</p>
+ */
+function openOpsDialog(item) {
+  const current = state.ops.get(item.id) || { status: 'normal', note: '' };
+  const statusSelect = select([
+    { value: 'normal', label: '普通' },
+    { value: 'recommended', label: '推荐' },
+    { value: 'deprecated', label: '已弃用' },
+  ], current.status || 'normal', () => {});
+  const noteInput = h('input', {
+    type: 'text',
+    value: current.note || '',
+    placeholder: '例如：1.4.8 实测可用 / 与本机宿主不兼容，别装',
+  });
+  const checkBox = h('div', { style: { marginTop: '12px' } });
+
+  const runCheck = async () => {
+    clear(checkBox);
+    checkBox.appendChild(h('div', { style: { fontSize: '12px', color: 'var(--text-dim)' } }, '正在自检…'));
+    try {
+      const result = await api(`/admin/plugin-ops/${encodeURIComponent(item.id)}/submission`);
+      clear(checkBox);
+      checkBox.appendChild(h('div.config-section-title',
+        result.ready ? '✓ 可以提交到官方索引' : '⚠ 还差几项，补齐再提交'));
+      checkBox.appendChild(h('div.config-panel', ...result.items.map((row) => h('div.config-item',
+        // 不通过的行直接标红：清单式的自检要能一眼扫到"还差哪几项"。
+        h('span', { style: row.ok ? {} : { color: 'var(--danger)' } },
+          `${row.ok ? '✓' : '✗'} ${row.name}`),
+        h('span', {
+          style: {
+            marginLeft: 'auto', color: 'var(--text-dim)', fontSize: '12px', textAlign: 'right',
+          },
+        }, row.detail)))));
+    } catch (err) {
+      toastError(err, '自检失败');
+    }
+  };
+
+  modal({
+    title: `运营 · ${item.name}`,
+    width: 'wide',
+    body: h('div',
+      field('运营状态', statusSelect, '「推荐」会显示在插件名下方，「已弃用」用来提醒同事别再装——比在群里说一句管用。'),
+      field('备注', noteInput, '写给后来的自己：为什么这么标、上次验证是哪天。'),
+      h('div.card-actions', { style: { marginTop: '12px' } },
+        h('button.btn.btn-sm', { type: 'button', onClick: runCheck }, '上架自检')),
+      checkBox),
+    confirmText: '保存',
+    onConfirm: async () => {
+      try {
+        await api(`/admin/plugin-ops/${encodeURIComponent(item.id)}`, {
+          method: 'PUT',
+          body: { status: statusSelect.value, note: noteInput.value },
+        });
+        await loadAll();
+        paint();
+        toast('ok', '运营标记已保存');
+        return true;
+      } catch (err) {
+        toastError(err, '保存失败');
+        return false;
+      }
+    },
+  });
+}
+
 function openDetailDialog(item) {
   const readmeBox = h('div.md-holder',
     h('div', { style: { color: 'var(--text-dim)', fontSize: '12.5px' } }, '正在取作者的自述文件…'));

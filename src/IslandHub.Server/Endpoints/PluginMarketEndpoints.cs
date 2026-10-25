@@ -41,6 +41,13 @@ public static class PluginMarketEndpoints
         group.MapGet("/plugin-deployments/{id}", GetDeploymentAsync).RequirePermission(PermissionKeys.PluginsRead);
         group.MapPost("/plugin-deployments", CreateDeploymentAsync).RequirePermission(PermissionKeys.PluginsWrite);
 
+        // 运营标记（#104）：推荐 / 弃用 / 上次验证时间。人工维护，独立于市场索引（同步不会冲掉）。
+        group.MapGet("/plugin-ops", ListOpsAsync).RequirePermission(PermissionKeys.PluginsRead);
+        group.MapPut("/plugin-ops/{id}", SetOpsAsync).RequirePermission(PermissionKeys.PluginsWrite);
+        // 上架自检：把"提交到官方市场"的审核清单里能自动判断的部分跑一遍。
+        group.MapGet("/plugin-ops/{id}/submission", CheckSubmissionAsync)
+            .RequirePermission(PermissionKeys.PluginsRead);
+
         // 插件图标（#122 后续）：**刻意免鉴权**——<img> 标签带不了 bearer 令牌，而图标本身就是
         // 公开的官方索引内容（插件 ID 也公开）。免鉴权才能让浏览器按 URL 缓存它们：
         // 一屏几十个图标，每次都由前端带鉴权 fetch 再转 blob 是没必要的负担。
@@ -50,6 +57,113 @@ public static class PluginMarketEndpoints
         // 地址只取索引里登记的 readme_path，不接受任意 URL——否则这就成了开放的抓取代理。
         app.MapGet("/api/v1/plugin-readmes/{id}", GetReadmeAsync).AllowAnonymous();
     }
+
+    /// <summary>读取全部运营标记（前端一次性拿到，避免每行一个请求）。</summary>
+    private static async Task<ApiResult<List<PluginOpsDto>>> ListOpsAsync(
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        http.RequireAdminSession();
+        var rows = await store.ListPluginOpsAsync(cancellationToken);
+        return ApiResult<List<PluginOpsDto>>.Success(rows.Values
+            .OrderBy(r => r.PluginId, StringComparer.Ordinal)
+            .Select(ToOpsDto)
+            .ToList());
+    }
+
+    /// <summary>保存一个插件的运营标记。</summary>
+    private static async Task<ApiResult<PluginOpsDto>> SetOpsAsync(
+        string id,
+        PluginOpsRequest request,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+
+        var status = (request.Status ?? "normal").Trim().ToLowerInvariant();
+        if (status is not ("normal" or "recommended" or "deprecated"))
+        {
+            throw HubException.Validation("运营状态只能是 normal / recommended / deprecated。");
+        }
+
+        var row = new Data.PluginOpsRow
+        {
+            PluginId = id,
+            Status = status,
+            Note = (request.Note ?? string.Empty).Trim(),
+            VerifiedAt = DateTimeOffset.UtcNow,
+            UpdatedBy = session.Username,
+        };
+        await store.SetPluginOpsAsync(row, cancellationToken);
+
+        // 审计有意义：这条标记会影响所有人看到的"推荐 / 别用"。
+        await store.AddAuditAsync(session.Username, "plugin.ops", id,
+            $"设置插件运营标记：{status}{(row.Note.Length > 0 ? $"，备注「{row.Note}」" : string.Empty)}。",
+            http.GetClientIpAddress(), cancellationToken);
+
+        return ApiResult<PluginOpsDto>.Success(ToOpsDto(row));
+    }
+
+    /// <summary>
+    /// 上架自检（#104）：审核清单里"能自动判断"的那几项。
+    /// <para>
+    /// 只读本地已同步的索引与缓存状态，**不访问外网**——自检不该因为外部站点慢而失败。
+    /// 判断不了的项目（文案质量、截图好不好看）不在这里装样子，写进文档让人看。
+    /// </para>
+    /// </summary>
+    private static async Task<ApiResult<PluginSubmissionCheckDto>> CheckSubmissionAsync(
+        string id,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        http.RequireAdminSession();
+
+        var item = await store.GetMarketItemAsync(id, cancellationToken)
+                   ?? throw HubException.NotFound("市场索引里没有这个插件（先同步一次市场）。");
+        var packages = await store.ListPackagesAsync(cancellationToken);
+        var cached = packages.Where(p => string.Equals(p.PluginId, id, StringComparison.Ordinal)).ToList();
+
+        var items = new List<PluginSubmissionItemDto>
+        {
+            Item("插件 ID", item.PluginId.Length > 0, item.PluginId, "官方索引里必须有唯一 ID"),
+            Item("名称", item.Name.Length > 0, item.Name, "列表里显示的名字"),
+            Item("版本号", item.Version.Length > 0, item.Version, "发版时打标签的那个版本"),
+            Item("API 版本", item.ApiVersion.Length > 0, item.ApiVersion, "与编译所用 PluginSdk 对齐"),
+            Item("作者", item.Author.Length > 0, item.Author, "署名"),
+            Item("简介", item.Description.Length > 0, item.Description, "一句话说明这个插件做什么"),
+            Item("图标", item.IconPath.Length > 0, item.IconPath, "清单里的 icon"),
+            Item("自述文件", item.ReadmePath.Length > 0, item.ReadmePath, "清单里的 readme"),
+            Item("仓库地址", item.RepoUrl.Length > 0, item.RepoUrl, "用户要能看到源码与 issue"),
+            Item("安装包已缓存", cached.Count > 0,
+                cached.Count > 0 ? $"{cached.Count} 个版本" : "未缓存（教室端装不了）", "缓存后才能下发给教室端"),
+        };
+
+        return ApiResult<PluginSubmissionCheckDto>.Success(new PluginSubmissionCheckDto
+        {
+            PluginId = id,
+            Ready = items.Where(i => i.Required).All(i => i.Ok),
+            Items = items,
+        });
+
+        static PluginSubmissionItemDto Item(string name, bool ok, string detail, string hint) => new()
+        {
+            Name = name,
+            Ok = ok,
+            Detail = ok ? detail : hint,
+        };
+    }
+
+    private static PluginOpsDto ToOpsDto(Data.PluginOpsRow row) => new()
+    {
+        PluginId = row.PluginId,
+        Status = row.Status,
+        Note = row.Note,
+        VerifiedAt = row.VerifiedAt.ToString("O"),
+        UpdatedBy = row.UpdatedBy,
+    };
 
     /// <summary>
     /// 取一个插件的自述文件（Markdown 原文）。取不到返回 404，前端据此显示「去仓库看」而不是空白。

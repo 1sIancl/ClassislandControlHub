@@ -108,6 +108,23 @@ public sealed partial class HubStore
             await packages.ExecuteNonQueryAsync(cancellationToken);
         }
 
+        await using (var ops = connection.CreateCommand())
+        {
+            // 运营标记（#104）：**独立表**，不塞进 plugin_market_index。
+            // 索引表每次同步都是整表替换（ReplaceMarketIndexAsync），把运营备注放进去会被同步冲掉——
+            // 而这些是人工写的、同步不该碰的东西。
+            ops.CommandText = """
+                CREATE TABLE IF NOT EXISTS plugin_ops (
+                    plugin_id   TEXT PRIMARY KEY,
+                    status      TEXT NOT NULL DEFAULT 'normal',
+                    note        TEXT NOT NULL DEFAULT '',
+                    verified_at TEXT NOT NULL,
+                    updated_by  TEXT NOT NULL DEFAULT ''
+                );
+                """;
+            await ops.ExecuteNonQueryAsync(cancellationToken);
+        }
+
         await using (var deployments = connection.CreateCommand())
         {
             // 逐台进度不另建表：直接复用 device_commands（status / error_code / output 都是现成的），
@@ -346,6 +363,70 @@ public sealed partial class HubStore
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
+    // ────────────────────────────── 运营标记（#104）──────────────────────────────
+
+    /// <summary>读取全部运营标记（插件 id → 标记）。</summary>
+    public async Task<Dictionary<string, PluginOpsRow>> ListPluginOpsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var rows = new Dictionary<string, PluginOpsRow>(StringComparer.Ordinal);
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT plugin_id, status, note, verified_at, updated_by FROM plugin_ops;";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var row = new PluginOpsRow
+            {
+                PluginId = GetString(reader, "plugin_id"),
+                Status = GetString(reader, "status"),
+                Note = GetString(reader, "note"),
+                VerifiedAt = GetTimestampOrNow(reader, "verified_at"),
+                UpdatedBy = GetString(reader, "updated_by"),
+            };
+            rows[row.PluginId] = row;
+        }
+
+        return rows;
+    }
+
+    /// <summary>
+    /// 写入一条运营标记（幂等 upsert）。
+    /// <para>状态传 <c>normal</c> 且没有备注时直接删掉这一行——"没标记"和"标记成普通"对界面是一回事，
+    /// 留一行空记录只会让表越来越脏。</para>
+    /// </summary>
+    public async Task SetPluginOpsAsync(PluginOpsRow row, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+
+        if (string.Equals(row.Status, "normal", StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrWhiteSpace(row.Note))
+        {
+            await using var remove = connection.CreateCommand();
+            remove.CommandText = "DELETE FROM plugin_ops WHERE plugin_id = $id;";
+            remove.Parameters.AddWithValue("$id", row.PluginId);
+            await remove.ExecuteNonQueryAsync(cancellationToken);
+            return;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO plugin_ops (plugin_id, status, note, verified_at, updated_by)
+            VALUES ($id, $status, $note, $verified, $by)
+            ON CONFLICT(plugin_id) DO UPDATE SET
+                status = excluded.status,
+                note = excluded.note,
+                verified_at = excluded.verified_at,
+                updated_by = excluded.updated_by;
+            """;
+        command.Parameters.AddWithValue("$id", row.PluginId);
+        command.Parameters.AddWithValue("$status", row.Status);
+        command.Parameters.AddWithValue("$note", row.Note);
+        command.Parameters.AddWithValue("$verified", row.VerifiedAt.ToString("O"));
+        command.Parameters.AddWithValue("$by", row.UpdatedBy);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     // ────────────────────────────── 下发记录 ──────────────────────────────
 
     /// <summary>创建一条下发记录。</summary>
@@ -528,6 +609,25 @@ public sealed class PluginMarketRow
 
     /// <summary>同步时间。</summary>
     public DateTimeOffset SyncedAt { get; set; }
+}
+
+/// <summary>插件的运营标记（#104）：人工维护，不随市场同步冲掉。</summary>
+public sealed class PluginOpsRow
+{
+    /// <summary>插件 ID。</summary>
+    public string PluginId { get; set; } = string.Empty;
+
+    /// <summary>运营状态：<c>normal</c> / <c>recommended</c> / <c>deprecated</c>。</summary>
+    public string Status { get; set; } = "normal";
+
+    /// <summary>运营备注（为什么推荐 / 为什么弃用，写给后来的自己看）。</summary>
+    public string Note { get; set; } = string.Empty;
+
+    /// <summary>上次人工验证时间（"这个插件还能用"这句话是什么时候说的）。</summary>
+    public DateTimeOffset VerifiedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>最后改动这条标记的账号。</summary>
+    public string UpdatedBy { get; set; } = string.Empty;
 }
 
 /// <summary>插件包缓存行。</summary>
