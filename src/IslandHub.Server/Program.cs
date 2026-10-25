@@ -486,6 +486,8 @@ app.MapMigrationEndpoints();
 app.MapApprovalEndpoints();
 // 天气管理：读配置 / 保存 / 立即刷新（教室端那条是 /client/weather，在 ClientEndpoints 里）。
 app.MapWeatherEndpoints();
+// 首次使用引导（#126）：实例级的"是否已看过开始页"。
+app.MapWelcomeEndpoints();
 
 // 未匹配到的 API 路径统一返回 JSON 404，而不是落到前端页面。
 app.Map($"{HubProtocol.ApiPrefix}/{{**rest}}",

@@ -16,16 +16,17 @@
  * 本页的「外观（本机）」。</para>
  */
 
-import { api } from '../core/api.js?v=140';
+import { api } from '../core/api.js?v=141';
+import { toastError } from '../core/errors.js?v=141';
 import {
   h, clear, field, select, loadingBlock, toast, confirmDialog,
-} from '../core/ui.js?v=140';
+} from '../core/ui.js?v=141';
 import {
   THEMES, DENSITIES, ACCENTS, FONTS, RADII,
   getTheme, applyTheme, getDensity, setDensity,
   getAccent, setAccent, getFont, setFont, getRadius, setRadius,
-} from '../core/prefs.js?v=140';
-import { t } from '../core/i18n.js?v=140';
+} from '../core/prefs.js?v=141';
+import { t } from '../core/i18n.js?v=141';
 
 export const meta = {
   title: t('appearance.title'),
@@ -489,6 +490,23 @@ function renderAdvancedCard(branding) {
         type: 'button',
         onClick: () => { window.location.hash = '#/devices'; },
       }, t('appearance.deviceColumns')),
+      // 重新播放首次使用引导（#126）：重置实例状态后跳过去。
+      // 注意这会影响到**所有人**下次登录，所以按钮上写清楚。
+      h('button.btn.btn-sm', {
+        type: 'button',
+        onClick: async (event) => {
+          const target = event.currentTarget;
+          target.disabled = true;
+          try {
+            await api('/admin/welcome/reset', { method: 'POST' });
+            window.location.hash = '#/welcome';
+          } catch (err) {
+            toastError(err, t('appearance.replayTourFailed'));
+          } finally {
+            target.disabled = false;
+          }
+        },
+      }, t('appearance.replayTour')),
     ),
   );
 }

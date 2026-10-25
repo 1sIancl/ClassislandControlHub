@@ -79,6 +79,19 @@ function check(name, ok, extra = '') {
   await page.type('#loginPassword', 'admin123');
   await page.click('#loginSubmit');
   await page.waitForFunction(() => document.getElementById('app')?.hidden === false, { timeout: 30000 });
+
+  // 首次使用引导（#126）：**全新的实例**登录后会被送去 #/welcome，冒烟后面所有断言都会落空。
+  // 这里替测试"点一下跳过"（真实用户也是这么做的），让冒烟与实例是不是刚部署脱钩。
+  await page.evaluate(async () => {
+    const token = localStorage.getItem('controlhub.admin.token');
+    if (!token) return;
+    await fetch('/api/v1/admin/welcome/complete', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  });
+  // 标记完再回到仪表盘（可能刚才已经被送去引导页了）。
+  await page.evaluate(() => { window.location.hash = '#/dashboard'; });
   await sleep(2500);
   console.log('LOGGED_IN');
 

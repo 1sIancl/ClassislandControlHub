@@ -4323,3 +4323,199 @@ input.pcell-name:focus {
 @media (prefers-reduced-motion: reduce) {
   .bulk-bar { animation: none; }
 }
+/* ── 首次使用引导（#126）──────────────────────────────────────────────
+   一张居中的卡片 + 四个步骤。刻意做成"能一屏看完"的样子：
+   新部署的人面对的是空白管理台，这一页要能立刻给出方向。 */
+.welcome-page {
+  display: flex;
+  justify-content: center;
+  padding: 24px 16px 40px;
+}
+
+.welcome-card {
+  position: relative;
+  width: 100%;
+  max-width: 680px;
+  padding: 28px 26px 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-panel);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+}
+
+.welcome-skip {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+
+.welcome-head {
+  text-align: center;
+  margin: 12px 0 18px;
+}
+
+.welcome-title {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.welcome-sub {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text-dim);
+}
+
+.welcome-body {
+  min-height: 200px;
+}
+
+.welcome-hero {
+  text-align: center;
+}
+
+.welcome-emoji {
+  font-size: 52px;
+  line-height: 1.2;
+  margin-bottom: 10px;
+}
+
+.welcome-lead {
+  margin: 0 auto 10px;
+  max-width: 520px;
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--text);
+}
+
+.welcome-note {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-faint);
+}
+
+.welcome-list {
+  margin: 4px 0 16px;
+  padding-left: 22px;
+  font-size: 13.5px;
+  line-height: 2;
+  color: var(--text-dim);
+}
+
+.welcome-done {
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--ok-soft);
+  color: var(--ok);
+  text-align: center;
+  font-size: 13.5px;
+}
+
+.welcome-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+
+.welcome-code {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+
+.welcome-code-value {
+  font-family: Consolas, 'SF Mono', monospace;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+
+.welcome-features {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.welcome-feature {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+
+.welcome-feature-icon {
+  font-size: 16px;
+}
+
+.welcome-feature-label {
+  font-weight: 600;
+}
+
+.welcome-feature-desc {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  text-align: right;
+}
+
+.welcome-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.welcome-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.welcome-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  transition: width 0.18s ease, background 0.18s ease;
+}
+
+.welcome-dot.active {
+  width: 22px;
+  background: var(--accent);
+}
+
+@media (max-width: 700px) {
+  .welcome-card {
+    padding: 20px 16px 16px;
+  }
+
+  .welcome-feature-desc {
+    display: none;
+  }
+
+  .welcome-actions .btn,
+  .welcome-foot .btn {
+    flex: 1 1 100%;
+  }
+}
+
+/* 尊重系统的"减少动效"/"减少透明"偏好（#49 的一贯做法）。 */
+@media (prefers-reduced-motion: reduce) {
+  .welcome-dot {
+    transition: none;
+  }
+}
