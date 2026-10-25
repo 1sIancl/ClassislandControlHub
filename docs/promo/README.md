@@ -34,7 +34,7 @@ powershell -ExecutionPolicy Bypass -File docs\promo\tools\setup-demo-env.ps1
 | `04-profiles.png` | `#/profiles` | 周课表网格、时间表、科目 |
 | `05-remote.png` | `#/remote` | 指令面板 + 目标选择 + 诊断截图区 |
 | `06-audit.png` | `#/audit` | 筛选条件与列表 |
-| `07-accounts.png` | `#/accounts` | 账号、角色模板、权限矩阵 |
+| `07-settings.png` | `#/accounts` | 账号、角色模板、权限矩阵（现有文件是旧「系统设置」页截图，建议重拍） |
 | `08-shell.png` | 桌面外壳 | 状态胶囊、按钮分组、日志面板 |
 
 > `08-shell.png` 是旧版外壳截图，建议换新。
