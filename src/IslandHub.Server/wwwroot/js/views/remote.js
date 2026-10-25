@@ -3,13 +3,13 @@
  * 数据来自 A 端 /admin/devices、/admin/backups 等接口。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=136';
-import { toastError } from '../core/errors.js?v=136';
-import { hintForCode } from '../core/error-hints.js?v=136';
+import { api, fetchBlob } from '../core/api.js?v=137';
+import { toastError } from '../core/errors.js?v=137';
+import { hintForCode } from '../core/error-hints.js?v=137';
 import {
   h, clear, toast, loadingBlock, confirmDialog, field, select, emptyState, formatDateTime, modal,
   hintIcon,
-} from '../core/ui.js?v=136';
+} from '../core/ui.js?v=137';
 
 export const meta = {
   title: '远程管理',

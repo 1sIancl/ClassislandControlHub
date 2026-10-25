@@ -3,13 +3,13 @@
  * 档案是 IslandHub 下发的最小单元：一个档案 = 一套时间表 + 课表 + 科目 + 自定义设置。
  */
 
-import { api } from '../core/api.js?v=136';
-import { toastError, errorBlock } from '../core/errors.js?v=136';
-import { openAuditTimeline } from '../core/audit-timeline.js?v=136';
+import { api } from '../core/api.js?v=137';
+import { toastError, errorBlock } from '../core/errors.js?v=137';
+import { openAuditTimeline } from '../core/audit-timeline.js?v=137';
 import {
   h, clear, formatDateTime, toast, loadingBlock, modal, confirmDialog,
   emptyState, field, select,
-} from '../core/ui.js?v=136';
+} from '../core/ui.js?v=137';
 
 export const meta = {
   title: '配置档案',

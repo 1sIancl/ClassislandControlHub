@@ -2,12 +2,12 @@
  * 审计日志视图：记录管理员操作与设备同步事件，便于排查与追溯。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=136';
-import { toastError } from '../core/errors.js?v=136';
+import { api, fetchBlob } from '../core/api.js?v=137';
+import { toastError } from '../core/errors.js?v=137';
 import {
   h, clear, formatDateTime, toast, loadingBlock, emptyState,
-} from '../core/ui.js?v=136';
-import { t } from '../core/i18n.js?v=136';
+} from '../core/ui.js?v=137';
+import { t } from '../core/i18n.js?v=137';
 
 export const meta = {
   title: t('audit.title'),

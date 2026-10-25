@@ -2,21 +2,21 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=136';
-import { toastError } from './core/errors.js?v=136';
-import { h, clear, toast, icon } from './core/ui.js?v=136';
-import { t, applyStatic, mountLocalePicker } from './core/i18n.js?v=136';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=137';
+import { toastError } from './core/errors.js?v=137';
+import { h, clear, toast, icon } from './core/ui.js?v=137';
+import { t, applyStatic, mountLocalePicker } from './core/i18n.js?v=137';
 import {
   initTheme,
   getSidebarCollapsed, setSidebarCollapsed,
   applyDensity,
   applyAppearance, setBrandingAccent,
   applyRemotePrefs, applySchedScale,
-} from './core/prefs.js?v=136';
-import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=136';
-import { initGlassHighlight } from './core/glass.js?v=136';
-import { initTopbar } from './topbar.js?v=136';
-import { openSearch } from './core/search.js?v=136';
+} from './core/prefs.js?v=137';
+import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=137';
+import { initGlassHighlight } from './core/glass.js?v=137';
+import { initTopbar } from './topbar.js?v=137';
+import { openSearch } from './core/search.js?v=137';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -155,31 +155,31 @@ const ROUTE_ALIASES = {
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=136'),
-  devices: () => import('./views/devices.js?v=136'),
+  dashboard: () => import('./views/dashboard.js?v=137'),
+  devices: () => import('./views/devices.js?v=137'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=136'),
-  profiles: () => import('./views/profiles.js?v=136'),
-  profileEditor: () => import('./views/profileEditor.js?v=136'),
-  deploy: () => import('./views/deploy.js?v=136'),
-  remote: () => import('./views/remote.js?v=136'),
-  reminders: () => import('./views/reminders.js?v=136'),
-  examMode: () => import('./views/examMode.js?v=136'),
-  weather: () => import('./views/weather.js?v=136'),
-  profileSlots: () => import('./views/profileSlots.js?v=136'),
-  audit: () => import('./views/audit.js?v=136'),
-  reports: () => import('./views/reports.js?v=136'),
-  appearance: () => import('./views/appearance.js?v=136'),
+  groups: () => import('./views/devices.js?v=137'),
+  profiles: () => import('./views/profiles.js?v=137'),
+  profileEditor: () => import('./views/profileEditor.js?v=137'),
+  deploy: () => import('./views/deploy.js?v=137'),
+  remote: () => import('./views/remote.js?v=137'),
+  reminders: () => import('./views/reminders.js?v=137'),
+  examMode: () => import('./views/examMode.js?v=137'),
+  weather: () => import('./views/weather.js?v=137'),
+  profileSlots: () => import('./views/profileSlots.js?v=137'),
+  audit: () => import('./views/audit.js?v=137'),
+  reports: () => import('./views/reports.js?v=137'),
+  appearance: () => import('./views/appearance.js?v=137'),
   // 「系统设置」拆成四页（原 settings.js 已按此拆分，见各文件头部说明）。
-  accounts: () => import('./views/accounts.js?v=136'),
-  server: () => import('./views/server.js?v=136'),
-  integrations: () => import('./views/integrations.js?v=136'),
-  maintenance: () => import('./views/maintenance.js?v=136'),
-  board: () => import('./views/board.js?v=136'),
-  approvals: () => import('./views/approvals.js?v=136'),
-  timesync: () => import('./views/timesync.js?v=136'),
-  lessons: () => import('./views/lessons.js?v=136'),
-  plugins: () => import('./views/pluginMarket.js?v=136'),
+  accounts: () => import('./views/accounts.js?v=137'),
+  server: () => import('./views/server.js?v=137'),
+  integrations: () => import('./views/integrations.js?v=137'),
+  maintenance: () => import('./views/maintenance.js?v=137'),
+  board: () => import('./views/board.js?v=137'),
+  approvals: () => import('./views/approvals.js?v=137'),
+  timesync: () => import('./views/timesync.js?v=137'),
+  lessons: () => import('./views/lessons.js?v=137'),
+  plugins: () => import('./views/pluginMarket.js?v=137'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -231,7 +231,7 @@ const runtime = {
 setSessionExpiredHandler(() => {
   if (document.getElementById('app')?.hidden === false) {
     stopPolling();
-    showLogin('登录状态已失效，请重新登录。');
+    showLogin(t('app.sessionExpired'));
   }
 });
 
@@ -257,9 +257,9 @@ async function loadServerInfo() {
     session.serverInfo = info;
     session.revision = info.revision;
     applyBranding(info);
-    setLoginServerState('online', info.serverName || '已连接服务器');
+    setLoginServerState('online', info.serverName || t('app.connected'));
   } catch {
-    setLoginServerState('offline', '无法连接到服务器');
+    setLoginServerState('offline', t('app.disconnected'));
   }
 }
 
@@ -274,11 +274,11 @@ function setLoginServerState(state, text) {
 /** 应用站点品牌个性化（名称 / Logo / 图标）。 */
 function applyBranding(info) {
   const branding = info.branding || {};
-  const siteName = branding.siteName || info.serverName || 'IslandHub 系统';
+  const siteName = branding.siteName || info.serverName || t('app.defaultSiteName');
   // 没配品牌图时用内置的 icon.png（applyBrandMark 的兜底）；logoText 只在图片加载不出来时才显示。
   const logoText = branding.logoText || 'IslandHub';
 
-  document.title = `${siteName} · 管理后台`;
+  document.title = t('app.titleWithSite', { site: siteName });
   const ids = ['brandServerName', 'loginTitle', 'brandTitle'];
   for (const id of ids) {
     const el = document.getElementById(id);
@@ -334,7 +334,7 @@ function applyBranding(info) {
 
   const loginSubtitle = document.getElementById('loginSubtitle');
   if (loginSubtitle) {
-    loginSubtitle.textContent = branding.loginSubtitle || 'ClassIsland 机房 IslandHub 平台';
+    loginSubtitle.textContent = branding.loginSubtitle || t('app.defaultLoginSubtitle');
   }
 
   // 描述段落：配了才替换；配成空串则整段收起（而不是留一行空白）。
@@ -465,10 +465,10 @@ function switchLoginMode(mode) {
 
   // 标题与副文案跟随当前表单，避免多张表单共用一个标题造成误解。
   const titles = {
-    login: ['欢迎回来', '登录以继续管理您的 IslandHub 服务'],
-    register: ['创建账号', '凭管理员发放的邀请码即可自助注册'],
-    apply: ['申请账号', '提交后由管理员审批，通过即可登录'],
-    totp: ['两步验证', '请输入验证器 App 显示的 6 位验证码'],
+    login: [t('app.welcomeBack'), t('app.loginIntro')],
+    register: [t('app.modeRegister'), t('app.modeRegisterHint')],
+    apply: [t('app.modeApply'), t('app.modeApplyHint')],
+    totp: [t('app.twoFactor'), t('app.twoFactorHint')],
   };
   const [title, subtitle] = titles[mode] || titles.login;
   const heading = document.getElementById('loginHeading');
@@ -504,7 +504,7 @@ function resetPasswordFields() {
   for (const btn of document.querySelectorAll('.pw-toggle')) {
     btn.classList.remove('is-on');
     btn.setAttribute('aria-pressed', 'false');
-    btn.setAttribute('aria-label', '显示密码');
+    btn.setAttribute('aria-label', t('app.showPassword'));
   }
 }
 
@@ -519,7 +519,7 @@ function bindPasswordToggles() {
       input.type = show ? 'text' : 'password';
       btn.classList.toggle('is-on', show);
       btn.setAttribute('aria-pressed', show ? 'true' : 'false');
-      btn.setAttribute('aria-label', show ? '隐藏密码' : '显示密码');
+      btn.setAttribute('aria-label', show ? t('app.hidePassword') : t('app.showPassword'));
       input.focus();
     });
   }
@@ -532,8 +532,8 @@ async function refreshRegistrationEntry() {
     runtime.registrationEnabled = Boolean(info.enabled);
     runtime.approvalEnabled = Boolean(info.approvalEnabled);
     document.getElementById('loginFootHint').innerHTML = info.hint
-      ? `${info.hint}；首次部署默认账号 <code>admin</code>。`
-      : '首次部署默认账号 <code>admin</code>，登录后请立即修改密码。';
+      ? t('app.loginHintDefault', { hint: info.hint })
+      : t('app.defaultAccountHint');
   } catch {
     runtime.registrationEnabled = false;
     runtime.approvalEnabled = false;
@@ -556,13 +556,13 @@ async function completeSignIn(result) {
   await showApp();
 
   if (session.me.mustChangePassword) {
-    toast('warn', '请修改初始密码', '当前账号仍在使用初始密码，建议立即在「账号与权限」中修改。', 8000);
+    toast('warn', t('app.changeInitialTitle'), t('app.changeInitialText'), 8000);
   }
 
   // 密码到期提醒（#28）：服务端在**登录应答**里直接给出可读提示（临近到期 / 已过期），
   // 与「初始密码」提示并列，进控制台就能看到；不阻止登录，提醒后由管理员自行安排时间。
   if (result.passwordWarning) {
-    toast('warn', '登录密码需要更换', result.passwordWarning, 12000);
+    toast('warn', t('app.changePasswordNeeded'), result.passwordWarning, 12000);
   }
 }
 
@@ -574,7 +574,7 @@ async function handleLogin(event) {
   const username = document.getElementById('loginUsername').value.trim();
   const password = document.getElementById('loginPassword').value;
 
-  setButtonLoading(button, true, '登录中…');
+  setButtonLoading(button, true, t('app.signingIn'));
   errorBox.hidden = true;
 
   try {
@@ -590,16 +590,16 @@ async function handleLogin(event) {
     if (result.needTotp) {
       runtime.pendingTotp = result.totpTicket || '';
       switchLoginMode('totp');
-      toast('info', '需要两步验证', '请输入验证器 App 里的 6 位验证码。');
+      toast('info', t('app.needsTwoFactor'), t('app.needsTwoFactorText'));
       return;
     }
 
     await completeSignIn(result);
   } catch (err) {
-    errorBox.textContent = err.message || '登录失败';
+    errorBox.textContent = err.message || t('app.loginFailed');
     errorBox.hidden = false;
   } finally {
-    setButtonLoading(button, false, '登录');
+    setButtonLoading(button, false, t('login.submit'));
   }
 }
 
@@ -613,11 +613,11 @@ async function handleTotp(event) {
 
   if (!runtime.pendingTotp) {
     switchLoginMode('login');
-    showLogin('验证已超时，请重新登录。');
+    showLogin(t('app.verifyExpired'));
     return;
   }
 
-  setButtonLoading(button, true, '验证中…');
+  setButtonLoading(button, true, t('app.verifying'));
   errorBox.hidden = true;
 
   try {
@@ -631,10 +631,10 @@ async function handleTotp(event) {
     document.getElementById('totpCode').value = '';
     await completeSignIn(result);
   } catch (err) {
-    errorBox.textContent = err.message || '验证失败';
+    errorBox.textContent = err.message || t('app.verifyFailed');
     errorBox.hidden = false;
   } finally {
-    setButtonLoading(button, false, '验证并登录');
+    setButtonLoading(button, false, t('app.verifyAndSignIn'));
   }
 }
 
@@ -651,19 +651,19 @@ async function handleRegister(event) {
     password: document.getElementById('registerPassword').value,
   };
 
-  setButtonLoading(button, true, '注册中…');
+  setButtonLoading(button, true, t('app.registering'));
   errorBox.hidden = true;
 
   try {
     const result = await api('/admin/register', { method: 'POST', auth: false, body });
     document.getElementById('registerPassword').value = '';
     await completeSignIn(result);
-    toast('ok', '注册成功', `欢迎，${result.displayName || session.me?.username || '新同事'}。`);
+    toast('ok', t('app.registered'), t('app.welcomeUser', { name: result.displayName || session.me?.username || t('app.newColleague') }));
   } catch (err) {
-    errorBox.textContent = err.message || '注册失败';
+    errorBox.textContent = err.message || t('app.registerFailed');
     errorBox.hidden = false;
   } finally {
-    setButtonLoading(button, false, '注册并登录');
+    setButtonLoading(button, false, t('app.registerAndSignIn'));
   }
 }
 
@@ -680,7 +680,7 @@ async function handleApply(event) {
     password: document.getElementById('applyPassword').value,
   };
 
-  setButtonLoading(button, true, '提交中…');
+  setButtonLoading(button, true, t('app.submitting'));
   errorBox.hidden = true;
 
   try {
@@ -688,12 +688,12 @@ async function handleApply(event) {
     document.getElementById('applyPassword').value = '';
     document.getElementById('applyForm').hidden = true;
     document.getElementById('applyDone').hidden = false;
-    toast('ok', '申请已提交', '管理员审批通过后即可登录。');
+    toast('ok', t('app.requestSubmitted'), t('app.requestSubmittedHint'));
   } catch (err) {
-    errorBox.textContent = err.message || '提交失败';
+    errorBox.textContent = err.message || t('app.submitFailed');
     errorBox.hidden = false;
   } finally {
-    setButtonLoading(button, false, '提交申请');
+    setButtonLoading(button, false, t('app.submitRequest'));
   }
 }
 
@@ -709,7 +709,7 @@ async function showApp() {
   // 否则会先闪一下默认布局再跳成自定义布局。未登录 / 无偏好时此调用是空操作。
   applyRemotePrefs(me.uiPreferences);
 
-  document.getElementById('userName').textContent = me.displayName || me.username || '管理员';
+  document.getElementById('userName').textContent = me.displayName || me.username || t('app.adminRole');
   document.getElementById('userAvatar').textContent = (me.displayName || me.username || 'A').slice(0, 1).toUpperCase();
 
   renderNav();
@@ -724,7 +724,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=136');
+    const { startTour } = await import('./core/tour.js?v=137');
     startTour({
       onFinish: async (skipped) => {
         try {
@@ -732,7 +732,7 @@ async function showApp() {
           session.me.onboardingDone = true;
         } catch { /* 记录失败也无妨，下次登录会再放一次 */ }
         if (!skipped) {
-          toast('ok', '引导已完成', '之后可以在「账号与权限」里重新观看。');
+          toast('ok', t('app.tourDone'), t('app.tourDoneHint'));
         }
       },
     });
@@ -868,7 +868,7 @@ function renderSideNav() {
   const list = (group?.items || []).filter((item) => can(item.perm));
   const hints = pageHintMap();
 
-  host.appendChild(h('div.side-nav-title', group ? group.label : '导航'));
+  host.appendChild(h('div.side-nav-title', group ? group.label : t('app.navigation')));
 
   for (const item of list) {
     const hint = hints.get(item.key) || '';
@@ -1167,7 +1167,7 @@ function bindShellEvents() {
       saveToken('');
       session.me = null;
       stopPolling();
-      showLogin('已退出登录。');
+      showLogin(t('app.signedOut'));
     } else if (action === 'change-password') {
       window.location.hash = '#/accounts';
     }
@@ -1218,16 +1218,16 @@ async function route() {
 
   // 无权访问的页面直接给提示，不要先打一堆注定 403 的接口。
   if (!can(ROUTE_PERMS[key])) {
-    const label = NAV.flatMap((g) => g.items).find((i) => i.key === key)?.label || '该页面';
+    const label = NAV.flatMap((g) => g.items).find((i) => i.key === key)?.label || t('app.thisPage');
     document.getElementById('pageTitle').textContent = label;
-    document.getElementById('pageSubtitle').textContent = '无权访问';
+    document.getElementById('pageSubtitle').textContent = t('app.forbiddenTitle');
     clear(content);
     content.appendChild(h('div.card',
       h('div.notice.notice-warn', { style: { margin: 0 } },
         h('span.notice-icon', '!'),
         h('div',
-          h('strong', '当前账号没有访问该页面的权限'),
-          h('div', `请联系超级管理员在「账号与权限」中为你的账号勾选相应权限。`)),
+          h('strong', t('app.forbiddenText')),
+          h('div', t('app.forbiddenHint'))),
       ),
     ));
     return;
@@ -1240,7 +1240,7 @@ async function route() {
   try {
     const view = await module();
 
-    document.getElementById('pageTitle').textContent = view.meta?.title || 'IslandHub 中心';
+    document.getElementById('pageTitle').textContent = view.meta?.title || t('app.defaultCenterName');
     document.getElementById('pageSubtitle').textContent = view.meta?.subtitle || '';
 
     await view.render(content, params);
@@ -1250,10 +1250,10 @@ async function route() {
     content.appendChild(h('div.card',
       h('div.notice.notice-danger', { style: { margin: 0 } },
         h('span.notice-icon', '!'),
-        h('div', h('strong', '页面加载失败'), h('div', err.message || String(err))),
+        h('div', h('strong', t('app.pageLoadFailed')), h('div', err.message || String(err))),
       ),
     ));
-    toastError(err, '加载失败');
+    toastError(err, t('app.loadFailed'));
   }
 }
 
@@ -1282,13 +1282,13 @@ async function refreshConnectionState() {
     session.revision = info.revision;
 
     stateEl.className = 'conn-state online';
-    textEl.textContent = `在线 · ${info.onlineDeviceCount}/${info.deviceCount} 台`;
+    textEl.textContent = t('app.onlineCount', { online: info.onlineDeviceCount, total: info.deviceCount });
     document.getElementById('sidebarVersion').textContent =
-      `v${info.version} · 协议 ${info.protocolVersion}`;
+      t('app.versionLine', { version: info.version, protocol: info.protocolVersion });
     updateRevisionChip();
   } catch {
     stateEl.className = 'conn-state offline';
-    textEl.textContent = '与服务器断开连接';
+    textEl.textContent = t('app.connectionLost');
   }
 }
 
