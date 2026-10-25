@@ -2,14 +2,14 @@
  * 审计日志视图：记录管理员操作与设备同步事件，便于排查与追溯。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=147';
-import { toastError } from '../core/errors.js?v=147';
+import { api, fetchBlob } from '../core/api.js?v=148';
+import { toastError } from '../core/errors.js?v=148';
 import {
   h, clear, formatDateTime, toast, loadingBlock, emptyState,
-} from '../core/ui.js?v=147';
-import { t } from '../core/i18n.js?v=147';
+} from '../core/ui.js?v=148';
+import { t } from '../core/i18n.js?v=148';
 // 动作码 → 可读标签（`device.command` → 「设备 · 下发指令」）。原始码仍保留在下方小字里，便于对日志。
-import { auditActionLabel } from '../core/audit-actions.js?v=147';
+import { auditActionLabel } from '../core/audit-actions.js?v=148';
 
 export const meta = {
   title: t('audit.title'),

@@ -3,37 +3,38 @@
  * 数据来自 A 端 /admin/devices、/admin/backups 等接口。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=147';
-import { toastError } from '../core/errors.js?v=147';
-import { hintForCode } from '../core/error-hints.js?v=147';
+import { api, fetchBlob } from '../core/api.js?v=148';
+import { toastError } from '../core/errors.js?v=148';
+import { hintForCode } from '../core/error-hints.js?v=148';
 import {
   h, clear, toast, loadingBlock, confirmDialog, field, select, emptyState, formatDateTime, modal,
   hintIcon,
-} from '../core/ui.js?v=147';
+} from '../core/ui.js?v=148';
+import { t } from './../core/i18n.js?v=148';
 
 export const meta = {
-  title: '远程管理',
-  subtitle: '远程命令行、插件、外观、提醒与备份',
+  title: t('remote.title'),
+  subtitle: t('remote.subtitle'),
 };
 
 const TABS = [
-  { key: 'command', label: '远程命令行' },
-  { key: 'diagnostic', label: '远程诊断' },
-  { key: 'plugins', label: '插件管理' },
-  { key: 'appearance', label: '外观下发' },
-  { key: 'device', label: '音量与亮度' },
-  { key: 'notify', label: '发送提醒' },
-  { key: 'automation', label: '自动化' },
-  { key: 'backup', label: '备份' },
+  { key: 'command', label: t('remote.tabCommand') },
+  { key: 'diagnostic', label: t('remote.tabDiagnostics') },
+  { key: 'plugins', label: t('remote.tabPlugins') },
+  { key: 'appearance', label: t('remote.tabAppearance') },
+  { key: 'device', label: t('remote.tabVolume') },
+  { key: 'notify', label: t('remote.tabNotice') },
+  { key: 'automation', label: t('remote.tabAutomation') },
+  { key: 'backup', label: t('remote.tabBackup') },
 ];
 
 /** 指令状态 → 展示文案 / 日志级别。 */
 const STATUS_LABEL = {
-  pending: '排队中',
-  dispatched: '已派发',
-  done: '已完成',
-  failed: '失败',
-  expired: '已过期',
+  pending: t('remote.stateQueued'),
+  dispatched: t('remote.stateDispatched'),
+  done: t('remote.stateDone'),
+  failed: t('remote.stateFailed'),
+  expired: t('remote.stateExpired'),
 };
 
 const STATUS_LEVEL = {
@@ -83,7 +84,13 @@ function renderTab(container) {
 }
 
 function deviceOptions() {
-  return state.devices.map((d) => ({ value: d.id, label: `${d.name}${d.online ? '（在线）' : '（离线）'}` }));
+  return state.devices.map((d) => ({
+    value: d.id,
+    label: t('remote.deviceOption', {
+      name: d.name,
+      state: d.online ? t('remote.onlineSuffix') : t('remote.offlineSuffix'),
+    }),
+  }));
 }
 
 /** 重新拉取设备列表（在线状态会随心跳变化）。 */
@@ -95,12 +102,12 @@ async function reloadDevices(container) {
 function deviceRefreshButton(container) {
   return h('button.btn.btn-sm', {
     type: 'button',
-    title: '重新读取设备在线状态',
+    title: t('remote.refreshDevicesHint'),
     onClick: async () => {
       await reloadDevices(container);
-      toast('ok', '已刷新设备状态');
+      toast('ok', t('remote.refreshed'));
     },
-  }, '刷新设备');
+  }, t('remote.refreshDevices'));
 }
 
 /** 「含离线设备」开关：默认只发给在线设备，避免对离线设备堆积陈旧指令。 */
@@ -109,14 +116,14 @@ function offlineOption() {
   return {
     input,
     el: h('label.checkbox-field', input,
-      h('span', '含离线设备（命令会排队，等设备上线后执行，2 小时后自动作废）')),
+      h('span', t('remote.includeOffline'))),
   };
 }
 
 function broadcastResult(result) {
   const skipped = result?.skipped ?? 0;
-  return `已下发 ${result?.affected ?? 0} 台在线设备`
-    + (skipped > 0 ? `；${skipped} 台离线未下发（如需排队，请勾选「含离线设备」）` : '');
+  return t('remote.sentOnline', { count: result?.affected ?? 0 })
+    + (skipped > 0 ? t('remote.skippedOffline', { count: skipped }) : '');
 }
 
 /**
@@ -145,14 +152,14 @@ function createQueueView(deviceSelect) {
     const device = state.devices.find((d) => d.id === deviceId);
 
     box.appendChild(h('div.toolbar',
-      h('span.toolbar-label', `待执行指令队列（${list.length}）`),
+      h('span.toolbar-label', t('remote.queueTitle', { count: list.length })),
       h('div.spacer'),
-      h('button.btn.btn-sm', { type: 'button', onClick: refresh }, '刷新队列'),
+      h('button.btn.btn-sm', { type: 'button', onClick: refresh }, t('remote.refreshQueue')),
     ));
 
     if (list.length === 0) {
       box.appendChild(h('div', { style: { padding: '6px 0', color: 'var(--text-faint)', fontSize: '12.5px' } },
-        '队列为空。设备在线时指令会立即执行；要让离线设备排队执行，请勾选「含离线设备」。'));
+        t('remote.queueEmpty')));
       return;
     }
 
@@ -162,7 +169,7 @@ function createQueueView(deviceSelect) {
       return h('div.cmd-row',
         h('div.cmd-head',
           h('span.log-time', formatDateTime(c.issuedAt)),
-          h('span.log-level.warn', inflight ? '已派发' : '排队中'),
+          h('span.log-level.warn', inflight ? t('remote.stateDispatched') : t('remote.stateQueued')),
           h('span.cmd-kind', c.kind),
           remaining ? h('span.cmd-kind', remaining) : null,
           h('div.spacer'),
@@ -171,17 +178,17 @@ function createQueueView(deviceSelect) {
             : h('button.btn.btn-sm', {
               type: 'button',
               onClick: async () => {
-                if (!await confirmDialog('取消指令',
-                  `确定取消这条「${c.kind}」指令吗？取消后设备不会执行它。`, '取消指令')) return;
+                if (!await confirmDialog(t('remote.cancelCommand'),
+                  t('remote.cancelConfirm', { kind: c.kind }), t('remote.cancelCommand'))) return;
                 try {
                   await api(`/admin/devices/commands/${c.id}`, { method: 'DELETE' });
-                  toast('ok', '已取消指令');
+                  toast('ok', t('remote.cancelDone'));
                 } catch (err) {
-                  toastError(err, '取消失败');
+                  toastError(err, t('remote.cancelFailed'));
                 }
                 await refresh();
               },
-            }, '取消'),
+            }, t('remote.cancel')),
         ),
         h('div.shot-note', queueStateText(c, device, inflight)),
       );
@@ -196,18 +203,18 @@ function createQueueView(deviceSelect) {
 
 /** 队列条目「为什么还没执行」的说明文案。 */
 function queueStateText(command, device, inflight) {
-  if (inflight) return '设备已取走指令，正在执行，等待回报结果。';
+  if (inflight) return t('remote.takenByDevice');
 
   const notBefore = command.notBefore ? new Date(command.notBefore).getTime() : 0;
   if (notBefore > Date.now()) {
-    return `定时指令：${formatDateTime(command.notBefore)} 生效后执行。`;
+    return t('remote.scheduledAt', { time: formatDateTime(command.notBefore) });
   }
 
   if (device && device.online === false) {
-    return '设备当前离线，将在下次上线心跳时立即执行。';
+    return t('remote.offlineWillRun');
   }
 
-  return '设备在线，将在下一次心跳时执行。';
+  return t('remote.onlineWillRun');
 }
 
 /** 到期倒计时文案（队列条目右侧）。 */
@@ -215,23 +222,23 @@ function formatRemaining(expiresAt) {
   if (!expiresAt) return '';
   const left = new Date(expiresAt).getTime() - Date.now();
   if (!Number.isFinite(left)) return '';
-  if (left <= 0) return '已过期';
+  if (left <= 0) return t('remote.stateExpired');
 
   const minutes = Math.round(left / 60000);
-  if (minutes < 60) return `${minutes} 分钟后作废`;
+  if (minutes < 60) return t('remote.expiresMinutes', { minutes });
 
   const hours = Math.floor(minutes / 60);
-  return `${hours} 小时 ${minutes % 60} 分钟后作废`;
+  return t('remote.expiresHours', { hours, minutes: minutes % 60 });
 }
 
 // ────────────────────── 远程命令行 ──────────────────────
 
 function renderCommand(container) {
   const targetSelect = select(
-    [{ value: '__all__', label: '全部在线设备（统一执行）' }, ...deviceOptions()],
+    [{ value: '__all__', label: t('remote.scopeOnline') }, ...deviceOptions()],
     '__all__',
   );
-  const cmdInput = h('input', { type: 'text', placeholder: '例如：ipconfig /all 或 uname -a' });
+  const cmdInput = h('input', { type: 'text', placeholder: t('remote.commandPlaceholder') });
   const offline = offlineOption();
   const out = h('div', { style: { display: 'none' } });
   const queue = createQueueView(targetSelect);
@@ -248,10 +255,10 @@ function renderCommand(container) {
     type: 'button',
     onClick: async () => {
       const command = cmdInput.value.trim();
-      if (!command) { toast('warn', '请输入命令'); return; }
+      if (!command) { toast('warn', t('remote.needCommand')); return; }
       const isAll = targetSelect.value === '__all__';
-      const ok = await confirmDialog('执行远程命令',
-        `将在${isAll ? '所选范围内的设备' : '所选设备'}上执行：\n${command}\n\n确定继续吗？`, '执行');
+      const ok = await confirmDialog(t('remote.runCommand'),
+        `将在${isAll ? t('remote.targetsInScope') : t('remote.targetsPicked')}上执行：\n${command}\n\n确定继续吗？`, t('remote.run'));
       if (!ok) return;
 
       const body = { kind: 'shell', payload: JSON.stringify({ command }) };
@@ -261,35 +268,35 @@ function renderCommand(container) {
             method: 'POST',
             body: { ...body, includeOffline: offline.input.checked },
           });
-          toast('ok', '已下发', broadcastResult(r));
+          toast('ok', t('remote.sent'), broadcastResult(r));
           if (Array.isArray(r.items) && r.items.length > 0) {
             openBroadcastPanel(r.items, command);
           }
         } else {
           await api(`/admin/devices/${targetSelect.value}/command`, { method: 'POST', body });
           const target = state.devices.find((d) => d.id === targetSelect.value);
-          toast('ok', '已下发', target && target.online === false
-            ? '设备当前离线，指令已进入队列，上线后自动执行（可在下方队列里取消）。'
-            : '请在下方查看执行结果。');
+          toast('ok', t('remote.sent'), target && target.online === false
+            ? t('remote.queuedForOffline')
+            : t('remote.checkBelow'));
           await loadCommandHistory(targetSelect.value, out);
           pollHistory(targetSelect.value, out);
           await queue.refresh();
         }
       } catch (e) {
-        toastError(e, '下发失败');
+        toastError(e, t('remote.sendFailed'));
       }
     },
-  }, '执行');
+  }, t('remote.run'));
 
   return h('div',
     h('div.toolbar',
-      h('span.toolbar-label', '目标设备'),
+      h('span.toolbar-label', t('remote.targetDevice')),
       targetSelect,
       deviceRefreshButton(container),
       h('div.spacer'),
-      h('button.btn.btn-sm', { type: 'button', onClick: () => loadCommandHistory(targetSelect.value, out) }, '查看历史'),
+      h('button.btn.btn-sm', { type: 'button', onClick: () => loadCommandHistory(targetSelect.value, out) }, t('remote.viewHistory')),
     ),
-    field('命令', cmdInput, '在 Windows 上以 cmd /c 执行，其它平台以 bash -c 执行。'),
+    field(t('remote.command'), cmdInput, t('remote.commandHint')),
     offline.el,
     h('div', { style: { display: 'flex', gap: '8px', marginTop: '12px' } }, runBtn),
     queue.el,
@@ -298,12 +305,12 @@ function renderCommand(container) {
 }
 
 async function loadCommandHistory(deviceId, outEl) {
-  if (deviceId === '__all__') { toast('warn', '请选择单台设备查看历史'); return; }
+  if (deviceId === '__all__') { toast('warn', t('remote.pickOneForHistory')); return; }
   const list = await api(`/admin/devices/${deviceId}/commands`);
   outEl.style.display = 'block';
   clear(outEl);
   if (list.length === 0) {
-    outEl.appendChild(h('div', { style: { padding: '12px', color: 'var(--text-faint)', fontSize: '12.5px' } }, '暂无指令记录。'));
+    outEl.appendChild(h('div', { style: { padding: '12px', color: 'var(--text-faint)', fontSize: '12.5px' } }, t('remote.noCommands')));
     return;
   }
 
@@ -312,9 +319,9 @@ async function loadCommandHistory(deviceId, outEl) {
       h('span.log-time', formatDateTime(c.issuedAt)),
       h('span.log-level.' + (STATUS_LEVEL[c.status] || 'warn'), STATUS_LABEL[c.status] || c.status),
       h('span.cmd-kind', c.kind),
-      c.exitCode ? h('span.cmd-kind', `退出码 ${c.exitCode}`) : null,
+      c.exitCode ? h('span.cmd-kind', t('remote.exitCode', { code: c.exitCode })) : null,
     ),
-    h('pre.cmd-output', c.output && c.output.length > 0 ? c.output : '等待执行…'),
+    h('pre.cmd-output', c.output && c.output.length > 0 ? c.output : t('remote.waiting')),
     failureHint(c),
   ))));
 }
@@ -331,7 +338,7 @@ function failureHint(command) {
   }
 
   return h('div.cmd-hint',
-    `怎么办：${hint}`,
+    t('remote.howToFix', { hint }),
     // 码本身也留一份：截图给别人排查时，光凭中文描述很难定位。
     h('span.cmd-code', command.errorCode));
 }
@@ -379,19 +386,19 @@ function renderPlugins(container) {
 
   /** 发一条插件指令；随后自动请求刷新清单，让状态列反映最新结果。 */
   const sendPluginCommand = async (kind, payload, message) => {
-    if (!targetSelect.value) { toast('warn', '请先选择设备'); return; }
+    if (!targetSelect.value) { toast('warn', t('remote.needDevice')); return; }
     try {
       await api(`/admin/devices/${targetSelect.value}/command`, {
         method: 'POST',
         body: { kind, payload: JSON.stringify(payload) },
       });
-      toast('ok', '指令已下发', message);
+      toast('ok', t('remote.commandSent'), message);
 
       // 启停/卸载要等 B 端执行完再刷新清单，否则拿到的是旧状态。
       setTimeout(() => refreshList().catch(() => {}), 800);
       setTimeout(() => load().catch(() => {}), 5000);
     } catch (e) {
-      toastError(e, '下发失败');
+      toastError(e, t('remote.sendFailed'));
     }
   };
 
@@ -400,7 +407,7 @@ function renderPlugins(container) {
       clear(listBox);
       listBox.appendChild(h('div.notice.notice-info',
         h('span.notice-icon', 'i'),
-        h('div', '还没有设备接入。请先到「设备管理」生成注册码并接入教室终端。')));
+        h('div', t('remote.noDevices'))));
       return;
     }
 
@@ -412,40 +419,43 @@ function renderPlugins(container) {
       if (plugins.length === 0) {
         listBox.appendChild(h('div.notice.notice-info',
           h('span.notice-icon', 'i'),
-          h('div', '该设备尚未上报插件列表。点击「刷新插件列表」让 B 端上报。')));
+          h('div', t('remote.noPluginList'))));
         return;
       }
 
       listBox.appendChild(h('div.table-wrap',
         h('table.data',
           h('thead', h('tr',
-            h('th', '插件'), h('th', '版本'), h('th', '作者'), h('th', '状态'),
-            h('th', { style: { textAlign: 'right' } }, '操作'),
+            h('th', t('remote.plugin')), h('th', t('remote.version')), h('th', t('remote.author')), h('th', t('remote.status')),
+            h('th', { style: { textAlign: 'right' } }, t('remote.actions')),
           )),
           h('tbody', ...plugins.map((p) => h('tr',
             h('td', h('div.cell-main', p.name), h('div.cell-sub', p.id)),
             h('td', p.version || '—'),
             h('td', p.author || '—'),
-            h('td', p.isEnabled ? h('span.badge.badge-ok', '已启用') : h('span.badge.badge-neutral', '已禁用')),
+            h('td', p.isEnabled ? h('span.badge.badge-ok', t('remote.enabled')) : h('span.badge.badge-neutral', t('remote.disabled'))),
             h('td.actions',
               h('button.btn.btn-sm', {
                 type: 'button',
                 onClick: () => sendPluginCommand('plugin.toggle', { pluginId: p.id, enabled: !p.isEnabled },
-                  `已请求${p.isEnabled ? '禁用' : '启用'}「${p.name}」，ClassIsland 重启后生效。`),
-              }, p.isEnabled ? '禁用' : '启用'),
+                  t('remote.pluginToggleRequested', {
+                    action: p.isEnabled ? t('remote.disable') : t('remote.enable'),
+                    name: p.name,
+                  })),
+              }, p.isEnabled ? t('remote.disable') : t('remote.enable')),
               ' ',
               isHubPlugin(p)
                 ? null
                 : h('button.btn.btn-sm.btn-danger', {
                   type: 'button',
                   onClick: async () => {
-                    const ok = await confirmDialog('卸载插件',
-                      `将从该设备删除插件「${p.name}」，ClassIsland 重启后生效。确定继续吗？`, '卸载', true);
+                    const ok = await confirmDialog(t('remote.uninstallPlugin'),
+                      t('remote.uninstallConfirm', { name: p.name }), t('remote.uninstall'), true);
                     if (!ok) return;
                     await sendPluginCommand('plugin.uninstall', { pluginId: p.id },
-                      `已请求卸载「${p.name}」，ClassIsland 重启后生效。`);
+                      t('remote.uninstallRequested', { name: p.name }));
                   },
-                }, '卸载'),
+                }, t('remote.uninstall')),
             ),
           ))),
         ),
@@ -453,7 +463,7 @@ function renderPlugins(container) {
 
       listBox.appendChild(h('div.notice.notice-info', { style: { marginTop: '12px' } },
         h('span.notice-icon', 'i'),
-        h('div', '插件的启用 / 禁用 / 卸载都通过「插件目录下的 .disabled 标记」实现，需重启 ClassIsland 才会真正生效。')));
+        h('div', t('remote.pluginToggleHint'))));
     } catch (e) {
       clear(listBox);
       listBox.appendChild(h('div.notice.notice-danger', h('span.notice-icon', '!'), h('div', e.message)));
@@ -465,18 +475,18 @@ function renderPlugins(container) {
 
   return h('div',
     h('div.toolbar',
-      h('span.toolbar-label', '目标设备'),
+      h('span.toolbar-label', t('remote.targetDevice')),
       targetSelect,
       deviceRefreshButton(container),
       h('button.btn.btn-sm', {
         type: 'button',
         onClick: async () => {
           await refreshList();
-          toast('ok', '已请求刷新', 'B 端将在下一次心跳后上报。');
+          toast('ok', t('remote.refreshRequested'), t('remote.refreshAfterHeartbeat'));
           setTimeout(() => load().catch(() => {}), 5000);
         },
-      }, '刷新插件列表'),
-      h('button.btn.btn-sm', { type: 'button', onClick: load }, '查看'),
+      }, t('remote.refreshPlugins')),
+      h('button.btn.btn-sm', { type: 'button', onClick: load }, t('remote.view')),
     ),
     listBox,
   );
@@ -499,7 +509,7 @@ function isHubPlugin(plugin) {
  */
 function renderDeviceControl(container) {
   const targetSelect = select(
-    [{ value: '__all__', label: '全部在线设备（统一）' }, ...deviceOptions()],
+    [{ value: '__all__', label: t('remote.scopeOnlineShort') }, ...deviceOptions()],
     '__all__',
   );
   const offline = offlineOption();
@@ -514,15 +524,15 @@ function renderDeviceControl(container) {
   const volume = slider(60);
   const brightness = slider(60);
   const muteSelect = select([
-    { value: '', label: '不改动静音状态' },
-    { value: 'on', label: '静音' },
-    { value: 'off', label: '取消静音' },
+    { value: '', label: t('remote.muteKeep') },
+    { value: 'on', label: t('remote.mute') },
+    { value: 'off', label: t('remote.unmute') },
   ], '');
   const out = h('div');
   // 网络探测（#107）用到的两个控件：目标地址与 Ping 次数（刻意用普通 input，
   // 次数这种「填个数字」的输入不需要滑块那套外观）。
   const hostInput = h('input', {
-    type: 'text', placeholder: '目标地址（IP / 域名）', style: { width: '200px' },
+    type: 'text', placeholder: t('remote.targetHost'), style: { width: '200px' },
   });
   const probeCount = h('input', {
     type: 'number', min: '1', max: '10', value: '4', style: { width: '64px' },
@@ -544,11 +554,11 @@ function renderDeviceControl(container) {
         method: 'POST',
         body: { kind, payload: JSON.stringify(payload) },
       });
-      toast('ok', title, '已发送，结果见下方。');
+      toast('ok', title, t('remote.sentSeeBelow'));
       await loadCommandHistory(targetSelect.value, out);
       pollHistory(targetSelect.value, out);
     } catch (e) {
-      toastError(e, '下发失败');
+      toastError(e, t('remote.sendFailed'));
     }
   };
 
@@ -559,60 +569,60 @@ function renderDeviceControl(container) {
       // 否则会把教室端原本的静音状态一并覆盖掉。
       const payload = { percent: volume.value() };
       if (muteSelect.value) payload.mute = muteSelect.value === 'on';
-      dispatch('volume.set', payload, '已下发音量设置');
+      dispatch('volume.set', payload, t('remote.volumeSent'));
     },
-  }, '设置音量');
+  }, t('remote.setVolume'));
 
   const brightnessBtn = h('button.btn.btn-primary', {
     type: 'button',
-    onClick: () => dispatch('brightness.set', { percent: brightness.value() }, '已下发亮度设置'),
-  }, '设置亮度');
+    onClick: () => dispatch('brightness.set', { percent: brightness.value() }, t('remote.brightnessSent')),
+  }, t('remote.setBrightness'));
 
   return h('div',
     h('div.notice.notice-info',
       h('span.notice-icon', 'i'),
-      h('div', '统一调整教室机的系统音量与屏幕亮度（仅 Windows 教室端有效）。音量作用于'
-        + '系统主输出，与音量面板里那条一致；亮度依赖显示器支持软件调亮度——外接显示器多数不支持，'
-        + '此时教室机**如实回报「不支持」**而不是假装成功，这种情况需要到显示器上手动调。')),
+      h('div', t('remote.avLead')
+        + t('remote.avBody')
+        + t('remote.avTail'))),
     h('div.form-row',
-      field('目标设备', targetSelect, '「全部在线设备」用于整栋楼统一静音这类场景。'),
-      field('静音', muteSelect, '只想调音量时保持「不改动」。'),
+      field(t('remote.targetDevice'), targetSelect, t('remote.avScopeHint')),
+      field(t('remote.mute'), muteSelect, t('remote.avKeepHint')),
     ),
     h('div.form-row',
-      field('音量', h('div.slider-row', volume.range, volume.label), '0~100。'),
-      field('亮度', h('div.slider-row', brightness.range, brightness.label),
-        '0~100；建议别用 0——屏幕全黑后现场只能靠显示器本身的按键恢复。'),
+      field(t('remote.volume'), h('div.slider-row', volume.range, volume.label), '0~100。'),
+      field(t('remote.brightness'), h('div.slider-row', brightness.range, brightness.label),
+        t('remote.brightnessHint')),
     ),
     h('div.form-row',
-      field(h('span', '主界面',
-        hintIcon('远程控制教室机上那台 ClassIsland 主界面：隐藏＝把讲台屏上的主界面收起来'
-          + '（现场点不到它），显示＝叫回来；全屏适合把课表或大通知铺满整屏。'
-          + '⚠️ 全屏是「尽力而为」——教室端在档案刷新或窗口位置变化时可能自己退出全屏；'
-          + '另外主界面被隐藏时，「抓取屏幕截图」拿不到窗口内容（那条指令会如实报错）。')),
+      field(h('span', t('remote.mainWindow'),
+        hintIcon(t('remote.mainWindowLead')
+          + t('remote.mainWindowBody')
+          + t('remote.fullscreenCaveat')
+          + t('remote.fullscreenCaveat2'))),
         h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
           h('button.btn', {
             type: 'button',
-            onClick: () => dispatch('window.set', { visible: true }, '已下发展示主界面'),
-          }, '显示主界面'),
+            onClick: () => dispatch('window.set', { visible: true }, t('remote.showWindowSent')),
+          }, t('remote.showWindow')),
           h('button.btn.btn-danger', {
             type: 'button',
-            onClick: () => dispatch('window.set', { visible: false }, '已下发隐藏主界面'),
-          }, '隐藏主界面'),
+            onClick: () => dispatch('window.set', { visible: false }, t('remote.hideWindowSent')),
+          }, t('remote.hideWindow')),
           h('button.btn', {
             type: 'button',
-            onClick: () => dispatch('window.set', { fullscreen: true }, '已下发全屏'),
-          }, '全屏'),
+            onClick: () => dispatch('window.set', { fullscreen: true }, t('remote.fullscreenSent')),
+          }, t('remote.fullscreen')),
           h('button.btn', {
             type: 'button',
-            onClick: () => dispatch('window.set', { fullscreen: false }, '已下发退出全屏'),
-          }, '退出全屏'))),
+            onClick: () => dispatch('window.set', { fullscreen: false }, t('remote.exitFullscreenSent')),
+          }, t('remote.exitFullscreen')))),
     ),
     h('div.form-row',
-      field(h('span', '网络探测',
-        hintIcon('排查「这台教室机为什么连不上」时可用的三件事：Ping 看通不通与延迟、'
-          + '路由追踪看断在哪一跳、磁盘空间看系统盘是不是被塞满了（教室机很多莫名其妙的故障'
-          + '其实是 C 盘满了）。目标可以是 IP、域名或主机名；结果会出现在下方的指令历史里。'
-          + '⚠️ 路由追踪可能要等十几秒（跨网段时更久）。')),
+      field(h('span', t('remote.netTools'),
+        hintIcon(t('remote.netLead')
+          + t('remote.netBody')
+          + t('remote.netTail')
+          + t('remote.tracerouteCaveat'))),
         h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' } },
           hostInput,
           h('button.btn', {
@@ -620,11 +630,11 @@ function renderDeviceControl(container) {
             onClick: () => {
               const host = hostInput.value.trim();
               if (!host) {
-                toast('warn', '请填写目标地址');
+                toast('warn', t('remote.needTarget'));
                 return;
               }
 
-              dispatch('diagnostic.ping', { host, count: Number(probeCount.value) || 4 }, '已下发 Ping');
+              dispatch('diagnostic.ping', { host, count: Number(probeCount.value) || 4 }, t('remote.pingSent'));
             },
           }, 'Ping'),
           h('button.btn', {
@@ -632,17 +642,17 @@ function renderDeviceControl(container) {
             onClick: () => {
               const host = hostInput.value.trim();
               if (!host) {
-                toast('warn', '请填写目标地址');
+                toast('warn', t('remote.needTarget'));
                 return;
               }
 
-              dispatch('diagnostic.traceroute', { host }, '已下发路由追踪');
+              dispatch('diagnostic.traceroute', { host }, t('remote.tracerouteSent'));
             },
-          }, '路由追踪'),
+          }, t('remote.traceroute')),
           h('button.btn', {
             type: 'button',
-            onClick: () => dispatch('diagnostic.disks', {}, '已下发磁盘空间检查'),
-          }, '磁盘空间')))),   // 依次关掉：磁盘空间按钮 → 按钮组 → field() → form-row
+            onClick: () => dispatch('diagnostic.disks', {}, t('remote.diskSent')),
+          }, t('remote.diskSpace'))))),   // 依次关掉：磁盘空间按钮 → 按钮组 → field() → form-row
     h('div', { style: { display: 'flex', gap: '8px', marginTop: '12px' } }, volumeBtn, brightnessBtn),
     offline.el,
     h('div', { style: { marginTop: '16px' } }, out),
@@ -650,43 +660,43 @@ function renderDeviceControl(container) {
 }
 
 function renderAppearance(container) {
-  const unchanged = { value: '', label: '不修改' };
+  const unchanged = { value: '', label: t('remote.keep') };
   const numberInput = (placeholder) => h('input', { type: 'number', placeholder });
   const onOff = [
     unchanged,
-    { value: 'on', label: '启用' },
-    { value: 'off', label: '关闭' },
+    { value: 'on', label: t('remote.enable') },
+    { value: 'off', label: t('remote.off') },
   ];
 
   const targetSelect = select(
-    [{ value: '__all__', label: '全部在线设备（统一）' }, ...deviceOptions()],
+    [{ value: '__all__', label: t('remote.scopeOnlineShort') }, ...deviceOptions()],
     '__all__',
   );
   const themeSelect = select([
     unchanged,
-    { value: 'system', label: '跟随系统' },
-    { value: 'light', label: '浅色' },
-    { value: 'dark', label: '深色' },
+    { value: 'system', label: t('remote.themeSystem') },
+    { value: 'light', label: t('remote.themeLight') },
+    { value: 'dark', label: t('remote.themeDark') },
   ], '');
-  const accentInput = h('input', { type: 'text', placeholder: '例如 #1E90FF（留空不修改）' });
-  const secondaryInput = h('input', { type: 'text', placeholder: '例如 #7FFFD4（留空不修改）' });
-  const fontInput = h('input', { type: 'text', placeholder: '例如 微软雅黑（留空不修改）' });
-  const sizeSecondary = numberInput('如 14');
-  const sizeBody = numberInput('如 16');
-  const sizeEmphasized = numberInput('如 18');
-  const sizeLarge = numberInput('如 20');
-  const radiusInput = numberInput('如 8');
-  const opacityInput = numberInput('如 0.6');
-  const scaleInput = numberInput('如 1.0');
+  const accentInput = h('input', { type: 'text', placeholder: t('remote.accentPlaceholder') });
+  const secondaryInput = h('input', { type: 'text', placeholder: t('remote.secondaryPlaceholder') });
+  const fontInput = h('input', { type: 'text', placeholder: t('remote.fontPlaceholder') });
+  const sizeSecondary = numberInput(t('remote.sizeExample1'));
+  const sizeBody = numberInput(t('remote.sizeExample2'));
+  const sizeEmphasized = numberInput(t('remote.sizeExample3'));
+  const sizeLarge = numberInput(t('remote.sizeExample4'));
+  const radiusInput = numberInput(t('remote.sizeExample5'));
+  const opacityInput = numberInput(t('remote.ratioExample1'));
+  const scaleInput = numberInput(t('remote.ratioExample2'));
   const materialSelect = select([
     unchanged,
-    { value: 'acrylic', label: '亚克力 Acrylic' },
+    { value: 'acrylic', label: t('remote.materialAcrylic') },
     { value: 'liquidglass', label: 'Liquid Glass' },
     { value: 'mica', label: 'Mica' },
-    { value: 'off', label: '关闭材质' },
+    { value: 'off', label: t('remote.materialOff') },
   ], '');
   const separatedSelect = select(onOff, '');
-  const foregroundInput = h('input', { type: 'text', placeholder: '例如 #FFFFFF（留空不修改）' });
+  const foregroundInput = h('input', { type: 'text', placeholder: t('remote.foregroundPlaceholder') });
   const offline = offlineOption();
 
   /** 只把「填了值的项」放进载荷：留空 = 不改动教室机现有设置。 */
@@ -723,7 +733,7 @@ function renderAppearance(container) {
     onClick: async () => {
       const appearance = buildAppearance();
       if (Object.keys(appearance).length === 0) {
-        toast('warn', '请至少填写一项', '留空的项表示不修改，全部留空则无事可做。');
+        toast('warn', t('remote.needOneField'), t('remote.needOneFieldHint'));
         return;
       }
 
@@ -733,53 +743,53 @@ function renderAppearance(container) {
             method: 'POST',
             body: { appearance, includeOffline: offline.input.checked },
           });
-          toast('ok', '已下发', broadcastResult(r));
+          toast('ok', t('remote.sent'), broadcastResult(r));
         } else {
           await api(`/admin/devices/${targetSelect.value}/command`, {
             method: 'POST',
             body: { kind: 'appearance.apply', payload: JSON.stringify(appearance) },
           });
-          toast('ok', '已下发', '外观配置已发送，客户端会立即应用并写入设置（重启保留）。');
+          toast('ok', t('remote.sent'), t('remote.appearanceSent'));
         }
       } catch (e) {
-        toastError(e, '下发失败');
+        toastError(e, t('remote.sendFailed'));
       }
     },
-  }, '统一下发外观');
+  }, t('remote.pushAppearance'));
 
   return h('div',
     h('div.notice.notice-info',
       h('span.notice-icon', 'i'),
-      h('div', '统一管理所有教室大屏的 ClassIsland 外观：主题、配色、字体排版与窗口材质。'
-        + '留空的项不会改动教室机现有设置；下发生效后立即应用并写入教室机设置（重启后保留）。')),
+      h('div', t('remote.appearanceLead')
+        + t('remote.appearanceBody'))),
     h('div.form-row',
-      field('目标设备', targetSelect),
-      field('主题', themeSelect),
+      field(t('remote.targetDevice'), targetSelect),
+      field(t('remote.theme'), themeSelect),
     ),
     h('div.form-row',
-      field('强调色', accentInput),
-      field('第二色', secondaryInput),
+      field(t('remote.accent'), accentInput),
+      field(t('remote.secondary'), secondaryInput),
     ),
-    field('字体', fontInput, '需教室机已安装该字体，否则会回退到默认字体。'),
+    field(t('remote.font'), fontInput, t('remote.fontHint')),
     h('div.form-row',
-      field('字号·次级', sizeSecondary),
-      field('字号·正文', sizeBody),
-    ),
-    h('div.form-row',
-      field('字号·强调', sizeEmphasized),
-      field('字号·大号', sizeLarge),
+      field(t('remote.sizeSecondary'), sizeSecondary),
+      field(t('remote.sizeBody'), sizeBody),
     ),
     h('div.form-row',
-      field('圆角', radiusInput, '0 ~ 64 像素'),
-      field('背景不透明度', opacityInput, '0.1 ~ 1'),
+      field(t('remote.sizeEmphasis'), sizeEmphasized),
+      field(t('remote.sizeLarge'), sizeLarge),
     ),
     h('div.form-row',
-      field('界面缩放', scaleInput, '0.5 ~ 3'),
-      field('背景材质', materialSelect),
+      field(t('remote.radius'), radiusInput, t('remote.radiusHint')),
+      field(t('remote.opacity'), opacityInput, '0.1 ~ 1'),
     ),
     h('div.form-row',
-      field('分体主界面', separatedSelect),
-      field('前景色', foregroundInput, '需与主题对比度足够'),
+      field(t('remote.scale'), scaleInput, '0.5 ~ 3'),
+      field(t('remote.material'), materialSelect),
+    ),
+    h('div.form-row',
+      field(t('remote.splitWindow'), separatedSelect),
+      field(t('remote.foreground'), foregroundInput, t('remote.foregroundHint')),
     ),
     offline.el,
     h('div', { style: { marginTop: '12px' } }, applyBtn),
@@ -791,14 +801,14 @@ function renderAppearance(container) {
 function renderNotify(container) {
   const targetSelect = select(
     [
-      { value: '__all__', label: '全部在线设备（统一）' },
+      { value: '__all__', label: t('remote.scopeOnlineShort') },
       ...deviceOptions(),
-      { value: '__pick__', label: '多选设备…' },
+      { value: '__pick__', label: t('remote.pickDevices') },
     ],
     '__all__',
   );
-  const titleInput = h('input', { type: 'text', placeholder: '例如：紧急通知' });
-  const msgInput = h('textarea', { placeholder: '提醒内容…', style: { minHeight: '90px' } });
+  const titleInput = h('input', { type: 'text', placeholder: t('remote.noticeTitlePlaceholder') });
+  const msgInput = h('textarea', { placeholder: t('remote.noticeBodyPlaceholder'), style: { minHeight: '90px' } });
   const speakChk = h('input', { type: 'checkbox' });
   // #22：默认「全屏强调」——与这个勾选框出现之前的行为一致（以前一律全屏）。
   // 取消勾选则是「温和通知」：只出角落滚动条，不挡讲台。
@@ -811,13 +821,13 @@ function renderNotify(container) {
   const pickInfo = h('span.pick-info', { hidden: true });
 
   // 通知模板：常用广播内容一键套用
-  const templateSelect = select([{ value: '', label: '（不使用模板）' }], '');
+  const templateSelect = select([{ value: '', label: t('remote.noTemplate') }], '');
   let templates = [];
   const loadTemplates = async () => {
     try {
       templates = await api('/admin/notice-templates');
       clear(templateSelect);
-      templateSelect.appendChild(h('option', { value: '' }, '（不使用模板）'));
+      templateSelect.appendChild(h('option', { value: '' }, t('remote.noTemplate')));
       for (const t of templates) {
         templateSelect.appendChild(h('option', { value: t.id }, t.name));
       }
@@ -830,7 +840,7 @@ function renderNotify(container) {
     titleInput.value = t.title || '';
     msgInput.value = t.content || '';
     speakChk.checked = Boolean(t.speak);
-    toast('ok', '已套用模板', t.name);
+    toast('ok', t('remote.templateApplied'), t.name);
   });
 
   targetSelect.addEventListener('change', () => {
@@ -848,7 +858,7 @@ function renderNotify(container) {
     const list = h('div.picker-list');
 
     if (state.devices.length === 0) {
-      list.appendChild(h('div', { style: { color: 'var(--text-faint)', fontSize: '12.5px' } }, '还没有设备接入。'));
+      list.appendChild(h('div', { style: { color: 'var(--text-faint)', fontSize: '12.5px' } }, t('remote.noDevicesShort')));
     }
 
     for (const d of state.devices) {
@@ -864,25 +874,28 @@ function renderNotify(container) {
 
       list.appendChild(h('label.picker-item', box,
         h('span', ` ${d.name}`),
-        h('span.picker-meta', `${d.online ? '在线' : '离线'}${d.remark ? ` · ${d.remark}` : ''}`)));
+        h('span.picker-meta', t('remote.pickerMeta', {
+          state: d.online ? t('remote.online') : t('remote.offline'),
+          remark: d.remark ? t('remote.pickerRemark', { remark: d.remark }) : '',
+        }))));
     }
 
     modal({
-      title: '选择目标设备',
+      title: t('remote.pickTargets'),
       width: 'wide',
       body: h('div',
         h('p', { style: { marginTop: 0, color: 'var(--text-dim)', fontSize: '12.5px' } },
-          '勾选要发送通知的教室。即时通知只发给在线设备，离线设备不会补发。'),
+          t('remote.pickTargetsHint')),
         list),
-      confirmText: '确定',
+      confirmText: t('remote.ok'),
       onConfirm: () => {
         if (selected.size === 0) {
-          toast('warn', '请至少选择一台设备');
+          toast('warn', t('remote.needOneDevice'));
           return false;
         }
 
         picked = [...selected];
-        pickInfo.textContent = `已选 ${picked.length} 台设备`;
+        pickInfo.textContent = t('remote.pickedCount', { count: picked.length });
         pickInfo.hidden = false;
         return true;
       },
@@ -892,15 +905,15 @@ function renderNotify(container) {
   const saveTemplateBtn = h('button.btn.btn-sm', {
     type: 'button',
     onClick: () => {
-      const nameInput = h('input', { type: 'text', placeholder: '例如：广播站通知' });
+      const nameInput = h('input', { type: 'text', placeholder: t('remote.templateNamePlaceholder') });
       modal({
-        title: '存为通知模板',
-        body: h('div', field('模板名称', nameInput, '仅管理端使用，下次发同类通知可一键套用。')),
-        confirmText: '保存',
+        title: t('remote.saveAsTemplate'),
+        body: h('div', field(t('remote.templateName'), nameInput, t('remote.templateNameHint'))),
+        confirmText: t('remote.save'),
         onConfirm: async () => {
           const name = nameInput.value.trim();
           if (!name) {
-            toast('warn', '请填写模板名称');
+            toast('warn', t('remote.needTemplateName'));
             return false;
           }
 
@@ -913,69 +926,72 @@ function renderNotify(container) {
               speak: speakChk.checked,
             },
           });
-          toast('ok', '模板已保存', '下次可直接从模板下拉里选择。');
+          toast('ok', t('remote.templateSaved'), t('remote.templateSavedHint'));
           await loadTemplates();
           return true;
         },
       });
     },
-  }, '存为模板');
+  }, t('remote.saveTemplate'));
 
   const sendBtn = h('button.btn.btn-primary', {
     type: 'button',
     onClick: async () => {
       const title = titleInput.value.trim();
       const message = msgInput.value.trim();
-      if (!title && !message) { toast('warn', '请填写提醒内容'); return; }
+      if (!title && !message) { toast('warn', t('remote.needNoticeBody')); return; }
 
       const payload = JSON.stringify({
         title, message, speak: speakChk.checked, emphasize: emphasizeChk.checked,
       });
       try {
         if (targetSelect.value === '__pick__') {
-          if (picked.length === 0) { toast('warn', '请先选择目标设备'); return; }
+          if (picked.length === 0) { toast('warn', t('remote.needTargets')); return; }
           const r = await api('/admin/devices/command', {
             method: 'POST',
             body: { kind: 'notify', payload, deviceIds: picked, includeOffline: false },
           });
-          toast('ok', '已发送', broadcastResult(r));
+          toast('ok', t('remote.noticeSentShort'), broadcastResult(r));
         } else if (targetSelect.value === '__all__') {
           const r = await api('/admin/devices/command', {
             method: 'POST',
             body: { kind: 'notify', payload, includeOffline: offline.input.checked },
           });
-          toast('ok', '已广播', broadcastResult(r));
+          toast('ok', t('remote.broadcastSent'), broadcastResult(r));
         } else {
           await api(`/admin/devices/${targetSelect.value}/notify`, {
             method: 'POST',
             body: { title, message, speak: speakChk.checked, emphasize: emphasizeChk.checked },
             });
-            toast('ok', '已发送',
-            `提醒已下发${emphasizeChk.checked ? '（全屏强调）' : '（角落提示，不挡讲台）'}${speakChk.checked ? '，并会语音播报' : ''}。`);
+            toast('ok', t('remote.noticeSentShort'),
+            t('remote.noticeSent', {
+              style: emphasizeChk.checked ? t('remote.noticeFullscreen') : t('remote.noticeCorner'),
+              speak: speakChk.checked ? t('remote.noticeSpeakSuffix') : '',
+            }));
         }
       } catch (e) {
-        toastError(e, '发送失败');
+        toastError(e, t('remote.noticeFailed'));
       }
     },
-  }, '发送提醒');
+  }, t('remote.tabNotice'));
 
   loadTemplates();
 
   return h('div',
     h('div.form-row',
-      field('目标设备', targetSelect),
-      field('通知模板', h('div.template-row', templateSelect, saveTemplateBtn),
-        '选择模板会填入标题、内容与播报设置；也可以把当前内容存成新模板。'),
+      field(t('remote.targetDevice'), targetSelect),
+      field(t('remote.noticeTemplate'), h('div.template-row', templateSelect, saveTemplateBtn),
+        t('remote.noticeTemplateHint')),
     ),
     pickInfo,
-    field('标题', titleInput),
-    field('内容', msgInput),
-    h('label.checkbox-field', speakChk, h('span', '语音播报提醒内容')),
+    field(t('remote.noticeTitle'), titleInput),
+    field(t('remote.noticeBody'), msgInput),
+    h('label.checkbox-field', speakChk, h('span', t('remote.noticeSpeak'))),
     h('label.checkbox-field', emphasizeChk,
-      h('span', '全屏强调',
-        hintIcon('全屏强调＝教室大屏整屏遮挡 + 提示音，适合紧急通知（临时调课、停电通知）；'
-          + '取消勾选＝只出角落滚动条，内容照样看得到但不挡讲台——「明天记得带实验报告」这类用它更合适。'
-          + '教室端关掉了提醒总开关时，两种都不会显示。'))),
+      h('span', t('remote.noticeEmphasize'),
+        hintIcon(t('remote.emphasizeHint')
+          + t('remote.emphasizeHint2')
+          + t('remote.emphasizeHint3')))),
     offline.el,
     h('div', { style: { marginTop: '12px' } }, sendBtn),
   );
@@ -992,7 +1008,7 @@ function renderAutomation(container) {
   const datalist = h('datalist#automationSignals');
   const signalInput = h('input', {
     type: 'text',
-    placeholder: '例如：放学（与 ClassIsland「信号触发器」里填写的名称一致）',
+    placeholder: t('remote.signalPlaceholder'),
   });
   signalInput.setAttribute('list', 'automationSignals');
 
@@ -1014,7 +1030,7 @@ function renderAutomation(container) {
       clear(datalist);
       for (const s of found) datalist.appendChild(h('option', { value: s }));
       if (found.size > 0) {
-        toast('ok', '已获取可用信号', [...found].join('、'));
+        toast('ok', t('remote.signalsFetched'), [...found].join('、'));
       }
     } catch { /* 拿不到就退回手动输入 */ }
   }
@@ -1022,30 +1038,30 @@ function renderAutomation(container) {
   const pullBtn = h('button.btn.btn-sm', {
     type: 'button',
     onClick: async () => {
-      if (!deviceSelect.value) { toast('warn', '请先选择设备'); return; }
+      if (!deviceSelect.value) { toast('warn', t('remote.needDevice')); return; }
       try {
         await api(`/admin/devices/${deviceSelect.value}/command`, {
           method: 'POST',
           body: { kind: 'automation.list' },
         });
-        toast('ok', '已请求', '设备回报后会把可用信号填进输入建议。');
+        toast('ok', t('remote.requested'), t('remote.signalsHint'));
         await loadCommandHistory(deviceSelect.value, historyBox);
         pollHistory(deviceSelect.value, historyBox, 3);
         setTimeout(() => harvestSignals().catch(() => {}), 3000);
       } catch (e) {
-        toastError(e, '请求失败');
+        toastError(e, t('remote.requestFailed'));
       }
     },
-  }, '拉取可用信号');
+  }, t('remote.fetchSignals'));
 
   const triggerBtn = h('button.btn.btn-primary', {
     type: 'button',
     onClick: async () => {
       const signal = signalInput.value.trim();
-      if (!deviceSelect.value) { toast('warn', '请先选择设备'); return; }
-      if (!signal) { toast('warn', '请填写信号名'); return; }
-      if (!await confirmDialog('触发自动化',
-        `将在所选设备上触发自动化信号「${signal}」。确定继续吗？`, '触发')) {
+      if (!deviceSelect.value) { toast('warn', t('remote.needDevice')); return; }
+      if (!signal) { toast('warn', t('remote.needSignal')); return; }
+      if (!await confirmDialog(t('remote.triggerAutomation'),
+        t('remote.triggerConfirm', { signal }), t('remote.trigger'))) {
         return;
       }
 
@@ -1054,14 +1070,14 @@ function renderAutomation(container) {
           method: 'POST',
           body: { kind: 'automation.trigger', payload: JSON.stringify({ signal }) },
         });
-        toast('ok', '已触发', '执行结果可在下方命令历史里查看。');
+        toast('ok', t('remote.triggered'), t('remote.triggeredHint'));
         await loadCommandHistory(deviceSelect.value, historyBox);
         pollHistory(deviceSelect.value, historyBox, 3);
       } catch (e) {
-        toastError(e, '触发失败');
+        toastError(e, t('remote.triggerFailed'));
       }
     },
-  }, '触发自动化');
+  }, t('remote.triggerAutomation'));
 
   deviceSelect.addEventListener('change', () => {
     clear(datalist);
@@ -1069,9 +1085,9 @@ function renderAutomation(container) {
   });
 
   return h('div',
-    h('div.form-row', field('目标设备', deviceSelect)),
-    field('自动化信号', h('div.template-row', signalInput, pullBtn),
-      'B 端会列出该设备上配置了「信号触发器」的自动化名称；触发效果等于在教室里手动点一次那条自动化。'),
+    h('div.form-row', field(t('remote.targetDevice'), deviceSelect)),
+    field(t('remote.signal'), h('div.template-row', signalInput, pullBtn),
+      t('remote.signalHint')),
     h('div', { style: { marginTop: '12px' } }, triggerBtn),
     datalist,
     historyBox,
@@ -1088,8 +1104,8 @@ function openBroadcastPanel(items, commandText) {
   const list = h('div.cmd-list', { style: { marginTop: '12px' } });
 
   items.forEach((item) => {
-    const status = h('span.log-level.warn', '排队中');
-    const output = h('pre.cmd-output', '等待执行…');
+    const status = h('span.log-level.warn', t('remote.stateQueued'));
+    const output = h('pre.cmd-output', t('remote.waiting'));
     cells.set(item.commandId, { status, output, done: false });
     list.appendChild(h('div.cmd-row',
       h('div.cmd-head',
@@ -1101,13 +1117,13 @@ function openBroadcastPanel(items, commandText) {
   });
 
   const dialog = modal({
-    title: '批量执行结果',
+    title: t('remote.batchResult'),
     width: 'wide',
     hideFooter: true,
     body: h('div',
       h('div.notice.notice-info',
         h('span.notice-icon', 'i'),
-        h('div', `命令：${commandText}　共 ${items.length} 台。结果会自动刷新；关掉这个窗口也可以稍后在设备的指令历史里查看。`)),
+        h('div', t('remote.batchCaption', { command: commandText, count: items.length }))),
       list,
     ),
   });
@@ -1155,11 +1171,11 @@ function renderDiagnostic(container) {
 
   const run = (kind, label) => async () => {
     const deviceId = deviceSelect.value;
-    if (!deviceId) { toast('warn', '请先选择设备'); return; }
+    if (!deviceId) { toast('warn', t('remote.needDevice')); return; }
 
     try {
       await api(`/admin/devices/${deviceId}/command`, { method: 'POST', body: { kind, payload: '{}' } });
-      toast('ok', `已请求${label}`, '结果稍后出现在下方；离线设备会排队等上线后执行。');
+      toast('ok', t('remote.requestedAction', { action: label }), t('remote.resultLater'));
       await loadCommandHistory(deviceId, out);
       pollHistory(deviceId, out, 6);
       await queue.refresh();
@@ -1167,7 +1183,7 @@ function renderDiagnostic(container) {
         pollScreenshots(deviceId, gallery, 4);
       }
     } catch (e) {
-      toastError(e, '下发失败');
+      toastError(e, t('remote.sendFailed'));
     }
   };
 
@@ -1179,19 +1195,19 @@ function renderDiagnostic(container) {
 
   const view = h('div',
     h('div.toolbar',
-      h('span.toolbar-label', '目标设备'),
+      h('span.toolbar-label', t('remote.targetDevice')),
       deviceSelect,
       deviceRefreshButton(container),
     ),
     h('div.notice.notice-info', { style: { marginTop: '12px' } },
       h('span.notice-icon', 'i'),
-      h('div', '诊断指令由教室端执行：截图会上传保存（每台设备保留最近 5 张），'
-        + '前台进程与诊断数据包以文本形式出现在下方结果里；诊断数据包还会顺带把教室端日志推上来，'
-        + '可在设备列表的「运行日志」中查看。')),
+      h('div', t('remote.diagLead')
+        + t('remote.diagBody')
+        + t('remote.diagTail'))),
     h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '12px' } },
-      h('button.btn.btn-primary', { type: 'button', onClick: run('diagnostic.screenshot', '屏幕截图') }, '抓取屏幕截图'),
-      h('button.btn', { type: 'button', onClick: run('diagnostic.processes', '进程快照') }, '请求前台进程'),
-      h('button.btn', { type: 'button', onClick: run('diagnostic.bundle', '诊断数据包') }, '请求诊断数据包'),
+      h('button.btn.btn-primary', { type: 'button', onClick: run('diagnostic.screenshot', t('remote.screenshot')) }, t('remote.takeScreenshot')),
+      h('button.btn', { type: 'button', onClick: run('diagnostic.processes', t('remote.processes')) }, t('remote.requestProcesses')),
+      h('button.btn', { type: 'button', onClick: run('diagnostic.bundle', t('remote.bundle')) }, t('remote.requestBundle')),
     ),
     offline.el,
     queue.el,
@@ -1208,7 +1224,7 @@ function renderDiagnostic(container) {
 async function loadScreenshots(deviceId, box) {
   if (!deviceId) return;
   clear(box);
-  box.appendChild(loadingBlock('正在读取截图…'));
+  box.appendChild(loadingBlock(t('remote.loadingShots')));
 
   let list = [];
   try {
@@ -1221,23 +1237,23 @@ async function loadScreenshots(deviceId, box) {
 
   clear(box);
   box.appendChild(h('div.toolbar',
-    h('span.toolbar-label', `屏幕截图（${list.length}）`),
+    h('span.toolbar-label', t('remote.shotsTitle', { count: list.length })),
     h('div.spacer'),
     list.length > 0
       ? h('button.btn.btn-sm', {
         type: 'button',
         onClick: async () => {
-          if (!await confirmDialog('清空截图', '确定清空该设备已上传的全部截图吗？', '清空', true)) return;
+          if (!await confirmDialog(t('remote.clearShots'), t('remote.clearShotsConfirm'), t('remote.clear'), true)) return;
           await api(`/admin/devices/${deviceId}/diagnostics`, { method: 'DELETE' });
-          toast('ok', '已清空截图');
+          toast('ok', t('remote.shotsCleared'));
           await loadScreenshots(deviceId, box);
         },
-      }, '清空截图')
+      }, t('remote.clearShots'))
       : null,
   ));
 
   if (list.length === 0) {
-    box.appendChild(emptyState('devices', '暂无截图', '点上方「抓取屏幕截图」，教室端在线时会立即回传。'));
+    box.appendChild(emptyState('devices', t('remote.noShots'), t('remote.noShotsHint')));
     return;
   }
 
@@ -1245,12 +1261,12 @@ async function loadScreenshots(deviceId, box) {
 }
 
 function screenshotCard(item) {
-  const wrap = h('div.shot-thumb-wrap', h('div.shot-loading', '加载中…'));
+  const wrap = h('div.shot-thumb-wrap', h('div.shot-loading', t('remote.loading')));
 
   fetchBlob(`/admin/devices/diagnostics/${item.id}/content`)
     .then((blob) => {
       const url = URL.createObjectURL(blob);
-      const img = h('img.shot-thumb', { src: url, alt: '设备截图' });
+      const img = h('img.shot-thumb', { src: url, alt: t('remote.deviceShots') });
       img.addEventListener('load', () => URL.revokeObjectURL(url), { once: true });
       clear(wrap);
       wrap.appendChild(img);
@@ -1266,7 +1282,7 @@ function screenshotCard(item) {
   // 纯 div 上挂 click，键盘用户根本够不着。
   wrap.tabIndex = 0;
   wrap.setAttribute('role', 'button');
-  wrap.setAttribute('aria-label', `查看截图 ${formatDateTime(item.capturedAt)}`);
+  wrap.setAttribute('aria-label', t('remote.viewShotAt', { time: formatDateTime(item.capturedAt) }));
   wrap.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
@@ -1286,10 +1302,10 @@ function screenshotCard(item) {
 
 async function openScreenshot(item) {
   const dialog = modal({
-    title: `截图 · ${formatDateTime(item.capturedAt)}`,
+    title: t('remote.shotAt', { time: formatDateTime(item.capturedAt) }),
     width: 'xwide',
     hideFooter: true,
-    body: loadingBlock('正在读取截图…'),
+    body: loadingBlock(t('remote.loadingShots')),
   });
 
   try {
@@ -1299,12 +1315,12 @@ async function openScreenshot(item) {
     dialog.bodyEl.appendChild(h('div',
       h('img', {
         src: url,
-        alt: '设备截图',
+        alt: t('remote.deviceShots'),
         style: { width: '100%', borderRadius: '10px', border: '1px solid var(--border)' },
       }),
       h('div', { style: { marginTop: '10px', fontSize: '12.5px', color: 'var(--text-dim)' } }, item.note || ''),
       h('div', { style: { marginTop: '10px' } },
-        h('a.btn.btn-sm', { href: url, download: `screenshot-${item.id}.png` }, '下载原图')),
+        h('a.btn.btn-sm', { href: url, download: `screenshot-${item.id}.png` }, t('remote.downloadOriginal'))),
     ));
   } catch (err) {
     clear(dialog.bodyEl);
@@ -1337,14 +1353,14 @@ function renderBackup() {
       state.backupList = await api('/admin/backups');
       clear(listBox);
       if (state.backupList.length === 0) {
-        listBox.appendChild(emptyState('database', '还没有备份', '点击「立即备份」创建第一个备份。'));
+        listBox.appendChild(emptyState('database', t('remote.noBackups'), t('remote.noBackupsHint')));
         return;
       }
 
       listBox.appendChild(h('div.table-wrap',
         h('table.data',
           h('thead', h('tr',
-            h('th', '备份'), h('th', '类型'), h('th', '时间'), h('th', '大小'), h('th', '操作'),
+            h('th', t('remote.tabBackup')), h('th', t('remote.backupType')), h('th', t('remote.backupTime')), h('th', t('remote.backupSize')), h('th', t('remote.actions')),
           )),
           h('tbody', ...state.backupList.map((b) => h('tr',
             h('td', h('div.cell-main', b.id), h('div.cell-sub', b.note || '')),
@@ -1352,30 +1368,30 @@ function renderBackup() {
             h('td', formatDateTime(b.createdAt)),
             h('td', `${(b.sizeBytes / 1024).toFixed(1)} KB`),
             h('td.actions',
-              h('a.btn.btn-sm', { href: `/api/v1/admin/backups/${b.id}/download`, style: { textDecoration: 'none' } }, '下载'),
+              h('a.btn.btn-sm', { href: `/api/v1/admin/backups/${b.id}/download`, style: { textDecoration: 'none' } }, t('remote.download')),
               ' ',
               h('button.btn.btn-sm', {
                 type: 'button',
                 onClick: async () => {
-                  const ok = await confirmDialog('恢复备份',
-                    `将用备份「${b.id}」覆盖当前数据库，需重启服务生效。当前数据会先自动备份一次。确定继续吗？`,
-                    '恢复');
+                  const ok = await confirmDialog(t('remote.restoreBackup'),
+                    t('remote.restoreConfirm', { id: b.id }),
+                    t('remote.restore'));
                   if (!ok) return;
                   await api(`/admin/backups/${b.id}/restore`, { method: 'POST' });
-                  toast('ok', '已恢复', '请重启 IslandHub 服务以生效。');
+                  toast('ok', t('remote.restored'), t('remote.restartToApply'));
                 },
-              }, '恢复'),
+              }, t('remote.restore')),
               ' ',
               h('button.btn.btn-sm.btn-danger', {
                 type: 'button',
                 onClick: async () => {
-                  const ok = await confirmDialog('删除备份', `确定删除备份「${b.id}」吗？`, '删除', true);
+                  const ok = await confirmDialog(t('remote.deleteBackup'), t('remote.deleteBackupConfirm', { id: b.id }), t('remote.delete'), true);
                   if (!ok) return;
                   await api(`/admin/backups/${b.id}`, { method: 'DELETE' });
-                  toast('ok', '已删除');
+                  toast('ok', t('remote.deleted'));
                   await load();
                 },
-              }, '删除'),
+              }, t('remote.delete')),
             ),
           ))),
         ),
@@ -1393,14 +1409,14 @@ function renderBackup() {
       h('button.btn.btn-primary.btn-sm', {
         type: 'button',
         onClick: async () => {
-          await api('/admin/backups', { method: 'POST', body: { note: '手动备份' } });
-          toast('ok', '备份已创建');
+          await api('/admin/backups', { method: 'POST', body: { note: t('remote.backupManual') } });
+          toast('ok', t('remote.backupCreated'));
           await load();
         },
-      }, '立即备份'),
-      h('button.btn.btn-sm', { type: 'button', onClick: load }, '刷新'),
+      }, t('remote.backupNow')),
+      h('button.btn.btn-sm', { type: 'button', onClick: load }, t('remote.refresh')),
       h('div.spacer'),
-      h('span', { style: { fontSize: '12px', color: 'var(--text-faint)' } }, '自动备份默认每 7 天一次，保留最近 16 份'),
+      h('span', { style: { fontSize: '12px', color: 'var(--text-faint)' } }, t('remote.autoBackupHint')),
     ),
     listBox,
   );
