@@ -1,3 +1,5 @@
+import { t } from './i18n.js?v=146';
+
 /**
  * 审计动作码 → 中文（#42）。
  *
@@ -9,137 +11,135 @@
 
 /** 动作码第一段 → 模块名。 */
 const PREFIX_LABELS = {
-  device: '设备',
-  group: '分组',
-  profile: '配置档案',
-  account: '账号',
-  registration: '自助注册',
-  enrollcode: '注册码',
-  webhook: 'Webhook',
-  reminder: '定时提醒',
-  'notice-template': '通知模板',
-  settings: '系统设置',
-  backup: '备份',
-  timetable: '临时换课',
-  apikey: 'API 密钥',
-  totp: '两步验证',
-  audit: '审计日志',
-  tag: '标签',
-  template: '课表模板',
+  'device': 'audit.prefix.device',
+  'group': 'audit.prefix.group',
+  'profile': 'audit.prefix.profile',
+  'account': 'audit.prefix.account',
+  'registration': 'audit.prefix.registration',
+  'enrollcode': 'audit.prefix.enrollcode',
+  'webhook': 'audit.prefix.webhook',
+  'reminder': 'audit.prefix.reminder',
+  'notice-template': 'audit.prefix.notice-template',
+  'settings': 'audit.prefix.settings',
+  'backup': 'audit.prefix.backup',
+  'timetable': 'audit.prefix.timetable',
+  'apikey': 'audit.prefix.apikey',
+  'totp': 'audit.prefix.totp',
+  'audit': 'audit.prefix.audit',
+  'tag': 'audit.prefix.tag',
+  'template': 'audit.prefix.template',
   // 插件管理（#121）：同步索引 / 缓存包 / 批量下发。
-  plugin: '插件',
-  admin: '登录',
+  'plugin': 'audit.prefix.plugin',
+  'admin': 'audit.prefix.admin',
   // 下面这些是「凑齐 104 个动作码、一个不漏」时补的：少了它们，审计页会出现
   // 「exam.start」「device.enroll」这种整串英文（前缀认不出来就整串退回原文）。
-  exam: '考试模式',
-  'profile-slots': '走班制',
-  'register-code': '注册码',
-  update: '程序更新',
-  config: '配置',
-  database: '数据库',
-  branding: '品牌',
-  ai: 'AI',
-  lesson: '换课',
-  timeoffset: '授时',
-};
+  'exam': 'audit.prefix.exam',
+  'profile-slots': 'audit.prefix.profile-slots',
+  'register-code': 'audit.prefix.register-code',
+  'update': 'audit.prefix.update',
+  'config': 'audit.prefix.config',
+  'database': 'audit.prefix.database',
+  'branding': 'audit.prefix.branding',
+  'ai': 'audit.prefix.ai',
+  'lesson': 'audit.prefix.lesson',
+  'timeoffset': 'audit.prefix.timeoffset',};
 
 /** 动作码其余部分 → 动词。多段动作（如 `command.broadcast`）整体作为键。 */
 const VERB_LABELS = {
-  create: '创建',
-  update: '修改',
-  delete: '删除',
-  clear: '清空',
-  test: '测试',
-  push: '下发',
-  run: '手动触发',
-  cancel: '取消',
-  restore: '恢复',
-  login: '登录',
-  logout: '退出登录',
-  export: '导出',
-  import: '导入',
-  setdefault: '设为默认',
-  duplicate: '复制',
+  'create': 'audit.verb.create',
+  'update': 'audit.verb.update',
+  'delete': 'audit.verb.delete',
+  'clear': 'audit.verb.clear',
+  'test': 'audit.verb.test',
+  'push': 'audit.verb.push',
+  'run': 'audit.verb.run',
+  'cancel': 'audit.verb.cancel',
+  'restore': 'audit.verb.restore',
+  'login': 'audit.verb.login',
+  'logout': 'audit.verb.logout',
+  'export': 'audit.verb.export',
+  'import': 'audit.verb.import',
+  'setdefault': 'audit.verb.setdefault',
+  'duplicate': 'audit.verb.duplicate',
   // 拼出来是「标签变更」；用「分配」或「设置」都会读出别扭的语序。
-  assign: '变更',
-  approve: '批准',
-  reject: '拒绝',
-  request: '申请',
-  switch: '开关变更',
-  command: '下发指令',
-  'command.broadcast': '广播指令',
-  'command.cancel': '取消指令',
-  'diagnostics.clear': '清空诊断记录',
-  appearance: '下发外观',
-  notify: '发送提醒',
-  'plugin.refresh': '刷新插件列表',
-  'import-cses': '导入 CSES 课表',
-  'import-cidata': '导入 .cidata 档案',
-  'version.delete': '删除历史版本',
-  'deliveries.clear': '清空投递记录',
+  'assign': 'audit.verb.assign',
+  'approve': 'audit.verb.approve',
+  'reject': 'audit.verb.reject',
+  'request': 'audit.verb.request',
+  'switch': 'audit.verb.switch',
+  'command': 'audit.verb.command',
+  'command.broadcast': 'audit.verb.command_broadcast',
+  'command.cancel': 'audit.verb.command_cancel',
+  'diagnostics.clear': 'audit.verb.diagnostics_clear',
+  'appearance': 'audit.verb.appearance',
+  'notify': 'audit.verb.notify',
+  'plugin.refresh': 'audit.verb.plugin_refresh',
+  'import-cses': 'audit.verb.import-cses',
+  'import-cidata': 'audit.verb.import-cidata',
+  'version.delete': 'audit.verb.version_delete',
+  'deliveries.clear': 'audit.verb.deliveries_clear',
   // 插件管理（#121）。前缀是 plugin，这里填的是动作码去掉前缀后的部分。
-  refresh: '刷新插件列表',
-  cache: '缓存插件包',
-  'cache.delete': '删除插件包缓存',
-  deploy: '下发插件',
-  'market.sync': '同步市场索引',
-  'market.settings': '修改市场设置',
+  'refresh': 'audit.verb.refresh',
+  'cache': 'audit.verb.cache',
+  'cache.delete': 'audit.verb.cache_delete',
+  'deploy': 'audit.verb.deploy',
+  'market.sync': 'audit.verb.market_sync',
+  'market.settings': 'audit.verb.market_settings',
   // ── 补齐剩下的动作码（`_shot/audit-labels-report.js` 会把「渲染后仍含英文」的全列出来）──
   // 登录 / 密码（前缀 admin）
-  'login.failed': '登录失败',
-  'login.locked': '账号被锁定',
-  'login.totp': '两步验证登录',
-  'login.totp.failed': '两步验证失败',
-  'password.changed': '修改密码',
-  'password.expiring': '密码即将到期',
-  'password.reset': '重置密码',
-  seed: '初始化管理员',
+  'login.failed': 'audit.verb.login_failed',
+  'login.locked': 'audit.verb.login_locked',
+  'login.totp': 'audit.verb.login_totp',
+  'login.totp.failed': 'audit.verb.login_totp_failed',
+  'password.changed': 'audit.verb.password_changed',
+  'password.expiring': 'audit.verb.password_expiring',
+  'password.reset': 'audit.verb.password_reset',
+  'seed': 'audit.verb.seed',
   // 自助注册 / 注册码
-  register: '注册',
-  'register.approve': '批准注册申请',
-  'register.reject': '拒绝注册申请',
-  'register.request': '提交注册申请',
-  'register.delete': '删除注册申请',
-  'register.failed': '注册失败',
-  'approval.switch': '开关变更',
+  'register': 'audit.verb.register',
+  'register.approve': 'audit.verb.register_approve',
+  'register.reject': 'audit.verb.register_reject',
+  'register.request': 'audit.verb.register_request',
+  'register.delete': 'audit.verb.register_delete',
+  'register.failed': 'audit.verb.register_failed',
+  'approval.switch': 'audit.verb.approval_switch',
   // 设备
-  enroll: '注册接入',
-  wake: '网络唤醒',
-  'command.result': '指令执行结果',
-  'export.csv': '导出 CSV',
-  'import.csv': '导入 CSV',
+  'enroll': 'audit.verb.enroll',
+  'wake': 'audit.verb.wake',
+  'command.result': 'audit.verb.command_result',
+  'export.csv': 'audit.verb.export_csv',
+  'import.csv': 'audit.verb.import_csv',
   // 档案 / 课表 / 模板
-  apply: '套用',
-  'ai-import': 'AI 导入',
-  'override.create': '新建临时换课',
-  'override.delete': '删除临时换课',
-  swap: '对调',
-  adjust: '微调',
+  'apply': 'audit.verb.apply',
+  'ai-import': 'audit.verb.ai-import',
+  'override.create': 'audit.verb.override_create',
+  'override.delete': 'audit.verb.override_delete',
+  'swap': 'audit.verb.swap',
+  'adjust': 'audit.verb.adjust',
   // 其他
-  config: '配置',
-  start: '开启',
-  end: '结束',
-  updated: '修改',
+  'config': 'audit.verb.config',
+  'start': 'audit.verb.start',
+  'end': 'audit.verb.end',
+  'updated': 'audit.verb.updated',
   // 多校区时间偏移（#26）：动作码是 `timeoffset.group.updated`，缺了这条会显示成
   // 「授时 · group.updated」这种半英文。
-  'group.updated': '修改分组偏移',
-  check: '检查',
-  vacuum: '清理空间',
-  'image.upload': '上传图片',
-  disable: '关闭',
-  enable: '启用',
-  'inventory.refresh': '刷新已装清单',
+  'group.updated': 'audit.verb.group_updated',
+  'check': 'audit.verb.check',
+  'vacuum': 'audit.verb.vacuum',
+  'image.upload': 'audit.verb.image_upload',
+  'disable': 'audit.verb.disable',
+  'enable': 'audit.verb.enable',
+  'inventory.refresh': 'audit.verb.inventory_refresh',
   // 考试模式（#21）：临时切档案 + 还原，事后要看得出「谁在什么时候开的、涉及哪些教室」。
-  'exam.start': '开启考试模式',
-  'exam.end': '结束考试模式',
+  'exam.start': 'audit.verb.exam_start',
+  'exam.end': 'audit.verb.exam_end',
   // 配置同步（#17 / #79）。这些码一直存在（`device.sync.success` 等），但此前没登记，
   // 审计页显示的是「设备 · sync.success」这种半英文。
-  'sync.pull': '拉取配置',
-  'sync.success': '应用配置',
-  'sync.partial': '应用配置（部分成功）',
-  'sync.failed': '应用配置失败',
-  'sync.retry': '自动重推配置',
-};
+  'sync.pull': 'audit.verb.sync_pull',
+  'sync.success': 'audit.verb.sync_success',
+  'sync.partial': 'audit.verb.sync_partial',
+  'sync.failed': 'audit.verb.sync_failed',
+  'sync.retry': 'audit.verb.sync_retry',};
 
 /**
  * 把审计动作码翻成中文标签。
@@ -148,7 +148,7 @@ const VERB_LABELS = {
  */
 export function auditActionLabel(action) {
   if (!action) {
-    return '（未知动作）';
+    return t('audit.unknownAction');
   }
 
   const dot = action.indexOf('.');
@@ -158,12 +158,19 @@ export function auditActionLabel(action) {
 
   const prefix = action.slice(0, dot);
   const rest = action.slice(dot + 1);
-  const prefixLabel = PREFIX_LABELS[prefix];
+  const prefixLabel = PREFIX_LABELS[prefix] ? t(PREFIX_LABELS[prefix]) : '';
   if (!prefixLabel) {
     return action;
   }
 
-  const verbLabel = VERB_LABELS[rest];
+  const verbLabel = VERB_LABELS[rest] ? t(VERB_LABELS[rest]) : '';
+
+  // 前缀与动作同名时只显示一次（`admin.login` → 「登录 · 登录」这种重复很蠢，
+  // 英文下更明显：Sign-in · Sign-in）。
+  if (verbLabel && verbLabel === prefixLabel) {
+    return prefixLabel;
+  }
+
   // 只认得模块、不认得动作时，仍给出模块名 + 原动作，比全文原文好读、也不丢信息。
   return verbLabel ? `${prefixLabel} · ${verbLabel}` : `${prefixLabel} · ${rest}`;
 }

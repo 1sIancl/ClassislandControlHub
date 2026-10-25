@@ -2,12 +2,14 @@
  * 审计日志视图：记录管理员操作与设备同步事件，便于排查与追溯。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=144';
-import { toastError } from '../core/errors.js?v=144';
+import { api, fetchBlob } from '../core/api.js?v=146';
+import { toastError } from '../core/errors.js?v=146';
 import {
   h, clear, formatDateTime, toast, loadingBlock, emptyState,
-} from '../core/ui.js?v=144';
-import { t } from '../core/i18n.js?v=144';
+} from '../core/ui.js?v=146';
+import { t } from '../core/i18n.js?v=146';
+// 动作码 → 可读标签（`device.command` → 「设备 · 下发指令」）。原始码仍保留在下方小字里，便于对日志。
+import { auditActionLabel } from '../core/audit-actions.js?v=146';
 
 export const meta = {
   title: t('audit.title'),
@@ -137,7 +139,13 @@ export async function render(container) {
             h('tbody', ...result.items.map((item) => h('tr',
               h('td', { style: { fontSize: '12px', color: 'var(--text-faint)' } }, formatDateTime(item.timestamp)),
               h('td', h('span', { style: { fontSize: '12.5px' } }, item.actor || '—')),
-              h('td', h('code', { style: { fontSize: '11.5px' } }, item.action)),
+              // 可读标签在上、原始码在下：标签给人看，原始码给对日志的人看（悬停也能看到）。
+              h('td',
+                h('div', { style: { fontSize: '12.5px' } }, auditActionLabel(item.action)),
+                h('code', {
+                  style: { fontSize: '11px', color: 'var(--text-faint)' },
+                  title: item.action,
+                }, item.action)),
               h('td', { style: { fontSize: '12.5px' } }, item.target || '—'),
               h('td', { style: { fontSize: '12.5px', color: 'var(--text-dim)', maxWidth: '380px' } }, item.detail || '—'),
               h('td', { style: { fontSize: '11.5px', fontFamily: 'var(--mono)', color: 'var(--text-faint)' } }, item.ipAddress || '—'),
