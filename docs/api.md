@@ -122,6 +122,22 @@ curl -s "$BASE/admin/devices" -H "Authorization: Bearer $TOKEN" \
 数据源是 Open-Meteo（免 Key）。⚠️ 内网无外网时抓取会失败——服务端**保留上一次成功的数据**，
 所以 `available` 可能为 `true` 而 `error` 非空（表示「数据是旧的」）。
 
+### 备份导入（#125）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| POST | `/admin/backups/import` | `backup.write` | `multipart/form-data`：`file`（`.zip` 或 `.zip.enc`）、`passphrase`（加密包必填，≥6 位）、`note`（可选）。返回新建的备份条目（`type: "imported"`） |
+
+要点：
+
+- **导入 ≠ 恢复**。导入只是把这个包**落成一份备份**（出现在列表里），真正覆盖数据仍要
+  `POST /admin/backups/{id}/restore`（那条带操作审批）。这样传错文件不会把整库换掉。
+- 加密包（`.zip.enc`）会自动识别并解密；口令错或文件被改过会返回 400
+  「口令不对，或文件已损坏」（AES-GCM 认证失败，不是解出乱码）。
+- 服务端校验：必须是 zip、**不接受带路径的条目**（防 Zip Slip）、必须含 `controlhub.db`、
+  解压后 ≤ 2 GB、上传 ≤ 256 MB；任何一步失败都会清掉半截目录。
+- 命令行解密（不给服务端口令的场景）：`IslandHub.Server --decrypt-backup <file> <out.zip>`。
+
 `POST /admin/backups/{id}/restore` 的响应因此变成
 `{ executed, approvalId, status, message }`：`executed=false` 表示已提交审批（`approvalId` 为申请号），
 `status` 取值 `done` / `failed` / `pending`。同一申请只能被处理一次（并发点「通过」只有一个能进入执行）。

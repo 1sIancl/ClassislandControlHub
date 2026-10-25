@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Text.Json;
 using IslandHub.Protocol;
 using IslandHub.Protocol.Dtos;
+using IslandHub.Server.Http;
 using IslandHub.Server.Options;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
@@ -228,6 +229,120 @@ public sealed class BackupService(
         }
 
         return ms.ToArray();
+    }
+
+    /// <summary>
+    /// 从上传的 zip 导入一份备份（#125）。
+    /// <para>
+    /// 为什么先落成「一份备份」而不是直接恢复：恢复会**整库覆盖**。先让它在列表里出现，
+    /// 用户能看清「里面有什么、含不含加密密钥」，再由既有的「恢复」入口（**带操作审批**）执行——
+    /// 多一步，但不会因为传错一个文件就把整个库换掉。
+    /// </para>
+    /// <para>加密包（<c>.zip.enc</c>）由调用方先解密；这里只接受 zip 字节。</para>
+    /// </summary>
+    public BackupEntry ImportBackupZip(byte[] zipBytes, string note = "")
+    {
+        // 先认 zip magic：传错文件 / 传了个 .txt / 解密后其实是垃圾，都会落到这里。
+        // 自己报一句「不是有效的备份包」，比让 ZipArchive 抛底层异常好懂。
+        if (zipBytes.Length < 4 || zipBytes[0] != 0x50 || zipBytes[1] != 0x4B)
+        {
+            throw HubException.Validation("这不是有效的备份包（应为 .zip，或解密后的 zip）。");
+        }
+
+        var stamp = DateTimeOffset.Now.ToString("yyyyMMdd_HHmmss_fff");
+        var id = $"Imported_{stamp}";
+        if (Directory.Exists(Path.Combine(Root, id)))
+        {
+            id = $"Imported_{stamp}_{Guid.NewGuid().ToString("N")[..4]}";
+        }
+
+        var dir = Path.Combine(Root, id);
+        Directory.CreateDirectory(dir);
+
+        void Cleanup()
+        {
+            try
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+            catch (IOException)
+            {
+                // 清理失败不该盖住真正的错误（用户看到「无法删除目录」会完全摸不着头脑）。
+            }
+        }
+
+        // 解压后体积上限：防 zip 炸弹（几百 KB 的包解出几十 GB 把磁盘写满）。
+        const long maxUncompressed = 2L * 1024 * 1024 * 1024;
+        long total = 0;
+        var names = new List<string>();
+
+        try
+        {
+            using var archive = new ZipArchive(new MemoryStream(zipBytes), ZipArchiveMode.Read);
+            foreach (var entry in archive.Entries)
+            {
+                // 只接受**平铺的文件**：备份目录本身就是平铺的。带路径的条目只可能是
+                // Zip Slip 攻击或别人手工打的怪包——直接拒绝，不做「聪明的」路径归一化。
+                var name = entry.FullName;
+                if (name.Length == 0 || name.EndsWith('/') || name != Path.GetFileName(name))
+                {
+                    throw HubException.Validation($"备份包里有非法路径：{name}");
+                }
+
+                total += entry.Length;
+                if (total > maxUncompressed)
+                {
+                    throw HubException.Validation("备份包解压后超过 2 GB，已中止（正常备份不会有这么大）。");
+                }
+
+                entry.ExtractToFile(Path.Combine(dir, name), overwrite: true);
+                names.Add(name);
+            }
+        }
+        catch (InvalidDataException)
+        {
+            Cleanup();
+            throw HubException.Validation("备份包已损坏或不是有效的 zip。");
+        }
+        catch
+        {
+            Cleanup();
+            throw;
+        }
+
+        // 没有数据库的备份无法用来恢复，导入它只会让列表里多一条看着有用、点了没用的条目。
+        if (!names.Any(n => n.StartsWith("controlhub.db", StringComparison.OrdinalIgnoreCase)))
+        {
+            Cleanup();
+            throw HubException.Validation("备份包里没有数据库文件（controlhub.db），不能用来恢复。");
+        }
+
+        var includesSecretsKey = names.Contains("secrets.key", StringComparer.OrdinalIgnoreCase);
+        var meta = new BackupEntry
+        {
+            Id = id,
+            Type = "imported",
+            CreatedAt = DateTimeOffset.UtcNow,
+            Note = string.IsNullOrWhiteSpace(note) ? "导入的备份文件" : note.Trim(),
+            FileCount = names.Count,
+            IncludesSecretsKey = includesSecretsKey,
+        };
+        File.WriteAllText(Path.Combine(dir, "backup.json"), JsonSerializer.Serialize(meta));
+
+        var size = Directory.GetFiles(dir).Sum(f => new FileInfo(f).Length);
+        logger.LogInformation("已导入备份 {Id}（{Count} 个文件，{Size} 字节，含密钥 {Key}）。",
+            id, names.Count, size, includesSecretsKey);
+
+        return new BackupEntry
+        {
+            Id = id,
+            Type = meta.Type,
+            CreatedAt = meta.CreatedAt,
+            SizeBytes = size,
+            Note = meta.Note,
+            FileCount = names.Count,
+            IncludesSecretsKey = includesSecretsKey,
+        };
     }
 
     /// <summary>从备份恢复数据库（覆盖当前 controlhub.db，需重启服务生效）。</summary>

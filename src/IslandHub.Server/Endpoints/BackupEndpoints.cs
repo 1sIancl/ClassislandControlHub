@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+
 using IslandHub.Protocol;
 using IslandHub.Protocol.Dtos;
 using IslandHub.Server.Data;
@@ -23,6 +25,9 @@ public static class BackupEndpoints
         // 加密导出（#60）：口令走请求体（不进 URL / 访问日志），返回 .zip.enc。
         group.MapPost("/backups/{id}/export", ExportAsync).RequirePermission(PermissionKeys.BackupRead);
         group.MapPost("/backups/{id}/restore", RestoreAsync).RequirePermission(PermissionKeys.BackupWrite);
+        // 导入备份（#125）：接受 .zip 或 .zip.enc（加密包要给口令）。导入只是**落成一份备份**，
+        // 真正的恢复仍走 /backups/{id}/restore（那条带操作审批），所以这里不需要再审批一次。
+        group.MapPost("/backups/import", ImportAsync).RequirePermission(PermissionKeys.BackupWrite);
 
         // 数据库健康检查与整理（#62）：SQLite 删数据不归还磁盘空间，需要一个能查、能整理的入口。
         group.MapGet("/database/health", DatabaseHealthAsync).RequirePermission(PermissionKeys.BackupRead);
@@ -108,6 +113,74 @@ public static class BackupEndpoints
             $"创建备份（{entry.FileCount} 个文件，{entry.SizeBytes} 字节"
             + $"{(entry.IncludesSecretsKey ? "，含加密密钥" : "，不含加密密钥")}）。",
             http.GetClientIpAddress(), cancellationToken);
+        return ApiResult<BackupEntryDto>.Success(ToDto(entry));
+    }
+
+    /// <summary>
+    /// 导入备份文件（#125）：<c>multipart/form-data</c>，字段 <c>file</c>（.zip / .zip.enc）、
+    /// <c>passphrase</c>（加密包必填）、<c>note</c>（可选）。
+    /// </summary>
+    private static async Task<ApiResult<BackupEntryDto>> ImportAsync(
+        HttpContext http,
+        BackupService backups,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+
+        if (!http.Request.HasFormContentType)
+        {
+            throw HubException.Validation("请用 multipart/form-data 上传备份文件。");
+        }
+
+        var form = await http.Request.ReadFormAsync(cancellationToken);
+        var file = form.Files.GetFile("file")
+                   ?? throw HubException.Validation("没有收到文件（字段名应为 file）。");
+
+        // 上限 256 MB：整库 + 配置文件正常远小于这个数；不设上限就会被一个超大上传拖死。
+        const long maxBytes = 256L * 1024 * 1024;
+        if (file.Length == 0)
+        {
+            throw HubException.Validation("文件是空的。");
+        }
+
+        if (file.Length > maxBytes)
+        {
+            throw HubException.Validation("文件超过 256 MB，不像是备份包。");
+        }
+
+        using var buffer = new MemoryStream();
+        await file.CopyToAsync(buffer, cancellationToken);
+        var payload = buffer.ToArray();
+
+        // 加密包先解密：口令错、文件被改过，都会在 AES-GCM 的认证标签这一步被拦下
+        // （不是「解出来一堆乱码」，而是直接抛异常——所以可以明确告诉用户是哪一类问题）。
+        if (BackupCrypto.IsEncrypted(payload))
+        {
+            var passphrase = form["passphrase"].ToString();
+            if (passphrase.Length < 6)
+            {
+                throw HubException.Validation("这是加密备份，需要填写口令（至少 6 位）。");
+            }
+
+            try
+            {
+                payload = BackupCrypto.Decrypt(payload, passphrase);
+            }
+            catch (CryptographicException)
+            {
+                throw HubException.Validation("口令不对，或文件已损坏。");
+            }
+        }
+
+        var entry = backups.ImportBackupZip(payload, form["note"].ToString());
+
+        // 审计只记「导入了一份多大、含不含密钥的备份」——**绝不记口令**。
+        await store.AddAuditAsync(session.Username, "backup.import", entry.Id,
+            $"导入备份文件（{entry.FileCount} 个文件，{entry.SizeBytes} 字节"
+            + $"{(entry.IncludesSecretsKey ? "，含加密密钥" : "，不含加密密钥")}；口令不记录）。",
+            http.GetClientIpAddress(), cancellationToken);
+
         return ApiResult<BackupEntryDto>.Success(ToDto(entry));
     }
 

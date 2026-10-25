@@ -2,21 +2,21 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=138';
-import { toastError } from './core/errors.js?v=138';
-import { h, clear, toast, icon } from './core/ui.js?v=138';
-import { t, applyStatic, mountLocalePicker } from './core/i18n.js?v=138';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=139';
+import { toastError } from './core/errors.js?v=139';
+import { h, clear, toast, icon } from './core/ui.js?v=139';
+import { t, applyStatic, mountLocalePicker } from './core/i18n.js?v=139';
 import {
   initTheme,
   getSidebarCollapsed, setSidebarCollapsed,
   applyDensity,
   applyAppearance, setBrandingAccent,
   applyRemotePrefs, applySchedScale,
-} from './core/prefs.js?v=138';
-import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=138';
-import { initGlassHighlight } from './core/glass.js?v=138';
-import { initTopbar } from './topbar.js?v=138';
-import { openSearch } from './core/search.js?v=138';
+} from './core/prefs.js?v=139';
+import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=139';
+import { initGlassHighlight } from './core/glass.js?v=139';
+import { initTopbar } from './topbar.js?v=139';
+import { openSearch } from './core/search.js?v=139';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -155,31 +155,31 @@ const ROUTE_ALIASES = {
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=138'),
-  devices: () => import('./views/devices.js?v=138'),
+  dashboard: () => import('./views/dashboard.js?v=139'),
+  devices: () => import('./views/devices.js?v=139'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=138'),
-  profiles: () => import('./views/profiles.js?v=138'),
-  profileEditor: () => import('./views/profileEditor.js?v=138'),
-  deploy: () => import('./views/deploy.js?v=138'),
-  remote: () => import('./views/remote.js?v=138'),
-  reminders: () => import('./views/reminders.js?v=138'),
-  examMode: () => import('./views/examMode.js?v=138'),
-  weather: () => import('./views/weather.js?v=138'),
-  profileSlots: () => import('./views/profileSlots.js?v=138'),
-  audit: () => import('./views/audit.js?v=138'),
-  reports: () => import('./views/reports.js?v=138'),
-  appearance: () => import('./views/appearance.js?v=138'),
+  groups: () => import('./views/devices.js?v=139'),
+  profiles: () => import('./views/profiles.js?v=139'),
+  profileEditor: () => import('./views/profileEditor.js?v=139'),
+  deploy: () => import('./views/deploy.js?v=139'),
+  remote: () => import('./views/remote.js?v=139'),
+  reminders: () => import('./views/reminders.js?v=139'),
+  examMode: () => import('./views/examMode.js?v=139'),
+  weather: () => import('./views/weather.js?v=139'),
+  profileSlots: () => import('./views/profileSlots.js?v=139'),
+  audit: () => import('./views/audit.js?v=139'),
+  reports: () => import('./views/reports.js?v=139'),
+  appearance: () => import('./views/appearance.js?v=139'),
   // 「系统设置」拆成四页（原 settings.js 已按此拆分，见各文件头部说明）。
-  accounts: () => import('./views/accounts.js?v=138'),
-  server: () => import('./views/server.js?v=138'),
-  integrations: () => import('./views/integrations.js?v=138'),
-  maintenance: () => import('./views/maintenance.js?v=138'),
-  board: () => import('./views/board.js?v=138'),
-  approvals: () => import('./views/approvals.js?v=138'),
-  timesync: () => import('./views/timesync.js?v=138'),
-  lessons: () => import('./views/lessons.js?v=138'),
-  plugins: () => import('./views/pluginMarket.js?v=138'),
+  accounts: () => import('./views/accounts.js?v=139'),
+  server: () => import('./views/server.js?v=139'),
+  integrations: () => import('./views/integrations.js?v=139'),
+  maintenance: () => import('./views/maintenance.js?v=139'),
+  board: () => import('./views/board.js?v=139'),
+  approvals: () => import('./views/approvals.js?v=139'),
+  timesync: () => import('./views/timesync.js?v=139'),
+  lessons: () => import('./views/lessons.js?v=139'),
+  plugins: () => import('./views/pluginMarket.js?v=139'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -724,7 +724,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=138');
+    const { startTour } = await import('./core/tour.js?v=139');
     startTour({
       onFinish: async (skipped) => {
         try {

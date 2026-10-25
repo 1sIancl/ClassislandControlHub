@@ -1,18 +1,24 @@
 /** 系统维护视图（系统设置拆分而来）：自动更新、备份与数据库整理。 */
 
-import { api, hasPermission, fetchBlob } from '../core/api.js?v=138';
-import { toastError } from '../core/errors.js?v=138';
+import { api, hasPermission, fetchBlob } from '../core/api.js?v=139';
+import { toastError } from '../core/errors.js?v=139';
 import {
   h, clear, formatDateTime, toast, modal, confirmDialog, field, loadingBlock, kvRow,
-} from '../core/ui.js?v=138';
-import { t } from '../core/i18n.js?v=138';
+} from '../core/ui.js?v=139';
+import { t } from '../core/i18n.js?v=139';
 
 export const meta = {
   title: t('maint.title'),
   subtitle: t('maint.subtitle'),
 };
 
-const BACKUP_TYPE_LABELS = { manual: t('maint.kindManual'), auto: t('maint.kindAuto'), update: t('maint.kindPreUpdate') };
+const BACKUP_TYPE_LABELS = {
+  manual: t('maint.kindManual'),
+  auto: t('maint.kindAuto'),
+  update: t('maint.kindPreUpdate'),
+  // 从上传的文件导入的（#125）：与「手动新建」区分开，否则用户会以为是自己刚点出来的。
+  imported: t('maint.kindImported'),
+};
 
 /**
  * 系统维护：自动更新、备份与数据库整理。
@@ -393,10 +399,17 @@ function renderBackupCard(container) {
           + t('maint.backupIntro2')),
       ),
       canWrite
-        ? h('button.btn.btn-primary.btn-sm', {
-          type: 'button',
-          onClick: () => openCreateBackupDialog(container),
-        }, t('maint.newBackup'))
+        ? h('div.card-actions',
+          // 导入备份（#125）：换机器迁移、或把别人给的备份拿进来时用。加密包会问口令。
+          h('button.btn.btn-sm', {
+            type: 'button',
+            onClick: () => openImportBackupDialog(container),
+          }, t('maint.importBackup')),
+          h('button.btn.btn-primary.btn-sm', {
+            type: 'button',
+            onClick: () => openCreateBackupDialog(container),
+          }, t('maint.newBackup')),
+        )
         : null,
     ),
     healthBox,
@@ -702,6 +715,57 @@ function openCreateBackupDialog(container) {
         return true;
       } catch (err) {
         toastError(err, t('maint.createFailed'));
+        return false;
+      }
+    },
+  });
+}
+
+/**
+ * 导入备份文件（#125）：支持普通 zip 与加密包（.zip.enc，要口令）。
+ *
+ * <p>
+ * 导入只是**落成一份备份**：它会出现在列表里，但要真正覆盖数据还得再点「从备份恢复」
+ * （那条带操作审批）。所以这里不做「导入即恢复」——传错文件不该直接换掉整库。
+ * </p>
+ */
+function openImportBackupDialog(container) {
+  const fileInput = h('input', { type: 'file', accept: '.zip,.enc' });
+  const passInput = h('input', {
+    type: 'password',
+    autocomplete: 'new-password',
+    placeholder: t('maint.importPassphrasePlaceholder'),
+  });
+  const noteInput = h('input', { type: 'text', placeholder: t('maint.notePlaceholder') });
+
+  modal({
+    title: t('maint.importBackupTitle'),
+    width: 'wide',
+    body: h('div',
+      field(t('maint.importFile'), fileInput, t('maint.importFileHint')),
+      field(t('maint.importPassphrase'), passInput, t('maint.importPassphraseHint')),
+      field(t('maint.note'), noteInput, t('maint.noteHint')),
+    ),
+    confirmText: t('maint.import'),
+    onConfirm: async () => {
+      const file = fileInput.files?.[0];
+      if (!file) {
+        toast('warn', t('maint.importNeedFile'));
+        return false;
+      }
+
+      try {
+        const form = new FormData();
+        form.append('file', file);
+        form.append('passphrase', passInput.value);
+        form.append('note', noteInput.value.trim());
+        const entry = await api('/admin/backups/import', { method: 'POST', body: form });
+        // 提醒一句「还没生效」：用户很容易以为导入完数据就换好了。
+        toast('ok', t('maint.importDone', { name: entry?.id ?? '' }), t('maint.importDoneHint'), 6000);
+        await render(container);
+        return true;
+      } catch (err) {
+        toastError(err, t('maint.importFailed'));
         return false;
       }
     },
