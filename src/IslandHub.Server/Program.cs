@@ -256,6 +256,8 @@ builder.Services.AddSingleton<ServerTimeService>();
 builder.Services.AddSingleton<UpdateService>();
 builder.Services.AddSingleton<BackupService>();
 builder.Services.AddSingleton<BrandingImageStore>();
+// 个人界面背景图（#127 补完）：按账号隔离，与全站品牌图是两个目录。
+builder.Services.AddSingleton<UserBackgroundStore>();
 builder.Services.AddSingleton<CidataImportStore>();
 builder.Services.AddSingleton<AiTimetableService>();
 

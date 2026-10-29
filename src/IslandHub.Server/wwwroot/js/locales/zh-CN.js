@@ -2118,6 +2118,16 @@ export default {
   // 个人外观（#127）
   'myLook.title': "我的界面",
   'myLook.desc': "只影响你自己看到的样式：换台电脑登录同一账号会跟着走，其他管理员不受影响，也不下发到教室端。",
+  // 个人背景图上传（#127 补完）
+  'myLook.bgImage': "自定义图片",
+  'myLook.backgroundImage': "背景图",
+  'myLook.uploadImage': "上传图片",
+  'myLook.removeImage': "移除",
+  'myLook.imageUploaded': "已上传，刷新也会保留",
+  'myLook.imageRemoved': "已移除",
+  'myLook.uploadFailed': "上传失败",
+  'myLook.removeFailed': "移除失败",
+
   'myLook.background': "页面背景",
   'myLook.opacity': "玻璃透明度",
   'myLook.blur': "磨砂程度",

@@ -52,6 +52,13 @@ public static class AdminEndpoints
         // 界面偏好是「每个人自己的设置」，任何已登录账号都能读写自己那份（#40）。
         authed.MapGet("/ui-preferences", GetUiPreferencesAsync).RequirePermission(PermissionKeys.Authenticated);
         authed.MapPut("/ui-preferences", SetUiPreferencesAsync).RequirePermission(PermissionKeys.Authenticated);
+        // 个人背景图（#127）：上传 / 读取 / 删除。都只作用于**当前账号自己那一张**。
+        authed.MapPost("/ui-preferences/background-image", UploadBackgroundImageAsync)
+            .RequirePermission(PermissionKeys.Authenticated);
+        authed.MapGet("/ui-preferences/background-image", GetBackgroundImageAsync)
+            .RequirePermission(PermissionKeys.Authenticated);
+        authed.MapDelete("/ui-preferences/background-image", DeleteBackgroundImageAsync)
+            .RequirePermission(PermissionKeys.Authenticated);
 
         // 两步验证（TOTP）：绑定 / 启用 / 关闭，都是「对自己的账号」操作，只需已登录
         authed.MapPost("/totp/setup", TotpSetupAsync).RequirePermission(PermissionKeys.Authenticated);
@@ -372,6 +379,77 @@ public static class AdminEndpoints
         return ApiResult<UiPreferencesDto>.Success(request);
     }
 
+    /// <summary>上传当前账号的界面背景图（multipart，字段 <c>file</c>，≤4 MB）。</summary>
+    private static async Task<ApiResult<string>> UploadBackgroundImageAsync(
+        HttpContext http,
+        UserBackgroundStore backgrounds,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        if (!http.Request.HasFormContentType)
+        {
+            throw HubException.Validation("请以表单方式上传图片（字段名 file）。");
+        }
+
+        var form = await http.Request.ReadFormAsync(cancellationToken);
+        var file = form.Files["file"] ?? (form.Files.Count > 0 ? form.Files[0] : null);
+        if (file is null || file.Length == 0)
+        {
+            throw HubException.Validation("没有收到图片文件（字段名 file）。");
+        }
+
+        if (file.Length > UserBackgroundStore.MaxBytes)
+        {
+            throw HubException.Validation($"图片超过 {UserBackgroundStore.MaxBytes / 1024 / 1024}MB 上限。");
+        }
+
+        string name;
+        await using (var stream = file.OpenReadStream())
+        {
+            name = await backgrounds.SaveAsync(session.UserId, stream, cancellationToken);
+        }
+
+        // 只是个人外观，但"谁往服务器里放了一个文件"仍然值得记一笔。
+        await http.RequestServices.GetRequiredService<HubStore>().AddAuditAsync(
+            session.Username, "ui.background.upload", name,
+            $"上传个人界面背景图（{file.Length / 1024}KB）。", http.GetClientIpAddress(), cancellationToken);
+
+        return ApiResult<string>.Success(name);
+    }
+
+    /// <summary>读取当前账号的背景图；没有就 404（前端据此回退到默认背景）。</summary>
+    private static Task GetBackgroundImageAsync(
+        HttpContext http,
+        UserBackgroundStore backgrounds,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        if (!backgrounds.TryResolve(session.UserId, out var path, out var contentType))
+        {
+            throw HubException.NotFound("还没有上传过背景图。");
+        }
+
+        // 内容类型由服务端按扩展名判定（扩展名本身在上传时按**文件头**校验过），不采信请求头。
+        http.Response.ContentType = contentType;
+        // 改图后要立刻看到；文件名虽然会变，但同一个 URL 的缓存会让"换了图还是旧的"显得像 bug。
+        http.Response.Headers.CacheControl = "private, no-store";
+        return http.Response.SendFileAsync(path, cancellationToken);
+    }
+
+    /// <summary>删除当前账号的背景图（幂等）。</summary>
+    private static async Task<ApiResult<bool>> DeleteBackgroundImageAsync(
+        HttpContext http,
+        UserBackgroundStore backgrounds,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        backgrounds.Delete(session.UserId);
+        await store.AddAuditAsync(session.Username, "ui.background.delete", session.UserId,
+            "删除个人界面背景图。", http.GetClientIpAddress(), cancellationToken);
+        return ApiResult<bool>.Success(true);
+    }
+
     /// <summary>把外观数值夹到安全范围（超范围不报错，直接夹——用户拖滑块不该看到 400）。</summary>
     private static void ClampAppearance(UiAppearanceDto appearance)
     {
@@ -386,9 +464,9 @@ public static class AdminEndpoints
             : "none";
     }
 
-    /// <summary>可选背景预设（与前端 `core/appearance.js` 一一对应）。</summary>
+    /// <summary>可选背景预设（与前端 `core/appearance.js` 一一对应）。`image` = 用户自己上传的那张。</summary>
     private static readonly HashSet<string> UiBackgrounds =
-        new(StringComparer.Ordinal) { "default", "aurora", "sunset", "minimal", "night" };
+        new(StringComparer.Ordinal) { "default", "aurora", "sunset", "minimal", "night", "image" };
 
     /// <summary>可选玻璃色调。</summary>
     private static readonly HashSet<string> UiTints =

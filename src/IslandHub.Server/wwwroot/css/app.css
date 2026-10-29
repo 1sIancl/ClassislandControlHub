@@ -4532,3 +4532,13 @@ input.pcell-name:focus {
     transition: none;
   }
 }
+
+/* 无障碍（#49 / #127）：系统要求"减少透明"时，玻璃层一律不透明、不磨砂。
+   core/appearance.js 也会同步覆盖（内联变量优先级更高），这里兜住未登录与首屏这一瞬。 */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-alpha: 1;
+    --glass-blur: 0px;
+    --glass-tint: transparent;
+  }
+}

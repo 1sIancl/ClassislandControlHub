@@ -2118,6 +2118,16 @@ export default {
   // 个人外观（#127）
   'myLook.title': "My interface",
   'myLook.desc': "Only affects what you see. Signing in from another PC keeps it; other admins are unaffected, and it is never pushed to classrooms.",
+  // 个人背景图上传（#127 补完）
+  'myLook.bgImage': "Custom image",
+  'myLook.backgroundImage': "Background image",
+  'myLook.uploadImage': "Upload image",
+  'myLook.removeImage': "Remove",
+  'myLook.imageUploaded': "uploaded; kept after reload",
+  'myLook.imageRemoved': "removed",
+  'myLook.uploadFailed': "Failed to upload",
+  'myLook.removeFailed': "Failed to remove",
+
   'myLook.background': "Page background",
   'myLook.opacity': "Glass opacity",
   'myLook.blur': "Blur strength",

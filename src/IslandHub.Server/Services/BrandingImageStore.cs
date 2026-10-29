@@ -164,7 +164,7 @@ public sealed class BrandingImageStore
     // ────────────────────────────── 内部 ──────────────────────────────
 
     /// <summary>复制剩余内容，但总量超过 <paramref name="budget"/> 就判定超限。</summary>
-    private static async Task<long> CopyBoundedAsync(
+    internal static async Task<long> CopyBoundedAsync(
         Stream source, Stream target, long budget, CancellationToken cancellationToken)
     {
         var buffer = new byte[81920];
@@ -188,7 +188,7 @@ public sealed class BrandingImageStore
     }
 
     /// <summary>尽量读满 <paramref name="count"/> 字节（读不满也要把已读数量返回去）。</summary>
-    private static async Task<int> ReadAtLeastAsync(
+    internal static async Task<int> ReadAtLeastAsync(
         Stream source, byte[] buffer, int count, CancellationToken cancellationToken)
     {
         var total = 0;
@@ -207,7 +207,7 @@ public sealed class BrandingImageStore
     }
 
     /// <summary>按文件头判定图片类型；认不出返回 null。</summary>
-    private static (string Extension, string ContentType)? Detect(ReadOnlySpan<byte> header)
+    internal static (string Extension, string ContentType)? Detect(ReadOnlySpan<byte> header)
     {
         // PNG: 89 50 4E 47 0D 0A 1A 0A
         ReadOnlySpan<byte> png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
@@ -252,7 +252,7 @@ public sealed class BrandingImageStore
         return null;
     }
 
-    private static string ContentTypeOf(string extension) => extension.ToLowerInvariant() switch
+    internal static string ContentTypeOf(string extension) => extension.ToLowerInvariant() switch
     {
         ".png" => "image/png",
         ".jpg" => "image/jpeg",
