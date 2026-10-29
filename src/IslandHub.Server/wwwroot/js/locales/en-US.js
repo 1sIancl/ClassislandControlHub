@@ -3131,5 +3131,13 @@ export default {
   'profiles.cidataSeparators': 'Separators',
   'profiles.cidataActions': 'Actions',
   'profiles.cidataActionNames': 'Actions: {names}',
+  // 档案编辑器：时间点附加设置 / 时间表引用提示
+  'profiles.editor.attachedBadge': "Attached {count}",
+  'profiles.editor.attachedHint': "{count} attached settings (plugin data on this time point); click to view the raw JSON",
+  'profiles.editor.attachedTitle': "Attached settings ({count})",
+  'profiles.editor.attachedNote': "Maintained by third-party plugins. IslandHub stores and deploys them as-is without interpreting them, so this view is read-only.",
+  'profiles.editor.close': "Close",
+  'profiles.editor.layoutRefs': "{count} timetables reference this layout; changes here affect all of them (including other rotation weeks).",
+
 };
 

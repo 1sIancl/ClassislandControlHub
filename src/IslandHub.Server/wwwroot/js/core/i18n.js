@@ -8,8 +8,8 @@
  *      三处一致的作法；只重画一部分会出现「侧栏英文、页面中文」这种半截状态。
  *   ③ **缺键回退中文**：翻译做一半时不会出现空白或键名，先把外壳翻完就能用。
  */
-import zhCN from '../locales/zh-CN.js?v=156';
-import enUS from '../locales/en-US.js?v=156';
+import zhCN from '../locales/zh-CN.js?v=157';
+import enUS from '../locales/en-US.js?v=157';
 
 const DICTS = { 'zh-CN': zhCN, 'en-US': enUS };
 const FALLBACK = 'zh-CN';

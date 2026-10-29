@@ -3,14 +3,14 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=156';
-import { toastError } from '../core/errors.js?v=156';
+import { api } from '../core/api.js?v=157';
+import { toastError } from '../core/errors.js?v=157';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, icon, select,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=156';
-import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=156';
-import { t } from './../core/i18n.js?v=156';
+} from '../core/ui.js?v=157';
+import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=157';
+import { t } from './../core/i18n.js?v=157';
 
 export const meta = {
   title: t('profiles.editor.title'),
@@ -574,6 +574,13 @@ function renderTimeLayouts() {
         t('profiles.editor.layoutsLead'),
         h('button.btn.btn-primary', { type: 'button', onClick: addLayout }, t('profiles.editor.createLayout')))
       : h('div',
+        // 引用提示（阶段六）：时间表是被课表共享引用的，改一次会波及所有引用它的周/天。
+        // 不说清楚，管理员会以为只改了当前这一张课表（轮换周次里尤其容易误会）。
+        referencedPlanCount(layout) > 0
+          ? h('div.notice.notice-info', { style: { marginTop: '10px' } },
+            h('span.notice-icon', 'i'),
+            h('div', t('profiles.editor.layoutRefs', { count: referencedPlanCount(layout) })))
+          : null,
         // 可视化时间轴放在表格**上方**（两个视图同时可见，不需要切来切去）：
         // 拖动色块平移整段时间、拖下边缘改时长，分钟吸附到 5 分钟并自动避让相邻时间点。
         renderLayoutTimeline(layout),
@@ -635,15 +642,40 @@ function periodCell(layout, item, index) {
     endInput.classList.add('muted');
   }
 
+  // 显示名：一个输入框写两处——`displayName` 是通用显示名，课间还要同步写 `breakName`
+  // （宿主只认 breakName，不同步的话教室里显示的仍是「课间休息」）。
   const nameInput = h('input.pcell-name', {
     type: 'text',
-    value: item.breakName || '',
+    value: item.displayName || item.breakName || '',
     placeholder: item.kind === 'break' ? t('profiles.editor.breakNamePlaceholder') : t('profiles.editor.noteOptional'),
     onInput: (e) => {
-      item.breakName = e.target.value.trim() || null;
+      const text = e.target.value.trim() || null;
+      item.displayName = text;
+      if (item.kind === 'break') {
+        item.breakName = text;
+      }
       markDirtyLight();
     },
   });
+
+  // 附加设置（插件挂在时间点上的数据）：只读展示，点开看原始 JSON。
+  // 这些值 A 端不解释语义，编辑它们等于让管理员手改插件数据，风险大于收益。
+  const attachedCount = Object.keys(item.attachedSettings || {}).length;
+  const attachBadge = attachedCount > 0
+    ? h('button.pcell-attach', {
+      type: 'button',
+      title: t('profiles.editor.attachedHint', { count: attachedCount }),
+      onClick: () => modal({
+        title: t('profiles.editor.attachedTitle', { count: attachedCount }),
+        width: 'wide',
+        body: h('div',
+          h('p.card-desc', t('profiles.editor.attachedNote')),
+          h('pre.attach-json', JSON.stringify(item.attachedSettings, null, 2))),
+        confirmText: t('profiles.editor.close'),
+        onConfirm: () => true,
+      }),
+    }, t('profiles.editor.attachedBadge', { count: attachedCount }))
+    : null;
 
   return h('div', { class: `pcell kind-${item.kind}${item.isHideDefault ? ' hidden-point' : ''}` },
     h('div.pcell-top',
@@ -664,7 +696,19 @@ function periodCell(layout, item, index) {
     ),
     h('div.pcell-times', startInput, h('span.pcell-dash', '–'), endInput),
     nameInput,
+    attachBadge,
   );
+}
+
+/** 有多少张课表引用了这份时间表（轮换周次时同一个时间表往往被多张课表共用）。 */
+function referencedPlanCount(layout) {
+  if (!layout) {
+    return 0;
+  }
+
+  return (state.content.classPlans || [])
+    .filter((plan) => plan.timeLayoutId === layout.id)
+    .length;
 }
 
 /** 统计某个索引之前有多少个「上课」时间点，用于显示节次。 */

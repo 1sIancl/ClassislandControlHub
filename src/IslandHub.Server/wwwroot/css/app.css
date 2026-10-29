@@ -4542,3 +4542,38 @@ input.pcell-name:focus {
     --glass-tint: transparent;
   }
 }
+
+/* 时间点上的「附加 N」徽章（#129）：插件挂的数据，只读查看。
+   刻意做得像标签而不是按钮——它不是常用操作，不该抢走编辑时间的注意力。 */
+.pcell-attach {
+  margin-top: 6px;
+  align-self: flex-start;
+  padding: 2px 8px;
+  font-size: 11px;
+  line-height: 1.6;
+  border-radius: 999px;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.pcell-attach:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+/* 原始 JSON 预览：等宽字体 + 换行，长 GUID 不至于把弹窗撑破。 */
+pre.attach-json {
+  margin: 10px 0 0;
+  padding: 12px;
+  max-height: 340px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.55;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  white-space: pre-wrap;
+  word-break: break-all;
+}

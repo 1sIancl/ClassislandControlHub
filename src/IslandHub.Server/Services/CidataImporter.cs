@@ -221,6 +221,12 @@ public static class CidataImporter
                 }
 
                 var kind = TimeItemKind.FromTimeType(item.TimeType);
+                // 附加设置要**原样**带走并计数：数量是管理员判断"插件数据有没有跟着来"的唯一线索。
+                var attached = ToAttachedSettings(item.AttachedObjects);
+                if (attached is { Count: > 0 })
+                {
+                    entry.AttachedSettingsCount += attached.Count;
+                }
 
                 items.Add(new TimeLayoutItemDto
                 {
@@ -230,6 +236,12 @@ public static class CidataImporter
                     BreakName = string.IsNullOrWhiteSpace(item.BreakName) ? null : item.BreakName.Trim(),
                     IsHideDefault = item.IsHideDefault,
                     DefaultSubjectId = AsOptionalGuid(item.DefaultClassId),
+                    // 行动内容与附加设置**原样带走**：A 端不解释它们，但也不允许在这里丢掉。
+                    ActionType = string.IsNullOrWhiteSpace(item.Action?.Type) ? null : item.Action!.Type!.Trim(),
+                    ActionSettings = item.Action?.Settings is { ValueKind: not JsonValueKind.Null } settings
+                        ? settings.GetRawText()
+                        : null,
+                    AttachedSettings = attached,
                 });
 
                 // 分割线（TimeType=2）与行动（TimeType=3）是**独立时间点**，不是上课节点的附属属性。
@@ -313,6 +325,15 @@ public static class CidataImporter
         {
             warnings.Add("部分分割线 / 行动时间点的结束时间与开始时间不一致（宿主历史脏数据），"
                 + "已保留原始结束时间；教室里按开始时间显示。");
+        }
+
+        // 附加设置：原样收下（导出 / 备份 / 换机都不丢），但**下发端本版不写回宿主**——
+        // 值只有 JSON、没有对应的 .NET 类型，硬塞进宿主的 AttachedObjects 会让它在读取时抛异常，
+        // 那比"维持原样"更糟。所以这里如实说明边界，而不是装作已经生效。
+        if (entry.AttachedSettingsCount > 0)
+        {
+            warnings.Add($"{entry.AttachedSettingsCount} 项「附加设置」（插件挂在时间点上的数据）已原样保存在档案里，"
+                + "编辑、备份、换机器都不会丢；下发到教室端时本版尚未写回宿主，教室端沿用原来那份。");
         }
 
         var layoutIds = content.TimeLayouts.Select(l => l.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -687,6 +708,31 @@ public static class CidataImporter
         return true;
     }
 
+    /// <summary>
+    /// 把宿主的 <c>AttachedObjects</c> 转成「GUID → 原始 JSON」。
+    /// <para>
+    /// 值必须 <c>Clone()</c>：<see cref="JsonElement"/> 只是 <c>JsonDocument</c> 里的一段视图，
+    /// 文档释放后再访问会抛 <c>ObjectDisposedException</c>——直接把 element 存进 DTO 是最容易踩的坑。
+    /// </para>
+    /// </summary>
+    private static Dictionary<string, JsonElement?>? ToAttachedSettings(JsonElement? source)
+    {
+        if (source is not { ValueKind: JsonValueKind.Object } obj)
+        {
+            return null;
+        }
+
+        var map = new Dictionary<string, JsonElement?>(StringComparer.Ordinal);
+        foreach (var property in obj.EnumerateObject())
+        {
+            map[property.Name] = property.Value.ValueKind == JsonValueKind.Null
+                ? null
+                : property.Value.Clone();
+        }
+
+        return map.Count > 0 ? map : null;
+    }
+
     /// <summary>把 GUID 文本转成「可空」形式；空串与全零 GUID（宿主的「未指定」写法）都算空。</summary>
     private static string? AsOptionalGuid(string? value)
     {
@@ -758,9 +804,21 @@ public static class CidataImporter
 
         /// <summary>
         /// 行动（<c>TimeType = 3</c>）承载的具体动作：通知 / 自动化 / 插件自定义类型。
-        /// <para>只用来在预览里说清"这条行动原本要做什么"——内容不随包导入（见导入说明）。</para>
+        /// <para>
+        /// 类型与名称用于预览说明；<c>Settings</c> 原样存进 DTO（<c>ActionSettings</c>）随档案走，
+        /// 不解释、不改写——宿主侧写入属于教室端本机的事。
+        /// </para>
         /// </summary>
         public TimeLayoutItemActionJson? Action { get; set; }
+
+        /// <summary>
+        /// 宿主的 <c>AttachedObjects</c>（GUID → 任意 JSON）。
+        /// <para>
+        /// 第三方插件把倒计时格式、配色这类数据挂在时间点上，IslandHub 不理解语义，
+        /// **原样收下、原样下发**。丢了它教室里插件的效果会莫名消失，而且看不出是被清空的。
+        /// </para>
+        /// </summary>
+        public JsonElement? AttachedObjects { get; set; }
     }
 
     /// <summary>行动时间点里的 <c>Action</c> 字段（只取几个通用字段，其余原样忽略）。</summary>
@@ -933,6 +991,12 @@ public sealed class CidataProfileEntry
 
     /// <summary>行动按 <c>Action.Type</c> 的计数（预览里给管理员看"都包含哪几类"）。</summary>
     public Dictionary<string, int> ActionTypeCounts { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 包内时间点上挂的附加设置总项数（宿主 <c>AttachedObjects</c>，已原样保留）。
+    /// <para>0 表示这个包没用到附加设置；大于 0 说明有插件的附加数据被一起带过来了。</para>
+    /// </summary>
+    public int AttachedSettingsCount { get; set; }
 
     /// <summary>包内定义的课表群（含默认与全局）。IslandHub 内容包里没有群清单，这里仅用于预览展示。</summary>
     public List<CidataGroupInfo> Groups { get; } = [];

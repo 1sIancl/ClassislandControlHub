@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace IslandHub.Protocol.Dtos;
 
 /// <summary>
@@ -84,6 +86,34 @@ public sealed class TimeLayoutItemDto
 
     /// <summary>默认科目 ID（当课表节点未指定科目时的回退值），可为空。</summary>
     public string? DefaultSubjectId { get; set; }
+
+    /// <summary>
+    /// 自定义显示名（任何类型都可以有）。为空表示按类型自动显示（上课显示节次、课间显示 <see cref="BreakName"/> 或「课间休息」）。
+    /// </summary>
+    public string? DisplayName { get; set; }
+
+    /// <summary>
+    /// 行动（<see cref="TimeItemKind.Action"/>）的动作类型：<c>Notification</c> / <c>Automation</c> / <c>Run</c> / 插件自定义。
+    /// <para>只做**原样透传**：IslandHub 不解释这些动作，也不据此执行任何东西。</para>
+    /// </summary>
+    public string? ActionType { get; set; }
+
+    /// <summary>
+    /// 行动的原始配置 JSON（宿主 <c>Action.Settings</c> 原样）。
+    /// <para>为什么存字符串而不是强类型：<c>Action.Type</c> 是开放集合，强类型会让新类型在保存时被静默截断。</para>
+    /// </summary>
+    public string? ActionSettings { get; set; }
+
+    /// <summary>
+    /// 宿主的 <c>TimeLayoutItem.AttachedObjects</c>（GUID → 任意 JSON），**原样透传**。
+    /// <para>
+    /// 这是第三方插件往时间点上挂数据的唯一通道（倒计时格式、配色、考勤策略……），
+    /// IslandHub 不需要理解任何一项的语义。丢掉它，教室里插件的效果就会莫名消失，
+    /// 而且从界面上看不出是"被清空了"。
+    /// </para>
+    /// <para>键是 GUID 字符串（原样保留大小写）；值是原始 JSON（可以是对象、数字、字符串、null）。</para>
+    /// </summary>
+    public Dictionary<string, JsonElement?>? AttachedSettings { get; set; }
 }
 
 /// <summary>

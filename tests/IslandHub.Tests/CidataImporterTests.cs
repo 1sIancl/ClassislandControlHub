@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text;
+using System.Text.Json;
 using IslandHub.Protocol.Dtos;
 using IslandHub.Server.Services;
 
@@ -39,7 +40,12 @@ public sealed class CidataImporterTests
             { "StartTime": "09:40:00", "EndTime": "10:25:00", "TimeType": 0 },
             { "StartTime": "10:25:00", "EndTime": "10:30:00", "TimeType": 3, "BreakName": "眼保健操",
               "Action": { "Id": "44444444-4444-4444-8444-444444444441", "Name": "课前提醒", "Type": "Notification",
-                          "Settings": { "Title": "准备上课", "Content": "请回到座位" } } }
+                          "Settings": { "Title": "准备上课", "Content": "请回到座位" } },
+              "AttachedObjects": {
+                "a1b2c3d4-0000-4000-8000-000000000001": { "color": "#ff0000" },
+                "a1b2c3d4-0000-4000-8000-000000000002": 3,
+                "a1b2c3d4-0000-4000-8000-000000000003": null
+              } }
           ]
         }
       },
@@ -255,6 +261,41 @@ public sealed class CidataImporterTests
         // 位置导进去了、内容没跟着走，如果不说，教室端到点什么都不做且没人知道为什么。
         Assert.Contains(entry.Warnings, w => w.Contains("「行动」时间点已按原位置导入"));
         Assert.Contains(entry.Warnings, w => w.Contains("不随包导入"));
+    }
+
+    [Fact]
+    public void 附加设置原样保留且计数可查()
+    {
+        var entry = Convert();
+        var item = entry.Content.TimeLayouts.Single().Items[5];
+
+        // AttachedObjects 是第三方插件挂数据的唯一通道：语义不认识，但必须原样带走。
+        Assert.NotNull(item.AttachedSettings);
+        Assert.Equal(3, item.AttachedSettings!.Count);
+        // 原样保留 = 连空白都不重排（GetRawText 拿到的就是包里的原文）。
+        var color = item.AttachedSettings["a1b2c3d4-0000-4000-8000-000000000001"]!.Value;
+        Assert.Equal(JsonValueKind.Object, color.ValueKind);
+        Assert.Equal("#ff0000", color.GetProperty("color").GetString());
+        Assert.Equal(3, item.AttachedSettings["a1b2c3d4-0000-4000-8000-000000000002"]!.Value.GetInt32());
+
+        // 值为 null 也要留 key（插件靠 key 存在与否判断"有没有配过"）。
+        Assert.True(item.AttachedSettings.ContainsKey("a1b2c3d4-0000-4000-8000-000000000003"));
+        Assert.Null(item.AttachedSettings["a1b2c3d4-0000-4000-8000-000000000003"]);
+
+        Assert.Equal(3, entry.AttachedSettingsCount);
+        Assert.Contains(entry.Warnings, w => w.Contains("「附加设置」"));
+    }
+
+    [Fact]
+    public void 行动的类型与原始配置一并保留()
+    {
+        var entry = Convert();
+        var item = entry.Content.TimeLayouts.Single().Items[5];
+
+        // 类型用于界面上说明"这条行动原本要做什么"；配置原样留档，
+        // 将来宿主侧支持写回时不用再改一次协议。
+        Assert.Equal("Notification", item.ActionType);
+        Assert.Contains("准备上课", item.ActionSettings);
     }
 
     [Fact]

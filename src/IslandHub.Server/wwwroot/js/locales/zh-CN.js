@@ -3131,5 +3131,13 @@ export default {
   'profiles.cidataSeparators': '分割线',
   'profiles.cidataActions': '行动',
   'profiles.cidataActionNames': '行动：{names}',
+  // 档案编辑器：时间点附加设置 / 时间表引用提示
+  'profiles.editor.attachedBadge': "附加 {count}",
+  'profiles.editor.attachedHint': "{count} 项附加设置（插件挂在时间点上的数据），点击查看原始 JSON",
+  'profiles.editor.attachedTitle': "附加设置（{count} 项）",
+  'profiles.editor.attachedNote': "这些数据由第三方插件维护，IslandHub 不解释语义、只原样保存与下发。直接改 JSON 容易写坏插件读的数据，所以这里只读。",
+  'profiles.editor.close': "关闭",
+  'profiles.editor.layoutRefs': "这份时间表正被 {count} 张课表引用；在这里的改动会影响它们全部（含轮换周次里的其它周）。",
+
 };
 

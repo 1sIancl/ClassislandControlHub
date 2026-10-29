@@ -602,6 +602,7 @@ public static class ProfileEndpoints
         SeparatorDetails = [.. entry.Separators],
         ActionDetails = [.. entry.Actions],
         ActionTypeCounts = new Dictionary<string, int>(entry.ActionTypeCounts, StringComparer.Ordinal),
+        AttachedSettings = entry.AttachedSettingsCount,
         Warnings = [.. entry.Warnings],
     };
 
@@ -900,6 +901,12 @@ public sealed class CidataProfilePreview
 
     /// <summary>行动按 <c>Action.Type</c> 计数（<c>Notification</c> / <c>Automation</c> / 其它）。</summary>
     public Dictionary<string, int> ActionTypeCounts { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 时间点上挂的「附加设置」项数（宿主 <c>AttachedObjects</c>，已原样保留在档案里）——
+    /// 用来让管理员确认插件挂在时间点上的数据有没有跟着包过来。
+    /// </summary>
+    public int AttachedSettings { get; set; }
 
     /// <summary>导入会丢东西的地方，逐条写清「丢了什么、为什么」。</summary>
     public List<string> Warnings { get; set; } = [];
