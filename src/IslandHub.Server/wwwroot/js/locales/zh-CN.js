@@ -3135,9 +3135,18 @@ export default {
   'profiles.editor.attachedBadge': "附加 {count}",
   'profiles.editor.attachedHint': "{count} 项附加设置（插件挂在时间点上的数据），点击查看原始 JSON",
   'profiles.editor.attachedTitle': "附加设置（{count} 项）",
-  'profiles.editor.attachedNote': "这些数据由第三方插件维护，IslandHub 不解释语义、只原样保存与下发。直接改 JSON 容易写坏插件读的数据，所以这里只读。",
   'profiles.editor.close': "关闭",
   'profiles.editor.layoutRefs': "这份时间表正被 {count} 张课表引用；在这里的改动会影响它们全部（含轮换周次里的其它周）。",
+
+  // 附加设置的结构化展示
+  'profiles.editor.attachedEmpty': "空值",
+  'profiles.editor.attachedEmptyObject': "空对象",
+  'profiles.editor.attachedOn': "开",
+  'profiles.editor.attachedOff': "关",
+  'profiles.editor.attachedItems': "{count} 项",
+  'profiles.editor.attachedGroup': "第 {n} 项",
+  'profiles.editor.attachedRaw': "原始 JSON",
+  'profiles.editor.attachedGuess': "下面按值的结构解析（对象展开字段、颜色给色块、开关给开/关）；字段名的中文只是通用词表对照，插件的实际含义可能不同。只读——写坏一个字段比不显示更糟。",
 
 };
 

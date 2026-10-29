@@ -3,14 +3,14 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=157';
-import { toastError } from '../core/errors.js?v=157';
+import { api } from '../core/api.js?v=158';
+import { toastError } from '../core/errors.js?v=158';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, icon, select,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=157';
-import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=157';
-import { t } from './../core/i18n.js?v=157';
+} from '../core/ui.js?v=158';
+import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=158';
+import { t } from './../core/i18n.js?v=158';
 
 export const meta = {
   title: t('profiles.editor.title'),
@@ -665,15 +665,7 @@ function periodCell(layout, item, index) {
     ? h('button.pcell-attach', {
       type: 'button',
       title: t('profiles.editor.attachedHint', { count: attachedCount }),
-      onClick: () => modal({
-        title: t('profiles.editor.attachedTitle', { count: attachedCount }),
-        width: 'wide',
-        body: h('div',
-          h('p.card-desc', t('profiles.editor.attachedNote')),
-          h('pre.attach-json', JSON.stringify(item.attachedSettings, null, 2))),
-        confirmText: t('profiles.editor.close'),
-        onConfirm: () => true,
-      }),
+      onClick: () => openAttachedDialog(item, attachedCount),
     }, t('profiles.editor.attachedBadge', { count: attachedCount }))
     : null;
 
@@ -698,6 +690,123 @@ function periodCell(layout, item, index) {
     nameInput,
     attachBadge,
   );
+}
+
+/**
+ * 附加设置的常见字段名 → 中文。
+ *
+ * <p>**这只是词表对照，不是语义解释**：键名由插件作者自己起，任何一项都可能被用成别的意思。
+ * 所以界面上把原始键名摆在前面、中文只作提示，避免"看着像颜色就以为是颜色"。</p>
+ */
+const ATTACHED_FIELD_LABELS = {
+  format: '格式',
+  countdownformat: '倒计时格式',
+  color: '颜色',
+  colour: '颜色',
+  foreground: '前景色',
+  background: '背景色',
+  enabled: '启用',
+  isenabled: '启用',
+  visible: '显示',
+  isvisible: '显示',
+  hidden: '隐藏',
+  ishidden: '隐藏',
+  duration: '时长',
+  seconds: '秒',
+  opacity: '不透明度',
+  size: '大小',
+  fontsize: '字号',
+  text: '文本',
+  content: '内容',
+  title: '标题',
+  position: '位置',
+  align: '对齐',
+  width: '宽度',
+  height: '高度',
+};
+
+/** `#RGB` / `#RRGGBB` / `#RRGGBBAA`——只有这几种才当颜色渲染色块。 */
+const ATTACHED_COLOR = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+
+/**
+ * 把一个附加设置的值解析成可读的一行。
+ *
+ * <p>能解析到什么程度：类型（空 / 开 / 关 / 数字 / 文本 / 颜色 / 列表 / 对象）全解析，
+ * 对象再往下展开一层字段。**不做语义转换**——值怎么存就怎么显示，免得"看起来解析了、其实猜错了"。</p>
+ */
+function describeAttachedValue(value) {
+  if (value === null || value === undefined) {
+    return h('span.attach-dim', t('profiles.editor.attachedEmpty'));
+  }
+
+  if (typeof value === 'boolean') {
+    return h('span', { class: value ? 'badge badge-ok' : 'badge' },
+      value ? t('profiles.editor.attachedOn') : t('profiles.editor.attachedOff'));
+  }
+
+  if (typeof value === 'number') {
+    return h('span.attach-num', String(value));
+  }
+
+  if (typeof value === 'string') {
+    if (ATTACHED_COLOR.test(value)) {
+      return h('span.attach-color',
+        h('span.attach-swatch', { style: { background: value } }),
+        h('code', value));
+    }
+
+    // 长文本截断显示（原始 JSON 里仍能看全）。
+    const text = value.length > 60 ? `${value.slice(0, 60)}…` : value;
+    return h('code.attach-str', { title: value }, text);
+  }
+
+  if (Array.isArray(value)) {
+    return h('span.attach-dim', t('profiles.editor.attachedItems', { count: value.length }));
+  }
+
+  if (typeof value === 'object') {
+    const entries = Object.entries(value);
+    return h('div.attach-obj',
+      entries.length === 0
+        ? h('span.attach-dim', t('profiles.editor.attachedEmptyObject'))
+        : h('div.attach-fields', ...entries.map(([key, inner]) => h('div.attach-row',
+          h('span.attach-key', key,
+            ATTACHED_FIELD_LABELS[key.toLowerCase()]
+              ? h('span.attach-key-hint', `（${ATTACHED_FIELD_LABELS[key.toLowerCase()]}）`)
+              : null),
+          describeAttachedValue(inner)))));
+  }
+
+  return h('code', String(value));
+}
+
+/**
+ * 附加设置弹窗：把每一项都解析成可读结构，原始 JSON 收在折叠区里兜底。
+ *
+ * <p>为什么不做成可编辑：这些键值由插件读，写坏一个字段比不显示更糟；
+ * 而且 A 端不知道每个字段的取值范围（比如格式串支持哪些占位符）。</p>
+ */
+function openAttachedDialog(item, count) {
+  const entries = Object.entries(item.attachedSettings || {});
+
+  modal({
+    title: t('profiles.editor.attachedTitle', { count }),
+    width: 'wide',
+    body: h('div',
+      h('p.card-desc', t('profiles.editor.attachedGuess')),
+      entries.length === 0
+        ? h('p.card-desc', t('profiles.editor.attachedEmpty'))
+        : h('div.attach-groups', ...entries.map(([guid, value], index) => h('div.attach-group',
+          h('div.attach-head',
+            h('span.attach-index', t('profiles.editor.attachedGroup', { n: index + 1 })),
+            h('code.attach-guid', { title: guid }, guid)),
+          h('div.attach-value', describeAttachedValue(value))))),
+      h('details.attach-raw',
+        h('summary', t('profiles.editor.attachedRaw')),
+        h('pre.attach-json', JSON.stringify(item.attachedSettings, null, 2)))),
+    confirmText: t('profiles.editor.close'),
+    onConfirm: () => true,
+  });
 }
 
 /** 有多少张课表引用了这份时间表（轮换周次时同一个时间表往往被多张课表共用）。 */

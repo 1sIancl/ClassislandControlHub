@@ -7,10 +7,10 @@
  *   · 带「看板模式」：隐藏侧栏与顶栏，整屏都留给数据；
  *   · 页面切走自动停表（本仓的视图没有 unmount 钩子，靠 `container.isConnected` 自清）。
  */
-import { api, hasPermission } from '../core/api.js?v=157';
-import { toastError } from '../core/errors.js?v=157';
-import { h, clear, formatDateTime } from '../core/ui.js?v=157';
-import { t } from '../core/i18n.js?v=157';
+import { api, hasPermission } from '../core/api.js?v=158';
+import { toastError } from '../core/errors.js?v=158';
+import { h, clear, formatDateTime } from '../core/ui.js?v=158';
+import { t } from '../core/i18n.js?v=158';
 
 export const meta = {
   title: t('board.title'),

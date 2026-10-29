@@ -3135,9 +3135,18 @@ export default {
   'profiles.editor.attachedBadge': "Attached {count}",
   'profiles.editor.attachedHint': "{count} attached settings (plugin data on this time point); click to view the raw JSON",
   'profiles.editor.attachedTitle': "Attached settings ({count})",
-  'profiles.editor.attachedNote': "Maintained by third-party plugins. IslandHub stores and deploys them as-is without interpreting them, so this view is read-only.",
   'profiles.editor.close': "Close",
   'profiles.editor.layoutRefs': "{count} timetables reference this layout; changes here affect all of them (including other rotation weeks).",
+
+  // 附加设置的结构化展示
+  'profiles.editor.attachedEmpty': "empty",
+  'profiles.editor.attachedEmptyObject': "empty object",
+  'profiles.editor.attachedOn': "on",
+  'profiles.editor.attachedOff': "off",
+  'profiles.editor.attachedItems': "{count} items",
+  'profiles.editor.attachedGroup': "Item {n}",
+  'profiles.editor.attachedRaw': "Raw JSON",
+  'profiles.editor.attachedGuess': "Parsed by value shape below (objects expand their fields, colours get a swatch, booleans show on/off). Field name hints are a generic glossary — a plugin may mean something else. Read-only.",
 
 };
 

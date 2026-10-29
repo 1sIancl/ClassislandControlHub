@@ -3,7 +3,7 @@
  * 统一处理鉴权令牌、响应封套（ApiResult）、错误抛出与会话失效。
  */
 
-import { t } from './i18n.js?v=157';
+import { t } from './i18n.js?v=158';
 
 const TOKEN_KEY = 'controlhub.admin.token';
 const API_PREFIX = '/api/v1';
