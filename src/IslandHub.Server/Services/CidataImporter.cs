@@ -189,6 +189,8 @@ public static class CidataImporter
         // ── 时间表 ──
         var skippedLayoutNames = new List<string>();
         var skippedLayoutIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // 分割线 / 行动出现了「结束时间 ≠ 开始时间」的历史脏数据：保留原值，但要在预览里说一句。
+        var dirtyTimeline = false;
         foreach (var (id, layout) in profile.TimeLayouts ?? [])
         {
             if (string.IsNullOrWhiteSpace(id))
@@ -218,15 +220,52 @@ public static class CidataImporter
                     break;
                 }
 
+                var kind = TimeItemKind.FromTimeType(item.TimeType);
+
                 items.Add(new TimeLayoutItemDto
                 {
                     StartTime = start,
                     EndTime = end,
-                    Kind = TimeItemKind.FromTimeType(item.TimeType),
+                    Kind = kind,
                     BreakName = string.IsNullOrWhiteSpace(item.BreakName) ? null : item.BreakName.Trim(),
                     IsHideDefault = item.IsHideDefault,
                     DefaultSubjectId = AsOptionalGuid(item.DefaultClassId),
                 });
+
+                // 分割线（TimeType=2）与行动（TimeType=3）是**独立时间点**，不是上课节点的附属属性。
+                // 两者都已作为 items 写入（Kind 分别为 separator / action），这里只是额外记账：
+                // 预览要能数清"有几条"，管理员才知道包里的作息被完整搬过来了。
+                if (kind == TimeItemKind.Separator)
+                {
+                    entry.Separators.Add(new CidataSeparatorInfo
+                    {
+                        Layout = dto.Name,
+                        Time = start.Length > 5 ? start[..5] : start,
+                    });
+
+                    // 零时长是常态，但历史数据里确实见过 Start != End；保留原值，只是提示一句。
+                    if (!string.Equals(start, end, StringComparison.Ordinal))
+                    {
+                        dirtyTimeline = true;
+                    }
+                }
+                else if (kind == TimeItemKind.Action)
+                {
+                    var actionType = string.IsNullOrWhiteSpace(item.Action?.Type) ? "Unknown" : item.Action!.Type!.Trim();
+                    entry.Actions.Add(new CidataActionInfo
+                    {
+                        Layout = dto.Name,
+                        Time = start.Length > 5 ? start[..5] : start,
+                        Name = item.Action?.Name?.Trim() ?? string.Empty,
+                        Type = actionType,
+                    });
+                    entry.ActionTypeCounts[actionType] = entry.ActionTypeCounts.GetValueOrDefault(actionType) + 1;
+
+                    if (!string.Equals(start, end, StringComparison.Ordinal))
+                    {
+                        dirtyTimeline = true;
+                    }
+                }
             }
 
             if (unusable)
@@ -244,6 +283,36 @@ public static class CidataImporter
         {
             warnings.Add($"时间表 {string.Join("、", skippedLayoutNames)} 里有时间点无法解析，整张已跳过"
                 + "（用到它的课表也一并跳过）；请检查这份包是不是被改过。");
+        }
+
+        // ── 分割线 / 行动的如实说明 ──
+        // 这两类都是**独立时间点**（TimeType 2 / 3），已按原位置、原顺序导入；
+        // 但「行动」引用的通知内容与自动化配置属于教室端本机，IslandHub 的档案模型里没有落点，
+        // 所以只保留"到点该做点什么"的位置，内容本身不随包走——这一点必须写在预览里，
+        // 否则换一台机器导入后，行动会变成「到点但什么都不做」，而且没人知道为什么。
+        if (entry.Actions.Count > 0)
+        {
+            var types = string.Join("、", entry.ActionTypeCounts
+                .OrderByDescending(pair => pair.Value)
+                .Select(pair => $"{pair.Key} {pair.Value} 条"));
+            warnings.Add($"{entry.Actions.Count} 条「行动」时间点已按原位置导入（{types}），"
+                + "但行动引用的通知内容 / 自动化配置属于教室端本机，不随包导入——"
+                + "教室端原有的会保留，换机器则需要重新配置。");
+
+            var unknown = entry.ActionTypeCounts
+                .Where(pair => pair.Key is not ("Notification" or "Automation"))
+                .Sum(pair => pair.Value);
+            if (unknown > 0)
+            {
+                warnings.Add($"{unknown} 条行动的 Type 无法识别（可能来自插件或更新的宿主版本），"
+                    + "已按「到点的行动节点」导入，内容需要人工确认。");
+            }
+        }
+
+        if (dirtyTimeline)
+        {
+            warnings.Add("部分分割线 / 行动时间点的结束时间与开始时间不一致（宿主历史脏数据），"
+                + "已保留原始结束时间；教室里按开始时间显示。");
         }
 
         var layoutIds = content.TimeLayouts.Select(l => l.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -686,6 +755,21 @@ public static class CidataImporter
         public string? BreakName { get; set; }
         public bool IsHideDefault { get; set; }
         public string? DefaultClassId { get; set; }
+
+        /// <summary>
+        /// 行动（<c>TimeType = 3</c>）承载的具体动作：通知 / 自动化 / 插件自定义类型。
+        /// <para>只用来在预览里说清"这条行动原本要做什么"——内容不随包导入（见导入说明）。</para>
+        /// </summary>
+        public TimeLayoutItemActionJson? Action { get; set; }
+    }
+
+    /// <summary>行动时间点里的 <c>Action</c> 字段（只取几个通用字段，其余原样忽略）。</summary>
+    private sealed class TimeLayoutItemActionJson
+    {
+        public string? Id { get; set; }
+        public string? Name { get; set; }
+        public string? Type { get; set; }
+        public JsonElement? Settings { get; set; }
     }
 
     private sealed class ClassPlanJson
@@ -784,6 +868,32 @@ public sealed class CidataArchive
     }
 }
 
+/// <summary>包内的一条分割线时间点（<c>TimeType = 2</c>）。</summary>
+public sealed class CidataSeparatorInfo
+{
+    /// <summary>所属时间表名。</summary>
+    public string Layout { get; set; } = string.Empty;
+
+    /// <summary>出现时刻（<c>HH:mm</c>）。</summary>
+    public string Time { get; set; } = string.Empty;
+}
+
+/// <summary>包内的一条行动时间点（<c>TimeType = 3</c>）。</summary>
+public sealed class CidataActionInfo
+{
+    /// <summary>所属时间表名。</summary>
+    public string Layout { get; set; } = string.Empty;
+
+    /// <summary>出现时刻（<c>HH:mm</c>）。</summary>
+    public string Time { get; set; } = string.Empty;
+
+    /// <summary>行动名称（宿主里给人看的那个名字）。</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary><c>Action.Type</c>：<c>Notification</c> / <c>Automation</c> / 其它（插件或新版本引入）。</summary>
+    public string Type { get; set; } = string.Empty;
+}
+
 /// <summary>包内宿主的多周轮换设置（从 <c>Settings.json</c> 里取）。</summary>
 public sealed class CidataRotationInfo
 {
@@ -814,6 +924,15 @@ public sealed class CidataProfileEntry
 
     /// <summary>包内临时层课表的张数（未导入）。</summary>
     public int SkippedOverlayPlans { get; set; }
+
+    /// <summary>包里识别到的分割线时间点（<c>TimeType = 2</c>，已导入）。</summary>
+    public List<CidataSeparatorInfo> Separators { get; } = [];
+
+    /// <summary>包里识别到的行动时间点（<c>TimeType = 3</c>，位置已导入，内容不随包走）。</summary>
+    public List<CidataActionInfo> Actions { get; } = [];
+
+    /// <summary>行动按 <c>Action.Type</c> 的计数（预览里给管理员看"都包含哪几类"）。</summary>
+    public Dictionary<string, int> ActionTypeCounts { get; } = new(StringComparer.Ordinal);
 
     /// <summary>包内定义的课表群（含默认与全局）。IslandHub 内容包里没有群清单，这里仅用于预览展示。</summary>
     public List<CidataGroupInfo> Groups { get; } = [];

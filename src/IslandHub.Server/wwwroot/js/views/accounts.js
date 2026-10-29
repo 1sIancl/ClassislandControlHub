@@ -6,13 +6,13 @@
  * 而不是抽成公共组件（那样就得给每张卡传一个「刷新回调」，反而更绕）。</para>
  */
 
-import { api, session, hasPermission } from '../core/api.js?v=155';
-import { toastError } from '../core/errors.js?v=155';
+import { api, session, hasPermission } from '../core/api.js?v=156';
+import { toastError } from '../core/errors.js?v=156';
 import {
   h, clear, formatDateTime, toast, loadingBlock, field, modal, copyText,
   confirmDialog, kvRow,
-} from '../core/ui.js?v=155';
-import { t } from './../core/i18n.js?v=155';
+} from '../core/ui.js?v=156';
+import { t } from './../core/i18n.js?v=156';
 
 export const meta = {
   title: t('accounts.title'),
@@ -187,7 +187,7 @@ async function replayOnboarding() {
     return;
   }
 
-  const { startTour } = await import('../core/tour.js?v=155');
+  const { startTour } = await import('../core/tour.js?v=156');
   startTour({
     onFinish: async (skipped) => {
       if (!skipped) {

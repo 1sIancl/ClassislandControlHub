@@ -599,6 +599,9 @@ public static class ProfileEndpoints
         OverlayPlans = entry.SkippedOverlayPlans,
         RotationWeeks = entry.Content.Rotation.Weeks,
         SemesterStartDate = entry.Content.Rotation.SemesterStartDate,
+        SeparatorDetails = [.. entry.Separators],
+        ActionDetails = [.. entry.Actions],
+        ActionTypeCounts = new Dictionary<string, int>(entry.ActionTypeCounts, StringComparer.Ordinal),
         Warnings = [.. entry.Warnings],
     };
 
@@ -876,6 +879,27 @@ public sealed class CidataProfilePreview
 
     /// <summary>包内临时层课表的张数（未导入）。</summary>
     public int OverlayPlans { get; set; }
+
+    /// <summary>
+    /// 识别到的分割线时间点（宿主 <c>TimeType = 2</c>）。它们是**独立时间点**，
+    /// 会按原位置、原顺序导入，不是上课节点的附属属性。
+    /// </summary>
+    public List<CidataSeparatorInfo> SeparatorDetails { get; set; } = [];
+
+    /// <summary>分割线总数（前端省得自己数）。</summary>
+    public int Separators => SeparatorDetails.Count;
+
+    /// <summary>
+    /// 识别到的行动时间点（宿主 <c>TimeType = 3</c>）。位置会导入，但行动引用的通知 / 自动化内容
+    /// 属于教室端本机，不随包走——预览里会明确说明。
+    /// </summary>
+    public List<CidataActionInfo> ActionDetails { get; set; } = [];
+
+    /// <summary>行动总数。</summary>
+    public int Actions => ActionDetails.Count;
+
+    /// <summary>行动按 <c>Action.Type</c> 计数（<c>Notification</c> / <c>Automation</c> / 其它）。</summary>
+    public Dictionary<string, int> ActionTypeCounts { get; set; } = new(StringComparer.Ordinal);
 
     /// <summary>导入会丢东西的地方，逐条写清「丢了什么、为什么」。</summary>
     public List<string> Warnings { get; set; } = [];

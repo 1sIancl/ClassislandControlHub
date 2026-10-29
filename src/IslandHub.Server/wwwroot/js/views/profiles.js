@@ -3,14 +3,14 @@
  * 档案是 IslandHub 下发的最小单元：一个档案 = 一套时间表 + 课表 + 科目 + 自定义设置。
  */
 
-import { api } from '../core/api.js?v=155';
-import { toastError, errorBlock } from '../core/errors.js?v=155';
-import { openAuditTimeline } from '../core/audit-timeline.js?v=155';
+import { api } from '../core/api.js?v=156';
+import { toastError, errorBlock } from '../core/errors.js?v=156';
+import { openAuditTimeline } from '../core/audit-timeline.js?v=156';
 import {
   h, clear, formatDateTime, toast, loadingBlock, modal, confirmDialog,
   emptyState, field, select,
-} from '../core/ui.js?v=155';
-import { t } from './../core/i18n.js?v=155';
+} from '../core/ui.js?v=156';
+import { t } from './../core/i18n.js?v=156';
 
 export const meta = {
   title: t('profiles.title'),
@@ -724,6 +724,9 @@ function renderCidataPreview(parsed) {
       [t('profiles.timeLayouts'), profile.timeLayouts],
       [t('profiles.timetable'), profile.classPlans],
       [t('profiles.timetableGroups'), (profile.groups || []).length],
+      // 分割线与行动是**独立时间点**（宿主 TimeType 2 / 3），数清它们才知道作息有没有完整搬过来。
+      [t('profiles.cidataSeparators'), profile.separators ?? 0],
+      [t('profiles.cidataActions'), profile.actions ?? 0],
     ];
 
     box.appendChild(h('div', { style: { marginTop: '12px', borderTop: '1px solid var(--border)', paddingTop: '10px' } },
@@ -745,6 +748,15 @@ function renderCidataPreview(parsed) {
       (profile.groups || []).length > 0
         ? h('div.cell-sub', { style: { marginTop: '2px' } },
           t('profiles.cidataGroupNames', { names: profile.groups.map((g) => g.name).join(t('profiles.listSep')) }))
+        : null,
+      // 行动明细：让管理员一眼看出"到点要做什么"有没有跟着来（内容本身不随包导入）。
+      (profile.actionDetails || []).length > 0
+        ? h('div.cell-sub', { style: { marginTop: '4px' } },
+          t('profiles.cidataActionNames', {
+            names: profile.actionDetails.slice(0, 5)
+              .map((action) => `${action.time} ${action.name || action.type}`)
+              .join(t('profiles.listSep')),
+          }) + (profile.actions > 5 ? ' …' : ''))
         : null));
   }
 

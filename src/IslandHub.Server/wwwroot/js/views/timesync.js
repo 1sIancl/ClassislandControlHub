@@ -9,11 +9,11 @@
  * 不是随导航走的），所以这一页只对有系统设置权限的账号出现。</para>
  */
 
-import { api, hasPermission } from '../core/api.js?v=155';
+import { api, hasPermission } from '../core/api.js?v=156';
 import {
   h, clear, formatDateTime, toast, loadingBlock, field, kvRow,
-} from '../core/ui.js?v=155';
-import { t } from '../core/i18n.js?v=155';
+} from '../core/ui.js?v=156';
+import { t } from '../core/i18n.js?v=156';
 
 export const meta = {
   title: t('tsync.title'),

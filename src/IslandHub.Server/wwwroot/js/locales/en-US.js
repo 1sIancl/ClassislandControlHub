@@ -3127,4 +3127,9 @@ export default {
   'board.weekOf': 'Week {week}/{weeks}',
   'board.noLessonState': 'No lesson status reported yet',
   'board.breakTime': 'Break',
+  // .cidata 预览：分割线 / 行动时间点（宿主 TimeType 2 / 3）
+  'profiles.cidataSeparators': 'Separators',
+  'profiles.cidataActions': 'Actions',
+  'profiles.cidataActionNames': 'Actions: {names}',
 };
+

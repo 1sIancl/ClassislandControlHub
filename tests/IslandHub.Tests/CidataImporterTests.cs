@@ -37,7 +37,9 @@ public sealed class CidataImporterTests
             { "StartTime": "08:55:00", "EndTime": "09:40:00", "TimeType": 0, "BreakName": "" },
             { "StartTime": "09:40:00", "EndTime": "09:40:00", "TimeType": 2 },
             { "StartTime": "09:40:00", "EndTime": "10:25:00", "TimeType": 0 },
-            { "StartTime": "10:25:00", "EndTime": "10:30:00", "TimeType": 3, "BreakName": "眼保健操" }
+            { "StartTime": "10:25:00", "EndTime": "10:30:00", "TimeType": 3, "BreakName": "眼保健操",
+              "Action": { "Id": "44444444-4444-4444-8444-444444444441", "Name": "课前提醒", "Type": "Notification",
+                          "Settings": { "Title": "准备上课", "Content": "请回到座位" } } }
           ]
         }
       },
@@ -226,6 +228,91 @@ public sealed class CidataImporterTests
 
         // 分割线的起止时间是同一个点，这是宿主的表达方式，不要「修」成别的。
         Assert.Equal(items[3].StartTime, items[3].EndTime);
+    }
+
+    [Fact]
+    public void 分割线与行动是独立时间点并被单独统计()
+    {
+        var entry = Convert();
+
+        // 两者都是 Layouts 数组里的独立元素（TimeType 2 / 3），不是上课节点的附属属性。
+        Assert.Single(entry.Separators);
+        Assert.Equal("09:40", entry.Separators[0].Time);
+        Assert.Equal("夏季作息", entry.Separators[0].Layout);
+
+        Assert.Single(entry.Actions);
+        Assert.Equal("课前提醒", entry.Actions[0].Name);
+        Assert.Equal("Notification", entry.Actions[0].Type);
+        Assert.Equal(1, entry.ActionTypeCounts["Notification"]);
+    }
+
+    [Fact]
+    public void 行动内容不随包导入时明确写在预览里()
+    {
+        var entry = Convert();
+
+        // 关键不是"能不能导入"，而是**不能导入的那部分有没有被说出来**：
+        // 位置导进去了、内容没跟着走，如果不说，教室端到点什么都不做且没人知道为什么。
+        Assert.Contains(entry.Warnings, w => w.Contains("「行动」时间点已按原位置导入"));
+        Assert.Contains(entry.Warnings, w => w.Contains("不随包导入"));
+    }
+
+    [Fact]
+    public void 未知的行动类型降级为普通时间点并提示()
+    {
+        var entry = Convert($$"""
+        {
+          "Name": "插件行动",
+          "TimeLayouts": {
+            "{{LayoutId}}": {
+              "Name": "插件作息",
+              "Layouts": [
+                { "StartTime": "08:00:00", "EndTime": "08:45:00", "TimeType": 0 },
+                { "StartTime": "09:00:00", "EndTime": "09:00:00", "TimeType": 3,
+                  "Action": { "Id": "55555555-5555-4555-8555-555555555551", "Name": "第三方动作", "Type": "PluginThing" } }
+              ]
+            }
+          },
+          "ClassPlans": {},
+          "Subjects": {}
+        }
+        """);
+
+        // 未知 Type 不能抛异常、也不能把整个时间点丢掉——按「到点的行动节点」导入，内容留给人工确认。
+        Assert.Single(entry.Actions);
+        Assert.Equal("PluginThing", entry.Actions[0].Type);
+        Assert.Contains(entry.Warnings, w => w.Contains("无法识别"));
+        Assert.Equal(
+            [TimeItemKind.Class, TimeItemKind.Action],
+            entry.Content.TimeLayouts.Single().Items.Select(i => i.Kind));
+    }
+
+    [Fact]
+    public void 分割线结束时间与开始时间不一致时保留原值并提示()
+    {
+        var entry = Convert($$"""
+        {
+          "Name": "脏数据",
+          "TimeLayouts": {
+            "{{LayoutId}}": {
+              "Name": "脏作息",
+              "Layouts": [
+                { "StartTime": "08:00:00", "EndTime": "08:45:00", "TimeType": 0 },
+                { "StartTime": "09:00:00", "EndTime": "09:30:00", "TimeType": 2 }
+              ]
+            }
+          },
+          "ClassPlans": {},
+          "Subjects": {}
+        }
+        """);
+
+        // 历史数据里确实存在这种"分割线有长度"的脏数据：原样保留，但要说一句。
+        var separator = entry.Content.TimeLayouts.Single().Items[1];
+        Assert.Equal(TimeItemKind.Separator, separator.Kind);
+        Assert.Equal("09:00:00", separator.StartTime);
+        Assert.Equal("09:30:00", separator.EndTime);
+        Assert.Contains(entry.Warnings, w => w.Contains("结束时间与开始时间不一致"));
     }
 
     [Fact]
