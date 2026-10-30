@@ -97,6 +97,32 @@ public static class CidataImporter
                 if (name.StartsWith(ConfigPrefix, StringComparison.OrdinalIgnoreCase))
                 {
                     result.ConfigEntryCount++;
+
+                    // 这些块 A 端**不承载**（属于教室端本机），但包里确实有内容——
+                    // 光说"文件计数 17"等于没说，要能讲清"还有什么、为什么没进来"。
+                    if (name.StartsWith("Config/Automations/", StringComparison.OrdinalIgnoreCase)
+                        && name.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+                        && !name.EndsWith(".bak", StringComparison.OrdinalIgnoreCase))
+                    {
+                        result.AutomationCount += CountJsonEntries(ReadText(entry));
+                    }
+                    else if (name.StartsWith("Config/ComponentLayouts/", StringComparison.OrdinalIgnoreCase)
+                             && name.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
+                             && !name.EndsWith(".bak", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // 组件布局是「一份文件 = 一套布局」，数文件而不是数 JSON 字段
+                        // （顶层字段是 Layouts/Name 这类，数出来会变成"3 组"）。
+                        result.ComponentLayoutCount += 1;
+                    }
+                    else if (name.EndsWith("EnabledThemes.json", StringComparison.OrdinalIgnoreCase))
+                    {
+                        result.ThemeCount += CountJsonEntries(ReadText(entry));
+                    }
+                    else if (name.EndsWith("Management/Policy.json", StringComparison.OrdinalIgnoreCase))
+                    {
+                        result.HasPolicy = CountJsonEntries(ReadText(entry)) > 0;
+                    }
+
                     continue;
                 }
 
@@ -167,6 +193,7 @@ public static class CidataImporter
 
         var content = entry.Content;
         var warnings = entry.Warnings;
+        var notices = entry.Notices;
 
         // ── 科目 ──
         foreach (var (id, subject) in profile.Subjects ?? [])
@@ -315,7 +342,7 @@ public static class CidataImporter
             var types = string.Join("、", entry.ActionTypeCounts
                 .OrderByDescending(pair => pair.Value)
                 .Select(pair => $"{pair.Key} {pair.Value} 条"));
-            warnings.Add($"{entry.Actions.Count} 条「行动」时间点已按原位置导入（{types}），"
+            notices.Add($"{entry.Actions.Count} 条「行动」时间点已按原位置导入（{types}），"
                 + "但行动引用的通知内容 / 自动化配置属于教室端本机，不随包导入——"
                 + "教室端原有的会保留，换机器则需要重新配置。");
 
@@ -332,13 +359,13 @@ public static class CidataImporter
         // 没配动作的行动节点：常见且无害，用一句中性说明带过，不列进「有问题」的警告里。
         if (entry.EmptyActions > 0)
         {
-            warnings.Add($"{entry.EmptyActions} 条「行动」时间点没有配置动作（教室里到点也不会做什么），"
+            notices.Add($"{entry.EmptyActions} 条「行动」时间点没有配置动作（教室里到点也不会做什么），"
                 + "位置已按原样保留；要让它做事，在编辑器里点该时间点的「行动」按钮填类型与配置。");
         }
 
         if (dirtyTimeline)
         {
-            warnings.Add("部分分割线 / 行动时间点的结束时间与开始时间不一致（宿主历史脏数据），"
+            notices.Add("部分分割线 / 行动时间点的结束时间与开始时间不一致（宿主历史脏数据），"
                 + "已保留原始结束时间；教室里按开始时间显示。");
         }
 
@@ -496,7 +523,7 @@ public static class CidataImporter
 
         if (withRawRule.Count > 0)
         {
-            warnings.Add($"有 {withRawRule.Count} 张课表用的是「日期型 / 循环型」触发规则（{Join(withRawRule)}）："
+            notices.Add($"有 {withRawRule.Count} 张课表用的是「日期型 / 循环型」触发规则（{Join(withRawRule)}）："
                 + "原始规则已整包保留并随档案下发，教室端按它自己的规则生效；"
                 + "IslandHub 的课表页只按星期几显示，列表里看到的那一天可能与实际生效日期不同。");
         }
@@ -509,13 +536,13 @@ public static class CidataImporter
 
         if (rangeLimited > 0)
         {
-            warnings.Add($"有 {rangeLimited} 张课表带「生效日期范围」：范围随原始规则整包保留，教室端按范围生效；"
+            notices.Add($"有 {rangeLimited} 张课表带「生效日期范围」：范围随原始规则整包保留，教室端按范围生效；"
                 + "IslandHub 的课表页只按星期几显示。");
         }
 
         if (enableDateLimited > 0)
         {
-            warnings.Add($"有 {enableDateLimited} 张课表指定了「启用日期」：日期清单随原始规则整包保留，教室端按它生效；"
+            notices.Add($"有 {enableDateLimited} 张课表指定了「启用日期」：日期清单随原始规则整包保留，教室端按它生效；"
                 + "IslandHub 的课表页不显示这些日期。");
         }
 
@@ -569,7 +596,7 @@ public static class CidataImporter
 
         if (host is null)
         {
-            entry.Warnings.Add($"这份档案是 {cycle} 周一轮换，但包里没有可用的轮换起点（Settings.json 缺失或读不出来），"
+            entry.Notices.Add($"这份档案是 {cycle} 周一轮换，但包里没有可用的轮换起点（Settings.json 缺失或读不出来），"
                 + "导入后请在档案的「多周轮换」里把起点填成开学第一周，否则教室端会按各自的本地日期算周次。");
             return;
         }
@@ -577,14 +604,14 @@ public static class CidataImporter
         if (host.SemesterStartDate is { } start)
         {
             entry.Content.Rotation.SemesterStartDate = start.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-            entry.Warnings.Add($"这份档案是 {cycle} 周一轮换，轮换起点按包内宿主的「{start:yyyy-MM-dd}」导入，"
+            entry.Notices.Add($"这份档案是 {cycle} 周一轮换，轮换起点按包内宿主的「{start:yyyy-MM-dd}」导入，"
                 + "请核对它确实是开学第一周（宿主机上没设置过的话，这个值只是导出那天所在周的周日，照它算会整学期错位）。");
         }
 
         if (host.Offsets.TryGetValue(cycle, out var offset) && offset != 0)
         {
             entry.Content.Rotation.Offset = offset;
-            entry.Warnings.Add($"{cycle} 周轮换在宿主上带着 {offset} 周的手动偏移（临时调过进度），已一并导入。");
+            entry.Notices.Add($"{cycle} 周轮换在宿主上带着 {offset} 周的手动偏移（临时调过进度），已一并导入。");
         }
     }
 
@@ -709,6 +736,28 @@ public static class CidataImporter
         return rest.Length > 5
             && rest.EndsWith(".json", StringComparison.OrdinalIgnoreCase)
             && !rest.Contains('/');
+    }
+
+    /// <summary>
+    /// 数一个 JSON 里有几个条目：对象取属性数、数组取长度，其余（含 <c>{}</c>）算 0。
+    /// <para>只用来给预览报个数，解析失败就当 0——不该因为一个坏文件让整包导不进来。</para>
+    /// </summary>
+    private static int CountJsonEntries(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.ValueKind switch
+            {
+                JsonValueKind.Object => document.RootElement.EnumerateObject().Count(),
+                JsonValueKind.Array => document.RootElement.GetArrayLength(),
+                _ => 0,
+            };
+        }
+        catch (JsonException)
+        {
+            return 0;
+        }
     }
 
     private static string ReadText(ZipArchiveEntry entry)
@@ -951,6 +1000,20 @@ public sealed class CidataArchive
     /// <summary><c>Plugins/</c> 下的条目数（插件与插件设置）。</summary>
     public int PluginEntryCount { get; set; }
 
+    /// <summary>包内自动化定义的个数（<c>Config/Automations/*.json</c> 的条目合计）。</summary>
+    public int AutomationCount { get; set; }
+
+    /// <summary>包内主界面组件布局的组数（<c>Config/ComponentLayouts/*.json</c>）。</summary>
+    public int ComponentLayoutCount { get; set; }
+
+    /// <summary>包内启用中的主题个数（<c>Config/EnabledThemes.json</c>）。</summary>
+    public int ThemeCount { get; set; }
+
+    /// <summary>包里是否带管理策略（<c>Config/Management/Policy.json</c> 且非空）。</summary>
+    public bool HasPolicy { get; set; }
+
+    /// <summary>包里那些「IslandHub 没有对应落点」的部分，用于预览页如实告知。</summary>
+
     /// <summary>包里那些「IslandHub 没有对应落点」的部分，用于预览页如实告知。</summary>
     public List<string> NotImportedNotes()
     {
@@ -960,10 +1023,33 @@ public sealed class CidataArchive
             notes.Add("应用设置（Settings.json）：主题、界面、天气等是教室端本机的设置，IslandHub 不下发，未导入。");
         }
 
-        if (ConfigEntryCount > 0)
+        // 逐类说清，别笼统报「Config/ 下 17 个文件」——那等于没说，管理员还是不知道少了什么。
+        if (AutomationCount > 0)
         {
-            notes.Add($"其它配置（Config/ 下 {ConfigEntryCount} 个文件）：自动化、组件布局、主题、管理策略等，"
-                + "IslandHub 的档案模型没有对应结构，未导入。");
+            notes.Add($"自动化定义（{AutomationCount} 个）：行动里的 Automation 引用指向它们，"
+                + "但 IslandHub 不承载自动化，教室里要按原样自己配一份。");
+        }
+
+        if (ComponentLayoutCount > 0)
+        {
+            notes.Add($"主界面组件布局（{ComponentLayoutCount} 组）：教室端主界面怎么摆，属于本机界面，未导入。");
+        }
+
+        if (ThemeCount > 0)
+        {
+            notes.Add($"启用中的主题（{ThemeCount} 个）：教室端的主题选择，未导入。");
+        }
+
+        if (HasPolicy)
+        {
+            notes.Add("管理策略（Policy.json）：教室端的管理限制，未导入。");
+        }
+
+        var otherConfig = ConfigEntryCount - (AutomationCount > 0 ? 1 : 0) - (ComponentLayoutCount > 0 ? 1 : 0)
+                          - (ThemeCount > 0 ? 1 : 0) - (HasPolicy ? 1 : 0);
+        if (otherConfig > 0)
+        {
+            notes.Add($"其它配置文件（{otherConfig} 个，含 .bak 备份）：与课表无关，未导入。");
         }
 
         if (PluginEntryCount > 0)
@@ -1025,6 +1111,16 @@ public sealed class CidataProfileEntry
 
     /// <summary>导入时会丢东西的地方，逐条写清「丢了什么、为什么」。</summary>
     public List<string> Warnings { get; } = [];
+
+    /// <summary>
+    /// 说明性提示：数据没有丢，只是「我们是怎么处理的」。
+    /// <para>
+    /// 为什么要和 <see cref="Warnings"/> 分开：真正会丢东西的（时间表解析失败、附加设置不写回宿主）
+    /// 和「已原样保留、只是界面显示方式不同」混在一张列表里，管理员读十条就麻木了，
+    /// 真正要紧的那条反而看不见。
+    /// </para>
+    /// </summary>
+    public List<string> Notices { get; } = [];
 
     /// <summary>包内按日期调休 / 换课的条数（未导入）。</summary>
     public int SkippedOrderedSchedules { get; set; }

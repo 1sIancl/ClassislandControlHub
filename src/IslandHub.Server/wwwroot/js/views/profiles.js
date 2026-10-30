@@ -3,14 +3,14 @@
  * 档案是 IslandHub 下发的最小单元：一个档案 = 一套时间表 + 课表 + 科目 + 自定义设置。
  */
 
-import { api } from '../core/api.js?v=161';
-import { toastError, errorBlock } from '../core/errors.js?v=161';
-import { openAuditTimeline } from '../core/audit-timeline.js?v=161';
+import { api } from '../core/api.js?v=162';
+import { toastError, errorBlock } from '../core/errors.js?v=162';
+import { openAuditTimeline } from '../core/audit-timeline.js?v=162';
 import {
   h, clear, formatDateTime, toast, loadingBlock, modal, confirmDialog,
   emptyState, field, select,
-} from '../core/ui.js?v=161';
-import { t } from './../core/i18n.js?v=161';
+} from '../core/ui.js?v=162';
+import { t } from './../core/i18n.js?v=162';
 
 export const meta = {
   title: t('profiles.title'),
@@ -768,6 +768,19 @@ function renderCidataPreview(parsed) {
         h('div', { style: { fontWeight: '600' } }, t('profiles.cidataWarnings', { count: warnings.length })),
         h('ul', { style: { margin: '6px 0 0 18px', padding: 0 } },
           ...warnings.map((w) => h('li', { style: { marginBottom: '3px' } }, w))))));
+  }
+
+  // 说明类单独一块：这些数据**没丢**，只是处理方式与界面上看到的不同。
+  // 和上面黄色那块分开，管理员才不会把「已保留」误读成「要处理」。
+  const notices = parsed.profiles.flatMap((p) => p.notices || []);
+  if (notices.length > 0) {
+    // `notice-notes` 用来和下面「未导入」那块区分（两块样式相同，靠类名才选得准）。
+    box.appendChild(h('div.notice.notice-info.notice-notes', { style: { marginTop: '10px' } },
+      h('span.notice-icon', 'i'),
+      h('div',
+        h('div', { style: { fontWeight: '600' } }, t('profiles.cidataNotices', { count: notices.length })),
+        h('ul', { style: { margin: '6px 0 0 18px', padding: 0 } },
+          ...notices.map((n) => h('li', { style: { marginBottom: '3px' } }, n))))));
   }
 
   if ((parsed.notImported || []).length > 0) {

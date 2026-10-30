@@ -604,6 +604,7 @@ public static class ProfileEndpoints
         ActionTypeCounts = new Dictionary<string, int>(entry.ActionTypeCounts, StringComparer.Ordinal),
         AttachedSettings = entry.AttachedSettingsCount,
         Warnings = [.. entry.Warnings],
+        Notices = [.. entry.Notices],
     };
 
     /// <summary>
@@ -910,6 +911,12 @@ public sealed class CidataProfilePreview
 
     /// <summary>导入会丢东西的地方，逐条写清「丢了什么、为什么」。</summary>
     public List<string> Warnings { get; set; } = [];
+
+    /// <summary>
+    /// 说明性提示：数据没丢，只是「我们是怎么处理的」（原样保留、界面显示方式不同等）。
+    /// <para>和 <see cref="Warnings"/> 分开，是为了让"真的会丢"那条不被一堆说明淹没。</para>
+    /// </summary>
+    public List<string> Notices { get; set; } = [];
 }
 
 /// <summary>确认导入 `.cidata` 的请求体。</summary>

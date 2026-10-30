@@ -3193,5 +3193,8 @@ export default {
   'profiles.editor.actionSettingsHint': "留空表示没有配置。填错会被拦下，不会写坏档案。",
   'profiles.editor.actionBadJson': "这段 JSON 不合法，修好再保存。",
 
+  // .cidata 预览：说明类提示
+  'profiles.cidataNotices': "{count} 条说明（数据没丢，只是处理方式不同）",
+
 };
 

@@ -3193,5 +3193,8 @@ export default {
   'profiles.editor.actionSettingsHint': "Blank means none. Invalid JSON is rejected instead of being saved.",
   'profiles.editor.actionBadJson': "This JSON is invalid — fix it before saving.",
 
+  // .cidata 预览：说明类提示
+  'profiles.cidataNotices': "{count} notes (nothing lost — just handled differently)",
+
 };
 

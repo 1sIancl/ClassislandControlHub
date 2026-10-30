@@ -117,11 +117,14 @@ public sealed class CidataImporterTests
         Assert.Equal(1, archive.PluginEntryCount);
 
         // 「没有落点」的部分必须如实说出来，而不是让管理员以为整包都进来了。
+        // 而且要**分类说**：笼统报「Config/ 下 2 个文件」等于没说（夹具里一个是空自动化、一个是组件布局）。
         var notes = archive.NotImportedNotes();
-        Assert.Equal(3, notes.Count);
         Assert.Contains(notes, n => n.Contains("应用设置"));
-        Assert.Contains(notes, n => n.Contains("Config"));
-        Assert.Contains(notes, n => n.Contains("Plugins"));
+        Assert.Contains(notes, n => n.Contains("组件布局"));
+        Assert.Contains(notes, n => n.Contains("插件"));
+
+        // 自动化文件是 `[]`（空的），不该出现在清单里充数。
+        Assert.DoesNotContain(notes, n => n.Contains("自动化定义"));
     }
 
     [Fact]
@@ -259,8 +262,8 @@ public sealed class CidataImporterTests
 
         // 关键不是"能不能导入"，而是**不能导入的那部分有没有被说出来**：
         // 位置导进去了、内容没跟着走，如果不说，教室端到点什么都不做且没人知道为什么。
-        Assert.Contains(entry.Warnings, w => w.Contains("「行动」时间点已按原位置导入"));
-        Assert.Contains(entry.Warnings, w => w.Contains("不随包导入"));
+        Assert.Contains(entry.Notices, w => w.Contains("「行动」时间点已按原位置导入"));
+        Assert.Contains(entry.Notices, w => w.Contains("不随包导入"));
     }
 
     [Fact]
@@ -353,7 +356,7 @@ public sealed class CidataImporterTests
         Assert.Equal(TimeItemKind.Separator, separator.Kind);
         Assert.Equal("09:00:00", separator.StartTime);
         Assert.Equal("09:30:00", separator.EndTime);
-        Assert.Contains(entry.Warnings, w => w.Contains("结束时间与开始时间不一致"));
+        Assert.Contains(entry.Notices, w => w.Contains("结束时间与开始时间不一致"));
     }
 
     [Fact]
@@ -517,7 +520,7 @@ public sealed class CidataImporterTests
             using var raw = JsonDocument.Parse(plan.TimeRuleRaw!);
             Assert.Equal(type, raw.RootElement.GetProperty("Type").GetInt32());
 
-            Assert.Contains(entry.Warnings, w => w.Contains("原样保留") || w.Contains("整包保留"));
+            Assert.Contains(entry.Notices, w => w.Contains("原样保留") || w.Contains("整包保留"));
         }
     }
 
@@ -545,7 +548,7 @@ public sealed class CidataImporterTests
         Assert.Equal(1, entry.EmptyActions);
         Assert.Empty(entry.Actions);
         Assert.DoesNotContain(entry.Warnings, w => w.Contains("无法识别"));
-        Assert.Contains(entry.Warnings, w => w.Contains("没有配置动作"));
+        Assert.Contains(entry.Notices, w => w.Contains("没有配置动作"));
         Assert.Equal(
             [TimeItemKind.Class, TimeItemKind.Action],
             entry.Content.TimeLayouts.Single().Items.Select(i => i.Kind));
@@ -595,8 +598,8 @@ public sealed class CidataImporterTests
         """);
 
         Assert.Single(entry.Content.ClassPlans);
-        Assert.Contains(entry.Warnings, w => w.Contains("生效日期范围"));
-        Assert.Contains(entry.Warnings, w => w.Contains("启用日期"));
+        Assert.Contains(entry.Notices, w => w.Contains("生效日期范围"));
+        Assert.Contains(entry.Notices, w => w.Contains("启用日期"));
     }
 
     // ── 课表群 ──
@@ -721,8 +724,8 @@ public sealed class CidataImporterTests
         Assert.Equal(1, entry.Content.Rotation.Offset);
 
         // 起点必须提示核对：宿主机没设置过的话，那只是「导出那天所在周的周日」，照它算会整学期错位。
-        Assert.Contains(entry.Warnings, w => w.Contains("轮换起点") && w.Contains("2026-09-06"));
-        Assert.Contains(entry.Warnings, w => w.Contains("手动偏移"));
+        Assert.Contains(entry.Notices, w => w.Contains("轮换起点") && w.Contains("2026-09-06"));
+        Assert.Contains(entry.Notices, w => w.Contains("手动偏移"));
     }
 
     [Fact]
