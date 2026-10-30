@@ -10,7 +10,7 @@
  * `rel="noopener noreferrer"`、`target="_blank"`。</para>
  */
 
-import { t } from './i18n.js?v=159';
+import { t } from './i18n.js?v=160';
 
 /** HTML 转义（所有进入 innerHTML 的文本都必须先过这里）。 */
 function escapeHtml(text) {

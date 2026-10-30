@@ -3135,18 +3135,14 @@ export default {
   'profiles.editor.attachedBadge': "Attached {count}",
   'profiles.editor.attachedHint': "{count} attached settings (plugin data on this time point); click to view the raw JSON",
   'profiles.editor.attachedTitle': "Attached settings ({count})",
-  'profiles.editor.close': "Close",
   'profiles.editor.layoutRefs': "{count} timetables reference this layout; changes here affect all of them (including other rotation weeks).",
 
   // 附加设置的结构化展示
   'profiles.editor.attachedEmpty': "empty",
-  'profiles.editor.attachedEmptyObject': "empty object",
   'profiles.editor.attachedOn': "on",
   'profiles.editor.attachedOff': "off",
-  'profiles.editor.attachedItems': "{count} items",
   'profiles.editor.attachedGroup': "Item {n}",
   'profiles.editor.attachedRaw': "Raw JSON",
-  'profiles.editor.attachedGuess': "Parsed by value shape below (objects expand their fields, colours get a swatch, booleans show on/off). Field name hints are a generic glossary — a plugin may mean something else. Read-only.",
 
   // 已知附加设置类型（依据真实 .cidata 统计：3 个固定 GUID）
   'attached.known.common.enabled': "attach settings enabled",
@@ -3175,6 +3171,27 @@ export default {
   'attached.known.extraInfo.spacing': "timetable spacing",
   'attached.known.extraInfo.currentLessonOnly': "current lesson on class only",
   'attached.known.extraInfo.nonExactCountdown': "non-exact countdown",
+
+  // 附加设置可编辑
+  'profiles.editor.attachedEditNote': "Everything below is editable: toggle switches, edit numbers and text in place, and use the JSON box for objects/arrays (invalid JSON turns red and is not written). Changes stay on this page until you click Save, and only reach classrooms after Save & deploy.",
+  'profiles.editor.attachedNewField': "+ Add field",
+  'profiles.editor.attachedNewGuid': "GUID of the attach settings (copy from the plugin docs or a .cidata)",
+  'profiles.editor.attachedNew': "+ Add attach settings",
+  'profiles.editor.attachedRemove': "Delete attach settings",
+  'profiles.editor.attachedRemoveHint': "Delete this entry (plugins reading it fall back to defaults)",
+  'profiles.editor.attachedRemoveConfirm': "Delete {guid}? Plugins reading it fall back to defaults and this data is gone from the profile.",
+
+  // 行动内容编辑
+  'profiles.editor.actionBadge': "Action · {type}",
+  'profiles.editor.actionHint': "Edit this action type and raw settings",
+  'profiles.editor.actionNone': "not set",
+  'profiles.editor.actionTitle': "Action content",
+  'profiles.editor.actionNote': "An action is \"what happens at this time\". Both the type and the settings are interpreted by the classroom plugin/host; IslandHub stores and deploys them as-is. Check the plugin docs before deleting fields.",
+  'profiles.editor.actionTypeLabel': "Type",
+  'profiles.editor.actionTypeHint': "e.g. Notification, Automation, Run, or a plugin-defined type. Blank means no action configured.",
+  'profiles.editor.actionSettingsLabel': "Raw settings (JSON)",
+  'profiles.editor.actionSettingsHint': "Blank means none. Invalid JSON is rejected instead of being saved.",
+  'profiles.editor.actionBadJson': "This JSON is invalid — fix it before saving.",
 
 };
 

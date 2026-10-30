@@ -3135,18 +3135,14 @@ export default {
   'profiles.editor.attachedBadge': "附加 {count}",
   'profiles.editor.attachedHint': "{count} 项附加设置（插件挂在时间点上的数据），点击查看原始 JSON",
   'profiles.editor.attachedTitle': "附加设置（{count} 项）",
-  'profiles.editor.close': "关闭",
   'profiles.editor.layoutRefs': "这份时间表正被 {count} 张课表引用；在这里的改动会影响它们全部（含轮换周次里的其它周）。",
 
   // 附加设置的结构化展示
   'profiles.editor.attachedEmpty': "空值",
-  'profiles.editor.attachedEmptyObject': "空对象",
   'profiles.editor.attachedOn': "开",
   'profiles.editor.attachedOff': "关",
-  'profiles.editor.attachedItems': "{count} 项",
   'profiles.editor.attachedGroup': "第 {n} 项",
   'profiles.editor.attachedRaw': "原始 JSON",
-  'profiles.editor.attachedGuess': "下面按值的结构解析（对象展开字段、颜色给色块、开关给开/关）；字段名的中文只是通用词表对照，插件的实际含义可能不同。只读——写坏一个字段比不显示更糟。",
 
   // 已知附加设置类型（依据真实 .cidata 统计：3 个固定 GUID）
   'attached.known.common.enabled': "启用附加设置",
@@ -3175,6 +3171,27 @@ export default {
   'attached.known.extraInfo.spacing': "课程表间距",
   'attached.known.extraInfo.currentLessonOnly': "仅上课时显示当前课程",
   'attached.known.extraInfo.nonExactCountdown': "非精确倒计时",
+
+  // 附加设置可编辑
+  'profiles.editor.attachedEditNote': "下面每一项都能直接改：开关点一下、数字与文本就地编辑、对象和数组用 JSON 框（填错会标红，不会写坏数据）。改动先落在本页，点「保存」写进档案，再「保存并下发」才会到教室端。",
+  'profiles.editor.attachedNewField': "+ 添加字段",
+  'profiles.editor.attachedNewGuid': "附加设置的 GUID（从插件文档或 .cidata 里复制）",
+  'profiles.editor.attachedNew': "+ 添加附加设置",
+  'profiles.editor.attachedRemove': "删除附加设置",
+  'profiles.editor.attachedRemoveHint': "删除这一项附加设置（读它的插件会退回默认行为）",
+  'profiles.editor.attachedRemoveConfirm': "确定删除 {guid} 吗？读它的插件会退回默认行为，这项数据也会从档案里消失。",
+
+  // 行动内容编辑
+  'profiles.editor.actionBadge': "行动 · {type}",
+  'profiles.editor.actionHint': "编辑这条行动的类型与原始配置",
+  'profiles.editor.actionNone': "未设置",
+  'profiles.editor.actionTitle': "行动内容",
+  'profiles.editor.actionNote': "行动是「到点做什么」。类型与配置都由教室端的插件/宿主解释，这里按原文保存、原样下发；不确定的字段建议先看一眼插件文档或原始包，别凭感觉删。",
+  'profiles.editor.actionTypeLabel': "类型",
+  'profiles.editor.actionTypeHint': "例如 Notification（通知）、Automation（自动化）、Run（运行命令），也可能是插件自己的类型；留空表示这条行动没有配置。",
+  'profiles.editor.actionSettingsLabel': "原始配置（JSON）",
+  'profiles.editor.actionSettingsHint': "留空表示没有配置。填错会被拦下，不会写坏档案。",
+  'profiles.editor.actionBadJson': "这段 JSON 不合法，修好再保存。",
 
 };
 

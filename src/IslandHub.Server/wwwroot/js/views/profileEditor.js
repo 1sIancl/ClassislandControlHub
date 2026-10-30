@@ -3,14 +3,14 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=159';
-import { toastError } from '../core/errors.js?v=159';
+import { api } from '../core/api.js?v=160';
+import { toastError } from '../core/errors.js?v=160';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, icon, select,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=159';
-import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=159';
-import { t } from './../core/i18n.js?v=159';
+} from '../core/ui.js?v=160';
+import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=160';
+import { t } from './../core/i18n.js?v=160';
 
 export const meta = {
   title: t('profiles.editor.title'),
@@ -660,6 +660,15 @@ function periodCell(layout, item, index) {
 
   // 附加设置（插件挂在时间点上的数据）：只读展示，点开看原始 JSON。
   // 这些值 A 端不解释语义，编辑它们等于让管理员手改插件数据，风险大于收益。
+  // 行动（kind === 'action'）：类型与原始配置都能改——不然"能解析"只停在看得见的层面。
+  const actionButton = item.kind === 'action'
+    ? h('button.pcell-attach', {
+      type: 'button',
+      title: t('profiles.editor.actionHint'),
+      onClick: () => openActionDialog(item),
+    }, t('profiles.editor.actionBadge', { type: item.actionType || t('profiles.editor.actionNone') }))
+    : null;
+
   const attachedCount = Object.keys(item.attachedSettings || {}).length;
   const attachBadge = attachedCount > 0
     ? h('button.pcell-attach', {
@@ -688,6 +697,7 @@ function periodCell(layout, item, index) {
     ),
     h('div.pcell-times', startInput, h('span.pcell-dash', '–'), endInput),
     nameInput,
+    actionButton,
     attachBadge,
   );
 }
@@ -796,57 +806,6 @@ const KNOWN_ATTACHED = {
  *
  * <p>能解析到什么程度：类型（空 / 开 / 关 / 数字 / 文本 / 颜色 / 列表 / 对象）全解析，
  * 对象再往下展开一层字段。**不做语义转换**——值怎么存就怎么显示，免得"看起来解析了、其实猜错了"。</p>
- */
-function describeAttachedValue(value, knownFields) {
-  if (value === null || value === undefined) {
-    return h('span.attach-dim', t('profiles.editor.attachedEmpty'));
-  }
-
-  if (typeof value === 'boolean') {
-    return h('span', { class: value ? 'badge badge-ok' : 'badge' },
-      value ? t('profiles.editor.attachedOn') : t('profiles.editor.attachedOff'));
-  }
-
-  if (typeof value === 'number') {
-    return h('span.attach-num', String(value));
-  }
-
-  if (typeof value === 'string') {
-    if (ATTACHED_COLOR.test(value)) {
-      return h('span.attach-color',
-        h('span.attach-swatch', { style: { background: value } }),
-        h('code', value));
-    }
-
-    // 长文本截断显示（原始 JSON 里仍能看全）。
-    const text = value.length > 60 ? `${value.slice(0, 60)}…` : value;
-    return h('code.attach-str', { title: value }, text);
-  }
-
-  if (Array.isArray(value)) {
-    return h('span.attach-dim', t('profiles.editor.attachedItems', { count: value.length }));
-  }
-
-  if (typeof value === 'object') {
-    const entries = Object.entries(value);
-    return h('div.attach-obj',
-      entries.length === 0
-        ? h('span.attach-dim', t('profiles.editor.attachedEmptyObject'))
-        : h('div.attach-fields', ...entries.map(([key, inner]) => {
-          // 已知类型用精确字段名；否则退回通用词表（并注明"只是词表"）。
-          const knownKey = knownFields?.[key];
-          const hint = knownKey
-            ? t(knownKey)
-            : ATTACHED_FIELD_LABELS[key.toLowerCase()];
-          return h('div.attach-row',
-            h('span.attach-key', key,
-              hint ? h('span.attach-key-hint', `（${hint}）`) : null),
-            describeAttachedValue(inner, knownFields));
-        })));
-  }
-
-  return h('code', String(value));
-}
 
 /**
  * 附加设置弹窗：把每一项都解析成可读结构，原始 JSON 收在折叠区里兜底。
@@ -855,29 +814,232 @@ function describeAttachedValue(value, knownFields) {
  * 而且 A 端不知道每个字段的取值范围（比如格式串支持哪些占位符）。</p>
  */
 function openAttachedDialog(item, count) {
-  const entries = Object.entries(item.attachedSettings || {});
+  // 深拷贝：弹窗里改的是草稿，点「保存」才写回 item（再靠「保存并下发」落到服务端）。
+  // 直接改原对象的话，用户点取消也回不去了。
+  const draft = JSON.parse(JSON.stringify(item.attachedSettings || {}));
+  const groupsHost = h('div');
+
+  /** 单个字段的编辑控件：按值的类型选控件，对象/数组给 JSON 文本框。 */
+  const fieldEditor = (value, onChange) => {
+    if (typeof value === 'boolean') {
+      const box = h('input', { type: 'checkbox' });
+      box.checked = value;
+      box.onchange = () => onChange(box.checked);
+      return h('label.checkbox-field', box,
+        h('span', value ? t('profiles.editor.attachedOn') : t('profiles.editor.attachedOff')));
+    }
+
+    if (typeof value === 'number') {
+      const input = h('input', { type: 'number', step: 'any', value: String(value) });
+      input.oninput = () => onChange(input.value === '' ? 0 : Number(input.value));
+      return input;
+    }
+
+    if (typeof value === 'string') {
+      const input = h('input', { type: 'text', value });
+      input.oninput = () => onChange(input.value);
+      return input;
+    }
+
+    // 对象 / 数组 / null：JSON 文本框（清空 = null）。
+    const area = h('textarea', { rows: 3, style: { width: '100%' } });
+    area.value = value === null ? '' : JSON.stringify(value, null, 2);
+    area.oninput = () => {
+      const text = area.value.trim();
+      if (text === '') {
+        onChange(null);
+        area.style.borderColor = '';
+        return;
+      }
+
+      try {
+        onChange(JSON.parse(text));
+        area.style.borderColor = '';
+      } catch {
+        // 只标红、不打断输入：边打字边弹错会让人没法编辑。
+        area.style.borderColor = 'var(--danger)';
+      }
+    };
+    return area;
+  };
+
+  const paintGroups = () => {
+    clear(groupsHost);
+
+    const guids = Object.keys(draft);
+    if (guids.length === 0) {
+      groupsHost.appendChild(h('p.card-desc', t('profiles.editor.attachedEmpty')));
+      return;
+    }
+
+    groupsHost.appendChild(h('div.attach-groups', ...guids.map((guid, index) => {
+      const value = draft[guid];
+      const known = KNOWN_ATTACHED[guid.trim().toLowerCase()] ?? KNOWN_ATTACHED[guid.trim()];
+      const isObject = value && typeof value === 'object' && !Array.isArray(value);
+
+      const body = isObject
+        ? h('div.attach-fields', ...Object.entries(value).map(([key, inner]) => {
+          const label = known?.fields?.[key] ? t(known.fields[key]) : ATTACHED_FIELD_LABELS[key.toLowerCase()];
+          const row = h('div.attach-row',
+            h('span.attach-key', key, label ? h('span.attach-key-hint', `（${label}）`) : null));
+          row.appendChild(fieldEditor(inner, (next) => {
+            draft[guid][key] = next;
+          }));
+          return row;
+        }))
+        : h('div.attach-row', fieldEditor(value, (next) => {
+          draft[guid] = next;
+        }));
+
+      return h('div.attach-group',
+        h('div.attach-head',
+          h('span.attach-index', t('profiles.editor.attachedGroup', { n: index + 1 })),
+          known ? h('span.attach-known', t(known.nameKey)) : null,
+          h('code.attach-guid', { title: guid }, guid),
+          h('div.spacer'),
+          h('button.btn.btn-sm.btn-danger', {
+            type: 'button',
+            title: t('profiles.editor.attachedRemoveHint'),
+            onClick: async () => {
+              const ok = await confirmDialog(
+                t('profiles.editor.attachedRemove'),
+                t('profiles.editor.attachedRemoveConfirm', { guid }),
+                t('profiles.editor.delete'),
+                true,
+              );
+              if (ok) {
+                delete draft[guid];
+                paintGroups();
+              }
+            },
+          }, t('profiles.editor.delete'))),
+        body,
+        isObject
+          ? h('button.btn.btn-sm', {
+            type: 'button',
+            style: { marginTop: '6px' },
+            onClick: () => {
+              const name = prompt(t('profiles.editor.attachedNewField'));
+              if (name) {
+                // 新字段默认 null：不凭空造类型，写什么由管理员决定。
+                draft[guid][name.trim()] = null;
+                paintGroups();
+              }
+            },
+          }, t('profiles.editor.attachedNewField'))
+          : null,
+      );
+    })));
+  };
+
+  paintGroups();
 
   modal({
     title: t('profiles.editor.attachedTitle', { count }),
     width: 'wide',
     body: h('div',
-      h('p.card-desc', t('profiles.editor.attachedGuess')),
-      entries.length === 0
-        ? h('p.card-desc', t('profiles.editor.attachedEmpty'))
-        : h('div.attach-groups', ...entries.map(([guid, value], index) => {
-          const known = KNOWN_ATTACHED[guid.trim().toLowerCase()] ?? KNOWN_ATTACHED[guid.trim()];
-          return h('div.attach-group',
-            h('div.attach-head',
-              h('span.attach-index', t('profiles.editor.attachedGroup', { n: index + 1 })),
-              known ? h('span.attach-known', t(known.nameKey)) : null,
-              h('code.attach-guid', { title: guid }, guid)),
-            h('div.attach-value', describeAttachedValue(value, known?.fields)));
-        })),
+      h('p.card-desc', t('profiles.editor.attachedEditNote')),
+      groupsHost,
+      h('button.btn.btn-sm', {
+        type: 'button',
+        style: { marginTop: '10px' },
+        onClick: () => {
+          const guid = prompt(t('profiles.editor.attachedNewGuid'));
+          if (guid) {
+            draft[guid.trim()] = {};
+            paintGroups();
+          }
+        },
+      }, t('profiles.editor.attachedNew')),
       h('details.attach-raw',
         h('summary', t('profiles.editor.attachedRaw')),
-        h('pre.attach-json', JSON.stringify(item.attachedSettings, null, 2)))),
-    confirmText: t('profiles.editor.close'),
-    onConfirm: () => true,
+        h('pre.attach-json', JSON.stringify(draft, null, 2)))),
+    confirmText: t('profiles.editor.save'),
+    onConfirm: () => {
+      // 空对象视同"没有附加设置"：留一个 {} 只会让徽章显示「附加 1」却点开是空的。
+      const cleaned = {};
+      for (const [guid, value] of Object.entries(draft)) {
+        if (value && typeof value === 'object' && !Array.isArray(value)
+          && Object.keys(value).length === 0) {
+          continue;
+        }
+
+        cleaned[guid] = value;
+      }
+
+      item.attachedSettings = Object.keys(cleaned).length > 0 ? cleaned : null;
+      markDirtyValues();
+      return true;
+    },
+  });
+}
+
+/**
+ * 行动时间点的动作内容（`Action.Type` + 原始配置）。
+ *
+ * <p>
+ * 为什么是「类型 + 原始 JSON」而不是按类型渲染表单：`Action.Type` 是开放集合
+ * （`Notification` / `Automation` / `Run` / 插件自定义），A 端没有这些类型的 schema；
+ * 硬造表单只会让管理员填出教室端读不懂的配置。给原始 JSON 至少能**改**、
+ * 能对照插件文档填，且不会因为缺少某个字段被静默截断。
+ * </p>
+ */
+function openActionDialog(item) {
+  const typeInput = h('input', {
+    type: 'text',
+    value: item.actionType || '',
+    placeholder: 'Notification / Automation / Run / …',
+  });
+
+  const settingsArea = h('textarea', { rows: 6, style: { width: '100%' } });
+  settingsArea.value = item.actionSettings || '';
+
+  const error = h('div.attach-dim', { hidden: true, style: { color: 'var(--danger)' } });
+
+  settingsArea.oninput = () => {
+    const text = settingsArea.value.trim();
+    if (text === '') {
+      settingsArea.style.borderColor = '';
+      error.hidden = true;
+      return;
+    }
+
+    try {
+      JSON.parse(text);
+      settingsArea.style.borderColor = '';
+      error.hidden = true;
+    } catch {
+      settingsArea.style.borderColor = 'var(--danger)';
+      error.hidden = false;
+    }
+  };
+
+  modal({
+    title: t('profiles.editor.actionTitle'),
+    width: 'wide',
+    body: h('div',
+      h('p.card-desc', t('profiles.editor.actionNote')),
+      field(t('profiles.editor.actionTypeLabel'), typeInput, t('profiles.editor.actionTypeHint')),
+      field(t('profiles.editor.actionSettingsLabel'), settingsArea, t('profiles.editor.actionSettingsHint')),
+      error),
+    confirmText: t('profiles.editor.save'),
+    onConfirm: () => {
+      const text = settingsArea.value.trim();
+      if (text !== '') {
+        try {
+          JSON.parse(text);
+        } catch {
+          error.hidden = false;
+          error.textContent = t('profiles.editor.actionBadJson');
+          return false;
+        }
+      }
+
+      item.actionType = typeInput.value.trim() || null;
+      item.actionSettings = text || null;
+      markDirtyValues();
+      return true;
+    },
   });
 }
 
