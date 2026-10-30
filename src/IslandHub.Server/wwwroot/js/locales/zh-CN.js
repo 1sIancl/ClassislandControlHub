@@ -3148,5 +3148,33 @@ export default {
   'profiles.editor.attachedRaw': "原始 JSON",
   'profiles.editor.attachedGuess': "下面按值的结构解析（对象展开字段、颜色给色块、开关给开/关）；字段名的中文只是通用词表对照，插件的实际含义可能不同。只读——写坏一个字段比不显示更糟。",
 
+  // 已知附加设置类型（依据真实 .cidata 统计：3 个固定 GUID）
+  'attached.known.common.enabled': "启用附加设置",
+  'attached.known.common.active': "当前生效",
+  'attached.known.weather.name': "天气预警与预报显示",
+  'attached.known.weather.alertShowMode': "预警显示方式",
+  'attached.known.weather.forecastShowMode': "预报显示方式",
+  'attached.known.classNotice.name': "上下课提醒",
+  'attached.known.classNotice.on': "上课提醒",
+  'attached.known.classNotice.preparing': "课前提醒",
+  'attached.known.classNotice.off': "下课提醒",
+  'attached.known.classNotice.deltaSeconds': "提前量（秒）",
+  'attached.known.classNotice.preparingText': "课前提示文本",
+  'attached.known.classNotice.outdoorPreparingText': "户外课课前提示",
+  'attached.known.classNotice.preparingMask': "课前遮罩文本",
+  'attached.known.classNotice.outdoorPreparingMask': "户外课课前遮罩",
+  'attached.known.classNotice.onMask': "上课遮罩文本",
+  'attached.known.classNotice.offMask': "下课遮罩文本",
+  'attached.known.classNotice.offOverlay': "下课浮层文本",
+  'attached.known.extraInfo.name': "时间点附加信息与倒计时",
+  'attached.known.extraInfo.show': "显示附加信息",
+  'attached.known.extraInfo.type': "附加信息类型（枚举）",
+  'attached.known.extraInfo.countdown': "启用倒计时",
+  'attached.known.extraInfo.countdownSeconds': "倒计时秒数",
+  'attached.known.extraInfo.showSecondsSeconds': "显示秒数",
+  'attached.known.extraInfo.spacing': "课程表间距",
+  'attached.known.extraInfo.currentLessonOnly': "仅上课时显示当前课程",
+  'attached.known.extraInfo.nonExactCountdown': "非精确倒计时",
+
 };
 

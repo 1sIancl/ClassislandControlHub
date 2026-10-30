@@ -3148,5 +3148,33 @@ export default {
   'profiles.editor.attachedRaw': "Raw JSON",
   'profiles.editor.attachedGuess': "Parsed by value shape below (objects expand their fields, colours get a swatch, booleans show on/off). Field name hints are a generic glossary — a plugin may mean something else. Read-only.",
 
+  // 已知附加设置类型（依据真实 .cidata 统计：3 个固定 GUID）
+  'attached.known.common.enabled': "attach settings enabled",
+  'attached.known.common.active': "currently active",
+  'attached.known.weather.name': "Weather alert & forecast display",
+  'attached.known.weather.alertShowMode': "alert display mode",
+  'attached.known.weather.forecastShowMode': "forecast display mode",
+  'attached.known.classNotice.name': "Lesson start / end notices",
+  'attached.known.classNotice.on': "start notice",
+  'attached.known.classNotice.preparing': "preparing notice",
+  'attached.known.classNotice.off': "end notice",
+  'attached.known.classNotice.deltaSeconds': "lead time (s)",
+  'attached.known.classNotice.preparingText': "preparing text",
+  'attached.known.classNotice.outdoorPreparingText': "outdoor preparing text",
+  'attached.known.classNotice.preparingMask': "preparing mask text",
+  'attached.known.classNotice.outdoorPreparingMask': "outdoor preparing mask",
+  'attached.known.classNotice.onMask': "start mask text",
+  'attached.known.classNotice.offMask': "end mask text",
+  'attached.known.classNotice.offOverlay': "end overlay text",
+  'attached.known.extraInfo.name': "Time point extra info & countdown",
+  'attached.known.extraInfo.show': "show extra info",
+  'attached.known.extraInfo.type': "extra info type (enum)",
+  'attached.known.extraInfo.countdown': "countdown enabled",
+  'attached.known.extraInfo.countdownSeconds': "countdown seconds",
+  'attached.known.extraInfo.showSecondsSeconds': "show seconds for",
+  'attached.known.extraInfo.spacing': "timetable spacing",
+  'attached.known.extraInfo.currentLessonOnly': "current lesson on class only",
+  'attached.known.extraInfo.nonExactCountdown': "non-exact countdown",
+
 };
 

@@ -16,22 +16,22 @@
  * 本页的「外观（本机）」。</para>
  */
 
-import { api } from '../core/api.js?v=158';
-import { toastError } from '../core/errors.js?v=158';
+import { api } from '../core/api.js?v=159';
+import { toastError } from '../core/errors.js?v=159';
 import {
   h, clear, field, select, loadingBlock, toast, confirmDialog,
-} from '../core/ui.js?v=158';
+} from '../core/ui.js?v=159';
 import {
   THEMES, DENSITIES, ACCENTS, FONTS, RADII,
   getTheme, applyTheme, getDensity, setDensity,
   getAccent, setAccent, getFont, setFont, getRadius, setRadius,
-} from '../core/prefs.js?v=158';
-import { t } from '../core/i18n.js?v=158';
+} from '../core/prefs.js?v=159';
+import { t } from '../core/i18n.js?v=159';
 // 个人外观（#127）：背景 / 透明度 / 磨砂 / 色调，只影响当前账号。
 import {
   applyAppearance, saveAppearance, readCachedAppearance, DEFAULT_APPEARANCE,
   uploadBackgroundImage, deleteBackgroundImage,
-} from '../core/appearance.js?v=158';
+} from '../core/appearance.js?v=159';
 
 export const meta = {
   title: t('appearance.title'),

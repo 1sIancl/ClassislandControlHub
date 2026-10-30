@@ -3,14 +3,14 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=158';
-import { toastError } from '../core/errors.js?v=158';
+import { api } from '../core/api.js?v=159';
+import { toastError } from '../core/errors.js?v=159';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, icon, select,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=158';
-import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=158';
-import { t } from './../core/i18n.js?v=158';
+} from '../core/ui.js?v=159';
+import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=159';
+import { t } from './../core/i18n.js?v=159';
 
 export const meta = {
   title: t('profiles.editor.title'),
@@ -729,12 +729,75 @@ const ATTACHED_FIELD_LABELS = {
 const ATTACHED_COLOR = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 
 /**
+ * 已知的附加设置类型（GUID → 名称 + 字段中文）。
+ *
+ * <p>
+ * 依据：对一份真实的 ClassIsland 2.1.1.1 `.cidata` 统计后发现 **59 个时间点全部带附加设置、
+ * 只有 3 个 GUID**，且每个 GUID 在 53~59 个时间点上字段完全一致——说明这些 GUID 是**固定常量**
+ * （不是每台机器随机生成），可以安全地按类型命名。
+ * </p>
+ *
+ * <p>
+ * 两条克制：① 只翻**字段名**，不解释**枚举值**（`ExtraInfoType: 2` 到底是"倒计时"还是"课程表"
+ * 没有公开契约，猜错会误导）；② GUID 对不上时（换了宿主版本/别的插件）自动退回通用结构解析，
+ * 不会把未知数据硬套成已知类型。
+ * </p>
+ */
+const KNOWN_ATTACHED = {
+  // 天气预警 / 预报在时间点上的显示方式
+  '7625de96-38aa-4b71-b478-3f156dd9458d': {
+    nameKey: 'attached.known.weather.name',
+    fields: {
+      AlertShowMode: 'attached.known.weather.alertShowMode',
+      ForecastShowMode: 'attached.known.weather.forecastShowMode',
+      IsAttachSettingsEnabled: 'attached.known.common.enabled',
+      IsActive: 'attached.known.common.active',
+    },
+  },
+  // 上下课提醒（提示文本、遮罩文本、提前量）
+  '08f0d9c3-c770-4093-a3d0-02f3d90c24bc': {
+    nameKey: 'attached.known.classNotice.name',
+    fields: {
+      IsClassOnNotificationEnabled: 'attached.known.classNotice.on',
+      IsClassOnPreparingNotificationEnabled: 'attached.known.classNotice.preparing',
+      IsClassOffNotificationEnabled: 'attached.known.classNotice.off',
+      ClassPreparingDeltaTime: 'attached.known.classNotice.deltaSeconds',
+      ClassOnPreparingText: 'attached.known.classNotice.preparingText',
+      OutdoorClassOnPreparingText: 'attached.known.classNotice.outdoorPreparingText',
+      ClassOnPreparingMaskText: 'attached.known.classNotice.preparingMask',
+      OutdoorClassOnPreparingMaskText: 'attached.known.classNotice.outdoorPreparingMask',
+      ClassOnMaskText: 'attached.known.classNotice.onMask',
+      ClassOffMaskText: 'attached.known.classNotice.offMask',
+      ClassOffOverlayText: 'attached.known.classNotice.offOverlay',
+      IsAttachSettingsEnabled: 'attached.known.common.enabled',
+      IsActive: 'attached.known.common.active',
+    },
+  },
+  // 时间点附加信息 / 倒计时
+  '58e5b69a-764a-472b-bcf7-003b6a8c7fdf': {
+    nameKey: 'attached.known.extraInfo.name',
+    fields: {
+      ShowExtraInfoOnTimePoint: 'attached.known.extraInfo.show',
+      ExtraInfoType: 'attached.known.extraInfo.type',
+      IsCountdownEnabled: 'attached.known.extraInfo.countdown',
+      CountdownSeconds: 'attached.known.extraInfo.countdownSeconds',
+      ExtraInfo4ShowSecondsSeconds: 'attached.known.extraInfo.showSecondsSeconds',
+      ScheduleSpacing: 'attached.known.extraInfo.spacing',
+      ShowCurrentLessonOnlyOnClass: 'attached.known.extraInfo.currentLessonOnly',
+      IsNonExactCountdownEnabled: 'attached.known.extraInfo.nonExactCountdown',
+      IsAttachSettingsEnabled: 'attached.known.common.enabled',
+      IsActive: 'attached.known.common.active',
+    },
+  },
+};
+
+/**
  * 把一个附加设置的值解析成可读的一行。
  *
  * <p>能解析到什么程度：类型（空 / 开 / 关 / 数字 / 文本 / 颜色 / 列表 / 对象）全解析，
  * 对象再往下展开一层字段。**不做语义转换**——值怎么存就怎么显示，免得"看起来解析了、其实猜错了"。</p>
  */
-function describeAttachedValue(value) {
+function describeAttachedValue(value, knownFields) {
   if (value === null || value === undefined) {
     return h('span.attach-dim', t('profiles.editor.attachedEmpty'));
   }
@@ -769,12 +832,17 @@ function describeAttachedValue(value) {
     return h('div.attach-obj',
       entries.length === 0
         ? h('span.attach-dim', t('profiles.editor.attachedEmptyObject'))
-        : h('div.attach-fields', ...entries.map(([key, inner]) => h('div.attach-row',
-          h('span.attach-key', key,
-            ATTACHED_FIELD_LABELS[key.toLowerCase()]
-              ? h('span.attach-key-hint', `（${ATTACHED_FIELD_LABELS[key.toLowerCase()]}）`)
-              : null),
-          describeAttachedValue(inner)))));
+        : h('div.attach-fields', ...entries.map(([key, inner]) => {
+          // 已知类型用精确字段名；否则退回通用词表（并注明"只是词表"）。
+          const knownKey = knownFields?.[key];
+          const hint = knownKey
+            ? t(knownKey)
+            : ATTACHED_FIELD_LABELS[key.toLowerCase()];
+          return h('div.attach-row',
+            h('span.attach-key', key,
+              hint ? h('span.attach-key-hint', `（${hint}）`) : null),
+            describeAttachedValue(inner, knownFields));
+        })));
   }
 
   return h('code', String(value));
@@ -796,11 +864,15 @@ function openAttachedDialog(item, count) {
       h('p.card-desc', t('profiles.editor.attachedGuess')),
       entries.length === 0
         ? h('p.card-desc', t('profiles.editor.attachedEmpty'))
-        : h('div.attach-groups', ...entries.map(([guid, value], index) => h('div.attach-group',
-          h('div.attach-head',
-            h('span.attach-index', t('profiles.editor.attachedGroup', { n: index + 1 })),
-            h('code.attach-guid', { title: guid }, guid)),
-          h('div.attach-value', describeAttachedValue(value))))),
+        : h('div.attach-groups', ...entries.map(([guid, value], index) => {
+          const known = KNOWN_ATTACHED[guid.trim().toLowerCase()] ?? KNOWN_ATTACHED[guid.trim()];
+          return h('div.attach-group',
+            h('div.attach-head',
+              h('span.attach-index', t('profiles.editor.attachedGroup', { n: index + 1 })),
+              known ? h('span.attach-known', t(known.nameKey)) : null,
+              h('code.attach-guid', { title: guid }, guid)),
+            h('div.attach-value', describeAttachedValue(value, known?.fields)));
+        })),
       h('details.attach-raw',
         h('summary', t('profiles.editor.attachedRaw')),
         h('pre.attach-json', JSON.stringify(item.attachedSettings, null, 2)))),
