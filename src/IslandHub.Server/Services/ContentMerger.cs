@@ -123,9 +123,14 @@ public static class ContentMerger
 
             // 去重键必须带上**周次**：单双周的两张课表同属一天、时间表也相同，
             // 只按「时间表 + 星期」去重会把它们并成一张——轮换直接失效，而且看不出哪里错了。
+            //
+            // 还必须带上**原始规则**：日期型 / 循环型的课表虽然也带着 WeekDay（宿主里的残留值），
+            // 但它的实际生效日期由 `EnableDates` 决定。真实包里就有「F5ri（日期型）」与
+            // 「周五（按星期几）」同为 WeekDay=5 的情况——按旧键合并会把其中一张的内容整份覆盖掉。
             var existing = target.ClassPlans.FirstOrDefault(p =>
                 p.TimeLayoutId == plan.TimeLayoutId && SameDays(p.DaysOfWeek, plan.DaysOfWeek)
-                && p.WeekInterval == plan.WeekInterval && p.WeekOffset == plan.WeekOffset);
+                && p.WeekInterval == plan.WeekInterval && p.WeekOffset == plan.WeekOffset
+                && SameTimeRule(p, plan));
             if (existing is null)
             {
                 target.ClassPlans.Add(plan);
@@ -191,6 +196,26 @@ public static class ContentMerger
         {
             target.Settings.Values[key] = value;
         }
+    }
+
+    /// <summary>
+    /// 两张课表的「原始触发规则」是否算同一张。
+    /// <para>
+    /// 两条都为空（老档案，没有原始规则）→ 视为相同，保持原有的覆盖行为；
+    /// 都非空 → 逐字比较；只有一条为空 → 视为不同（一个是按星期几、一个带原始规则，合并会丢语义）。
+    /// </para>
+    /// </summary>
+    private static bool SameTimeRule(ClassPlanDto left, ClassPlanDto right)
+    {
+        var leftRaw = left.TimeRuleRaw;
+        var rightRaw = right.TimeRuleRaw;
+
+        if (string.IsNullOrEmpty(leftRaw) && string.IsNullOrEmpty(rightRaw))
+        {
+            return true;
+        }
+
+        return string.Equals(leftRaw, rightRaw, StringComparison.Ordinal);
     }
 
     private static bool SameDays(List<int> left, List<int> right) =>

@@ -194,6 +194,19 @@ public sealed class ClassPlanDto
     /// </summary>
     public int WeekOffset { get; set; }
 
+    /// <summary>
+    /// 宿主 <c>TimeRule</c> 的**原始 JSON**（原样透传）。
+    /// <para>
+    /// 为什么要有它：宿主的规则有三种类型（<c>0=Weekly / 1=Date / 2=Loop</c>），后两种
+    /// （按日期、按 N 天循环）带 <c>EnableDates</c> / <c>LoopCycleDays</c> / <c>RestrictsEnableRange</c> 等字段，
+    /// IslandHub 的 <see cref="DaysOfWeek"/> / <see cref="WeekInterval"/> 表达不了。
+    /// 以前遇到后两种只能**跳过整张课表**（宁可丢也不能静默改成"每天生效"）。
+    /// 现在改成原样存下来、下发时原样还原：教室端按它自己的规则跑，IslandHub 不解释。
+    /// </para>
+    /// <para>非空时优先于 <see cref="DaysOfWeek"/> 等下发的规则字段。</para>
+    /// </summary>
+    public string? TimeRuleRaw { get; set; }
+
     /// <summary>课程节点列表，按 <see cref="ClassPlanSlotDto.Index"/> 升序。</summary>
     public List<ClassPlanSlotDto> Slots { get; set; } = [];
 }

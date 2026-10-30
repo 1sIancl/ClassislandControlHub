@@ -263,7 +263,15 @@ public static class CidataImporter
                 }
                 else if (kind == TimeItemKind.Action)
                 {
-                    var actionType = string.IsNullOrWhiteSpace(item.Action?.Type) ? "Unknown" : item.Action!.Type!.Trim();
+                    // 空行动 ≠ 无法识别：宿主里「加了到点的行动节点但没配动作」很常见
+                    // （真实包 8 个行动节点全是这种）。以前一律记成 "Unknown" 并警告"类型无法识别"，是误报。
+                    var actionType = item.Action?.Type?.Trim();
+                    if (string.IsNullOrWhiteSpace(actionType))
+                    {
+                        entry.EmptyActions += 1;
+                        continue;
+                    }
+
                     entry.Actions.Add(new CidataActionInfo
                     {
                         Layout = dto.Name,
@@ -321,6 +329,13 @@ public static class CidataImporter
             }
         }
 
+        // 没配动作的行动节点：常见且无害，用一句中性说明带过，不列进「有问题」的警告里。
+        if (entry.EmptyActions > 0)
+        {
+            warnings.Add($"{entry.EmptyActions} 条「行动」时间点没有配置动作（教室里到点也不会做什么），"
+                + "位置已按原样保留；要让它做事，在编辑器里点该时间点的「行动」按钮填类型与配置。");
+        }
+
         if (dirtyTimeline)
         {
             warnings.Add("部分分割线 / 行动时间点的结束时间与开始时间不一致（宿主历史脏数据），"
@@ -358,7 +373,8 @@ public static class CidataImporter
         }
 
         // ── 课表 ──
-        var skippedByRule = new List<string>();
+        // 带「日期型 / 循环型」规则的课表：不再跳过，原样保留在 TimeRuleRaw 里。
+        var withRawRule = new List<string>();
         var skippedByLayout = new List<string>();
         var skippedByUnusableLayout = new List<string>();
         var rangeLimited = 0;
@@ -399,14 +415,15 @@ public static class CidataImporter
                 continue;
             }
 
-            var rule = plan.TimeRule ?? new TimeRuleJson();
+            var rule = plan.TimeRule;
 
-            // IslandHub 的课表只能表达「星期几」这一种触发方式（对应宿主的 Weekly）。
-            // 日期型 / 循环型规则无法表达——按「星期几」硬塞会变成每天都在用这张课表，属于静默改语义。
-            if (rule.Type is 1 or 2)
+            // 触发规则不再按类型跳过：宿主有三种（0=Weekly / 1=Date / 2=Loop），
+            // 后两种带 EnableDates / LoopCycleDays / RestrictsEnableRange，IslandHub 的模型表达不了，
+            // 但**能原样存下来**（`TimeRuleRaw`）并在下发时原样还原——教室端按它自己的规则跑。
+            // 以前是跳过整张课表（等于丢数据），现在改成"不解释、不丢失"。
+            if (IntProp(rule, "Type") is 1 or 2)
             {
-                skippedByRule.Add(planName);
-                continue;
+                withRawRule.Add(planName);
             }
 
             var classItems = layout.Items.Where(i => i.Kind == TimeItemKind.Class).ToList();
@@ -417,6 +434,10 @@ public static class CidataImporter
                 misaligned++;
             }
 
+            // 星期几：宿主与 IslandHub 编码一致（0=周日..6=周六，都沿用 .NET 的 DayOfWeek），不需要 ±1。
+            // 默认值必须是 0（周日）——与宿主 TimeRule.WeekDay 的默认值一致，改 1 会让"省略字段"的包跑到周一去。
+            var weekDay = IntProp(rule, "WeekDay");
+
             var dto = new ClassPlanDto
             {
                 Id = id.Trim(),
@@ -424,8 +445,9 @@ public static class CidataImporter
                 TimeLayoutId = layout.Id,
                 IsEnabled = plan.IsEnabled,
                 GroupId = ToGroupId(plan.AssociatedGroup),
-                // 宿主与 IslandHub 的星期编码一致（0=周日..6=周六，都沿用 .NET 的 DayOfWeek），不需要 ±1。
-                DaysOfWeek = [rule.WeekDay is >= 0 and <= 6 ? rule.WeekDay : 1],
+                DaysOfWeek = [weekDay is >= 0 and <= 6 ? weekDay : 1],
+                // 整包原样带走：日期型/循环型、启用日期、循环周期都在里面。
+                TimeRuleRaw = rule is { ValueKind: JsonValueKind.Object } raw ? raw.GetRawText() : null,
             };
 
             ApplyWeekRotation(dto, rule);
@@ -445,12 +467,14 @@ public static class CidataImporter
                 });
             }
 
-            if (rule.RestrictsEnableRange)
+            // 「启用日期」与「日期范围」现在都随 `TimeRuleRaw` 整包保留，不再单独告警会丢；
+            // 这里只统计，便于预览里说清"有几张课表的生效范围不是按星期几算的"。
+            if (BoolProp(rule, "RestrictsEnableRange"))
             {
                 rangeLimited++;
             }
 
-            if (rule.EnableDates is { Count: > 0 })
+            if (HasNonEmptyArray(rule, "EnableDates"))
             {
                 enableDateLimited++;
             }
@@ -470,10 +494,11 @@ public static class CidataImporter
                 + Join(skippedByLayout) + "。");
         }
 
-        if (skippedByRule.Count > 0)
+        if (withRawRule.Count > 0)
         {
-            warnings.Add($"有 {skippedByRule.Count} 张课表用的是「日期型 / 循环型」触发规则，IslandHub 只能按星期几下发，"
-                + $"已跳过：{Join(skippedByRule)}。这类课表建议在教室端本地维护。");
+            warnings.Add($"有 {withRawRule.Count} 张课表用的是「日期型 / 循环型」触发规则（{Join(withRawRule)}）："
+                + "原始规则已整包保留并随档案下发，教室端按它自己的规则生效；"
+                + "IslandHub 的课表页只按星期几显示，列表里看到的那一天可能与实际生效日期不同。");
         }
 
         if (misaligned > 0)
@@ -484,14 +509,14 @@ public static class CidataImporter
 
         if (rangeLimited > 0)
         {
-            warnings.Add($"有 {rangeLimited} 张课表带「生效日期范围」，IslandHub 的档案没有这一概念，"
-                + "导入后这些课表会按星期几一直生效。");
+            warnings.Add($"有 {rangeLimited} 张课表带「生效日期范围」：范围随原始规则整包保留，教室端按范围生效；"
+                + "IslandHub 的课表页只按星期几显示。");
         }
 
         if (enableDateLimited > 0)
         {
-            warnings.Add($"有 {enableDateLimited} 张课表指定了「启用日期」（只在某些日子生效），IslandHub 无法表达，"
-                + "这部分设置会丢失。");
+            warnings.Add($"有 {enableDateLimited} 张课表指定了「启用日期」：日期清单随原始规则整包保留，教室端按它生效；"
+                + "IslandHub 的课表页不显示这些日期。");
         }
 
         if (entry.SkippedOverlayPlans > 0)
@@ -601,18 +626,18 @@ public static class CidataImporter
     }
 
     /// <summary>把宿主的周次轮换（单双周）映射到 IslandHub 的 <c>WeekInterval</c> / <c>WeekOffset</c>。</summary>
-    private static void ApplyWeekRotation(ClassPlanDto dto, TimeRuleJson rule)
+    private static void ApplyWeekRotation(ClassPlanDto dto, JsonElement? rule)
     {
         // 宿主：WeekCountDiv 0=每周、1=第一周、2=第二周…（配合 WeekCountDivTotal 一起看，默认 2 周）。
         // IslandHub：WeekInterval 周期长度、WeekOffset 周期内第几周（0-based）。
-        var div = rule.WeekCountDiv;
+        var div = IntProp(rule, "WeekCountDiv");
         if (div <= 0)
         {
             return;
         }
 
         // 宿主的默认值是 2 周，字段省略时按 2 算。
-        var total = rule.WeekCountDivTotal.GetValueOrDefault(2);
+        var total = NullableIntProp(rule, "WeekCountDivTotal") ?? 2;
         if (total < 2)
         {
             return;
@@ -620,6 +645,38 @@ public static class CidataImporter
 
         dto.WeekInterval = total;
         dto.WeekOffset = Math.Min(div - 1, total - 1);
+    }
+
+    /// <summary>从原始 <c>TimeRule</c> JSON 读一个整数（缺字段/类型不对时用默认值）。</summary>
+    private static int IntProp(JsonElement? element, string name, int fallback = 0)
+        => NullableIntProp(element, name) ?? fallback;
+
+    /// <summary>读一个布尔字段（缺字段时按 false）。</summary>
+    private static bool BoolProp(JsonElement? element, string name)
+        => element is { ValueKind: JsonValueKind.Object } obj
+           && obj.TryGetProperty(name, out var value)
+           && value.ValueKind is JsonValueKind.True or JsonValueKind.False
+           && value.GetBoolean();
+
+    /// <summary>数组字段是否非空。</summary>
+    private static bool HasNonEmptyArray(JsonElement? element, string name)
+        => element is { ValueKind: JsonValueKind.Object } obj
+           && obj.TryGetProperty(name, out var value)
+           && value.ValueKind == JsonValueKind.Array
+           && value.GetArrayLength() > 0;
+
+    /// <summary>同上，但区分「没写」与「写了 0」。</summary>
+    private static int? NullableIntProp(JsonElement? element, string name)
+    {
+        if (element is not { ValueKind: JsonValueKind.Object } obj
+            || !obj.TryGetProperty(name, out var value)
+            || value.ValueKind != JsonValueKind.Number
+            || !value.TryGetInt32(out var number))
+        {
+            return null;
+        }
+
+        return number;
     }
 
     /// <summary>把宿主的课表群映射成 IslandHub 的课表群 ID；默认群留空（由教室端归入它自己的默认群）。</summary>
@@ -838,30 +895,22 @@ public static class CidataImporter
         public bool IsEnabled { get; set; } = true;
         public bool IsOverlay { get; set; }
         public string? AssociatedGroup { get; set; }
-        public TimeRuleJson? TimeRule { get; set; }
+
+        /// <summary>
+        /// 原始 <c>TimeRule</c>：**不建强类型**。
+        /// <para>
+        /// 三种类型（0=Weekly / 1=Date / 2=Loop）字段集不同，宿主还会把默认值省略掉——
+        /// 强类型模型容易把"没写"和"写了默认值"混为一谈，下发时就把规则改掉了。
+        /// 留成 <see cref="JsonElement"/>：按需读几个字段，同时整包原样带走。
+        /// </para>
+        /// </summary>
+        public JsonElement? TimeRule { get; set; }
     }
 
     private sealed class ClassInfoJson
     {
         public string? SubjectId { get; set; }
         public bool IsEnabled { get; set; } = true;
-    }
-
-    private sealed class TimeRuleJson
-    {
-        /// <summary>0=Weekly、1=Date、2=Loop（宿主默认 Weekly 时会省略该字段）。</summary>
-        public int Type { get; set; }
-
-        /// <summary>0=周日、1..6=周一..周六（宿主默认 0 时会省略）。</summary>
-        public int WeekDay { get; set; }
-
-        public int WeekCountDiv { get; set; }
-
-        /// <summary>宿主的默认值是 2，但字段可能省略，所以这里用可空类型区分「没写」与「写了 0」。</summary>
-        public int? WeekCountDivTotal { get; set; }
-
-        public bool RestrictsEnableRange { get; set; }
-        public List<string>? EnableDates { get; set; }
     }
 
     private sealed class SubjectJson
@@ -988,6 +1037,12 @@ public sealed class CidataProfileEntry
 
     /// <summary>包里识别到的行动时间点（<c>TimeType = 3</c>，位置已导入，内容不随包走）。</summary>
     public List<CidataActionInfo> Actions { get; } = [];
+
+    /// <summary>
+    /// 没有配置动作的行动时间点（宿主里加了个"到点做点什么"的占位但没配）。
+    /// <para>这不是错误：真实包里 8 个行动节点全是这种。单独计数，免得被误报成「类型无法识别」。</para>
+    /// </summary>
+    public int EmptyActions { get; set; }
 
     /// <summary>行动按 <c>Action.Type</c> 的计数（预览里给管理员看"都包含哪几类"）。</summary>
     public Dictionary<string, int> ActionTypeCounts { get; } = new(StringComparer.Ordinal);

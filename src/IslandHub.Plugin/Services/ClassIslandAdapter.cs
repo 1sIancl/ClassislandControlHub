@@ -218,6 +218,24 @@ public sealed class ClassIslandAdapter(IPublicProfileService profileService, ILo
 
     private static TimeRule BuildTimeRule(ClassPlanDto dto)
     {
+        // 优先用导入时保留的**原始规则**：日期型 / 循环型、启用日期、生效范围全在里面，
+        // 按下面那套「星期几 + 周次」硬构造会把它们抹平成"每天都生效"（静默改语义）。
+        if (!string.IsNullOrWhiteSpace(dto.TimeRuleRaw))
+        {
+            try
+            {
+                var restored = System.Text.Json.JsonSerializer.Deserialize<TimeRule>(dto.TimeRuleRaw!);
+                if (restored is not null)
+                {
+                    return restored;
+                }
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // 原件坏了就退回按字段构造——至少还能下发一张能用的课表。
+            }
+        }
+
         var rule = new TimeRule
         {
             Type = TimeRule.TimeRuleType.Weekly,

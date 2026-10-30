@@ -3,14 +3,14 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=160';
-import { toastError } from '../core/errors.js?v=160';
+import { api } from '../core/api.js?v=161';
+import { toastError } from '../core/errors.js?v=161';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, icon, select,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=160';
-import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=160';
-import { t } from './../core/i18n.js?v=160';
+} from '../core/ui.js?v=161';
+import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=161';
+import { t } from './../core/i18n.js?v=161';
 
 export const meta = {
   title: t('profiles.editor.title'),

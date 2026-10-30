@@ -503,15 +503,52 @@ public sealed class CidataImporterTests
     }
 
     [Fact]
-    public void 日期型与循环型触发规则的课表被跳过()
+    public void 日期型与循环型规则原样保留而不是跳过()
     {
         foreach (var type in new[] { 1, 2 })
         {
             var entry = Convert(WithRotation(div: 0, total: 2, ruleType: type));
 
-            Assert.Empty(entry.Content.ClassPlans);
-            Assert.Contains(entry.Warnings, w => w.Contains("日期型") && w.Contains("周一"));
+            // 以前是整张课表丢弃（宁可丢也不静默改成"每天生效"）；
+            // 现在把原始规则整包带走，教室端按它自己的语义跑。
+            var plan = Assert.Single(entry.Content.ClassPlans);
+            Assert.False(string.IsNullOrWhiteSpace(plan.TimeRuleRaw));
+
+            using var raw = JsonDocument.Parse(plan.TimeRuleRaw!);
+            Assert.Equal(type, raw.RootElement.GetProperty("Type").GetInt32());
+
+            Assert.Contains(entry.Warnings, w => w.Contains("原样保留") || w.Contains("整包保留"));
         }
+    }
+
+    [Fact]
+    public void 没有配置动作的行动不算类型无法识别()
+    {
+        // 真实包里 8 个行动节点全是「TimeType=3 但没有 Action」——以前会报
+        // 「Type 无法识别」，属于误报：它本来就没有类型。
+        var entry = Convert($$"""
+        {
+          "Name": "空行动",
+          "TimeLayouts": {
+            "{{LayoutId}}": {
+              "Name": "作息",
+              "Layouts": [
+                { "StartTime": "08:00:00", "EndTime": "08:45:00", "TimeType": 0 },
+                { "StartTime": "07:20:00", "EndTime": "07:20:00", "TimeType": 3 }
+              ]
+            }
+          },
+          "ClassPlans": {}, "Subjects": {}
+        }
+        """);
+
+        Assert.Equal(1, entry.EmptyActions);
+        Assert.Empty(entry.Actions);
+        Assert.DoesNotContain(entry.Warnings, w => w.Contains("无法识别"));
+        Assert.Contains(entry.Warnings, w => w.Contains("没有配置动作"));
+        Assert.Equal(
+            [TimeItemKind.Class, TimeItemKind.Action],
+            entry.Content.TimeLayouts.Single().Items.Select(i => i.Kind));
     }
 
     [Fact]
