@@ -10,15 +10,15 @@
  * 每一步都写明「要不要重启」，卸载 / 启停也复用同一套下发与进度。</para>
  */
 
-import { api, hasPermission } from '../core/api.js?v=162';
-import { toastError, errorBlock } from '../core/errors.js?v=162';
-import { hintForCode } from '../core/error-hints.js?v=162';
-import { renderMarkdown } from '../core/markdown.js?v=162';
+import { api, hasPermission } from '../core/api.js?v=163';
+import { toastError, errorBlock } from '../core/errors.js?v=163';
+import { hintForCode } from '../core/error-hints.js?v=163';
+import { renderMarkdown } from '../core/markdown.js?v=163';
 import {
   h, clear, toast, loadingBlock, field, select, modal, confirmDialog, emptyState,
   formatDateTime, relativeTime, hintIcon,
-} from '../core/ui.js?v=162';
-import { t } from './../core/i18n.js?v=162';
+} from '../core/ui.js?v=163';
+import { t } from './../core/i18n.js?v=163';
 
 export const meta = {
   title: t('pluginMarket.title'),

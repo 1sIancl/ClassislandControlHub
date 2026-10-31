@@ -3,14 +3,14 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=162';
-import { toastError } from '../core/errors.js?v=162';
+import { api } from '../core/api.js?v=163';
+import { toastError } from '../core/errors.js?v=163';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, icon, select,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=162';
-import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=162';
-import { t } from './../core/i18n.js?v=162';
+} from '../core/ui.js?v=163';
+import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=163';
+import { t } from './../core/i18n.js?v=163';
 
 export const meta = {
   title: t('profiles.editor.title'),
@@ -87,6 +87,9 @@ export async function render(container, params) {
     scheduleSelection: null,
     armedSubjectId: null,
     dirty: false,
+    // 「多周轮换」默认折叠：绝大多数学校是每周同一张课表，
+    // 让一个未启用的功能常驻 200px 高度，等于每页白扔一屏的六分之一。
+    rotationOpen: false,
   };
 
   paint(container);
@@ -308,7 +311,7 @@ function setRotationWeeks(weeks) {
 }
 
 /** 顶部「多周轮换」设置条。 */
-function renderRotationBar() {
+function renderRotationBar(container) {
   const rotation = profileRotation();
   const weeks = rotation.weeks;
 
@@ -347,6 +350,27 @@ function renderRotationBar() {
     markDirtyLight();
   });
 
+  // 未启用：压成一行状态条（省掉整块卡片）。需要时再展开。
+  if (weeks < 2 && !state.rotationOpen) {
+    return h('div.rotation-strip',
+      h('span.rotation-strip-title', t('profiles.editor.rotation')),
+      h('span.badge.badge-neutral', t('profiles.editor.notEnabled')),
+      h('span.rotation-strip-hint', t('profiles.editor.rotationOffSummary')),
+      h('div.spacer'),
+      h('button.btn.btn-sm', {
+        type: 'button',
+        onClick: () => {
+          state.rotationOpen = true;
+          paint(container);
+        },
+      }, t('profiles.editor.rotationOpen')));
+  }
+
+  const collapse = () => {
+    state.rotationOpen = false;
+    paint(container);
+  };
+
   return h('div.card', { style: { marginBottom: '14px' } },
     h('div.card-head',
       h('div',
@@ -356,7 +380,10 @@ function renderRotationBar() {
           + t('profiles.editor.rotationOffsetHint'))),
       h('div.card-actions',
         h('span.badge' + (weeks < 2 ? '.badge-neutral' : '.badge-accent'),
-          weeks < 2 ? t('profiles.editor.notEnabled') : t('profiles.editor.rotationSummary', { weeks }))),
+          weeks < 2 ? t('profiles.editor.notEnabled') : t('profiles.editor.rotationSummary', { weeks })),
+        // 已启用时也能收起（看时间表时不需要一直占着这块）。
+        h('button.btn.btn-sm', { type: 'button', onClick: collapse },
+          t('profiles.editor.rotationCollapse'))),
     ),
     h('div.form-row', { style: { flexWrap: 'wrap' } },
       field(t('profiles.editor.rotationCycle'), weekSelect),
@@ -374,7 +401,7 @@ function paint(container) {
   // 页面标题由路由统一处理，这里只渲染内容。
   container.appendChild(h('div',
     renderHeader(),
-    renderRotationBar(),
+    renderRotationBar(container),
     h('div.card',
       h('div.editor-toolbar',
         h('div.tabs', ...TABS.map((tab) => h('button', {
@@ -563,11 +590,13 @@ function renderTimeLayouts() {
         t('profiles.editor.noLayouts'),
       ),
       h('div.spacer'),
-      h('button.btn.btn-sm.btn-primary', { type: 'button', onClick: addLayout }, t('profiles.editor.newLayout')),
-      layout ? h('button.btn.btn-sm', { type: 'button', onClick: () => renameLayout(layout) }, t('profiles.editor.rename')) : null,
+      // 主次分明：#1 日常最高频的是「加时间点」，其次是「快速生成」；
+      // 「新建时间表」其实低频（一个档案通常就一两张），「删除」更要退到边上。
+      layout ? h('button.btn.btn-sm.btn-primary', { type: 'button', onClick: () => addItem(layout) }, t('profiles.editor.addPoint')) : null,
       layout ? h('button.btn.btn-sm', { type: 'button', onClick: () => generateSchedule(layout) }, t('profiles.editor.quickGenerate')) : null,
-      layout ? h('button.btn.btn-sm', { type: 'button', onClick: () => addItem(layout) }, t('profiles.editor.addPoint')) : null,
-      layout ? h('button.btn.btn-sm.btn-danger', { type: 'button', onClick: () => removeLayout(layout) }, t('profiles.editor.delete')) : null,
+      layout ? h('button.btn.btn-sm', { type: 'button', onClick: () => renameLayout(layout) }, t('profiles.editor.rename')) : null,
+      h('button.btn.btn-sm', { type: 'button', onClick: addLayout }, t('profiles.editor.newLayout')),
+      layout ? h('button.btn.btn-sm.btn-ghost', { type: 'button', onClick: () => removeLayout(layout) }, t('profiles.editor.delete')) : null,
     ),
     !layout
       ? emptyState('clock', t('profiles.editor.layoutsEmpty'),
@@ -576,10 +605,9 @@ function renderTimeLayouts() {
       : h('div',
         // 引用提示（阶段六）：时间表是被课表共享引用的，改一次会波及所有引用它的周/天。
         // 不说清楚，管理员会以为只改了当前这一张课表（轮换周次里尤其容易误会）。
+        // 提示压成一行小字（原来是整条 notice，占 40px 却只说一句话）。
         referencedPlanCount(layout) > 0
-          ? h('div.notice.notice-info', { style: { marginTop: '10px' } },
-            h('span.notice-icon', 'i'),
-            h('div', t('profiles.editor.layoutRefs', { count: referencedPlanCount(layout) })))
+          ? h('div.editor-inline-hint', t('profiles.editor.layoutRefs', { count: referencedPlanCount(layout) }))
           : null,
         // 可视化时间轴放在表格**上方**（两个视图同时可见，不需要切来切去）：
         // 拖动色块平移整段时间、拖下边缘改时长，分钟吸附到 5 分钟并自动避让相邻时间点。
@@ -2280,7 +2308,8 @@ function renderSubjects() {
     subjects.length === 0
       ? emptyState('book', t('profiles.editor.subjectsEmpty'), t('profiles.editor.subjectsEmptyHint'))
       : h('div.table-wrap', { style: { maxHeight: '60vh', overflowY: 'auto' } },
-        h('table.data',
+        // `data-compact`：科目动辄二三十个，常规行高要滚四屏才看得完（截图实测 59px/行）。
+        h('table.data.data-compact',
           h('thead', h('tr',
             h('th', t('profiles.editor.subjectName')),
             h('th', { style: { width: '120px' } }, t('profiles.editor.abbr')),

@@ -3196,5 +3196,10 @@ export default {
   // .cidata 预览：说明类提示
   'profiles.cidataNotices': "{count} notes (nothing lost — just handled differently)",
 
+  // 档案编辑器：轮换条折叠
+  'profiles.editor.rotationOffSummary': "Same timetable every week — open this only if you rotate by week",
+  'profiles.editor.rotationOpen': "Set up rotation",
+  'profiles.editor.rotationCollapse': "Collapse",
+
 };
 

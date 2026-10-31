@@ -2427,15 +2427,18 @@ input.pcell-name:focus {
   font-size: 12.5px;
   color: var(--text-faint);
 }
+/* 调色板一块 37 个科目、每个都要能一键点中，所以只压尺寸不折叠：
+   收起省下的 60px 换来「排课时先展开」这一步，不划算。 */
 .sched-chip {
   display: inline-flex;
   align-items: baseline;
-  gap: 6px;
-  padding: 6px 12px;
+  gap: 5px;
+  padding: 4px 9px;
   border-radius: var(--radius-sm);
   background: var(--bg-panel-2);
   color: var(--text);
-  font-size: 12.5px;
+  font-size: 12px;
+  line-height: 1.5;
   cursor: grab;
   user-select: none;
   transition: background 0.12s, color 0.12s;
@@ -2451,7 +2454,7 @@ input.pcell-name:focus {
   opacity: 0.5;
 }
 .sched-chip-initial {
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .sched-grid {
@@ -4685,4 +4688,58 @@ pre.attach-json {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--accent);
   white-space: nowrap;
+}
+
+/* 未启用「多周轮换」时的折叠条：一行说清状态，把整块卡片的高度还给内容。 */
+.rotation-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+}
+
+.rotation-strip-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.rotation-strip-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+@media (max-width: 900px) {
+  .rotation-strip-hint {
+    display: none;
+  }
+}
+
+/* 紧凑表格（科目表用）：一行一个输入框的表，默认行高 59px 太费屏幕（26 个科目要滚四屏）。
+   只给显式加了 .data-compact 的表用，不动审计等其它宽表。 */
+table.data-compact td {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+table.data-compact td input[type="text"] {
+  padding: 4px 8px;
+  height: 30px;
+  font-size: 13px;
+}
+
+/* 编辑器里的一句话提示：带左侧色条的小字，占一行而不是一整条 notice 块。
+   用在「这份时间表被 N 张课表引用」这种说一句就够的地方。 */
+.editor-inline-hint {
+  margin-top: 8px;
+  padding: 5px 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }

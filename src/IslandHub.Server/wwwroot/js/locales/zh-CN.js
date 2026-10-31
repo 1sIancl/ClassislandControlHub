@@ -3196,5 +3196,10 @@ export default {
   // .cidata 预览：说明类提示
   'profiles.cidataNotices': "{count} 条说明（数据没丢，只是处理方式不同）",
 
+  // 档案编辑器：轮换条折叠
+  'profiles.editor.rotationOffSummary': "每周同一张课表；要按「第几周」换课表时再打开",
+  'profiles.editor.rotationOpen': "设置轮换",
+  'profiles.editor.rotationCollapse': "收起",
+
 };
 
