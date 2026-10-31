@@ -3,14 +3,14 @@
  * 数据来自 A 端 /admin/devices、/admin/backups 等接口。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=164';
-import { toastError } from '../core/errors.js?v=164';
-import { hintForCode } from '../core/error-hints.js?v=164';
+import { api, fetchBlob } from '../core/api.js?v=166';
+import { toastError } from '../core/errors.js?v=166';
+import { hintForCode } from '../core/error-hints.js?v=166';
 import {
   h, clear, toast, loadingBlock, confirmDialog, field, select, emptyState, formatDateTime, modal,
   hintIcon,
-} from '../core/ui.js?v=164';
-import { t } from './../core/i18n.js?v=164';
+} from '../core/ui.js?v=166';
+import { t } from './../core/i18n.js?v=166';
 
 export const meta = {
   title: t('remote.title'),
@@ -26,6 +26,8 @@ const TABS = [
   { key: 'notify', label: t('remote.tabNotice') },
   { key: 'automation', label: t('remote.tabAutomation') },
   { key: 'backup', label: t('remote.tabBackup') },
+  { key: 'hostSettings', label: t('remote.tabHostSettings') },
+  { key: 'configFiles', label: t('remote.tabConfigFiles') },
 ];
 
 /** 指令状态 → 展示文案 / 日志级别。 */
@@ -79,6 +81,8 @@ function renderTab(container) {
     case 'notify': return renderNotify(container);
     case 'automation': return renderAutomation(container);
     case 'backup': return renderBackup();
+    case 'hostSettings': return renderHostSettings(container);
+    case 'configFiles': return renderConfigFiles(container);
     default: return h('div');
   }
 }
@@ -1003,6 +1007,348 @@ function renderNotify(container) {
  * 远程触发 ClassIsland 的自动化规则：B 端把「信号触发器」的信号名上报上来，
  * A 端按信号名触发，效果等同于在教室里手动点一次那条自动化。
  */
+/**
+ * 发一条指令并等它的回执。
+ *
+ * <p>为什么不"发完就刷新列表"：教室端执行要时间（读文件、反射设置项），
+ * 立刻刷新只能看到 pending，用户会以为失败了。</p>
+ *
+ * @param {string} deviceId 目标设备。
+ * @param {string} kind 指令类型（如 settings.list）。
+ * @param {object|null} payload 载荷对象，会序列化成字符串。
+ * @param {number} timeoutMs 等多久放弃。
+ * @returns {Promise<object|null>} 回执；超时返回 null。
+ */
+async function sendAndWait(deviceId, kind, payload, timeoutMs = 9000) {
+  const started = Date.now();
+  await api(`/admin/devices/${deviceId}/command`, {
+    method: 'POST',
+    body: { kind, payload: payload ? JSON.stringify(payload) : '' },
+  });
+
+  while (Date.now() - started < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, 600));
+
+    let list;
+    try {
+      list = await api(`/admin/devices/${deviceId}/commands`);
+    } catch {
+      continue;
+    }
+
+    // 只看这次发出的：-3 秒容忍服务端与浏览器的时钟差。
+    const hit = list
+      .filter((c) => c.kind === kind && new Date(c.issuedAt).getTime() >= started - 3000)
+      .sort((a, b) => new Date(b.issuedAt) - new Date(a.issuedAt))[0];
+
+    if (hit && (hit.status === 'done' || hit.status === 'failed' || hit.status === 'expired')) {
+      return hit;
+    }
+  }
+
+  return null;
+}
+
+/** 指令回执里的 JSON 输出；解析不了就返回 null（不抛，界面上给"看不懂"的提示）。 */
+function parseOutput(command) {
+  if (!command?.output) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(command.output);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 「宿主设置」：列出设备上 ClassIsland 的设置项，简单项可直接改。
+ *
+ * <p>上百个字段铺一屏没法用，所以带搜索框；复杂对象显示为只读并标注原因——
+ * 它们跨进程传不过去（宿主要的是具体 .NET 类型），改也只能在教室端改。</p>
+ */
+function renderHostSettings(container) {
+  const deviceSelect = select(deviceOptions(), state.devices[0]?.id || '');
+  const searchInput = h('input', { type: 'text', placeholder: t('remote.settingsSearchPlaceholder') });
+  const body = h('div');
+  const edits = new Map();
+  let items = [];
+
+  /** 按类型给控件：开关 → 复选框，数字 → 数字框，文本/选项 → 文本框。 */
+  const editorFor = (item, onChange) => {
+    if (item.kind === 'bool') {
+      const box = h('input', { type: 'checkbox' });
+      box.checked = String(item.value).toLowerCase() === 'true';
+      box.onchange = () => onChange(box.checked ? 'true' : 'false');
+      return box;
+    }
+
+    const input = h('input', {
+      type: item.kind === 'number' ? 'number' : 'text',
+      value: item.value ?? '',
+      style: { width: '100%' },
+    });
+    input.oninput = () => onChange(input.value);
+    return input;
+  };
+
+  const paintRows = () => {
+    clear(body);
+
+    if (items.length === 0) {
+      body.appendChild(h('p.card-desc', t('remote.settingsEmpty')));
+      return;
+    }
+
+    const keyword = searchInput.value.trim().toLowerCase();
+    const shown = keyword
+      ? items.filter((item) => item.key.toLowerCase().includes(keyword))
+      : items;
+
+    body.appendChild(h('div.cell-sub', { style: { margin: '8px 0 6px' } },
+      t('remote.settingsCount', { shown: shown.length, total: items.length })));
+
+    body.appendChild(h('div.table-wrap', { style: { maxHeight: '50vh', overflowY: 'auto' } },
+      h('table.data.data-compact',
+        h('thead', h('tr',
+          h('th', t('remote.settingsKey')),
+          h('th', { style: { width: '120px' } }, t('remote.settingsType')),
+          h('th', t('remote.settingsValue')),
+          h('th', { style: { width: '84px' } }, t('remote.settingsWritable')))),
+        h('tbody', ...shown.map((item) => h('tr',
+          h('td', h('code', item.key)),
+          h('td', h('span.cell-sub', item.type)),
+          h('td', item.writable
+            ? editorFor(item, (next) => edits.set(item.key, next))
+            : h('span.cell-sub', item.value ?? '—')),
+          h('td', item.writable
+            ? h('span.badge.badge-ok', t('remote.settingsYes'))
+            : h('span.badge', t('remote.settingsNo')))))))));
+  };
+
+  searchInput.oninput = paintRows;
+
+  const loadBtn = h('button.btn.btn-sm', {
+    type: 'button',
+    onClick: async () => {
+      if (!deviceSelect.value) {
+        toast('warn', t('remote.needDevice'));
+        return;
+      }
+
+      loadBtn.disabled = true;
+      try {
+        const report = await sendAndWait(deviceSelect.value, 'settings.list');
+        const parsed = parseOutput(report);
+
+        if (!parsed?.items) {
+          toast('warn', t('remote.settingsNoReply'),
+            report?.output?.slice(0, 120) ?? t('remote.settingsTimeout'));
+          return;
+        }
+
+        items = parsed.items;
+        edits.clear();
+        paintRows();
+        toast('ok', t('remote.settingsLoaded'), t('remote.settingsLoadedHint', {
+          writable: parsed.writable ?? 0,
+          total: parsed.count ?? items.length,
+        }));
+      } catch (e) {
+        toastError(e, t('remote.requestFailed'));
+      } finally {
+        loadBtn.disabled = false;
+      }
+    },
+  }, t('remote.settingsLoad'));
+
+  const saveBtn = h('button.btn.btn-sm.btn-primary', {
+    type: 'button',
+    onClick: async () => {
+      if (edits.size === 0) {
+        toast('warn', t('remote.settingsNoChange'));
+        return;
+      }
+
+      saveBtn.disabled = true;
+      let ok = 0;
+      const failures = [];
+      try {
+        for (const [key, value] of edits) {
+          // 逐条发：某一项失败（类型不符、只读）不该把其余项一起卡住。
+          const report = await sendAndWait(deviceSelect.value, 'settings.set', { key, value });
+          if (report?.status === 'done') {
+            ok += 1;
+            const item = items.find((x) => x.key === key);
+            if (item) {
+              item.value = value;
+            }
+          } else {
+            failures.push(`${key}：${report?.output ?? t('remote.settingsTimeout')}`);
+          }
+        }
+
+        edits.clear();
+        paintRows();
+
+        if (failures.length === 0) {
+          toast('ok', t('remote.settingsSaved', { count: ok }));
+        } else {
+          toast('warn', t('remote.settingsPartlySaved', { ok, failed: failures.length }),
+            failures.slice(0, 3).join('；'));
+        }
+      } catch (e) {
+        toastError(e, t('remote.requestFailed'));
+      } finally {
+        saveBtn.disabled = false;
+      }
+    },
+  }, t('remote.settingsSave'));
+
+  // 注意：这里要 **return** 元素（由 renderTab 放进 #tabBody）。
+  // 用 container.appendChild 会把它插到标签行上方，看起来像布局错乱（本轮踩过）。
+  return h('div',
+    h('p.card-desc', t('remote.settingsLead')),
+    h('div.toolbar',
+      h('span.toolbar-label', t('remote.targetDevice')),
+      deviceSelect,
+      h('div.spacer'),
+      loadBtn,
+      saveBtn),
+    h('div', { style: { marginTop: '10px' } }, searchInput),
+    body);
+}
+
+/**
+ * 「配置文件」：管理没有跨进程 API 的模块（主界面组件布局、自动化定义、主题、插件配置、管理策略）。
+ *
+ * <p>做法是文件级的：读原文 → 改 → 写回 → 重启生效。不做实时同步，
+ * 但比"在教室端手改 JSON"安全——路径白名单、JSON 校验、自动备份都在设备端做。</p>
+ */
+function renderConfigFiles(container) {
+  const deviceSelect = select(deviceOptions(), state.devices[0]?.id || '');
+  const listBody = h('div');
+  const editorBody = h('div');
+  let currentPath = null;
+
+  const openFile = async (path) => {
+    currentPath = path;
+    clear(editorBody);
+    editorBody.appendChild(h('p.card-desc', t('remote.configLoading', { path })));
+
+    try {
+      const report = await sendAndWait(deviceSelect.value, 'config.read', { path });
+      if (report?.status !== 'done') {
+        editorBody.appendChild(h('p.card-desc', report?.output ?? t('remote.configTimeout')));
+        return;
+      }
+
+      const area = h('textarea', {
+        rows: 14,
+        spellcheck: 'false',
+        style: {
+          width: '100%', fontFamily: 'monospace', fontSize: '12.5px', lineHeight: '1.5',
+        },
+      });
+      area.value = report.output ?? '';
+
+      const writeBtn = h('button.btn.btn-sm.btn-primary', {
+        type: 'button',
+        onClick: async () => {
+          writeBtn.disabled = true;
+          try {
+            const written = await sendAndWait(deviceSelect.value, 'config.write', {
+              path,
+              content: area.value,
+            });
+            if (written?.status === 'done') {
+              toast('ok', t('remote.configWritten'), t('remote.configWrittenHint'));
+            } else {
+              toast('warn', t('remote.configWriteFailed'),
+                written?.output ?? t('remote.configTimeout'));
+            }
+          } catch (e) {
+            toastError(e, t('remote.requestFailed'));
+          } finally {
+            writeBtn.disabled = false;
+          }
+        },
+      }, t('remote.configWrite'));
+
+      clear(editorBody);
+      editorBody.appendChild(h('div',
+        h('div.toolbar',
+          h('span.toolbar-label', h('code', path)),
+          h('div.spacer'),
+          writeBtn),
+        h('p.card-desc', { style: { margin: '6px 0' } }, t('remote.configEditHint')),
+        area));
+    } catch (e) {
+      toastError(e, t('remote.requestFailed'));
+    }
+  };
+
+  const loadBtn = h('button.btn.btn-sm', {
+    type: 'button',
+    onClick: async () => {
+      if (!deviceSelect.value) {
+        toast('warn', t('remote.needDevice'));
+        return;
+      }
+
+      loadBtn.disabled = true;
+      clear(listBody);
+      try {
+        const report = await sendAndWait(deviceSelect.value, 'config.list');
+        const parsed = parseOutput(report);
+        if (!parsed?.files) {
+          listBody.appendChild(h('p.card-desc',
+            report?.output ?? t('remote.configNoReply')));
+          return;
+        }
+
+        if (parsed.files.length === 0) {
+          listBody.appendChild(h('p.card-desc', t('remote.configEmpty')));
+          return;
+        }
+
+        listBody.appendChild(h('div.table-wrap', { style: { maxHeight: '40vh', overflowY: 'auto' } },
+          h('table.data.data-compact',
+            h('thead', h('tr',
+              h('th', t('remote.configPath')),
+              h('th', { style: { width: '140px' } }, t('remote.configGroup')),
+              h('th', { style: { width: '100px' } }, t('remote.configSize')),
+              h('th', { style: { width: '90px' } }, ''))),
+            h('tbody', ...parsed.files.map((file) => h('tr',
+              h('td', h('code', file.path)),
+              h('td', h('span.cell-sub', file.group)),
+              h('td', h('span.cell-sub', `${Math.round(file.size / 1024)} KB`)),
+              h('td', h('button.btn.btn-sm', {
+                type: 'button',
+                onClick: () => openFile(file.path),
+              }, t('remote.configOpen')))))))));
+      } catch (e) {
+        toastError(e, t('remote.requestFailed'));
+      } finally {
+        loadBtn.disabled = false;
+      }
+    },
+  }, t('remote.configLoad'));
+
+  // 同 renderHostSettings：必须 return，不能 append 到 container。
+  return h('div',
+    h('p.card-desc', t('remote.configLead')),
+    h('div.toolbar',
+      h('span.toolbar-label', t('remote.targetDevice')),
+      deviceSelect,
+      h('div.spacer'),
+      loadBtn),
+    listBody,
+    h('div', { style: { marginTop: '14px' } }, editorBody));
+}
+
+
 function renderAutomation(container) {
   const deviceSelect = select(deviceOptions(), state.devices[0]?.id || '');
   const datalist = h('datalist#automationSignals');

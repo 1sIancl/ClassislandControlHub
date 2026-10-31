@@ -3187,10 +3187,6 @@ export default {
   'profiles.editor.actionNone': "未设置",
   'profiles.editor.actionTitle': "行动内容",
   'profiles.editor.actionNote': "行动是「到点做什么」。类型与配置都由教室端的插件/宿主解释，这里按原文保存、原样下发；不确定的字段建议先看一眼插件文档或原始包，别凭感觉删。",
-  'profiles.editor.actionTypeLabel': "类型",
-  'profiles.editor.actionTypeHint': "例如 Notification（通知）、Automation（自动化）、Run（运行命令），也可能是插件自己的类型；留空表示这条行动没有配置。",
-  'profiles.editor.actionSettingsLabel': "原始配置（JSON）",
-  'profiles.editor.actionSettingsHint': "留空表示没有配置。填错会被拦下，不会写坏档案。",
   'profiles.editor.actionBadJson': "这段 JSON 不合法，修好再保存。",
 
   // .cidata 预览：说明类提示
@@ -3204,6 +3200,52 @@ export default {
   // 档案编辑器：时间表双视图
   'profiles.editor.viewTimeline': "时间线",
   'profiles.editor.viewTable': "表格",
+
+  // 远程管理：宿主设置 / 配置文件
+  'remote.tabHostSettings': "宿主设置",
+  'remote.tabConfigFiles': "配置文件",
+  'remote.settingsLead': "列出教室端 ClassIsland 的设置项。开关、数字、文本、选项可以直接改；复杂对象（主题实例、规则集、组件布局）显示为只读——它们跨进程传不过去，只能在教室端改。",
+  'remote.settingsLoad': "读取设置",
+  'remote.settingsSave': "保存改动",
+  'remote.settingsSearchPlaceholder': "按名字筛选（例如 notif、weather、theme）",
+  'remote.settingsKey': "设置项",
+  'remote.settingsType': "类型",
+  'remote.settingsValue': "当前值",
+  'remote.settingsWritable': "可远程改",
+  'remote.settingsYes': "可改",
+  'remote.settingsNo': "只读",
+  'remote.settingsEmpty': "还没读取。点「读取设置」从教室端拉一次。",
+  'remote.settingsCount': "显示 {shown} / 共 {total} 项",
+  'remote.settingsLoaded': "已读取设置项",
+  'remote.settingsLoadedHint': "{total} 项里有 {writable} 项可以远程修改。",
+  'remote.settingsNoReply': "教室端没有返回设置项",
+  'remote.settingsTimeout': "等待教室端回执超时（设备可能离线或在忙）。",
+  'remote.settingsNoChange': "没有改动需要保存。",
+  'remote.settingsSaved': "已保存 {count} 项设置",
+  'remote.settingsPartlySaved': "保存了 {ok} 项，{failed} 项失败",
+  'remote.configLead': "这几种模块没有跨进程接口，改的是它们在教室端磁盘上的配置文件：主界面组件布局、自动化定义、主题、插件配置、管理策略。写回后会校验 JSON 并自动备份旧文件，宿主重启后生效。",
+  'remote.configLoad': "列出配置文件",
+  'remote.configOpen': "打开",
+  'remote.configWrite': "写回",
+  'remote.configPath': "路径",
+  'remote.configGroup': "模块",
+  'remote.configSize': "大小",
+  'remote.configLoading': "正在读取 {path}…",
+  'remote.configEditHint': "改完点「写回」。设备端会先校验 JSON，不合法会拒绝写入（避免教室端起不来）。",
+  'remote.configWritten': "已写入配置",
+  'remote.configWrittenHint': "宿主重启后生效；旧文件已备份为 .bak。",
+  'remote.configWriteFailed': "写入失败",
+  'remote.configNoReply': "教室端没有返回配置清单",
+  'remote.configEmpty': "这台设备上没有可管理的配置文件。",
+  'remote.configTimeout': "等待教室端回执超时（设备可能离线或在忙）。",
+
+  // 档案编辑器：行动结构化编辑
+  'profiles.editor.actionNoFields': "这条行动还没有配置任何字段。可以点下面的「添加字段」自己加，或直接改原始 JSON。",
+  'profiles.editor.actionFieldsLead': "字段（按当前配置里实际存在的键列出；字段名的中文只是词表对照）",
+  'profiles.editor.actionNewField': "添加字段",
+  'profiles.editor.actionRemoveField': "删除这个字段",
+  'profiles.editor.actionRaw': "原始 JSON（高级）",
+  'profiles.editor.actionSettingsBroken': "原来的配置不是合法 JSON（可能来自更早的版本），已原样放在上面；改好再保存。",
 
 };
 

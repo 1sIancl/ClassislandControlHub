@@ -3187,10 +3187,6 @@ export default {
   'profiles.editor.actionNone': "not set",
   'profiles.editor.actionTitle': "Action content",
   'profiles.editor.actionNote': "An action is \"what happens at this time\". Both the type and the settings are interpreted by the classroom plugin/host; IslandHub stores and deploys them as-is. Check the plugin docs before deleting fields.",
-  'profiles.editor.actionTypeLabel': "Type",
-  'profiles.editor.actionTypeHint': "e.g. Notification, Automation, Run, or a plugin-defined type. Blank means no action configured.",
-  'profiles.editor.actionSettingsLabel': "Raw settings (JSON)",
-  'profiles.editor.actionSettingsHint': "Blank means none. Invalid JSON is rejected instead of being saved.",
   'profiles.editor.actionBadJson': "This JSON is invalid — fix it before saving.",
 
   // .cidata 预览：说明类提示
@@ -3204,6 +3200,52 @@ export default {
   // 档案编辑器：时间表双视图
   'profiles.editor.viewTimeline': "Timeline",
   'profiles.editor.viewTable': "Table",
+
+  // 远程管理：宿主设置 / 配置文件
+  'remote.tabHostSettings': "Host settings",
+  'remote.tabConfigFiles': "Config files",
+  'remote.settingsLead': "ClassIsland settings on the classroom device. Switches, numbers, text and choices are editable; complex objects (theme instances, rulesets, component layouts) are read-only — they cannot cross the process boundary.",
+  'remote.settingsLoad': "Read settings",
+  'remote.settingsSave': "Save changes",
+  'remote.settingsSearchPlaceholder': "Filter by name (e.g. notif, weather, theme)",
+  'remote.settingsKey': "Setting",
+  'remote.settingsType': "Type",
+  'remote.settingsValue': "Value",
+  'remote.settingsWritable': "Editable",
+  'remote.settingsYes': "yes",
+  'remote.settingsNo': "read-only",
+  'remote.settingsEmpty': "Nothing loaded yet. Press \"Read settings\" to fetch from the device.",
+  'remote.settingsCount': "Showing {shown} of {total}",
+  'remote.settingsLoaded': "Settings loaded",
+  'remote.settingsLoadedHint': "{writable} of {total} can be edited remotely.",
+  'remote.settingsNoReply': "The device did not return any settings",
+  'remote.settingsTimeout': "Timed out waiting for the device (it may be offline or busy).",
+  'remote.settingsNoChange': "Nothing changed.",
+  'remote.settingsSaved': "Saved {count} setting(s)",
+  'remote.settingsPartlySaved': "Saved {ok}, failed {failed}",
+  'remote.configLead': "These modules have no cross-process API, so their config files are edited directly: component layouts, automations, themes, plugin configs and management policy. Writes are JSON-validated and the old file is backed up; the host applies them after a restart.",
+  'remote.configLoad': "List config files",
+  'remote.configOpen': "Open",
+  'remote.configWrite': "Write back",
+  'remote.configPath': "Path",
+  'remote.configGroup': "Module",
+  'remote.configSize': "Size",
+  'remote.configLoading': "Reading {path}…",
+  'remote.configEditHint': "Edit, then \"Write back\". Invalid JSON is rejected so the host cannot fail to boot.",
+  'remote.configWritten': "Config written",
+  'remote.configWrittenHint': "Takes effect after the host restarts; the old file is kept as .bak.",
+  'remote.configWriteFailed': "Write failed",
+  'remote.configNoReply': "The device did not return a config list",
+  'remote.configEmpty': "No manageable config files on this device.",
+  'remote.configTimeout': "Timed out waiting for the device (it may be offline or busy).",
+
+  // 档案编辑器：行动结构化编辑
+  'profiles.editor.actionNoFields': "This action has no fields yet. Add one below, or edit the raw JSON.",
+  'profiles.editor.actionFieldsLead': "Fields (listed as they actually exist in the config; the Chinese hints are just a glossary)",
+  'profiles.editor.actionNewField': "Add field",
+  'profiles.editor.actionRemoveField': "Remove this field",
+  'profiles.editor.actionRaw': "Raw JSON (advanced)",
+  'profiles.editor.actionSettingsBroken': "The stored config is not valid JSON (probably from an older version). It is shown above as-is — fix it before saving.",
 
 };
 

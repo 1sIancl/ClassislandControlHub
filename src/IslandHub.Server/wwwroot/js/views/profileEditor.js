@@ -3,14 +3,14 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=164';
-import { toastError } from '../core/errors.js?v=164';
+import { api } from '../core/api.js?v=166';
+import { toastError } from '../core/errors.js?v=166';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, icon, select,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=164';
-import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=164';
-import { t } from './../core/i18n.js?v=164';
+} from '../core/ui.js?v=166';
+import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=166';
+import { t } from './../core/i18n.js?v=166';
 
 export const meta = {
   title: t('profiles.editor.title'),
@@ -1031,63 +1031,240 @@ function openAttachedDialog(item, count) {
  * 能对照插件文档填，且不会因为缺少某个字段被静默截断。
  * </p>
  */
+/** 行动字段名的中英对照。只是词表——`Action.Type` 是开放集合，字段名由插件/宿主版本决定。 */
+const ACTION_FIELD_LABELS = {
+  title: '标题',
+  content: '内容',
+  duration: '显示时长（秒）',
+  automationid: '自动化',
+  command: '命令',
+  args: '参数',
+};
+
+/** 常见行动类型（只做下拉建议，不限制自由输入——插件可以有自定义类型）。 */
+const ACTION_TYPE_HINTS = ['Notification', 'Automation', 'Run'];
+
+/** 把 `actionSettings` 文本解析成对象；不是对象就返回空对象。 */
+function parseActionSettings(text) {
+  if (!text) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * 行动内容编辑。
+ *
+ * <p>
+ * 以前只有一个「类型 + 原始 JSON」框——能用，但等于让管理员手写 JSON。
+ * 现在按**实际存在的字段**渲染表单（不预设 Notification 一定有 Title/Content，
+ * 因为 `Action.Type` 是开放集合，字段名随宿主版本与插件变）：
+ * 有什么字段就列什么，按值的类型给控件；想加字段可以自己加；原始 JSON 收在折叠区里兜底。
+ * </p>
+ *
+ * <p>
+ * 为什么不做成"按类型给固定模板"：本地那份真实包的 8 个行动节点**全都没配动作**，
+ * 一个真实 `Action.Settings` 样本都没有——凭猜的模板会让人填出一堆教室里读不懂的字段。
+ * </p>
+ */
 function openActionDialog(item) {
+  const draft = parseActionSettings(item.actionSettings);
+  // 原文解析不出对象时**不要丢**：先留着，保存时提示，人可以改回来。
+  const broken = Boolean(item.actionSettings) && Object.keys(draft).length === 0;
+
+  const fieldsHost = h('div.attach-fields');
+  const rawArea = h('textarea', {
+    rows: 5,
+    spellcheck: 'false',
+    style: {
+      width: '100%', fontFamily: 'monospace', fontSize: '12.5px', lineHeight: '1.5',
+    },
+  });
+  const error = h('div.attach-dim', { hidden: true, style: { color: 'var(--danger)' } });
+
   const typeInput = h('input', {
     type: 'text',
     value: item.actionType || '',
     placeholder: 'Notification / Automation / Run / …',
   });
+  typeInput.setAttribute('list', 'actionTypeHints');
 
-  const settingsArea = h('textarea', { rows: 6, style: { width: '100%' } });
-  settingsArea.value = item.actionSettings || '';
+  const typeList = h('datalist#actionTypeHints',
+    ...ACTION_TYPE_HINTS.map((name) => h('option', { value: name })));
 
-  const error = h('div.attach-dim', { hidden: true, style: { color: 'var(--danger)' } });
+  /** 字段控件：按值类型给，和附加设置弹窗保持一致的手感。 */
+  const editorFor = (value, onChange) => {
+    if (typeof value === 'boolean') {
+      const box = h('input', { type: 'checkbox' });
+      box.checked = value;
+      box.onchange = () => onChange(box.checked);
+      return box;
+    }
 
-  settingsArea.oninput = () => {
-    const text = settingsArea.value.trim();
+    if (typeof value === 'number') {
+      const input = h('input', { type: 'number', step: 'any', value: String(value) });
+      input.oninput = () => onChange(input.value === '' ? 0 : Number(input.value));
+      return input;
+    }
+
+    if (typeof value === 'string' && value.length <= 60 && !value.includes('\n')) {
+      const input = h('input', { type: 'text', value });
+      input.oninput = () => onChange(input.value);
+      return input;
+    }
+
+    // 长文本 / 对象 / 数组 / null：给文本框（对象数组按 JSON 校验）。
+    const area = h('textarea', { rows: typeof value === 'string' ? 2 : 3, style: { width: '100%' } });
+    area.value = value === null || value === undefined
+      ? ''
+      : (typeof value === 'string' ? value : JSON.stringify(value, null, 2));
+    area.oninput = () => {
+      const text = area.value;
+      if (typeof value === 'string') {
+        onChange(text);
+        return;
+      }
+
+      if (text.trim() === '') {
+        onChange(null);
+        area.style.borderColor = '';
+        return;
+      }
+
+      try {
+        onChange(JSON.parse(text));
+        area.style.borderColor = '';
+      } catch {
+        // 只标红、不打断输入。
+        area.style.borderColor = 'var(--danger)';
+      }
+    };
+    return area;
+  };
+
+  const syncRaw = () => {
+    rawArea.value = Object.keys(draft).length > 0 ? JSON.stringify(draft, null, 2) : '';
+  };
+
+  const paintFields = () => {
+    clear(fieldsHost);
+
+    const keys = Object.keys(draft);
+    if (keys.length === 0) {
+      fieldsHost.appendChild(h('p.card-desc', t('profiles.editor.actionNoFields')));
+      return;
+    }
+
+    for (const key of keys) {
+      const label = ACTION_FIELD_LABELS[key.toLowerCase()];
+      const row = h('div.attach-row',
+        h('span.attach-key', key, label ? h('span.attach-key-hint', `（${label}）`) : null));
+
+      row.appendChild(editorFor(draft[key], (next) => {
+        draft[key] = next;
+        syncRaw();
+      }));
+
+      row.appendChild(h('button.btn.btn-sm.btn-ghost', {
+        type: 'button',
+        title: t('profiles.editor.actionRemoveField'),
+        onClick: () => {
+          delete draft[key];
+          paintFields();
+          syncRaw();
+        },
+      }, icon('close', 14)));
+
+      fieldsHost.appendChild(row);
+    }
+  };
+
+  rawArea.oninput = () => {
+    const text = rawArea.value.trim();
     if (text === '') {
-      settingsArea.style.borderColor = '';
+      Object.keys(draft).forEach((key) => delete draft[key]);
+      paintFields();
+      rawArea.style.borderColor = '';
       error.hidden = true;
       return;
     }
 
     try {
-      JSON.parse(text);
-      settingsArea.style.borderColor = '';
+      const parsed = JSON.parse(text);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('not an object');
+      }
+
+      Object.keys(draft).forEach((key) => delete draft[key]);
+      Object.assign(draft, parsed);
+      paintFields();
+      rawArea.style.borderColor = '';
       error.hidden = true;
     } catch {
-      settingsArea.style.borderColor = 'var(--danger)';
+      // 手写 JSON 时不要边打字边重建表单，只标红。
+      rawArea.style.borderColor = 'var(--danger)';
       error.hidden = false;
+      error.textContent = t('profiles.editor.actionBadJson');
     }
   };
+
+  paintFields();
+  syncRaw();
 
   modal({
     title: t('profiles.editor.actionTitle'),
     width: 'wide',
     body: h('div',
       h('p.card-desc', t('profiles.editor.actionNote')),
-      field(t('profiles.editor.actionTypeLabel'), typeInput, t('profiles.editor.actionTypeHint')),
-      field(t('profiles.editor.actionSettingsLabel'), settingsArea, t('profiles.editor.actionSettingsHint')),
+      typeInput,
+      typeList,
+      h('div', { style: { marginTop: '10px' } }, t('profiles.editor.actionFieldsLead')),
+      fieldsHost,
+      h('button.btn.btn-sm', {
+        type: 'button',
+        style: { marginTop: '6px' },
+        onClick: () => {
+          const name = prompt(t('profiles.editor.actionNewField'));
+          if (!name) {
+            return;
+          }
+
+          // 新字段默认空串：不凭空造类型，写什么由管理员决定。
+          draft[name.trim()] = '';
+          paintFields();
+          syncRaw();
+        },
+      }, t('profiles.editor.actionNewField')),
+      h('details.attach-raw', { style: { marginTop: '10px' } },
+        h('summary', t('profiles.editor.actionRaw')),
+        rawArea),
       error),
     confirmText: t('profiles.editor.save'),
     onConfirm: () => {
-      const text = settingsArea.value.trim();
-      if (text !== '') {
-        try {
-          JSON.parse(text);
-        } catch {
-          error.hidden = false;
-          error.textContent = t('profiles.editor.actionBadJson');
-          return false;
-        }
+      // 手写 JSON 有语法错误时，rawArea 里的内容才是人最后的输入，不能拿 draft 覆盖它。
+      if (!error.hidden && rawArea.value.trim() !== '') {
+        return false;
       }
 
       item.actionType = typeInput.value.trim() || null;
-      item.actionSettings = text || null;
+      item.actionSettings = Object.keys(draft).length > 0 ? JSON.stringify(draft) : null;
       markDirtyValues();
       return true;
     },
   });
+
+  if (broken) {
+    // 原文解析不出来：把原文放回 JSON 框，并说清楚"这里现在是坏的"。
+    rawArea.value = item.actionSettings;
+    error.hidden = false;
+    error.textContent = t('profiles.editor.actionSettingsBroken');
+  }
 }
 
 /** 有多少张课表引用了这份时间表（轮换周次时同一个时间表往往被多张课表共用）。 */
