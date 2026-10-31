@@ -124,6 +124,10 @@ public sealed class RemoteCommandExecutor(
                 // 宿主设置项：读写都要碰宿主的 Settings 对象，必须回 UI 线程。
                 RemoteCommandKinds.SettingsList => UiThread.Run(() => ReportSettings(command)),
                 RemoteCommandKinds.SettingsSet => UiThread.Run(() => SetSetting(command)),
+                // 配置文件：纯文件 IO，不碰界面，刻意不切 UI 线程。
+                RemoteCommandKinds.ConfigList => ReportConfigFiles(command),
+                RemoteCommandKinds.ConfigRead => ReadConfigFile(command),
+                RemoteCommandKinds.ConfigWrite => WriteConfigFile(command),
                 _ => Fail(command, CommandErrorCodes.Unsupported, $"不支持的指令类型：{command.Kind}"),
             };
         }
@@ -1379,6 +1383,203 @@ public sealed class RemoteCommandExecutor(
         }
 
         return Convert.ChangeType(trimmed, underlying, CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// 允许远程管理的配置目录（相对宿主配置目录）。
+    ///
+    /// <para>
+    /// 这些模块没有跨进程 API——组件是 Avalonia 控件、规则集是宿主内部对象——
+    /// 但它们的配置就是磁盘上的 JSON。走文件级管理：读 → 改 → 写回 → 重启生效。
+    /// </para>
+    ///
+    /// <para>
+    /// **不在白名单里的**：<c>PluginsIndex</c>（几十 MB 的市场缓存，改了没意义）、
+    /// <c>Management/Credentials.json</c>（含凭据，不该经远程通道搬）、
+    /// <c>.bak</c>（备份文件）、<c>Tutorial</c> / <c>ReadAnnouncements</c>（引导状态）。
+    /// </para>
+    /// </summary>
+    /// <summary>宿主配置目录（<c>CommonDirectories.AppConfigPath</c>）。</summary>
+    private static string? ConfigRoot()
+    {
+        var type = Type.GetType("ClassIsland.Shared.CommonDirectories, ClassIsland.Shared");
+        return type?.GetProperty("AppConfigPath", BindingFlags.Public | BindingFlags.Static)
+            ?.GetValue(null) as string;
+    }
+
+    /// <summary>
+    /// 把请求里的相对路径解析成真实路径，并校验它落在白名单内。
+    ///
+    /// <para>
+    /// 判定逻辑在 <see cref="ConfigPathPolicy"/>（协议层）——那里能写单测，
+    /// 而这类「放开写文件后的唯一信任边界」必须被测到，不能只靠代码审查。
+    /// </para>
+    /// </summary>
+    private static bool TryResolveConfigPath(string? relative, out string fullPath, out string reason)
+        => ConfigPathPolicy.TryResolve(ConfigRoot(), relative, out fullPath, out reason);
+
+    /// <summary>列出可管理的配置文件（只列白名单目录下的 .json）。</summary>
+    private static CommandReportRequest ReportConfigFiles(RemoteCommandDto command)
+    {
+        try
+        {
+            var root = ConfigRoot();
+            if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+            {
+                return Fail(command, CommandErrorCodes.HostApiUnavailable,
+                    "拿不到宿主配置目录，无法列出可管理的配置。");
+            }
+
+            var files = new List<object>();
+            foreach (var name in ConfigPathPolicy.WritableRoots)
+            {
+                var dir = Path.Combine(root, name);
+                if (!Directory.Exists(dir))
+                {
+                    continue;
+                }
+
+                foreach (var file in Directory.EnumerateFiles(dir, "*.json", SearchOption.AllDirectories))
+                {
+                    var info = new FileInfo(file);
+                    if (info.Length > ConfigPathPolicy.MaxBytes)
+                    {
+                        continue;
+                    }
+
+                    var relativePath = Path.GetRelativePath(root, file).Replace('\\', '/');
+                    if (relativePath.EndsWith("Credentials.json", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    files.Add(new
+                    {
+                        path = relativePath,
+                        group = name,
+                        size = info.Length,
+                        modifiedAt = info.LastWriteTimeUtc.ToString("O", CultureInfo.InvariantCulture),
+                    });
+                }
+            }
+
+            // 单文件的那一项也要能看见（启用的主题）。
+            var themesFile = Path.Combine(root, "EnabledThemes.json");
+            if (File.Exists(themesFile))
+            {
+                var info = new FileInfo(themesFile);
+                files.Add(new
+                {
+                    path = "EnabledThemes.json",
+                    group = "Themes",
+                    size = info.Length,
+                    modifiedAt = info.LastWriteTimeUtc.ToString("O", CultureInfo.InvariantCulture),
+                });
+            }
+
+            return Ok(command, HubJson.Serialize(new { count = files.Count, files }));
+        }
+        catch (Exception ex)
+        {
+            return Fail(command, CommandErrorCodes.ExecutionFailed, "列出配置失败：" + ex.Message);
+        }
+    }
+
+    /// <summary>读一份配置的原文。</summary>
+    private static CommandReportRequest ReadConfigFile(RemoteCommandDto command)
+    {
+        var request = HubJson.DeserializeOrDefault(command.Payload, new ConfigFilePayload());
+        if (!TryResolveConfigPath(request.Path, out var full, out var reason))
+        {
+            return Fail(command, CommandErrorCodes.PayloadInvalid, reason);
+        }
+
+        if (!File.Exists(full))
+        {
+            return Fail(command, CommandErrorCodes.TargetNotFound, $"配置不存在：{request.Path}");
+        }
+
+        var info = new FileInfo(full);
+        if (info.Length > ConfigPathPolicy.MaxBytes)
+        {
+            return Fail(command, CommandErrorCodes.Unsupported,
+                $"文件超过 {ConfigPathPolicy.MaxBytes / 1024 / 1024}MB，不像是一份正常配置。");
+        }
+
+        try
+        {
+            return Ok(command, File.ReadAllText(full));
+        }
+        catch (Exception ex)
+        {
+            return Fail(command, CommandErrorCodes.ExecutionFailed, "读取配置失败：" + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// 写回一份配置。
+    /// <para>
+    /// 顺序刻意是「先校验 → 再备份 → 最后写」：任何一步失败都不该留下半个文件。
+    /// 返回里明确写「重启后生效」——宿主只在启动时读这些配置，不重启会让人以为没成功。
+    /// </para>
+    /// </summary>
+    private static CommandReportRequest WriteConfigFile(RemoteCommandDto command)
+    {
+        var request = HubJson.DeserializeOrDefault(command.Payload, new ConfigFilePayload());
+        if (!TryResolveConfigPath(request.Path, out var full, out var reason))
+        {
+            return Fail(command, CommandErrorCodes.PayloadInvalid, reason);
+        }
+
+        var content = request.Content ?? string.Empty;
+        if (content.Length == 0)
+        {
+            return Fail(command, CommandErrorCodes.PayloadInvalid, "载荷缺少 content 字段。");
+        }
+
+        if (Encoding.UTF8.GetByteCount(content) > ConfigPathPolicy.MaxBytes)
+        {
+            return Fail(command, CommandErrorCodes.Unsupported,
+                $"内容超过 {ConfigPathPolicy.MaxBytes / 1024 / 1024}MB，已拒绝。");
+        }
+
+        // 只对 JSON 校验：写进去的必须是能解析的内容，否则宿主启动时直接抛异常。
+        if (full.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                using var _ = JsonDocument.Parse(content);
+            }
+            catch (JsonException ex)
+            {
+                return Fail(command, CommandErrorCodes.PayloadInvalid,
+                    "内容不是合法 JSON，已拒绝写入（避免教室端起不来）：" + ex.Message);
+            }
+        }
+
+        try
+        {
+            var dir = Path.GetDirectoryName(full);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            // 备份旧文件：写坏了还能手工改回去，这比"保证写对"更实际。
+            if (File.Exists(full))
+            {
+                File.Copy(full, full + ".bak", overwrite: true);
+            }
+
+            File.WriteAllText(full, content);
+
+            return Ok(command, $"已写入 {request.Path}（{Encoding.UTF8.GetByteCount(content)} 字节）。"
+                + "宿主会在**重启后**读取这份配置。");
+        }
+        catch (Exception ex)
+        {
+            return Fail(command, CommandErrorCodes.ExecutionFailed, "写入配置失败：" + ex.Message);
+        }
     }
 
     /// <summary>解析设置服务实例（兼容两种程序集/类型名写法）。</summary>

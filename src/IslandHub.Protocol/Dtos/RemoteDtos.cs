@@ -111,6 +111,24 @@ public static class RemoteCommandKinds
     /// 复杂对象（主题实例、规则集、组件布局）一律拒绝——跨进程塞不进正确类型。
     /// </summary>
     public const string SettingsSet = "settings.set";
+
+    /// <summary>
+    /// 列出设备上**可远程管理的配置文件**（主界面组件布局、自动化定义、主题、插件配置、管理策略）。
+    /// <para>
+    /// 这些模块没有跨进程 API（控件实例、宿主内部对象），但它们的配置就是磁盘上的 JSON。
+    /// 所以走「文件级管理」：读原文 → 改 → 写回 → 重启生效。不做实时同步，但**能管**。
+    /// </para>
+    /// </summary>
+    public const string ConfigList = "config.list";
+
+    /// <summary>读一份可管理配置的原文（JSON 文本）。</summary>
+    public const string ConfigRead = "config.read";
+
+    /// <summary>
+    /// 写回一份配置（覆盖原文件）。设备端会**校验 JSON、备份旧文件、拒绝白名单外的路径**，
+    /// 并返回「是否需要重启生效」。写坏配置会让教室端起不来，所以这些关卡一道都不能省。
+    /// </summary>
+    public const string ConfigWrite = "config.write";
 }
 
 /// <summary>网络探测（Ping / 路由追踪，#107）的载荷。</summary>
@@ -173,6 +191,21 @@ public sealed class WindowSetPayload
 }
 
 /// <summary>触发自动化信号的载荷。</summary>
+/// <summary>
+/// 读 / 写一份配置文件（<see cref="RemoteCommandKinds.ConfigRead"/> /
+/// <see cref="RemoteCommandKinds.ConfigWrite"/>）的载荷。
+/// <para>路径是**相对宿主配置目录**的路径（如 <c>ComponentLayouts/Default.json</c>），
+/// 设备端会把它规范化并校验是否落在白名单目录内——不接受绝对路径与 <c>..</c>。</para>
+/// </summary>
+public sealed class ConfigFilePayload
+{
+    /// <summary>相对配置目录的路径。</summary>
+    public string Path { get; set; } = string.Empty;
+
+    /// <summary>要写入的完整内容（仅写用）。</summary>
+    public string? Content { get; set; }
+}
+
 /// <summary>
 /// 修改宿主设置项（<see cref="RemoteCommandKinds.SettingsSet"/>）的载荷。
 /// <para>值统一用字符串传递：设备端知道目标字段的真实类型，由它负责转换与校验，
