@@ -3,14 +3,14 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=163';
-import { toastError } from '../core/errors.js?v=163';
+import { api } from '../core/api.js?v=164';
+import { toastError } from '../core/errors.js?v=164';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, icon, select,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=163';
-import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=163';
-import { t } from './../core/i18n.js?v=163';
+} from '../core/ui.js?v=164';
+import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=164';
+import { t } from './../core/i18n.js?v=164';
 
 export const meta = {
   title: t('profiles.editor.title'),
@@ -90,6 +90,8 @@ export async function render(container, params) {
     // 「多周轮换」默认折叠：绝大多数学校是每周同一张课表，
     // 让一个未启用的功能常驻 200px 高度，等于每页白扔一屏的六分之一。
     rotationOpen: false,
+    // 时间表页默认显示「时间线」（可拖拽，最常用）；要看精确时间点再切「表格」。
+    layoutView: 'timeline',
   };
 
   paint(container);
@@ -590,6 +592,20 @@ function renderTimeLayouts() {
         t('profiles.editor.noLayouts'),
       ),
       h('div.spacer'),
+      // 双视图切换（参照 ClassIsland 的档案编辑：时间线视图 / 列表视图）。
+      // 以前两个视图同时铺在页面上，一屏放不下，改完时间还得滚半天才看得到卡片。
+      layout ? segmented(
+        [
+          { id: 'timeline', label: t('profiles.editor.viewTimeline') },
+          { id: 'table', label: t('profiles.editor.viewTable') },
+        ],
+        state.layoutView,
+        (v) => {
+          state.layoutView = v;
+          repaintTab();
+        },
+      ) : null,
+
       // 主次分明：#1 日常最高频的是「加时间点」，其次是「快速生成」；
       // 「新建时间表」其实低频（一个档案通常就一两张），「删除」更要退到边上。
       layout ? h('button.btn.btn-sm.btn-primary', { type: 'button', onClick: () => addItem(layout) }, t('profiles.editor.addPoint')) : null,
@@ -609,12 +625,15 @@ function renderTimeLayouts() {
         referencedPlanCount(layout) > 0
           ? h('div.editor-inline-hint', t('profiles.editor.layoutRefs', { count: referencedPlanCount(layout) }))
           : null,
-        // 可视化时间轴放在表格**上方**（两个视图同时可见，不需要切来切去）：
-        // 拖动色块平移整段时间、拖下边缘改时长，分钟吸附到 5 分钟并自动避让相邻时间点。
-        renderLayoutTimeline(layout),
-        h('div.grid-scroll', { style: { marginTop: '14px' } },
-          h('div.period-grid', ...layout.items.map((item, index) => periodCell(layout, item, index))),
-        ),
+        // 一次只显示一个视图（默认时间线）：并排铺两套会各占半屏，
+        // 无论想改时间还是想改类型都要滚半天。
+        state.layoutView === 'table'
+          ? h('div.grid-scroll', { style: { marginTop: '10px' } },
+            h('div.period-grid', ...layout.items.map((item, index) => periodCell(layout, item, index))),
+          )
+          // 可视化时间轴：拖动色块平移整段时间、拖下边缘改时长，
+          // 分钟吸附到 5 分钟并自动避让相邻时间点。
+          : renderLayoutTimeline(layout),
       ),
     layout && layout.items.length === 0
       ? h('div.notice.notice-warn', { style: { marginTop: '14px' } },

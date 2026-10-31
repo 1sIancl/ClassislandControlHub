@@ -3201,5 +3201,9 @@ export default {
   'profiles.editor.rotationOpen': "设置轮换",
   'profiles.editor.rotationCollapse': "收起",
 
+  // 档案编辑器：时间表双视图
+  'profiles.editor.viewTimeline': "时间线",
+  'profiles.editor.viewTable': "表格",
+
 };
 

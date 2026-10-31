@@ -1034,11 +1034,18 @@ function check(name, ok, extra = '') {
   // 自备一套最小课表数据（id 统一带 e2e- 前缀，便于**幂等清理**），跑完按前缀剔除。
   const sched = await page.evaluate(async () => {
     const { api } = await import('/js/core/api.js?v=63');
-    const profiles = await api('/admin/profiles');
-    const target = profiles[0];
-    const detail = await api(`/admin/profiles/${target.id}`);
-    const name = detail.name;
-    const description = detail.description || '';
+    // ⚠️ 这里以前拿 `profiles[0]`（**真实档案**，通常是全站默认那份）直接覆盖 content。
+    // 覆盖意味着原始的课表/时间表/科目**当场就没了**，而收尾的清理只能剔除 e2e- 前缀项，
+    // 回不来——每跑一次冒烟就把真实档案洗成空壳（2026-10-31 实测踩到：默认档案从
+    // 「2 时间表 / 6 课表 / 26 科目」被冲成 0/0/0，靠版本历史才恢复）。
+    // 现在自建一个临时档案，跑完整份删掉，代价是多一个请求，收益是不再碰真实数据。
+    const created = await api('/admin/profiles', {
+      method: 'POST',
+      body: { name: 'E2E-批量操作', kind: 'blank' },
+    });
+    const profileId = created.id ?? created.profile?.id;
+    const name = created.name ?? created.profile?.name ?? 'E2E-批量操作';
+    const description = '';
 
     const content = {
       timeLayouts: [{
@@ -1066,10 +1073,10 @@ function check(name, ok, extra = '') {
       }],
     };
 
-    await api(`/admin/profiles/${target.id}`, {
+    await api(`/admin/profiles/${profileId}`, {
       method: 'PUT', body: { name, description, content },
     });
-    return { profileId: target.id, name, description };
+    return { profileId, name, description };
   });
 
   await page.goto(`${BASE}/#/profiles/${sched.profileId}`, { waitUntil: 'networkidle2' });
@@ -1205,35 +1212,22 @@ function check(name, ok, extra = '') {
       await api(`/admin/timetable-templates/${t.id}`, { method: 'DELETE' });
     }
 
-    const detail = await api(`/admin/profiles/${data.profileId}`);
-    const content = detail.content || {};
-    const clean = (list) => (list || []).filter((x) => !String(x.id).startsWith('e2e-'));
-
-    await api(`/admin/profiles/${data.profileId}`, {
-      method: 'PUT',
-      body: {
-        name: data.name,
-        description: data.description,
-        content: {
-          ...content,
-          timeLayouts: clean(content.timeLayouts),
-          subjects: clean(content.subjects),
-          classPlans: clean(content.classPlans),
-        },
-      },
-    });
+    // 自建的临时档案整份删掉。
+    // （以前是"剔除 e2e- 前缀项"，但那只能在**没覆盖过真实档案**时才有意义——
+    //  一旦覆盖，原始数据已经没了，剔除完就剩个空壳。）
+    await api(`/admin/profiles/${data.profileId}`, { method: 'DELETE' });
   }, sched);
   const schedRestored = await page.evaluate(async (id) => {
     const { api } = await import('/js/core/api.js?v=63');
-    const detail = await api(`/admin/profiles/${id}`);
-    // 直接查内容里还有没有 e2e 痕迹 —— 只数「有几个时间表」是查不出没还原的。
+    const profiles = await api('/admin/profiles');
+    // 临时档案应整个消失；模板也应清空。真实档案这条路径压根没被碰过。
     return {
-      hasProbeData: JSON.stringify(detail.content || {}).includes('e2e'),
+      removed: !profiles.some((p) => p.id === id),
       templates: (await api('/admin/timetable-templates')).length,
     };
   }, sched.profileId);
-  check('测试数据已还原（档案内容与模板都清干净）',
-    !schedRestored.hasProbeData && schedRestored.templates === 0,
+  check('临时档案与测试模板都已清理（真实档案没被碰过）',
+    schedRestored.removed && schedRestored.templates === 0,
     JSON.stringify(schedRestored));
 
   // 21) 交互层：快捷操作区 / 右键菜单 / 列表键盘导航

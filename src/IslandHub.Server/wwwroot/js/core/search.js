@@ -12,9 +12,9 @@
  * 面板最大的价值是「不知道功能在哪」时也能用。</para>
  */
 
-import { api } from './api.js?v=163';
-import { h, clear, modal, icon } from './ui.js?v=163';
-import { t } from '../core/i18n.js?v=163';
+import { api } from './api.js?v=164';
+import { h, clear, modal, icon } from './ui.js?v=164';
+import { t } from '../core/i18n.js?v=164';
 
 /** 类别标签：与后端 `SearchItemDto.Kind` 对应；后三个是本面板自己造的类别。 */
 const KIND_LABELS = {
