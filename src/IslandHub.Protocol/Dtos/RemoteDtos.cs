@@ -96,6 +96,21 @@ public static class RemoteCommandKinds
 
     /// <summary>磁盘空间（#107），无载荷：列出各固定分区的总量 / 可用 / 占用率。</summary>
     public const string DiskSpace = "diagnostic.disks";
+
+    /// <summary>
+    /// 列出宿主设置项（只读快照）。返回每一项的键、类型、当前值与是否可远程修改。
+    /// <para>
+    /// 为什么是「列出来再改」而不是一堆专用指令：宿主 <c>Settings</c> 有上百个字段，
+    /// 为每个字段开一条命令既不可能维护，也会漏掉新版本加进来的项。
+    /// </para>
+    /// </summary>
+    public const string SettingsList = "settings.list";
+
+    /// <summary>
+    /// 修改一个宿主设置项。只接受简单类型（开关 / 数字 / 文本 / 选项）；
+    /// 复杂对象（主题实例、规则集、组件布局）一律拒绝——跨进程塞不进正确类型。
+    /// </summary>
+    public const string SettingsSet = "settings.set";
 }
 
 /// <summary>网络探测（Ping / 路由追踪，#107）的载荷。</summary>
@@ -158,6 +173,20 @@ public sealed class WindowSetPayload
 }
 
 /// <summary>触发自动化信号的载荷。</summary>
+/// <summary>
+/// 修改宿主设置项（<see cref="RemoteCommandKinds.SettingsSet"/>）的载荷。
+/// <para>值统一用字符串传递：设备端知道目标字段的真实类型，由它负责转换与校验，
+/// A 端不用跟着宿主的类型变。</para>
+/// </summary>
+public sealed class SettingsSetPayload
+{
+    /// <summary>设置项键（宿主 <c>Settings</c> 上的属性名，例如 <c>IsNotificationEnabled</c>）。</summary>
+    public string Key { get; set; } = string.Empty;
+
+    /// <summary>新的值（字符串形式；布尔写 <c>true</c>/<c>false</c>）。</summary>
+    public string Value { get; set; } = string.Empty;
+}
+
 public sealed class AutomationTriggerPayload
 {
     /// <summary>信号名（与 ClassIsland 自动化里「信号触发器」填写的名称一致）。</summary>

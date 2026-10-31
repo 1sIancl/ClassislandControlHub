@@ -1,6 +1,8 @@
 using System.Collections;
 using System.Diagnostics;
 using System.Globalization;
+// 宿主设置项用反射读写（不绑死宿主的 Settings 类型，宿主升级后不会加载失败）。
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -119,6 +121,9 @@ public sealed class RemoteCommandExecutor(
                 RemoteCommandKinds.Ping => await RunPingAsync(command),
                 RemoteCommandKinds.Traceroute => await RunTracerouteAsync(command),
                 RemoteCommandKinds.DiskSpace => RunDiskSpace(command),
+                // 宿主设置项：读写都要碰宿主的 Settings 对象，必须回 UI 线程。
+                RemoteCommandKinds.SettingsList => UiThread.Run(() => ReportSettings(command)),
+                RemoteCommandKinds.SettingsSet => UiThread.Run(() => SetSetting(command)),
                 _ => Fail(command, CommandErrorCodes.Unsupported, $"不支持的指令类型：{command.Kind}"),
             };
         }
@@ -1166,6 +1171,234 @@ public sealed class RemoteCommandExecutor(
 
         method.Invoke(handler, [signal, false]);
         return Ok(command, $"已触发自动化信号「{signal}」。");
+    }
+
+    /// <summary>
+    /// 列出宿主设置项。
+    ///
+    /// <para>
+    /// 每一项给出：键（宿主 Settings 的属性名）、类型、当前值、能否远程修改。
+    /// 复杂对象（主题实例、规则集、组件布局）标成不可写——它们的值跨进程传不过去，
+    /// 强行改只会让宿主在下次保存时写出坏配置。
+    /// </para>
+    /// </summary>
+    private static CommandReportRequest ReportSettings(RemoteCommandDto command)
+    {
+        var service = ResolveSettingsService();
+        if (service is null)
+        {
+            return Fail(command, CommandErrorCodes.HostApiUnavailable,
+                "当前 ClassIsland 未提供设置服务，无法读写设置项。");
+        }
+
+        var settings = service.GetType().GetProperty("Settings")?.GetValue(service);
+        if (settings is null)
+        {
+            return Fail(command, CommandErrorCodes.HostApiUnavailable,
+                "设置服务的接口与预期不符（没有 Settings 属性）。");
+        }
+
+        var items = new List<object>();
+        foreach (var property in settings.GetType()
+                     .GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        {
+            if (!property.CanRead || property.GetIndexParameters().Length > 0)
+            {
+                continue;
+            }
+
+            object? value;
+            try
+            {
+                value = property.GetValue(settings);
+            }
+            catch
+            {
+                // 懒加载属性可能抛（比如要读文件），跳过它比整条指令失败好。
+                continue;
+            }
+
+            var kind = KindOf(property.PropertyType);
+            items.Add(new
+            {
+                key = property.Name,
+                type = property.PropertyType.Name,
+                kind,
+                value = TextOf(value, property.PropertyType),
+                writable = kind != "object" && property.CanWrite,
+            });
+        }
+
+        return Ok(command, HubJson.Serialize(new
+        {
+            count = items.Count,
+            writable = items.Count(i => (bool)i.GetType().GetProperty("writable")!.GetValue(i)!),
+            items,
+        }));
+    }
+
+    /// <summary>
+    /// 修改一个宿主设置项。
+    ///
+    /// <para>
+    /// 只接受简单类型。复杂对象直接拒绝并说明原因——塞一个字符串进 <c>object</c> 类型属性，
+    /// 宿主下次保存时会写出坏配置，而且看不出是谁弄坏的。
+    /// </para>
+    /// </summary>
+    private static CommandReportRequest SetSetting(RemoteCommandDto command)
+    {
+        var request = HubJson.DeserializeOrDefault(command.Payload, new SettingsSetPayload());
+        var key = (request.Key ?? string.Empty).Trim();
+        if (key.Length == 0)
+        {
+            return Fail(command, CommandErrorCodes.PayloadInvalid, "载荷缺少 key 字段。");
+        }
+
+        var service = ResolveSettingsService();
+        var settings = service?.GetType().GetProperty("Settings")?.GetValue(service);
+        if (settings is null)
+        {
+            return Fail(command, CommandErrorCodes.HostApiUnavailable,
+                "当前 ClassIsland 未提供设置服务，无法修改设置项。");
+        }
+
+        var property = settings.GetType()
+            .GetProperty(key, BindingFlags.Public | BindingFlags.Instance);
+        if (property is null)
+        {
+            return Fail(command, CommandErrorCodes.TargetNotFound, $"没有名为「{key}」的设置项。");
+        }
+
+        if (!property.CanWrite)
+        {
+            return Fail(command, CommandErrorCodes.Unsupported, $"设置项「{key}」是只读的。");
+        }
+
+        if (KindOf(property.PropertyType) == "object")
+        {
+            return Fail(command, CommandErrorCodes.Unsupported,
+                $"设置项「{key}」是复杂对象（{property.PropertyType.Name}），"
+                + "远程只能改开关 / 数字 / 文本 / 选项；这一项请在教室端本机修改。");
+        }
+
+        object? converted;
+        try
+        {
+            converted = ParseSettingValue(request.Value ?? string.Empty, property.PropertyType);
+        }
+        catch (Exception ex)
+        {
+            return Fail(command, CommandErrorCodes.PayloadInvalid,
+                $"值「{request.Value}」无法转换为 {property.PropertyType.Name}：{ex.Message}");
+        }
+
+        var before = property.GetValue(settings);
+        property.SetValue(settings, converted);
+
+        // 保存到宿主配置文件；不保存的话重启就回到旧值，而且用户会以为"改了但没用"。
+        var save = service!.GetType().GetMethod("SaveSettings", [typeof(string)]);
+        save?.Invoke(service, ["IslandHub 远程修改"]);
+
+        return Ok(command, $"已保存 {key}：{TextOf(before, property.PropertyType)} → "
+            + $"{TextOf(converted, property.PropertyType)}");
+    }
+
+    /// <summary>把设置项的值分成四类：开关 / 数字 / 文本 / 选项（枚举），其余算复杂对象。</summary>
+    private static string KindOf(Type type)
+    {
+        var underlying = Nullable.GetUnderlyingType(type) ?? type;
+        if (underlying == typeof(bool))
+        {
+            return "bool";
+        }
+
+        if (underlying.IsEnum)
+        {
+            return "choice";
+        }
+
+        if (underlying == typeof(string))
+        {
+            return "text";
+        }
+
+        if (underlying == typeof(byte) || underlying == typeof(short) || underlying == typeof(int)
+            || underlying == typeof(long) || underlying == typeof(float)
+            || underlying == typeof(double) || underlying == typeof(decimal))
+        {
+            return "number";
+        }
+
+        return "object";
+    }
+
+    /// <summary>把值转成可传的文本；复杂对象返回 null（不猜它的结构）。</summary>
+    private static string? TextOf(object? value, Type type)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (KindOf(type) == "object")
+        {
+            return null;
+        }
+
+        return value is IFormattable formattable
+            ? formattable.ToString(null, CultureInfo.InvariantCulture)
+            : value.ToString();
+    }
+
+    /// <summary>把文本转成目标类型。只处理四种简单类型，其余直接抛（由调用方转成错误回执）。</summary>
+    private static object? ParseSettingValue(string text, Type type)
+    {
+        var underlying = Nullable.GetUnderlyingType(type) ?? type;
+        var trimmed = text.Trim();
+
+        if (underlying == typeof(bool))
+        {
+            // 中文界面里管理员可能真的会填「是 / 否」，一并认。
+            return trimmed.ToLowerInvariant() switch
+            {
+                "true" or "1" or "on" or "yes" or "是" or "开" => true,
+                "false" or "0" or "off" or "no" or "否" or "关" => false,
+                _ => throw new FormatException("布尔值请填 true / false"),
+            };
+        }
+
+        if (underlying == typeof(string))
+        {
+            return text;
+        }
+
+        if (underlying.IsEnum)
+        {
+            // 允许填名字或数字（数字按枚举值解析），两者都对不上才报错。
+            return Enum.Parse(underlying, trimmed, ignoreCase: true);
+        }
+
+        return Convert.ChangeType(trimmed, underlying, CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>解析设置服务实例（兼容两种程序集/类型名写法）。</summary>
+    private static object? ResolveSettingsService()
+    {
+        foreach (var typeName in new[]
+                 {
+                     "ClassIsland.Core.Abstractions.Services.ISettingsService, ClassIsland.Core",
+                     "ClassIsland.Services.SettingsService, ClassIsland",
+                 })
+        {
+            var type = Type.GetType(typeName);
+            var instance = type is null ? null : IAppHost.Host?.Services.GetService(type);
+            if (instance is not null)
+            {
+                return instance;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>解析自动化服务实例（兼容两种程序集/类型名写法）。</summary>
