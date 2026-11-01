@@ -255,6 +255,10 @@ public static class CidataImporter
                     entry.AttachedSettingsCount += attached.Count;
                 }
 
+                // 行动：宿主是 `ActionSet`（行动组 + 组内若干动作），不是「一个类型 + 一份配置」。
+                // 早期按后者建模，结果把真实包里 8 条行动的全部配置当成"没有配置"丢掉了。
+                var actionSet = ReadActionSet(item.ActionSet);
+
                 items.Add(new TimeLayoutItemDto
                 {
                     StartTime = start,
@@ -263,7 +267,11 @@ public static class CidataImporter
                     BreakName = string.IsNullOrWhiteSpace(item.BreakName) ? null : item.BreakName.Trim(),
                     IsHideDefault = item.IsHideDefault,
                     DefaultSubjectId = AsOptionalGuid(item.DefaultClassId),
-                    // 行动内容与附加设置**原样带走**：A 端不解释它们，但也不允许在这里丢掉。
+                    // 行动组整包原样带走（动作的 Settings 是 object，拆开建模必然丢字段）。
+                    ActionSetJson = actionSet.Json,
+                    ActionSetName = actionSet.Name,
+                    ActionSetCount = actionSet.Count,
+                    // 旧字段：仅当包里真的是老的「单个 Action」形状时才填，兼容已有档案。
                     ActionType = string.IsNullOrWhiteSpace(item.Action?.Type) ? null : item.Action!.Type!.Trim(),
                     ActionSettings = item.Action?.Settings is { ValueKind: not JsonValueKind.Null } settings
                         ? settings.GetRawText()
@@ -290,21 +298,27 @@ public static class CidataImporter
                 }
                 else if (kind == TimeItemKind.Action)
                 {
-                    // 空行动 ≠ 无法识别：宿主里「加了到点的行动节点但没配动作」很常见
-                    // （真实包 8 个行动节点全是这种）。以前一律记成 "Unknown" 并警告"类型无法识别"，是误报。
-                    var actionType = item.Action?.Type?.Trim();
-                    if (string.IsNullOrWhiteSpace(actionType))
+                    // 空行动 ≠ 无法识别：宿主里「加了到点的行动节点但没配动作」确实存在。
+                    // 但**判断依据必须是 ActionSet 里的动作数**——早期读的是不存在的 `Action` 字段，
+                    // 于是真实包里 8 条**有配置**的行动被当成"没配动作"，配置整块丢掉且界面还显示得很正常。
+                    // 老的「单个 Action」形状（早期夹具与更早版本）仍然认，两者都空才算真的空。
+                    var legacyType = item.Action?.Type?.Trim();
+                    if (actionSet.Count == 0 && string.IsNullOrWhiteSpace(legacyType))
                     {
                         entry.EmptyActions += 1;
                         continue;
                     }
 
+                    var actionType = actionSet.Count > 0 ? "ActionSet" : legacyType!;
                     entry.Actions.Add(new CidataActionInfo
                     {
                         Layout = dto.Name,
                         Time = start.Length > 5 ? start[..5] : start,
-                        Name = item.Action?.Name?.Trim() ?? string.Empty,
+                        Name = actionSet.Count > 0
+                            ? actionSet.Name ?? string.Empty
+                            : item.Action?.Name?.Trim() ?? string.Empty,
                         Type = actionType,
+                        ActionCount = actionSet.Count,
                     });
                     entry.ActionTypeCounts[actionType] = entry.ActionTypeCounts.GetValueOrDefault(actionType) + 1;
 
@@ -333,26 +347,26 @@ public static class CidataImporter
         }
 
         // ── 分割线 / 行动的如实说明 ──
-        // 这两类都是**独立时间点**（TimeType 2 / 3），已按原位置、原顺序导入；
-        // 但「行动」引用的通知内容与自动化配置属于教室端本机，IslandHub 的档案模型里没有落点，
-        // 所以只保留"到点该做点什么"的位置，内容本身不随包走——这一点必须写在预览里，
-        // 否则换一台机器导入后，行动会变成「到点但什么都不做」，而且没人知道为什么。
+        // 这两类都是**独立时间点**（TimeType 2 / 3），已按原位置、原顺序导入。
+        // 行动的内容（行动组名 + 组内动作及其配置）**随包导入**，整包存在 `ActionSetJson` 里；
+        // 唯一的限制是下发后要重启宿主才生效（宿主在启动时解析动作配置）。
         if (entry.Actions.Count > 0)
         {
             var types = string.Join("、", entry.ActionTypeCounts
                 .OrderByDescending(pair => pair.Value)
                 .Select(pair => $"{pair.Key} {pair.Value} 条"));
-            notices.Add($"{entry.Actions.Count} 条「行动」时间点已按原位置导入（{types}），"
-                + "但行动引用的通知内容 / 自动化配置属于教室端本机，不随包导入——"
-                + "教室端原有的会保留，换机器则需要重新配置。");
+            var totalActions = entry.Actions.Sum(action => action.ActionCount);
+            notices.Add($"{entry.Actions.Count} 条「行动」已按原位置导入（{types}，共 {totalActions} 个动作），"
+                + "行动组名与每个动作的配置都整包保存、随档案下发；下发到教室端后需重启宿主才生效。");
 
+            // `ActionSet` 是宿主的正式结构；只有既不是它、也不是老的单个 Action 形状时才值得提示。
             var unknown = entry.ActionTypeCounts
-                .Where(pair => pair.Key is not ("Notification" or "Automation"))
+                .Where(pair => pair.Key is not ("ActionSet" or "Notification" or "Automation"))
                 .Sum(pair => pair.Value);
             if (unknown > 0)
             {
-                warnings.Add($"{unknown} 条行动的 Type 无法识别（可能来自插件或更新的宿主版本），"
-                    + "已按「到点的行动节点」导入，内容需要人工确认。");
+                warnings.Add($"{unknown} 条行动用的是未识别的结构（可能来自插件或更新的宿主版本），"
+                    + "已原样保留原始 JSON，内容需要人工确认。");
             }
         }
 
@@ -839,6 +853,37 @@ public static class CidataImporter
         return map.Count > 0 ? map : null;
     }
 
+    /// <summary>
+    /// 从宿主的 <c>ActionSet</c> 里读出「整包 JSON + 行动组名 + 动作个数」。
+    ///
+    /// <para>
+    /// 为什么整包带走：组里每个动作是「<c>Id</c> + <c>Settings</c>」两段，`Settings` 是 `object`
+    /// （类型由动作 `Id` 决定）。拆成字段建模，遇到没见过的动作必然丢数据——
+    /// 这正是之前把 8 条行动配置整块丢掉的原因。
+    /// </para>
+    /// </summary>
+    private static (string? Json, string? Name, int Count) ReadActionSet(JsonElement? source)
+    {
+        if (source is not { ValueKind: JsonValueKind.Object } set)
+        {
+            return (null, null, 0);
+        }
+
+        // 动作个数是「这条行动到底有没有配置」的唯一可靠依据。
+        var count = set.TryGetProperty("Actions", out var actions)
+            && actions.ValueKind == JsonValueKind.Array
+            ? actions.GetArrayLength()
+            : 0;
+
+        var name = set.TryGetProperty("Name", out var nameElement)
+            && nameElement.ValueKind == JsonValueKind.String
+            ? nameElement.GetString()?.Trim()
+            : null;
+
+        // 整包 Clone：JsonElement 只是 JsonDocument 的视图，文档释放后再访问会抛异常。
+        return (set.Clone().GetRawText(), string.IsNullOrWhiteSpace(name) ? null : name, count);
+    }
+
     /// <summary>把 GUID 文本转成「可空」形式；空串与全零 GUID（宿主的「未指定」写法）都算空。</summary>
     private static string? AsOptionalGuid(string? value)
     {
@@ -925,6 +970,12 @@ public static class CidataImporter
         /// </para>
         /// </summary>
         public JsonElement? AttachedObjects { get; set; }
+
+        /// <summary>
+        /// 宿主的行动组（<c>TimeType = 3</c> 才有）。
+        /// <para>真实包里行动配置全在这里，字段名是 <c>ActionSet</c> 而不是 <c>Action</c>。</para>
+        /// </summary>
+        public JsonElement? ActionSet { get; set; }
     }
 
     /// <summary>行动时间点里的 <c>Action</c> 字段（只取几个通用字段，其余原样忽略）。</summary>
@@ -1085,6 +1136,9 @@ public sealed class CidataActionInfo
 
     /// <summary><c>Action.Type</c>：<c>Notification</c> / <c>Automation</c> / 其它（插件或新版本引入）。</summary>
     public string Type { get; set; } = string.Empty;
+
+    /// <summary>行动组里的动作个数（0 表示这条行动确实没配动作）。</summary>
+    public int ActionCount { get; set; }
 }
 
 /// <summary>包内宿主的多周轮换设置（从 <c>Settings.json</c> 里取）。</summary>

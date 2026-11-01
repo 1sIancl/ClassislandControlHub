@@ -256,14 +256,15 @@ public sealed class CidataImporterTests
     }
 
     [Fact]
-    public void 行动内容不随包导入时明确写在预览里()
+    public void 行动内容随包导入并说明需重启生效()
     {
         var entry = Convert();
 
-        // 关键不是"能不能导入"，而是**不能导入的那部分有没有被说出来**：
-        // 位置导进去了、内容没跟着走，如果不说，教室端到点什么都不做且没人知道为什么。
-        Assert.Contains(entry.Notices, w => w.Contains("「行动」时间点已按原位置导入"));
-        Assert.Contains(entry.Notices, w => w.Contains("不随包导入"));
+        // 行动组与每个动作的配置都整包带走（早期按「单个 Action」建模，真实包里
+        // 8 条有配置的行动被当成空行动、配置整块丢掉）。唯一的限制是下发后要重启宿主。
+        Assert.Contains(entry.Notices, w => w.Contains("「行动」已按原位置导入"));
+        Assert.Contains(entry.Notices, w => w.Contains("整包保存"));
+        Assert.Contains(entry.Notices, w => w.Contains("重启宿主"));
     }
 
     [Fact]
@@ -302,6 +303,51 @@ public sealed class CidataImporterTests
     }
 
     [Fact]
+    public void 行动组按宿主真实结构整包导入()
+    {
+        // 真实包的形状是 `ActionSet { Name, Actions[] }`，不是 `Action { Type, Settings }`。
+        // 早期按后者建模，结果真实包里 8 条**有配置**的行动被当成空行动、配置整块丢掉。
+        var entry = Convert($$"""
+        {
+          "Name": "行动组档案",
+          "TimeLayouts": {
+            "{{LayoutId}}": {
+              "Name": "作息",
+              "Layouts": [
+                { "StartTime": "08:00:00", "EndTime": "08:45:00", "TimeType": 0 },
+                { "StartTime": "09:00:00", "EndTime": "09:00:00", "TimeType": 3,
+                  "ActionSet": {
+                    "Name": "课前准备",
+                    "Guid": "11111111-1111-4111-8111-111111111111",
+                    "Actions": [
+                      { "Id": "classisland.showNotification",
+                        "Settings": { "Content": "请回到座位", "Mask": "准备上课" } },
+                      { "Id": "VoiceAction.AdjustVolume", "Settings": { "volumePercent": 25 } }
+                    ]
+                  } }
+              ]
+            }
+          },
+          "ClassPlans": {}, "Subjects": {}
+        }
+        """);
+
+        var item = entry.Content.TimeLayouts.Single().Items[1];
+        Assert.Equal("课前准备", item.ActionSetName);
+        Assert.Equal(2, item.ActionSetCount);
+        Assert.Contains("classisland.showNotification", item.ActionSetJson);
+        // 每个动作的 Settings 都要在——这正是拆字段建模会丢的部分。
+        Assert.Contains("volumePercent", item.ActionSetJson);
+
+        // 有动作就不算空行动，也不该报「未识别的结构」。
+        Assert.Equal(0, entry.EmptyActions);
+        Assert.Single(entry.Actions);
+        Assert.Equal("ActionSet", entry.Actions[0].Type);
+        Assert.Equal(2, entry.Actions[0].ActionCount);
+        Assert.DoesNotContain(entry.Warnings, w => w.Contains("未识别的结构"));
+    }
+
+    [Fact]
     public void 未知的行动类型降级为普通时间点并提示()
     {
         var entry = Convert($$"""
@@ -325,7 +371,7 @@ public sealed class CidataImporterTests
         // 未知 Type 不能抛异常、也不能把整个时间点丢掉——按「到点的行动节点」导入，内容留给人工确认。
         Assert.Single(entry.Actions);
         Assert.Equal("PluginThing", entry.Actions[0].Type);
-        Assert.Contains(entry.Warnings, w => w.Contains("无法识别"));
+        Assert.Contains(entry.Warnings, w => w.Contains("未识别的结构"));
         Assert.Equal(
             [TimeItemKind.Class, TimeItemKind.Action],
             entry.Content.TimeLayouts.Single().Items.Select(i => i.Kind));

@@ -3,14 +3,14 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=166';
-import { toastError } from '../core/errors.js?v=166';
+import { api } from '../core/api.js?v=167';
+import { toastError } from '../core/errors.js?v=167';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, icon, select,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=166';
-import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=166';
-import { t } from './../core/i18n.js?v=166';
+} from '../core/ui.js?v=167';
+import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=167';
+import { t } from './../core/i18n.js?v=167';
 
 export const meta = {
   title: t('profiles.editor.title'),
@@ -1073,7 +1073,121 @@ function parseActionSettings(text) {
  * 一个真实 `Action.Settings` 样本都没有——凭猜的模板会让人填出一堆教室里读不懂的字段。
  * </p>
  */
+/**
+ * 行动组编辑（宿主真实结构：`ActionSet { Name, Actions[] }`）。
+ *
+ * <p>
+ * 每个动作是「`Id` + `Settings`」，`Settings` 的类型由 `Id` 决定（`classisland.showNotification`、
+ * `VoiceAction.AdjustVolume`……），是**开放集合**。所以这里不做逐字段表单：
+ * 列出动作名与 Id 让人看清「这条行动会做什么」，改则编整包 JSON——
+ * 硬造表单只会在遇到没见过的动作时把字段丢掉（这正是之前 8 条行动配置丢失的原因）。
+ * </p>
+ */
+function openActionSetDialog(item) {
+  let parsed = null;
+  try {
+    parsed = JSON.parse(item.actionSetJson || '{}');
+  } catch {
+    parsed = null;
+  }
+
+  const actions = Array.isArray(parsed?.Actions) ? parsed.Actions : [];
+  const summary = h('div.cell-sub');
+
+  const paintSummary = () => {
+    clear(summary);
+    if (actions.length === 0) {
+      summary.appendChild(h('span', t('profiles.editor.actionSetEmpty')));
+      return;
+    }
+
+    summary.appendChild(h('div', { style: { marginBottom: '6px' } },
+      t('profiles.editor.actionSetLead', { count: actions.length })));
+    summary.appendChild(h('div.attach-fields', ...actions.map((action, index) => h('div.attach-row',
+      h('span.attach-key', `${index + 1}. ${action?.Id ?? t('profiles.editor.actionSetUnknown')}`),
+      h('span.cell-sub', t('profiles.editor.actionSetHasSettings', {
+        state: action?.Settings ? t('profiles.editor.actionSetYes') : t('profiles.editor.actionSetNo'),
+      }))))));
+  };
+
+  const nameInput = h('input', { type: 'text', value: parsed?.Name ?? '' });
+
+  const area = h('textarea', {
+    rows: 12,
+    spellcheck: 'false',
+    style: {
+      width: '100%', fontFamily: 'monospace', fontSize: '12.5px', lineHeight: '1.5',
+    },
+  });
+  area.value = item.actionSetJson || '';
+
+  const error = h('div.attach-dim', { hidden: true, style: { color: 'var(--danger)' } });
+  area.oninput = () => {
+    try {
+      const next = JSON.parse(area.value);
+      if (!next || typeof next !== 'object' || Array.isArray(next)) {
+        throw new Error('not an object');
+      }
+
+      area.style.borderColor = '';
+      error.hidden = true;
+    } catch {
+      area.style.borderColor = 'var(--danger)';
+      error.hidden = false;
+      error.textContent = t('profiles.editor.actionBadJson');
+    }
+  };
+
+  paintSummary();
+
+  modal({
+    title: t('profiles.editor.actionTitle'),
+    width: 'wide',
+    body: h('div',
+      h('p.card-desc', t('profiles.editor.actionSetNote')),
+      field(t('profiles.editor.actionSetName'), nameInput),
+      summary,
+      h('div', { style: { marginTop: '10px' } }, t('profiles.editor.actionRaw')),
+      area,
+      error),
+    confirmText: t('profiles.editor.save'),
+    onConfirm: () => {
+      if (!error.hidden) {
+        return false;
+      }
+
+      try {
+        const next = JSON.parse(area.value || '{}');
+        // 名称以输入框为准（单独给个框，比让用户在大段 JSON 里找 Name 好）。
+        if (nameInput.value.trim()) {
+          next.Name = nameInput.value.trim();
+        }
+
+        item.actionSetJson = JSON.stringify(next);
+        item.actionSetName = next.Name ?? null;
+        item.actionSetCount = Array.isArray(next.Actions) ? next.Actions.length : 0;
+        // 旧字段清空：避免与新结构并存时产生歧义。
+        item.actionType = null;
+        item.actionSettings = null;
+        markDirtyValues();
+        return true;
+      } catch {
+        error.hidden = false;
+        error.textContent = t('profiles.editor.actionBadJson');
+        return false;
+      }
+    },
+  });
+}
+
 function openActionDialog(item) {
+  // 宿主的行动是「行动组 + 组内动作」：有 actionSetJson 就编整包，
+  // 不再走「单个类型 + 字段」那套（那是早期对宿主模型的误解，会丢配置）。
+  if (item.actionSetJson) {
+    openActionSetDialog(item);
+    return;
+  }
+
   const draft = parseActionSettings(item.actionSettings);
   // 原文解析不出对象时**不要丢**：先留着，保存时提示，人可以改回来。
   const broken = Boolean(item.actionSettings) && Object.keys(draft).length === 0;

@@ -93,8 +93,31 @@ public sealed class TimeLayoutItemDto
     public string? DisplayName { get; set; }
 
     /// <summary>
-    /// 行动（<see cref="TimeItemKind.Action"/>）的动作类型：<c>Notification</c> / <c>Automation</c> / <c>Run</c> / 插件自定义。
-    /// <para>只做**原样透传**：IslandHub 不解释这些动作，也不据此执行任何东西。</para>
+    /// 宿主的 <c>TimeLayoutItem.ActionSet</c>（**整包原始 JSON**）。
+    /// <para>
+    /// 宿主的行动是「一个行动组 + 组内若干动作」（`ActionSet { Name, Actions[] }`），
+    /// 每个动作有自己的 `Id`（如 `classisland.showNotification`、`VoiceAction.AdjustVolume`）和 `Settings`。
+    /// 不是"单个类型 + 一份配置"——之前按后者建模是错的，会让真实包里的行动配置整块丢掉。
+    /// </para>
+    /// <para>
+    /// 存整包而不是拆成字段：动作的 `Settings` 是 `object`（类型由动作 `Id` 决定），
+    /// 拆开建模必然在遇到没见过的动作时丢字段。A 端只负责**原样保存与下发**。
+    /// </para>
+    /// </summary>
+    public string? ActionSetJson { get; set; }
+
+    /// <summary>行动组名称（宿主 <c>ActionSet.Name</c>），单独存一份便于界面显示。</summary>
+    public string? ActionSetName { get; set; }
+
+    /// <summary>行动组里的动作个数（便于界面显示「N 个动作」，不用每次解析 JSON）。</summary>
+    public int ActionSetCount { get; set; }
+
+    /// <summary>
+    /// 单个动作的类型（**已废弃**）。
+    /// <para>
+    /// 早期按「一个时间点一个动作」建模留下的字段，与宿主模型不符；仅为兼容已导入的档案保留，
+    /// 新数据请用 <see cref="ActionSetJson"/>。
+    /// </para>
     /// </summary>
     public string? ActionType { get; set; }
 

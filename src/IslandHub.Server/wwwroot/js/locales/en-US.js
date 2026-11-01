@@ -3247,5 +3247,15 @@ export default {
   'profiles.editor.actionRaw': "Raw JSON (advanced)",
   'profiles.editor.actionSettingsBroken': "The stored config is not valid JSON (probably from an older version). It is shown above as-is — fix it before saving.",
 
+  // 档案编辑器：行动组编辑
+  'profiles.editor.actionSetNote': "An action is an action group containing several action items. The list below shows each item type; edit the JSON to change content — each item type has its own settings schema, so a fixed form would drop fields it does not know.",
+  'profiles.editor.actionSetName': "Action group name",
+  'profiles.editor.actionSetLead': "This group has {count} action item(s):",
+  'profiles.editor.actionSetEmpty': "This group has no action items yet.",
+  'profiles.editor.actionSetUnknown': "(unnamed action)",
+  'profiles.editor.actionSetHasSettings': "settings: {state}",
+  'profiles.editor.actionSetYes': "yes",
+  'profiles.editor.actionSetNo': "none",
+
 };
 

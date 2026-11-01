@@ -3247,5 +3247,15 @@ export default {
   'profiles.editor.actionRaw': "原始 JSON（高级）",
   'profiles.editor.actionSettingsBroken': "原来的配置不是合法 JSON（可能来自更早的版本），已原样放在上面；改好再保存。",
 
+  // 档案编辑器：行动组编辑
+  'profiles.editor.actionSetNote': "行动是「行动组 + 组内若干动作」。下面列出组里每个动作的类型，改内容请直接改 JSON——每个动作的配置字段由动作类型决定，做固定表单反而会把没见过的字段丢掉。",
+  'profiles.editor.actionSetName': "行动组名称",
+  'profiles.editor.actionSetLead': "这个行动组里有 {count} 个动作：",
+  'profiles.editor.actionSetEmpty': "这个行动组里还没有动作。",
+  'profiles.editor.actionSetUnknown': "（未命名动作）",
+  'profiles.editor.actionSetHasSettings': "配置：{state}",
+  'profiles.editor.actionSetYes': "有",
+  'profiles.editor.actionSetNo': "无",
+
 };
 

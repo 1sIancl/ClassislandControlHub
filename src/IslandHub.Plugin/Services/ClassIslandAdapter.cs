@@ -1,7 +1,9 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using ClassIsland.Shared.ComponentModels;
 using ClassIsland.Shared.IPC.Abstractions.Services;
+using ClassIsland.Shared.Models.Automation;
 using ClassIsland.Shared.Models.Profile;
 using IslandHub.Protocol;
 using IslandHub.Protocol.Dtos;
@@ -150,11 +152,20 @@ public sealed class ClassIslandAdapter(IPublicProfileService profileService, ILo
                     StartTime = HubTime.Parse(item.StartTime),
                     EndTime = HubTime.Parse(item.EndTime),
                     TimeType = TimeItemKind.ToTimeType(item.Kind),
-                    BreakName = item.BreakName ?? string.Empty,
+                    // 显示名优先用 BreakName（宿主只认这个字段给课间命名），
+                    // 没有就用通用的 DisplayName——否则上课时间点的自定义名字下发后消失。
+                    BreakName = !string.IsNullOrWhiteSpace(item.BreakName)
+                        ? item.BreakName!
+                        : (item.DisplayName ?? string.Empty),
                     IsHideDefault = item.IsHideDefault,
                     DefaultClassId = string.IsNullOrWhiteSpace(item.DefaultSubjectId)
                         ? Guid.Empty
                         : ToGuid(item.DefaultSubjectId),
+                    // 行动组：整包 JSON 反序列化回宿主类型。
+                    // 宿主的 `ActionItem.Settings` 是 `object`，用默认选项还原出来的是 JsonElement——
+                    // 形状没变，宿主保存 Profile 时会原样写回文件，**重启后按自己的转换器正确解析**。
+                    // 所以行动内容是"重启后生效"，不是"立即生效"。
+                    ActionSet = BuildActionSet(item),
                 });
             }
 
@@ -162,6 +173,31 @@ public sealed class ClassIslandAdapter(IPublicProfileService profileService, ILo
         }
 
         profile.TimeLayouts = ToOrderedDictionary(map);
+    }
+
+    /// <summary>
+    /// 把 A 端保存的 <c>ActionSetJson</c> 还原成宿主的 <see cref="ActionSet"/>。
+    ///
+    /// <para>
+    /// 反序列化失败时返回 null 而不是抛：一条行动配置坏了，不该让整次下发失败——
+    /// 时间是准的、课表是对的，只有这条行动缺内容，用户在教室里能看到并及时反馈。
+    /// </para>
+    /// </summary>
+    private static ActionSet? BuildActionSet(TimeLayoutItemDto item)
+    {
+        if (string.IsNullOrWhiteSpace(item.ActionSetJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<ActionSet>(item.ActionSetJson!);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static void ReplaceClassPlans(Profile profile, List<ClassPlanDto> plans)
