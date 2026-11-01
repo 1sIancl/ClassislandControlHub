@@ -3346,5 +3346,10 @@ export default {
   'layoutEditor.stats': "{total} points · {classes} lessons · {breaks} breaks · {totalMinutes} minutes",
   'layoutEditor.statsMarks': "plus {separators} separator(s) / {actions} action(s)",
 
+  // 时间表编辑：附加信息列
+  'layoutEditor.extras': "Attached",
+  'layoutEditor.actionBadge': "Action {count}",
+  'layoutEditor.attachAdd': "+ Attach",
+
 };
 

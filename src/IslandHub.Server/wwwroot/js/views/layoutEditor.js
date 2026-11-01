@@ -19,6 +19,11 @@ import {
   h, clear, toast, loadingBlock, confirmDialog,
 } from '../core/ui.js?v=169';
 import { t } from './../core/i18n.js?v=169';
+// 时间点的附加信息（插件附加设置 / 行动组）编辑：时间表独立后仍然要能编，
+// 所以和档案编辑器共用同一套弹窗，而不是各自复制一份。
+import {
+  openAttachedDialog, openActionSetDialog, attachedCountOf, actionCountOf,
+} from './layoutItemDialogs.js?v=169';
 
 export const meta = {
   title: t('layoutEditor.title'),
@@ -247,6 +252,38 @@ export async function render(container, params) {
     });
   }
 
+  /**
+   * 附加信息单元格：行动组（仅行动类型）+ 插件附加设置。
+   *
+   * <p>
+   * 时间点这些数据是**跟随时间点**的，不是档案的——所以时间表独立成页面之后，
+   * 编辑入口必须一起搬过来，否则「升到全局库」等于把附加信息变成只读。
+   * </p>
+   */
+  function extrasCell(item) {
+    const buttons = [];
+
+    if (item.kind === 'action') {
+      const count = actionCountOf(item);
+      buttons.push(h('button.btn.btn-sm', {
+        type: 'button',
+        title: t('profiles.editor.actionHint'),
+        onClick: () => openActionSetDialog(item, markDirty),
+      }, t('layoutEditor.actionBadge', { count })));
+    }
+
+    const attached = attachedCountOf(item);
+    buttons.push(h('button.btn.btn-sm' + (attached > 0 ? '' : '.btn-ghost'), {
+      type: 'button',
+      title: t('profiles.editor.attachedHint', { count: attached }),
+      onClick: () => openAttachedDialog(item, markDirty),
+    }, attached > 0
+      ? t('profiles.editor.attachedBadge', { count: attached })
+      : t('layoutEditor.attachAdd')));
+
+    return h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } }, ...buttons);
+  }
+
   function hideCell(item) {
     const box = h('input', { type: 'checkbox' });
     box.checked = Boolean(item.isHideDefault);
@@ -340,6 +377,7 @@ export async function render(container, params) {
           : (duration === null ? '—' : t('layoutEditor.minutes', { count: duration })))),
         h('td', kindCell(item)),
         h('td', nameCell(item)),
+        h('td', extrasCell(item)),
         h('td', hideCell(item)),
         h('td', removeCell(index)));
     });
@@ -351,6 +389,7 @@ export async function render(container, params) {
       h('th', { style: { width: '86px' } }, t('layoutEditor.duration')),
       h('th', { style: { width: '160px' } }, t('layoutEditor.kind')),
       h('th', t('layoutEditor.name')),
+      h('th', { style: { width: '190px' } }, t('layoutEditor.extras')),
       h('th', { style: { width: '70px' } }, t('layoutEditor.hidden')),
       h('th', { style: { width: '80px' } }, ''));
 

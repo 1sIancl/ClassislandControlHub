@@ -3346,5 +3346,10 @@ export default {
   'layoutEditor.stats': "共 {total} 个时间点 · 上课 {classes} 节 · 课间 {breaks} 个 · 共 {totalMinutes} 分钟",
   'layoutEditor.statsMarks': "另有 分割线 {separators} 条 / 行动 {actions} 条",
 
+  // 时间表编辑：附加信息列
+  'layoutEditor.extras': "附加信息",
+  'layoutEditor.actionBadge': "行动 {count}",
+  'layoutEditor.attachAdd': "＋附加",
+
 };
 
