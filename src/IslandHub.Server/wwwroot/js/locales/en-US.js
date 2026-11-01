@@ -3351,5 +3351,13 @@ export default {
   'layoutEditor.actionBadge': "Action {count}",
   'layoutEditor.attachAdd': "+ Attach",
 
+  // 未被引用的时间表（#138）
+  'layouts.unusedTitle': "Not used by any profile ({count})",
+  'layouts.unusedLead': "Deleting a profile does not delete its layouts (they may be shared), so unused ones accumulate. Remove them here once you are sure; ones still in use never show up.",
+  'layouts.unusedDelete': "Delete",
+  'layouts.unusedDeleteConfirm': "Delete layout \"{name}\"? No profile references it, so existing timetables are unaffected.",
+  'layouts.unusedDeleted': "Layout deleted",
+  'layouts.unusedDeleteFailed': "Failed to delete layout",
+
 };
 

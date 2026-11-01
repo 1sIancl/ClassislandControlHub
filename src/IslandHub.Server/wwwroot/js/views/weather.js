@@ -6,10 +6,10 @@
  * 内网抓不到时**保留上一次数据**并把原因写在页面上——教室里看到旧一点的天气，也好过突然空白。
  * </para>
  */
-import { api } from '../core/api.js?v=169';
-import { toastError } from '../core/errors.js?v=169';
-import { h, clear, toast, loadingBlock, formatDateTime, field } from '../core/ui.js?v=169';
-import { t } from '../core/i18n.js?v=169';
+import { api } from '../core/api.js?v=170';
+import { toastError } from '../core/errors.js?v=170';
+import { h, clear, toast, loadingBlock, formatDateTime, field } from '../core/ui.js?v=170';
+import { t } from '../core/i18n.js?v=170';
 
 export const meta = {
   title: t('weather.title'),

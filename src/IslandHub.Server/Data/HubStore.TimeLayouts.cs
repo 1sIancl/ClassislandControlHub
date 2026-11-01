@@ -47,6 +47,52 @@ public sealed partial class HubStore
         return result;
     }
 
+    /// <summary>
+    /// 按一组 ID 批量查询时间表（#138）。
+    ///
+    /// <para>
+    /// 投影一个档案时要取它引用的全部时间表。逐条查会变成 N+1：一份档案挂 5 张作息就是
+    /// 5 次往返，而且每读一次档案（列表页、编辑器、下发）都重来一遍。批量取一次就够。
+    /// </para>
+    /// </summary>
+    public async Task<Dictionary<string, TimeLayoutRow>> GetTimeLayoutsByIdsAsync(
+        IEnumerable<string> ids, CancellationToken cancellationToken = default)
+    {
+        var wanted = ids.Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var result = new Dictionary<string, TimeLayoutRow>(StringComparer.OrdinalIgnoreCase);
+        if (wanted.Count == 0)
+        {
+            return result;
+        }
+
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+
+        // 参数化 IN：ID 来自档案内容，不能拼进 SQL 文本。
+        var names = new List<string>(wanted.Count);
+        for (var i = 0; i < wanted.Count; i += 1)
+        {
+            var name = $"$id{i}";
+            names.Add(name);
+            command.Parameters.AddWithValue(name, wanted[i]);
+        }
+
+        command.CommandText =
+            $"SELECT {TimeLayoutColumns} FROM time_layouts WHERE id IN ({string.Join(", ", names)});";
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var row = ReadTimeLayout(reader);
+            result[row.Id] = row;
+        }
+
+        return result;
+    }
+
     /// <summary>按 ID 查询单个时间表。</summary>
     public async Task<TimeLayoutRow?> GetTimeLayoutAsync(string id, CancellationToken cancellationToken = default)
     {

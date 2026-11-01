@@ -13,10 +13,12 @@
  * </p>
  */
 
-import { api } from '../core/api.js?v=169';
-import { toastError, errorBlock } from '../core/errors.js?v=169';
-import { h, clear, loadingBlock, emptyState } from '../core/ui.js?v=169';
-import { t } from './../core/i18n.js?v=169';
+import { api } from '../core/api.js?v=170';
+import { toastError, errorBlock } from '../core/errors.js?v=170';
+import {
+  h, clear, toast, loadingBlock, emptyState, confirmDialog,
+} from '../core/ui.js?v=170';
+import { t } from './../core/i18n.js?v=170';
 
 export const meta = {
   title: t('layouts.title'),
@@ -94,11 +96,14 @@ export async function render(container) {
 
   let profiles;
   let devices;
+  let library;
   try {
-    // 设备列表用来回答「哪些班级在用这份作息」——只看课表张数答不了这个问题。
-    [profiles, devices] = await Promise.all([
+    // 设备列表用来回答「哪些班级在用这份作息」——只看课表张数答不了这个问题；
+    // 时间表库用来列出「没有任何档案引用」的条目（它们不在下面的分组里，等于隐身）。
+    [profiles, devices, library] = await Promise.all([
       api('/admin/profiles'),
       api('/admin/devices').catch(() => []),
+      api('/admin/time-layouts').catch(() => []),
     ]);
   } catch (error) {
     clear(container);
@@ -169,6 +174,52 @@ export async function render(container) {
 
     if (shown === 0) {
       listHost.appendChild(emptyState(t('layouts.noMatch'), t('layouts.noMatchHint')));
+    }
+
+    // 没被任何档案引用的时间表单独列出来（#138）。
+    // 它们不属于任何档案，下面的分组视图里根本看不到；删档案不删时间表，
+    // 于是这类条目会慢慢攒起来。这里只提示 + 提供删除，不自动清。
+    const unused = (library ?? []).filter((layout) => (layout.usedByProfiles ?? 0) === 0);
+    if (unused.length > 0 && !keyword) {
+      listHost.appendChild(h('div.card', { style: { marginBottom: '12px' } },
+        h('div.card-head',
+          h('div',
+            h('h3', t('layouts.unusedTitle', { count: unused.length })),
+            h('p.card-desc', t('layouts.unusedLead')))),
+        h('div.table-wrap',
+          h('table.data.data-compact',
+            h('thead', h('tr',
+              h('th', t('layouts.name')),
+              h('th', { style: { width: '110px' } }, t('layouts.points')),
+              h('th', { style: { width: '170px' } }, ''))),
+            h('tbody', ...unused.map((layout) => h('tr',
+              h('td', layout.name),
+              h('td', h('span.cell-sub', t('layouts.pointsCount', {
+                count: (layout.items ?? []).length,
+              }))),
+              h('td', h('button.btn.btn-sm.btn-ghost', {
+                type: 'button',
+                onClick: async () => {
+                  const ok = await confirmDialog(
+                    t('layouts.unusedDelete'),
+                    t('layouts.unusedDeleteConfirm', { name: layout.name }),
+                    t('layouts.unusedDelete'),
+                    true,
+                  );
+                  if (!ok) {
+                    return;
+                  }
+
+                  try {
+                    await api(`/admin/time-layouts/${layout.id}`, { method: 'DELETE' });
+                    library = library.filter((x) => x.id !== layout.id);
+                    paint();
+                    toast('ok', t('layouts.unusedDeleted'));
+                  } catch (error) {
+                    toastError(error, t('layouts.unusedDeleteFailed'));
+                  }
+                },
+              }, t('layouts.unusedDelete'))))))))));
     }
   };
 

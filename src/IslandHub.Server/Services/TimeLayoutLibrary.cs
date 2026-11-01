@@ -63,11 +63,14 @@ public static class TimeLayoutLibrary
         // 档案自带的那份快照：库里缺条目时用它兜底。
         var snapshot = root["timeLayouts"] as JsonArray;
 
+        // 一次批量取全部引用（#138）：逐条查是 N+1，而读档案的路径又多
+        // （列表、编辑器、下发预览、实际上报），每份档案挂几张作息就会被放大几倍。
+        var rows = await store.GetTimeLayoutsByIdsAsync(ids, cancellationToken);
+
         var projected = new JsonArray();
         foreach (var id in ids)
         {
-            var row = await store.GetTimeLayoutAsync(id, cancellationToken);
-            if (row is null)
+            if (!rows.TryGetValue(id, out var row))
             {
                 // 引用的时间表在库里找不到（被删了、或引用了不存在的 ID）。
                 //

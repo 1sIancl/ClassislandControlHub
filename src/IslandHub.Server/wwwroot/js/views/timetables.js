@@ -12,10 +12,10 @@
  * </p>
  */
 
-import { api } from '../core/api.js?v=169';
-import { errorBlock } from '../core/errors.js?v=169';
-import { h, clear, loadingBlock, emptyState } from '../core/ui.js?v=169';
-import { t } from './../core/i18n.js?v=169';
+import { api } from '../core/api.js?v=170';
+import { errorBlock } from '../core/errors.js?v=170';
+import { h, clear, loadingBlock, emptyState } from '../core/ui.js?v=170';
+import { t } from './../core/i18n.js?v=170';
 
 export const meta = {
   title: t('timetables.title'),

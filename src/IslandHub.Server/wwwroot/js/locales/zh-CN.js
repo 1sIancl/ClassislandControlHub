@@ -3351,5 +3351,13 @@ export default {
   'layoutEditor.actionBadge': "行动 {count}",
   'layoutEditor.attachAdd': "＋附加",
 
+  // 未被引用的时间表（#138）
+  'layouts.unusedTitle': "未被任何档案使用（{count} 张）",
+  'layouts.unusedLead': "删除档案不会删时间表（它可能还被别的档案共用），所以会攒下没人用的条目。确认不需要后可以在这里删掉；正在被引用的不会出现在这里。",
+  'layouts.unusedDelete': "删除",
+  'layouts.unusedDeleteConfirm': "删除时间表「{name}」？它没有被任何档案引用，删掉不会影响现有课表。",
+  'layouts.unusedDeleted': "时间表已删除",
+  'layouts.unusedDeleteFailed': "删除时间表失败",
+
 };
 

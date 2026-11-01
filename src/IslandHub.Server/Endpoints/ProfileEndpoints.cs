@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
+
 using IslandHub.Protocol;
 using IslandHub.Protocol.Dtos;
 using IslandHub.Server.Data;
@@ -37,6 +40,7 @@ public static class ProfileEndpoints
     group.MapGet("/time-layouts", ListTimeLayoutsAsync).RequirePermission(PermissionKeys.ProfilesRead);
     group.MapGet("/time-layouts/{id}", GetTimeLayoutAsync).RequirePermission(PermissionKeys.ProfilesRead);
     group.MapPut("/time-layouts/{id}", SaveTimeLayoutAsync).RequirePermission(PermissionKeys.ProfilesWrite);
+    group.MapDelete("/time-layouts/{id}", DeleteTimeLayoutAsync).RequirePermission(PermissionKeys.ProfilesWrite);
 
     // 下发内容预览（#136）：核对"这台设备会收到什么"，尤其是行动内容有没有跟着走。
     group.MapGet("/devices/{id}/sync-preview", PreviewSyncAsync).RequirePermission(PermissionKeys.ProfilesRead);
@@ -125,20 +129,89 @@ public static class ProfileEndpoints
     /// 一份作息（比如"夏季作息"）只该存在一条记录，多个档案 / 多张课表引用它。
     /// </para>
     /// </summary>
-    private static async Task<ApiResult<List<TimeLayoutDto>>> ListTimeLayoutsAsync(
+    private static async Task<ApiResult<object>> ListTimeLayoutsAsync(
         HttpContext http,
         HubStore store,
         CancellationToken cancellationToken)
     {
         http.RequireAdminSession();
+
         var rows = await store.GetTimeLayoutsAsync(cancellationToken);
 
-        return ApiResult<List<TimeLayoutDto>>.Success(rows.Select(row => new TimeLayoutDto
+        // 统计「被几个档案引用」（#138）。删档案不会删时间表（那是刻意的），
+        // 于是会逐渐积累出没人引用的时间表：它们不在任何档案卡片里，等于隐身。
+        // 这里把引用数带出去，界面才能单独列出来，让人自己决定要不要清。
+        var profiles = await store.GetProfilesAsync(cancellationToken);
+        var usage = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var profile in profiles)
         {
-            Id = row.Id,
-            Name = row.Name,
-            Items = HubJson.Deserialize<List<TimeLayoutItemDto>>(row.Items) ?? [],
+            foreach (var id in ReadLayoutIdsOfProfile(profile.Content))
+            {
+                usage[id] = usage.GetValueOrDefault(id) + 1;
+            }
+        }
+
+        return ApiResult<object>.Success(rows.Select(row => new
+        {
+            id = row.Id,
+            name = row.Name,
+            items = HubJson.Deserialize<List<TimeLayoutItemDto>>(row.Items) ?? [],
+            usedByProfiles = usage.GetValueOrDefault(row.Id),
         }).ToList());
+    }
+
+    /// <summary>
+    /// 读档案内容里引用的时间表 ID：优先 <c>timeLayoutIds</c>；
+    /// 老档案没有引用字段时，退回内容快照里出现过的 id。
+    /// </summary>
+    private static IEnumerable<string> ReadLayoutIdsOfProfile(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            yield break;
+        }
+
+        JsonNode? node;
+        try
+        {
+            node = JsonNode.Parse(content);
+        }
+        catch (JsonException)
+        {
+            yield break;
+        }
+
+        if (node is not JsonObject root)
+        {
+            yield break;
+        }
+
+        if (root["timeLayoutIds"] is JsonArray ids && ids.Count > 0)
+        {
+            foreach (var item in ids)
+            {
+                var id = item?.GetValue<string>();
+                if (!string.IsNullOrWhiteSpace(id))
+                {
+                    yield return id;
+                }
+            }
+
+            yield break;
+        }
+
+        if (root["timeLayouts"] is JsonArray layouts)
+        {
+            foreach (var item in layouts)
+            {
+                var id = item?["id"]?.GetValue<string>();
+                if (!string.IsNullOrWhiteSpace(id))
+                {
+                    yield return id;
+                }
+            }
+        }
     }
 
     /// <summary>读一张全局时间表。</summary>
@@ -199,6 +272,44 @@ public static class ProfileEndpoints
             Name = request.Name.Trim(),
             Items = request.Items ?? [],
         });
+    }
+
+    /// <summary>
+    /// 删除一张**没有被任何档案引用**的时间表（#138）。
+    ///
+    /// <para>
+    /// 删档案不删时间表是刻意的（它可能被别的档案共用），代价是库里会积累没人用的条目。
+    /// 所以这里加一道硬约束：**只允许删引用数为 0 的**——正在用的时间表一旦删掉，
+    /// 引用它的课表会全部悬空，而界面上一时看不出来。
+    /// </para>
+    /// </summary>
+    private static async Task<ApiResult<object>> DeleteTimeLayoutAsync(
+        string id,
+        HttpContext http,
+        HubStore store,
+        SyncService sync,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+
+        var row = await store.GetTimeLayoutAsync(id, cancellationToken)
+                  ?? throw HubException.NotFound("时间表不存在。");
+
+        var profiles = await store.GetProfilesAsync(cancellationToken);
+        var used = profiles.Any(profile =>
+            ReadLayoutIdsOfProfile(profile.Content).Contains(id, StringComparer.OrdinalIgnoreCase));
+
+        if (used)
+        {
+            throw HubException.Validation(
+                $"时间表「{row.Name}」仍被档案引用，不能删除。请先在档案里取消勾选它。");
+        }
+
+        await store.DeleteTimeLayoutAsync(id, cancellationToken);
+        await store.AddAuditAsync(session.Username, "timeLayout.delete", row.Name,
+            "删除一张未被任何档案引用的时间表。", http.GetClientIpAddress(), cancellationToken);
+
+        return ApiResult<object>.Success(new { removed = true });
     }
 
     /// <summary>
