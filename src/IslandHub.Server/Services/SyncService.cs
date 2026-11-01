@@ -103,7 +103,12 @@ public sealed class SyncService(
             };
         }
 
-        var content = HubJson.DeserializeOrDefault(profile.Content, new ContentBundleDto());
+        // 时间表是全局实体（#136）：档案里存的是**引用**（timeLayoutIds），
+        // 内容在 time_layouts 库里。下发前必须按引用取最新——否则在时间表页改了作息
+        // （包括时间点上的行动内容），教室端拿到的还是档案上次保存时的旧快照，
+        // 表现为「改了但教室端没变」，而且看不出哪里错了。
+        var projectedContent = await TimeLayoutLibrary.ProjectAsync(store, profile.Content, cancellationToken);
+        var content = HubJson.DeserializeOrDefault(projectedContent, new ContentBundleDto());
         content.Settings ??= new ProfileSettingsDto();
         content.Settings.Values ??= [];
         content.Settings.Announcement ??= null;
