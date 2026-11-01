@@ -3,20 +3,20 @@
  *
  * <p>
  * 时间表是全局实体（`/admin/time-layouts/{id}`）：一份作息只有一条记录，
- * 多个档案的课表引用它。所以编辑它不需要先选档案，也不该藏在档案编辑器里——
- * 那正是以前「同一份作息存三份、改一处漏两处」的根源。
+ * 多个档案的课表引用它。编辑它不需要先选档案，也不该藏在档案编辑器里。
  * </p>
  *
  * <p>
- * 这里是**唯一**的时间点编辑入口；档案编辑器里不再有时间表页签，
- * 只有「使用哪些时间表」的选择（可随时更换）。
+ * 类型选择刻意**不用每行内嵌的 `<select>`**：那东西窄、样式跟表格对不上，
+ * 四个类型还挤在一起看不清。改成「点一下单元格 → 弹出一块铺满的菜单」，
+ * 一次看清四个类型并各自带颜色，点哪个体力成本都一样。
  * </p>
  */
 
 import { api } from '../core/api.js?v=169';
 import { toastError, errorBlock } from '../core/errors.js?v=169';
 import {
-  h, clear, toast, loadingBlock, modal, confirmDialog, field, select,
+  h, clear, toast, loadingBlock, confirmDialog,
 } from '../core/ui.js?v=169';
 import { t } from './../core/i18n.js?v=169';
 
@@ -25,7 +25,6 @@ export const meta = {
   subtitle: t('layoutEditor.subtitle'),
 };
 
-/** 时间点类型：与宿主 TimeType 对应。 */
 const KIND_ORDER = ['class', 'break', 'separator', 'action'];
 
 function kindLabels() {
@@ -37,7 +36,6 @@ function kindLabels() {
   };
 }
 
-/** 生成唯一 ID（与档案编辑器同一套规则）。 */
 function genId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
@@ -50,8 +48,20 @@ function genId() {
   });
 }
 
-/** 分割线与行动是零时长点：只该有一个时间。 */
 const isPointKind = (kind) => kind === 'separator' || kind === 'action';
+
+/** `08:45` → 525（分钟）；解析不出来返回 null。 */
+function minutesOf(text) {
+  const [hour, minute] = String(text ?? '').split(':').map((x) => Number(x));
+  return Number.isFinite(hour) && Number.isFinite(minute) ? hour * 60 + minute : null;
+}
+
+/** 时长（分钟），零时长点或数据不全时返回 null。 */
+function durationOf(item) {
+  const start = minutesOf(item.startTime);
+  const end = minutesOf(item.endTime);
+  return start === null || end === null ? null : end - start;
+}
 
 export async function render(container, params) {
   clear(container);
@@ -80,24 +90,124 @@ export async function render(container, params) {
     style: { width: '100%', maxWidth: '280px' },
   });
   const listHost = h('div');
+  const statsHost = h('div.cell-sub', { style: { margin: '8px 0 6px' } });
   const dirtyMark = h('span.cell-sub');
 
   const markDirty = () => {
     dirtyMark.textContent = t('layoutEditor.unsaved');
   };
 
-  /** 开始 / 结束时间输入框。分割线与行动只有一个时间，结束框跟着开始走且不可编辑。 */
+  // ── 铺满式类型菜单 ──
+
+  let openMenu = null;
+
+  /** 关掉当前打开的菜单（点外面、按 Esc、选完都走这里）。 */
+  function closeMenu() {
+    if (!openMenu) {
+      return;
+    }
+
+    openMenu.remove();
+    openMenu = null;
+    document.removeEventListener('click', onDocumentClick, true);
+    document.removeEventListener('keydown', onEsc, true);
+  }
+
+  function onDocumentClick(event) {
+    if (openMenu && !openMenu.contains(event.target)) {
+      closeMenu();
+    }
+  }
+
+  function onEsc(event) {
+    if (event.key === 'Escape') {
+      closeMenu();
+    }
+  }
+
+  /**
+   * 在按钮下方弹出一块**铺满按钮宽度、至少 180px** 的类型菜单。
+   *
+   * <p>
+   * 为什么不用 `<select>`：原生下拉在表格里只有窄窄一条，四个类型（上课/课间/分割线/行动）
+   * 放一起既看不出区别、也不好点；这里每个选项带自己的颜色块，选中的打勾，
+   * 一次就能看清"这一列有哪几种"。
+   * </p>
+   */
+  function openKindMenu(anchor, current, onPick) {
+    closeMenu();
+
+    const labels = kindLabels();
+    const menu = h('div.kind-menu');
+
+    for (const kind of KIND_ORDER) {
+      const option = h('button.kind-menu-item' + (kind === current ? '.active' : ''), {
+        type: 'button',
+        onClick: () => {
+          closeMenu();
+          if (kind !== current) {
+            onPick(kind);
+          }
+        },
+      }, h('span.kind-dot', { dataset: { kind } }), h('span', labels[kind]));
+
+      menu.appendChild(option);
+    }
+
+    document.body.appendChild(menu);
+
+    // 覆盖按钮宽度，但不窄于 180px；贴到视口底部时向上翻，避免被裁掉。
+    const rect = anchor.getBoundingClientRect();
+    const width = Math.max(rect.width, 180);
+    menu.style.minWidth = `${width}px`;
+
+    const menuHeight = menu.offsetHeight || 160;
+    const below = window.innerHeight - rect.bottom;
+    menu.style.left = `${Math.min(rect.left, window.innerWidth - width - 8)}px`;
+    menu.style.top = below < menuHeight + 8
+      ? `${Math.max(8, rect.top - menuHeight - 4)}px`
+      : `${rect.bottom + 4}px`;
+
+    openMenu = menu;
+    // 捕获阶段监听：菜单自己的点击先执行完 closeMenu，不会被这里立刻关掉。
+    setTimeout(() => {
+      document.addEventListener('click', onDocumentClick, true);
+      document.addEventListener('keydown', onEsc, true);
+    }, 0);
+  }
+
+  /** 类型单元格：一个带色块的按钮，点开就是上面的菜单。 */
+  function kindCell(item) {
+    const labels = kindLabels();
+    return h('button.kind-chip', {
+      type: 'button',
+      dataset: { kind: item.kind ?? 'class' },
+      onClick: (event) => {
+        event.stopPropagation();
+        openKindMenu(event.currentTarget, item.kind ?? 'class', (kind) => {
+          item.kind = kind;
+          if (isPointKind(kind)) {
+            item.endTime = item.startTime;
+          }
+
+          markDirty();
+          paintRows();
+        });
+      },
+    }, h('span.kind-dot', { dataset: { kind: item.kind ?? 'class' } }), labels[item.kind ?? 'class']);
+  }
+
+  /** 开始 / 结束时间。分割线与行动只有一个时间，结束框跟随开始且禁用。 */
   function timeCell(item, which) {
     const point = isPointKind(item.kind);
     const input = h('input', {
       type: 'text',
       value: (which === 'start' || point ? item.startTime : item.endTime) ?? '',
       placeholder: '08:00',
-      style: { width: '86px' },
+      style: { width: '78px' },
     });
 
     if (which === 'end' && point) {
-      // 不是"少一个框"，是从根上杜绝负时长与几小时的异常时间点。
       input.disabled = true;
     }
 
@@ -113,33 +223,12 @@ export async function render(container, params) {
       }
 
       markDirty();
+      paintStats();
     };
 
     return input;
   }
 
-  /** 类型下拉：切到零时长类型时把结束时间对齐。 */
-  function kindSelect(item) {
-    const labels = kindLabels();
-    const node = select(
-      KIND_ORDER.map((key) => ({ value: key, label: labels[key] })),
-      item.kind ?? 'class',
-    );
-
-    node.onchange = () => {
-      item.kind = node.value;
-      if (isPointKind(item.kind)) {
-        item.endTime = item.startTime;
-      }
-
-      markDirty();
-      paintRows();
-    };
-
-    return node;
-  }
-
-  /** 名称输入：课间同步写 breakName（宿主只认它）。 */
   function nameCell(item) {
     return h('input', {
       type: 'text',
@@ -156,6 +245,17 @@ export async function render(container, params) {
         markDirty();
       },
     });
+  }
+
+  function hideCell(item) {
+    const box = h('input', { type: 'checkbox' });
+    box.checked = Boolean(item.isHideDefault);
+    box.onchange = () => {
+      item.isHideDefault = box.checked;
+      markDirty();
+    };
+
+    return h('label.checkbox-field', box);
   }
 
   function removeCell(index) {
@@ -180,33 +280,84 @@ export async function render(container, params) {
     }, t('profiles.editor.delete'));
   }
 
+  /** 顶部统计：一眼看清这张表里有多少节课、总时长多少。 */
+  function paintStats() {
+    const classes = draft.items.filter((item) => item.kind === 'class').length;
+    const breaks = draft.items.filter((item) => item.kind === 'break').length;
+    const separators = draft.items.filter((item) => item.kind === 'separator').length;
+    const actions = draft.items.filter((item) => item.kind === 'action').length;
+
+    const total = draft.items
+      .map(durationOf)
+      .filter((value) => value !== null)
+      .reduce((sum, value) => sum + Math.max(0, value), 0);
+
+    clear(statsHost);
+    statsHost.appendChild(h('span', t('layoutEditor.stats', {
+      total: draft.items.length,
+      classes,
+      breaks,
+      totalMinutes: total,
+    })));
+
+    if (separators > 0 || actions > 0) {
+      statsHost.appendChild(h('span', { style: { marginLeft: '10px' } },
+        t('layoutEditor.statsMarks', { separators, actions })));
+    }
+  }
+
+  /** 节次列：只有「上课」才编号，课间/分割线/行动显示为横线。 */
+  function ordinalAt(index) {
+    let count = 0;
+    for (let i = 0; i <= index; i += 1) {
+      if (draft.items[i]?.kind === 'class') {
+        count += 1;
+      }
+    }
+
+    return draft.items[index]?.kind === 'class' ? count : null;
+  }
+
   function paintRows() {
     clear(listHost);
+    paintStats();
 
     if (draft.items.length === 0) {
       listHost.appendChild(h('p.card-desc', t('layoutEditor.empty')));
       return;
     }
 
-    const rows = draft.items.map((item, index) => h('tr',
-      h('td', timeCell(item, 'start')),
-      h('td', timeCell(item, 'end')),
-      h('td', kindSelect(item)),
-      h('td', nameCell(item)),
-      h('td', removeCell(index))));
+    const rows = draft.items.map((item, index) => {
+      const ordinal = ordinalAt(index);
+      const duration = durationOf(item);
+
+      return h('tr',
+        h('td', h('span.cell-sub', ordinal === null ? '—' : String(ordinal))),
+        h('td', timeCell(item, 'start')),
+        h('td', timeCell(item, 'end')),
+        h('td', h('span.cell-sub', isPointKind(item.kind)
+          ? '—'
+          : (duration === null ? '—' : t('layoutEditor.minutes', { count: duration })))),
+        h('td', kindCell(item)),
+        h('td', nameCell(item)),
+        h('td', hideCell(item)),
+        h('td', removeCell(index)));
+    });
 
     const head = h('tr',
-      h('th', { style: { width: '110px' } }, t('layoutEditor.start')),
-      h('th', { style: { width: '110px' } }, t('layoutEditor.end')),
-      h('th', { style: { width: '120px' } }, t('layoutEditor.kind')),
+      h('th', { style: { width: '54px' } }, t('layoutEditor.ordinal')),
+      h('th', { style: { width: '100px' } }, t('layoutEditor.start')),
+      h('th', { style: { width: '100px' } }, t('layoutEditor.end')),
+      h('th', { style: { width: '86px' } }, t('layoutEditor.duration')),
+      h('th', { style: { width: '160px' } }, t('layoutEditor.kind')),
       h('th', t('layoutEditor.name')),
-      h('th', { style: { width: '90px' } }, ''));
+      h('th', { style: { width: '70px' } }, t('layoutEditor.hidden')),
+      h('th', { style: { width: '80px' } }, ''));
 
-    const table = h('table.data.data-compact',
-      h('thead', head),
-      h('tbody', ...rows));
-
-    listHost.appendChild(h('div.table-wrap', table));
+    listHost.appendChild(h('div.table-wrap',
+      h('table.data.data-compact',
+        h('thead', head),
+        h('tbody', ...rows))));
   }
 
   async function save() {
@@ -229,15 +380,22 @@ export async function render(container, params) {
     }
   }
 
-  function addItem() {
-    // 新时间点接在最后一个之后：默认 45 分钟，比"从 00:00 开始"少改两次。
+  function addItem(kind = 'class') {
+    // 新时间点接在最后一个之后：上课默认 45 分钟，课间默认 10 分钟。
     const last = draft.items[draft.items.length - 1];
     const start = last?.endTime || '08:00';
+    const span = kind === 'break' ? 10 : 45;
     const [hour, minute] = start.split(':').map((x) => Number(x) || 0);
-    const endMinutes = hour * 60 + minute + 45;
+    const endMinutes = hour * 60 + minute + span;
     const end = `${String(Math.floor(endMinutes / 60) % 24).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`;
 
-    draft.items.push({ id: genId(), startTime: start, endTime: end, kind: 'class' });
+    draft.items.push({
+      id: genId(),
+      startTime: start,
+      endTime: isPointKind(kind) ? start : end,
+      kind,
+    });
+
     markDirty();
     paintRows();
   }
@@ -248,12 +406,17 @@ export async function render(container, params) {
     nameInput,
     h('div.spacer'),
     dirtyMark,
-    h('button.btn.btn-sm', { type: 'button', onClick: addItem }, t('layoutEditor.addPoint')),
-    h('button.btn.btn-sm.btn-primary', { type: 'button', onClick: save }, t('profiles.editor.save')));
+    h('button.btn.btn-sm', { type: 'button', onClick: () => addItem('class') },
+      t('layoutEditor.addPoint')),
+    h('button.btn.btn-sm', { type: 'button', onClick: () => addItem('break') },
+      t('layoutEditor.addBreak')),
+    h('button.btn.btn-sm.btn-primary', { type: 'button', onClick: save },
+      t('profiles.editor.save')));
 
   container.appendChild(h('div',
     toolbar,
     h('p.card-desc', t('layoutEditor.lead')),
+    statsHost,
     listHost));
 
   paintRows();

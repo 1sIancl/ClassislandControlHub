@@ -3337,5 +3337,14 @@ export default {
   'layouts.newLayoutName': "New layout",
   'layouts.createFailed': "Failed to create layout",
 
+  // 时间表编辑：详细列与类型菜单（#136）
+  'layoutEditor.ordinal': "#",
+  'layoutEditor.duration': "Length",
+  'layoutEditor.hidden': "Hide",
+  'layoutEditor.minutes': "{count} min",
+  'layoutEditor.addBreak': "Add break",
+  'layoutEditor.stats': "{total} points · {classes} lessons · {breaks} breaks · {totalMinutes} minutes",
+  'layoutEditor.statsMarks': "plus {separators} separator(s) / {actions} action(s)",
+
 };
 

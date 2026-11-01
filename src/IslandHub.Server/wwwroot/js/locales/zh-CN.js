@@ -3337,5 +3337,14 @@ export default {
   'layouts.newLayoutName': "新时间表",
   'layouts.createFailed': "新建时间表失败",
 
+  // 时间表编辑：详细列与类型菜单（#136）
+  'layoutEditor.ordinal': "节次",
+  'layoutEditor.duration': "时长",
+  'layoutEditor.hidden': "隐藏",
+  'layoutEditor.minutes': "{count} 分钟",
+  'layoutEditor.addBreak': "加课间",
+  'layoutEditor.stats': "共 {total} 个时间点 · 上课 {classes} 节 · 课间 {breaks} 个 · 共 {totalMinutes} 分钟",
+  'layoutEditor.statsMarks': "另有 分割线 {separators} 条 / 行动 {actions} 条",
+
 };
 

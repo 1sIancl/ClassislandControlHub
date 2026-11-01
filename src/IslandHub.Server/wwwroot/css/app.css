@@ -4743,3 +4743,68 @@ table.data-compact td input[type="text"] {
   background: color-mix(in srgb, var(--accent) 7%, transparent);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
+
+/* 时间表编辑：类型用「点开铺满的菜单」，不用每行内嵌 <select>（#136）。
+   原生下拉在表格里只有窄窄一条，四个类型挤在一起既看不清也不好点；
+   这里每个选项带自己的色块、选中项打底色，一次就能看清这一列有哪几种。 */
+.kind-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel-2);
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.kind-chip:hover {
+  border-color: var(--accent);
+}
+
+.kind-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.kind-dot[data-kind='class'] { background: var(--accent); }
+.kind-dot[data-kind='break'] { background: var(--text-dim); }
+.kind-dot[data-kind='separator'] { background: #8b5cf6; }
+.kind-dot[data-kind='action'] { background: #f59e0b; }
+
+.kind-menu {
+  position: fixed;
+  z-index: 70;
+  padding: 6px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 18%);
+}
+.kind-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.kind-menu-item:hover {
+  background: var(--bg-hover);
+}
+.kind-menu-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
