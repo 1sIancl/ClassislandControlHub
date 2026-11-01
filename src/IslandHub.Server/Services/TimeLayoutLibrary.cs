@@ -60,13 +60,29 @@ public static class TimeLayoutLibrary
             return contentJson;
         }
 
+        // 档案自带的那份快照：库里缺条目时用它兜底。
+        var snapshot = root["timeLayouts"] as JsonArray;
+
         var projected = new JsonArray();
         foreach (var id in ids)
         {
             var row = await store.GetTimeLayoutAsync(id, cancellationToken);
             if (row is null)
             {
-                // 引用的时间表被删了：跳过而不是造一张空的，免得下发一份没时间点的作息。
+                // 引用的时间表在库里找不到（被删了、或引用了不存在的 ID）。
+                //
+                // 不能直接跳过：课表是按 timeLayoutId 指向时间表的，少一张就等于
+                // 这些课表全部悬空——教室里排不出节次，而且界面上看不出哪里错了。
+                // 用档案自带的快照兜底，至少内容还在；两者都没有才真的跳过。
+                var fallback = snapshot?
+                    .FirstOrDefault(node => string.Equals(
+                        node?["id"]?.GetValue<string>(), id, StringComparison.OrdinalIgnoreCase));
+
+                if (fallback is not null)
+                {
+                    projected.Add(fallback.DeepClone());
+                }
+
                 continue;
             }
 

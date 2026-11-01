@@ -256,8 +256,9 @@ public static class ProfileEndpoints
             Description = row.Description,
             Code = await GenerateUniqueCodeAsync(store, cancellationToken),
             Revision = 1,
-            // 内容原样放回：时间表仍在全局库里，引用照样有效；课表、科目也都是原文。
-            Content = row.Content,
+            // 内容原样放回，但**也走一次提取**：留档若来自更早的版本（只带 timeLayouts、
+            // 没有 timeLayoutIds），不提取的话这些时间表进不了全局库，之后别处就共享不到。
+            Content = await TimeLayoutLibrary.ExtractAsync(store, row.Content, cancellationToken),
             IsDefault = await store.CountProfilesAsync(cancellationToken) == 0,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
@@ -705,8 +706,13 @@ public static class ProfileEndpoints
         // CSES 会一并并入逐格课表（按 enable_day 生成），与 AI 导入保持一致。
         var merged = ContentMerger.Merge(content, imported, includeClassPlans: true);
 
+        // 与 .cidata 导入同样处理：并进来的时间表要进全局库（#136），
+        // 否则「时间表」页读完这库看不到它们，别的档案也共用不到。
+        var contentJson = await TimeLayoutLibrary.ExtractAsync(
+            store, HubJson.Serialize(content), cancellationToken);
+
         var updated = await store.UpdateProfileAsync(profile.Id, profile.Name, profile.Description,
-            HubJson.Serialize(content), true, cancellationToken)
+            contentJson, true, cancellationToken)
                       ?? throw HubException.NotFound("配置档案不存在。");
 
         var revision = await sync.BumpRevisionAsync(cancellationToken);
