@@ -154,11 +154,43 @@ public sealed partial class HubStore
         await transaction.CommitAsync(cancellationToken);
     }
 
-    /// <summary>删除配置档案，并解除相关绑定。</summary>
-    public async Task DeleteProfileAsync(string id, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// 删除配置档案，并解除相关绑定。
+    ///
+    /// <para>
+    /// 删之前先留一份整档快照到 <c>deleted_profiles</c>：课表、科目、设置都在 <c>content</c> 里，
+    /// 档案行一删就全没了，「删错了」没有第二次机会。
+    /// </para>
+    ///
+    /// <para>
+    /// **时间表不删**：它在独立的 <c>time_layouts</c> 表里，是全局实体，
+    /// 可能还被别的档案引用——跟着档案删掉，等于把别人的课表指向一张不存在的作息。
+    /// </para>
+    /// </summary>
+    public async Task DeleteProfileAsync(
+        string id, string deletedBy = "", CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        // ① 留档（同一事务，删失败不会留下"有快照却没删掉"的中间态）。
+        await using (var snapshot = connection.CreateCommand())
+        {
+            snapshot.Transaction = (SqliteTransaction)transaction;
+            snapshot.CommandText = """
+                INSERT INTO deleted_profiles
+                    (id, profile_id, name, description, content, revision, deleted_at, deleted_by)
+                SELECT $snapshotId, id, name, description, content, revision, $now, $by
+                FROM profiles WHERE id = $id;
+                """;
+            snapshot.Parameters.AddWithValue("$snapshotId", Guid.NewGuid().ToString("N"));
+            snapshot.Parameters.AddWithValue("$now", Ts(DateTimeOffset.UtcNow));
+            snapshot.Parameters.AddWithValue("$by", deletedBy ?? string.Empty);
+            snapshot.Parameters.AddWithValue("$id", id);
+            await snapshot.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        // ② 再删档案与绑定。
         foreach (var sql in new[]
                  {
                      "DELETE FROM profiles WHERE id = $id;",

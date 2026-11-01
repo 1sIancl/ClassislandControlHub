@@ -493,6 +493,20 @@ public sealed partial class HubStore
         -- 全局时间表库（#136）：时间表不再从属于某一个档案，而是独立实体；
         -- 档案通过 content.timeLayoutIds 引用它。这样同一张时间表（同一份作息）
         -- 可以被多个档案 / 多张课表共用，改一次全都跟着变。
+        -- 已删除档案的留档（#137）：删档案时把整份内容存一份，课表 / 科目 / 时间表引用都在里面，
+        -- 需要时可以整份恢复。时间表本身存 time_layouts，**不随档案删除**——它是全局实体，
+        -- 可能还被别的档案引用，删掉会让别人的课表指向不存在的作息。
+        CREATE TABLE IF NOT EXISTS deleted_profiles (
+            id            TEXT PRIMARY KEY,
+            profile_id    TEXT NOT NULL,
+            name          TEXT NOT NULL,
+            description   TEXT NOT NULL DEFAULT '',
+            content       TEXT NOT NULL,
+            revision      INTEGER NOT NULL DEFAULT 0,
+            deleted_at    TEXT NOT NULL,
+            deleted_by    TEXT NOT NULL DEFAULT ''
+        );
+
         CREATE TABLE IF NOT EXISTS time_layouts (
             id          TEXT PRIMARY KEY,
             name        TEXT NOT NULL,

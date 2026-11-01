@@ -37,6 +37,15 @@ public static class ProfileEndpoints
     group.MapGet("/time-layouts", ListTimeLayoutsAsync).RequirePermission(PermissionKeys.ProfilesRead);
     group.MapGet("/time-layouts/{id}", GetTimeLayoutAsync).RequirePermission(PermissionKeys.ProfilesRead);
     group.MapPut("/time-layouts/{id}", SaveTimeLayoutAsync).RequirePermission(PermissionKeys.ProfilesWrite);
+
+    // 下发内容预览（#136）：核对"这台设备会收到什么"，尤其是行动内容有没有跟着走。
+    group.MapGet("/devices/{id}/sync-preview", PreviewSyncAsync).RequirePermission(PermissionKeys.ProfilesRead);
+
+    // 已删除档案的留档（#137）：删档案不删时间表，课表随留档可恢复。
+    // 路径用 profile-trash 而不是 profiles/trash，免得和 /profiles/{id} 抢匹配。
+    group.MapGet("/profile-trash", ListProfileTrashAsync).RequirePermission(PermissionKeys.ProfilesRead);
+    group.MapPost("/profile-trash/{id}/restore", RestoreProfileAsync).RequirePermission(PermissionKeys.ProfilesWrite);
+    group.MapDelete("/profile-trash/{id}", PurgeProfileTrashAsync).RequirePermission(PermissionKeys.ProfilesWrite);
         group.MapDelete("/profiles/{id}", DeleteAsync).RequirePermission(PermissionKeys.ProfilesWrite);
         group.MapPost("/profiles/{id}/default", SetDefaultAsync).RequirePermission(PermissionKeys.ProfilesWrite);
         group.MapPost("/profiles/{id}/push", PushAsync).RequirePermission(PermissionKeys.DeployWrite);
@@ -189,6 +198,156 @@ public static class ProfileEndpoints
             Id = id,
             Name = request.Name.Trim(),
             Items = request.Items ?? [],
+        });
+    }
+
+    /// <summary>
+    /// 已删除档案的留档列表（#137）。
+    ///
+    /// <para>
+    /// 删档案时课表、科目会随 content 一起消失，所以删前存一份。
+    /// **时间表不在留档里**——它在全局库里，删除档案根本不碰它。
+    /// </para>
+    /// </summary>
+    private static async Task<ApiResult<object>> ListProfileTrashAsync(
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        http.RequireAdminSession();
+        var rows = await store.GetDeletedProfilesAsync(cancellationToken);
+
+        return ApiResult<object>.Success(rows.Select(row => new
+        {
+            id = row.Id,
+            profileId = row.ProfileId,
+            name = row.Name,
+            revision = row.Revision,
+            deletedAt = row.DeletedAt,
+            deletedBy = row.DeletedBy,
+        }).ToList());
+    }
+
+    /// <summary>
+    /// 从留档恢复档案（#137）。
+    /// <para>
+    /// 原 ID 若已被占用就换一个新 ID——同名档案被删后又重建是常见情况，
+    /// 撞 ID 会直接失败，而用户只想把内容拿回来。
+    /// </para>
+    /// </summary>
+    private static async Task<ApiResult<ProfileSaveResult>> RestoreProfileAsync(
+        string id,
+        HttpContext http,
+        HubStore store,
+        SyncService sync,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var row = await store.GetDeletedProfileAsync(id, cancellationToken)
+                  ?? throw HubException.NotFound("留档不存在或已恢复。");
+
+        var occupied = await store.GetProfileAsync(row.ProfileId, cancellationToken) is not null;
+        var newId = occupied ? HubChecksum.NewId() : row.ProfileId;
+
+        var profile = new ProfileRow
+        {
+            Id = newId,
+            Name = occupied ? $"{row.Name}（恢复）" : row.Name,
+            Description = row.Description,
+            Code = await GenerateUniqueCodeAsync(store, cancellationToken),
+            Revision = 1,
+            // 内容原样放回：时间表仍在全局库里，引用照样有效；课表、科目也都是原文。
+            Content = row.Content,
+            IsDefault = await store.CountProfilesAsync(cancellationToken) == 0,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
+
+        await store.CreateProfileAsync(profile, cancellationToken);
+        await store.PurgeDeletedProfileAsync(id, cancellationToken);
+
+        var revision = await sync.BumpRevisionAsync(cancellationToken);
+        await store.AddAuditAsync(session.Username, "profile.restore", profile.Name,
+            $"从「已删除档案」恢复（原 ID {row.ProfileId}，删除于 {row.DeletedAt:yyyy-MM-dd HH:mm}）。",
+            http.GetClientIpAddress(), cancellationToken);
+
+        return ApiResult<ProfileSaveResult>.Success(new ProfileSaveResult
+        {
+            Profile = ToDto(profile, includeContent: true),
+            Revision = revision,
+        });
+    }
+
+    /// <summary>彻底删除一条留档（内容一并丢弃，不可恢复）。</summary>
+    private static async Task<ApiResult<object>> PurgeProfileTrashAsync(
+        string id,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+        var removed = await store.PurgeDeletedProfileAsync(id, cancellationToken);
+
+        if (!removed)
+        {
+            throw HubException.NotFound("留档不存在。");
+        }
+
+        await store.AddAuditAsync(session.Username, "profile.trash-purge", id,
+            "彻底删除一条档案留档。", http.GetClientIpAddress(), cancellationToken);
+
+        return ApiResult<object>.Success(new { removed = true });
+    }
+
+    /// <summary>
+    /// 预览「这台设备实际会收到什么」（#136）。
+    ///
+    /// <para>
+    /// 起因是个很容易复现的困惑：在时间表页改了行动内容，档案接口读得到新值，
+    /// 教室端却没变；而没有这个接口时，只能靠猜"是没下发、还是下发的是旧快照"。
+    /// 这里直接把下发前的最终内容摘要出来，一眼就能看出行动在不在、内容多大。
+    /// </para>
+    /// </summary>
+    private static async Task<ApiResult<object>> PreviewSyncAsync(
+        string id,
+        HttpContext http,
+        HubStore store,
+        SyncService sync,
+        CancellationToken cancellationToken)
+    {
+        http.RequireAdminSession();
+
+        var device = await store.GetDeviceAsync(id, cancellationToken)
+                     ?? throw HubException.NotFound("设备不存在。");
+
+        // force = true：不看客户端版本，直接生成完整内容，否则"已是最新"时拿不到东西可看。
+        var response = await sync.BuildSyncResponseAsync(device, null, null, null, true, cancellationToken)
+                       ?? throw HubException.Validation("这台设备没有可用的配置档案。");
+
+        var content = response.Content;
+
+        return ApiResult<object>.Success(new
+        {
+            profileName = response.ProfileName,
+            revision = response.Revision,
+            checksum = response.Checksum,
+            timeLayouts = content?.TimeLayouts?.Count ?? 0,
+            classPlans = content?.ClassPlans?.Count ?? 0,
+            subjects = content?.Subjects?.Count ?? 0,
+            // 行动摘要：看得到「哪张时间表的哪个时间点、带几个动作、多少字节」，
+            // 就足以判断内容到底跟没跟着档案走。
+            actions = (content?.TimeLayouts ?? [])
+                .SelectMany(layout => (layout.Items ?? []).Select(item => new
+                {
+                    layout = layout.Name,
+                    time = item.StartTime,
+                    kind = item.Kind,
+                    actionSetName = item.ActionSetName,
+                    actionCount = item.ActionSetCount,
+                    bytes = item.ActionSetJson?.Length ?? 0,
+                }))
+                .Where(x => x.actionCount > 0 || x.bytes > 0)
+                .ToList(),
         });
     }
 
@@ -436,12 +595,16 @@ public static class ProfileEndpoints
             throw HubException.Validation("至少需要保留一个配置档案。");
         }
 
-        await store.DeleteProfileAsync(id, cancellationToken);
+        // 传操作人：删之前会留一份整档快照（#137），留档上要能看出是谁删的。
+        await store.DeleteProfileAsync(id, session.Username, cancellationToken);
         await store.DeleteProfileVersionsOfProfileAsync(id, cancellationToken);
         await store.DeleteTimetableOverridesOfProfileAsync(id, cancellationToken);
         await sync.BumpRevisionAsync(cancellationToken);
+        // 时间表**不删**（全局实体，可能还被别的档案引用）；
+        // 课表随 content 进了留档，可在「已删除档案」里整份恢复。
         await store.AddAuditAsync(session.Username, "profile.delete", profile.Name,
-            "删除配置档案，相关设备已恢复为继承分组/默认档案。",
+            "删除配置档案，相关设备已恢复为继承分组/默认档案；"
+            + "档案内容已留档（可在「已删除档案」恢复），时间表保留在全局库中未删除。",
             http.GetClientIpAddress(), cancellationToken);
 
         return ApiResult<bool>.Success(true);
@@ -655,8 +818,14 @@ public static class ProfileEndpoints
         // 而不是写出一份接口看着没问题、教室端却渲染不出来的档案。
         var repairs = ContentNormalizer.Normalize(content);
 
+        // 导入进来的时间表也要进全局库（#136）。少了这一步会形成很迷惑的状态：
+        // 档案里读得到行动内容，但「时间表」页（读的是库）里是空的，
+        // 别的档案想共用这张作息也拿不到——「行动内容跟档案走」就卡在这。
+        var contentJson = await TimeLayoutLibrary.ExtractAsync(
+            store, HubJson.Serialize(content), cancellationToken);
+
         var updated = await store.UpdateProfileAsync(profile.Id, profile.Name, profile.Description,
-            HubJson.Serialize(content), true, cancellationToken)
+            contentJson, true, cancellationToken)
                       ?? throw HubException.NotFound("配置档案不存在。");
 
         var revision = await sync.BumpRevisionAsync(cancellationToken);

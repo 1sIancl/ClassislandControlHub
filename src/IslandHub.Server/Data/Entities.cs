@@ -139,6 +139,33 @@ public sealed class TimeLayoutRow
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
+/// <summary>
+/// 已删除档案的留档（#137）。
+///
+/// <para>
+/// 课表、科目都装在 <see cref="Content"/> 里，档案行一删就全没了。删之前存一份，
+/// 需要时可以整份恢复。**时间表不在这里**——它是全局实体（<c>time_layouts</c>），
+/// 删档案时压根不动它：它还可能有别的档案在引用，删掉等于把别人的课表指空。
+/// </para>
+/// </summary>
+public sealed class DeletedProfileRow
+{
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>原档案 ID（恢复时用来判断是否与现有档案冲突）。</summary>
+    public string ProfileId { get; set; } = string.Empty;
+
+    public string Name { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+
+    /// <summary>删除前那一刻的整份内容（课表 / 科目 / 时间表引用 / 设置）。</summary>
+    public string Content { get; set; } = "{}";
+
+    public long Revision { get; set; }
+    public DateTimeOffset DeletedAt { get; set; }
+    public string DeletedBy { get; set; } = string.Empty;
+}
+
 public sealed class ProfileRow
 {
     public string Id { get; set; } = string.Empty;
