@@ -103,15 +103,17 @@ public sealed class UpdateService(
 
         try
         {
-            var api = $"https://api.github.com/repos/{repo}/releases/latest";
-            using var doc = await GetJsonAsync(api, cancellationToken);
+            // 官方优先，失败回退到配置的镜像：国内直连 api.github.com 经常超时，
+            // 只配官方的话「检查更新」永远是红的，用户会以为功能坏了。
+            var (root, source) = await QueryLatestReleaseAsync(repo, cancellationToken);
 
-            var root = doc.RootElement;
-            var tag = root.GetProperty("tag_name").GetString()?.TrimStart('v', 'V');
-            var body = root.TryGetProperty("body", out var b) ? b.GetString() : null;
+            using var _document = root;
+            var element = root.RootElement;
+            var tag = element.GetProperty("tag_name").GetString()?.TrimStart('v', 'V');
+            var body = element.TryGetProperty("body", out var b) ? b.GetString() : null;
 
             var (hasUpdate, downloadUrl) = HasNewer(tag, current)
-                ? (true, FindAssetUrl(root))
+                ? (true, MirrorDownload(FindAssetUrl(element)))
                 : (false, null);
 
             lock (_gate)
@@ -174,7 +176,23 @@ public sealed class UpdateService(
             try
             {
                 logger.LogInformation("下载更新包：{Url}", state.DownloadUrl);
-                await DownloadAsync(state.DownloadUrl, zipPath, cancellationToken);
+                try
+                {
+                    await DownloadAsync(state.DownloadUrl, zipPath, cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // 镜像挂了不该连官方也拿不到：去掉前缀再直连一次。
+                    // 反过来不成立——直连失败时没法凭空知道该用哪个镜像，所以只做这个方向。
+                    var direct = StripMirror(state.DownloadUrl);
+                    if (string.Equals(direct, state.DownloadUrl, StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw;
+                    }
+
+                    logger.LogWarning(ex, "镜像下载失败，改为直连 GitHub 重试：{Url}", direct);
+                    await DownloadAsync(direct!, zipPath, cancellationToken);
+                }
 
                 logger.LogInformation("解压更新包到 {Dir}", extractDir);
                 Directory.CreateDirectory(extractDir);
@@ -264,6 +282,95 @@ public sealed class UpdateService(
 
         logger.LogInformation("程序文件已替换，数据目录 {DataDir} 保留。", dataDirFull);
         await Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// 依次尝试各个 Release 来源，返回第一个成功的响应与来源名。
+    ///
+    /// <para>
+    /// 为什么要有这一步：国内直连 <c>api.github.com</c> 常常几十秒超时或直接 RST，
+    /// 「检查更新」就永远是红的，用户以为功能坏了。配了 <c>UpdateApiMirror</c> 之后
+    /// 官方失败会自动回退过去，且**不改变任何默认行为**（不填镜像就与以前完全一样）。
+    /// </para>
+    /// </summary>
+    private async Task<(JsonDocument Document, string Source)> QueryLatestReleaseAsync(
+        string repo, CancellationToken cancellationToken)
+    {
+        var attempts = new List<(string Url, string Label)>
+        {
+            ($"https://api.github.com/repos/{repo}/releases/latest", "GitHub"),
+        };
+
+        var mirror = (options.CurrentValue.UpdateApiMirror ?? string.Empty).Trim().TrimEnd('/');
+        if (mirror.Length > 0)
+        {
+            attempts.Add(($"{mirror}/repos/{repo}/releases/latest", "镜像"));
+        }
+
+        var errors = new List<string>();
+        foreach (var (url, label) in attempts)
+        {
+            try
+            {
+                return (await GetJsonAsync(url, cancellationToken), label);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                errors.Add($"{label}：{ex.Message}");
+                logger.LogWarning(ex, "从 {Label} 查询 Release 失败：{Url}", label, url);
+            }
+        }
+
+        throw new InvalidOperationException(
+            "所有更新源都不可用（" + string.Join("；", errors) + "）。"
+            + "国内网络可配置 ControlHub:UpdateApiMirror 与 UpdateDownloadMirrorPrefix 指向镜像。");
+    }
+
+    /// <summary>
+    /// 给下载地址套上镜像前缀（没配就原样返回）。
+    ///
+    /// <para>
+    /// 已经带前缀的不重复加——否则二次应用会变成
+    /// <c>https://ghfast.top/https://ghfast.top/https://github.com/…</c>。
+    /// </para>
+    /// </summary>
+    private string? MirrorDownload(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return url;
+        }
+
+        var prefix = options.CurrentValue.UpdateDownloadMirrorPrefix?.Trim();
+        if (string.IsNullOrWhiteSpace(prefix))
+        {
+            return url;
+        }
+
+        var normalized = prefix.TrimEnd('/') + "/";
+        return url.StartsWith(normalized, StringComparison.OrdinalIgnoreCase)
+            ? url
+            : normalized + url;
+    }
+
+    /// <summary>去掉镜像前缀，还原成 GitHub 原始地址（没配前缀时原样返回）。</summary>
+    private string? StripMirror(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return url;
+        }
+
+        var prefix = options.CurrentValue.UpdateDownloadMirrorPrefix?.Trim();
+        if (string.IsNullOrWhiteSpace(prefix))
+        {
+            return url;
+        }
+
+        var normalized = prefix.TrimEnd('/') + "/";
+        return url.StartsWith(normalized, StringComparison.OrdinalIgnoreCase)
+            ? url[normalized.Length..]
+            : url;
     }
 
     private static string? FindAssetUrl(JsonElement root)

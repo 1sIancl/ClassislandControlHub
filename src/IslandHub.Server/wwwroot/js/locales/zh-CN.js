@@ -3257,5 +3257,28 @@ export default {
   'profiles.editor.actionSetYes': "有",
   'profiles.editor.actionSetNo': "无",
 
+  // 时间表独立入口（#134）
+  'nav.layouts': "时间表",
+  'layouts.title': "时间表",
+  'layouts.subtitle': "按档案查看全部时间表，点「编辑」进入时间点编辑",
+  'layouts.loading': "正在读取档案与时间表…",
+  'layouts.loadFailed': "读取时间表失败",
+  'layouts.lead': "时间表属于档案（一个档案 = 一套时间表 + 课表 + 科目）。这里把它们集中列出来，按档案分组；编辑仍回到档案编辑器里做，数据只有一份，不会出现两处不一致。",
+  'layouts.searchLabel': "筛选",
+  'layouts.searchPlaceholder': "按时间表名或档案名筛选",
+  'layouts.name': "时间表",
+  'layouts.points': "时间点",
+  'layouts.refs': "被课表引用",
+  'layouts.pointsCount': "{count} 个",
+  'layouts.refsCount': "{count} 张",
+  'layouts.refsNone': "未被引用",
+  'layouts.edit': "编辑",
+  'layouts.opening': "正在打开档案",
+  'layouts.profileSummary': "{layouts} 张时间表 · {plans} 张课表",
+  'layouts.empty': "还没有档案",
+  'layouts.emptyHint': "先在「配置档案」里建一份档案，时间表就属于它。",
+  'layouts.noMatch': "没有匹配的时间表",
+  'layouts.noMatchHint': "换个关键词，或先在档案编辑器里新建一张时间表。",
+
 };
 

@@ -6,12 +6,12 @@
  * 最容易让人以为它只是一次普通推送。
  */
 
-import { api } from '../core/api.js?v=167';
-import { toastError } from '../core/errors.js?v=167';
+import { api } from '../core/api.js?v=168';
+import { toastError } from '../core/errors.js?v=168';
 import {
   h, clear, toast, loadingBlock, field, select, confirmDialog, formatDateTime,
-} from '../core/ui.js?v=167';
-import { t } from '../core/i18n.js?v=167';
+} from '../core/ui.js?v=168';
+import { t } from '../core/i18n.js?v=168';
 
 export const meta = {
   title: t('exam.title'),

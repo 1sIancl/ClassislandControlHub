@@ -1,0 +1,49 @@
+# IslandHub admin console - internal school system, not a public site.
+# Search engines must not index it.
+#
+# Two notes:
+#   1. robots.txt only binds well-behaved crawlers; it is not access control.
+#      Real protection is the login + optional admin IP allow-list.
+#   2. It does not affect normal usage: admins, classroom clients and API
+#      calls all work exactly as before.
+#
+# (Kept ASCII on purpose: robots.txt has no charset declaration, and non-ASCII
+#  comments come out as mojibake in most clients.)
+
+User-agent: *
+Disallow: /
+
+# Explicitly list the crawlers that are most likely to hit an exposed
+# management console in mainland China, so even robots-ignoring ones are on record.
+User-agent: Googlebot
+Disallow: /
+
+User-agent: Bingbot
+Disallow: /
+
+User-agent: Baiduspider
+Disallow: /
+
+User-agent: YisouSpider
+Disallow: /
+
+User-agent: Sogou web spider
+Disallow: /
+
+User-agent: 360Spider
+Disallow: /
+
+User-agent: PetalBot
+Disallow: /
+
+User-agent: AhrefsBot
+Disallow: /
+
+User-agent: SemrushBot
+Disallow: /
+
+User-agent: MJ12bot
+Disallow: /
+
+User-agent: DotBot
+Disallow: /

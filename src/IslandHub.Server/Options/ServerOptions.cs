@@ -80,6 +80,30 @@ public sealed class ServerOptions
     /// <summary>自动更新的 GitHub 仓库（owner/repo），用于检查最新 Release。</summary>
     public string UpdateRepo { get; set; } = "1sIancl/ClassislandControlHub";
 
+    /// <summary>
+    /// 备用的 Release 查询基址（**国内网络用**）。留空表示只用 GitHub 官方。
+    /// <para>
+    /// 两种写法都认：① 加速前缀，如 <c>https://ghfast.top/https://api.github.com</c>；
+    /// ② 自建镜像，如 <c>https://update.example.edu.cn/classisland</c>
+    /// （只要该地址下 <c>/repos/{owner}/{repo}/releases/latest</c> 能返回与 GitHub 同结构的 JSON）。
+    /// </para>
+    /// <para>
+    /// 检查更新时**官方优先，失败自动回退到它**——国内直连 api.github.com 常常超时，
+    /// 只配官方的话「检查更新」永远是红的，用户以为功能坏了。
+    /// </para>
+    /// </summary>
+    public string UpdateApiMirror { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 下载更新包时套用的镜像前缀（**国内网络用**）。留空表示直连 GitHub。
+    /// <para>
+    /// 例如 <c>https://ghfast.top/</c>，则 <c>https://github.com/x/y/releases/download/...</c>
+    /// 会变成 <c>https://ghfast.top/https://github.com/...</c>。
+    /// 下载失败时会自动去掉前缀再试一次直连（镜像挂了不至于连官方也拿不到）。
+    /// </para>
+    /// </summary>
+    public string UpdateDownloadMirrorPrefix { get; set; } = string.Empty;
+
     /// <summary>是否启用自动检查更新（后台周期性查询 GitHub Release）。</summary>
     public bool AutoCheckUpdates { get; set; } = true;
 

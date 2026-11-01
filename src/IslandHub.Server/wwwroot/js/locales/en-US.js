@@ -3257,5 +3257,28 @@ export default {
   'profiles.editor.actionSetYes': "yes",
   'profiles.editor.actionSetNo': "none",
 
+  // 时间表独立入口（#134）
+  'nav.layouts': "Time layouts",
+  'layouts.title': "Time layouts",
+  'layouts.subtitle': "All layouts grouped by profile — press Edit to change time points",
+  'layouts.loading': "Loading profiles and layouts…",
+  'layouts.loadFailed': "Failed to load layouts",
+  'layouts.lead': "Layouts belong to profiles (a profile = layouts + timetable + subjects). They are listed here grouped by profile; editing still happens in the profile editor, so there is exactly one source of truth.",
+  'layouts.searchLabel': "Filter",
+  'layouts.searchPlaceholder': "Filter by layout or profile name",
+  'layouts.name': "Layout",
+  'layouts.points': "Points",
+  'layouts.refs': "Used by",
+  'layouts.pointsCount': "{count}",
+  'layouts.refsCount': "{count}",
+  'layouts.refsNone': "unused",
+  'layouts.edit': "Edit",
+  'layouts.opening': "Opening profile",
+  'layouts.profileSummary': "{layouts} layout(s) · {plans} timetable(s)",
+  'layouts.empty': "No profiles yet",
+  'layouts.emptyHint': "Create a profile first — layouts belong to it.",
+  'layouts.noMatch': "No matching layouts",
+  'layouts.noMatchHint': "Try another keyword, or create a layout in the profile editor.",
+
 };
 

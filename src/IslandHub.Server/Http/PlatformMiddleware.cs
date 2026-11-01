@@ -37,6 +37,11 @@ public sealed class SecurityHeadersMiddleware(RequestDelegate next)
         headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()";
         headers["Content-Security-Policy"] = ContentSecurityPolicy;
 
+        // 不欢迎搜索引擎收录：管理台是校内系统，出现在搜索结果里既没用又暴露入口。
+        // 这是**给爬虫看的**语义头，对普通用户与已登录的管理员没有任何影响；
+        // 同时配合 wwwroot/robots.txt 拒绝抓取。要真正挡住访问得靠 IP 白名单与登录，不是这个头。
+        headers["X-Robots-Tag"] = "noindex, nofollow, noarchive, nosnippet";
+
         // HSTS 只在真正走 HTTPS 时下发：HTTP 下发了浏览器会把之后的 HTTP 访问也强制升级，反而更难用。
         if (context.Request.IsHttps)
         {
