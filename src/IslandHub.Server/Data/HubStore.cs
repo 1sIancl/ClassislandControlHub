@@ -490,6 +490,17 @@ public sealed partial class HubStore
             updated_at  TEXT NOT NULL
         );
 
+        -- 全局时间表库（#136）：时间表不再从属于某一个档案，而是独立实体；
+        -- 档案通过 content.timeLayoutIds 引用它。这样同一张时间表（同一份作息）
+        -- 可以被多个档案 / 多张课表共用，改一次全都跟着变。
+        CREATE TABLE IF NOT EXISTS time_layouts (
+            id          TEXT PRIMARY KEY,
+            name        TEXT NOT NULL,
+            items       TEXT NOT NULL DEFAULT '[]',
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS devices (
             id                      TEXT PRIMARY KEY,
             token                   TEXT NOT NULL,

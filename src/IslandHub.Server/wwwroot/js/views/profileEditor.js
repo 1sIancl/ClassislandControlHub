@@ -3,22 +3,23 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=168';
-import { toastError } from '../core/errors.js?v=168';
+import { api } from '../core/api.js?v=169';
+import { toastError } from '../core/errors.js?v=169';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, icon, select,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=168';
-import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=168';
-import { t } from './../core/i18n.js?v=168';
+} from '../core/ui.js?v=169';
+import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=169';
+import { t } from './../core/i18n.js?v=169';
 
 export const meta = {
   title: t('profiles.editor.title'),
   subtitle: '',
 };
 
+// 时间表页签已移除（#136）：时间表是全局实体，编辑在 `#/layouts/{id}` 独立页面做；
+// 档案里只剩「使用哪几张时间表」的选择（renderLayoutPicker），可随时更换。
 const TABS = [
-  { key: 'timeLayouts', label: t('profiles.editor.tabLayouts') },
   { key: 'classPlans', label: t('profiles.editor.tabTimetable') },
   { key: 'subjects', label: t('profiles.editor.tabSubjects') },
   { key: 'settings', label: t('profiles.editor.tabCustom') },
@@ -61,26 +62,40 @@ let state = {
   profileId: null,
   profile: null,
   content: null,
-  activeTab: 'timeLayouts',
+  activeTab: 'classPlans',
   selectedLayoutId: null,
   selectedPlanId: null,
   classPlanLayoutId: null,
   scheduleSelection: null,
   armedSubjectId: null,
   dirty: false,
+  // 只显示某一个页签（#135）：从「时间表 / 课表」的二级子页面进来时设置。
+  // 为空表示完整编辑器（科目 + 自定义设置 + 两个编辑区）。
+  section: null,
 };
+
+/** 只显示一个页签时，「返回」该回到哪个总览页。 */
+function sectionOverviewHref(section) {
+  return section === 'classPlans' ? '#/timetables' : '#/layouts';
+}
 
 export async function render(container, params) {
   clear(container);
   container.appendChild(loadingBlock(t('profiles.editor.loading')));
 
   const profile = await api(`/admin/profiles/${params.id}`);
+  // 全局时间表库（#136）：档案不再自带时间表，只「选」用哪几张。
+  const library = await api('/admin/time-layouts').catch(() => []);
+
   state = {
     profileId: params.id,
     profile,
+    library,
     content: normalizeContent(profile.content),
-    activeTab: state.activeTab,
-    selectedLayoutId: profile.content?.timeLayouts?.[0]?.id || null,
+    // 独立子页面（#135）：`section` 只显示那一个页签，`layoutId` 直接定位到某张时间表。
+    section: params.section || null,
+    activeTab: params.section || state.activeTab,
+    selectedLayoutId: params.layoutId || profile.content?.timeLayouts?.[0]?.id || null,
     selectedPlanId: profile.content?.classPlans?.[0]?.id || null,
     classPlanLayoutId: state.classPlanLayoutId || profile.content?.timeLayouts?.[0]?.id || null,
     rotationWeek: 1,
@@ -313,6 +328,88 @@ function setRotationWeeks(weeks) {
 }
 
 /** 顶部「多周轮换」设置条。 */
+/**
+ * 「使用的时间表」：从全局时间表库勾选，**可随时更换**（#136）。
+ *
+ * <p>
+ * 档案不再自带时间表，只引用库里的条目。同一张时间表可以被多个档案同时勾上，
+ * 于是「一份作息给三个年级用」只需维护一条记录；取消勾选就等于换掉。
+ * </p>
+ */
+function renderLayoutPicker(container) {
+  const library = state.library ?? [];
+  // 优先用引用；没有引用时退回「内容快照里有哪些」——老档案（迁移前）与通过 API 预填的档案
+  // 只带 timeLayouts 不带 timeLayoutIds，不这样兜底会把已用的时间表显示成"一个都没勾"。
+  const selected = new Set(
+    (state.content.timeLayoutIds?.length ?? 0) > 0
+      ? state.content.timeLayoutIds
+      : (state.content.timeLayouts ?? []).map((layout) => layout.id),
+  );
+
+  const head = h('div.card-head',
+    h('div',
+      h('h3', t('profiles.editor.usingLayouts')),
+      h('p.card-desc', library.length === 0
+        ? t('profiles.editor.noLibraryLayouts')
+        : t('profiles.editor.usingLayoutsLead'))));
+
+  if (library.length === 0) {
+    return h('div.card', { style: { marginBottom: '14px' } },
+      head,
+      h('a.btn.btn-sm', { href: '#/layouts' }, t('profiles.editor.manageLayouts')));
+  }
+
+  const rows = library.map((layout) => {
+    const box = h('input', { type: 'checkbox' });
+    box.checked = selected.has(layout.id);
+
+    box.onchange = () => {
+      if (box.checked) {
+        selected.add(layout.id);
+      } else {
+        selected.delete(layout.id);
+      }
+
+      applyLayoutSelection(selected);
+      markDirtyValues();
+      // 刻意**不**重建页面：重建会把 checkbox 换成一批新节点，
+      // 连续勾两张时第二次点击会落在已卸载的旧节点上（点不动）。
+      // 其余依赖 timeLayouts 的区域会在切换页签 / 保存前重新绘制。
+    };
+
+    return h('label.checkbox-field', box,
+      h('span', layout.name),
+      h('span.cell-sub', t('profiles.editor.layoutPointCount', {
+        count: (layout.items ?? []).length,
+      })));
+  });
+
+  return h('div.card', { style: { marginBottom: '14px' } },
+    head,
+    h('div.layout-picker', ...rows),
+    h('a.btn.btn-sm', { href: '#/layouts' }, t('profiles.editor.manageLayouts')));
+}
+
+/// 把勾选结果写回档案：引用 ids + 内容快照，并修正指向已取消的时间表的课表。
+function applyLayoutSelection(selected) {
+  const library = state.library ?? [];
+  state.content.timeLayoutIds = [...selected];
+  // 快照供课表编辑器与保存时使用；读取档案时服务端还会按引用投影一次，不会有两份真相。
+  state.content.timeLayouts = library.filter((layout) => selected.has(layout.id));
+
+  const ids = new Set(state.content.timeLayoutIds);
+  const fallback = state.content.timeLayoutIds[0] ?? null;
+  for (const plan of state.content.classPlans ?? []) {
+    // 指向被取消的时间表 → 退到第一张，免得课表挂在不存在的时间表上（教室里会空一节都没有）。
+    if (!ids.has(plan.timeLayoutId)) {
+      plan.timeLayoutId = fallback;
+    }
+  }
+
+  state.selectedLayoutId = fallback;
+  state.classPlanLayoutId = fallback;
+}
+
 function renderRotationBar(container) {
   const rotation = profileRotation();
   const weeks = rotation.weeks;
@@ -404,18 +501,28 @@ function paint(container) {
   container.appendChild(h('div',
     renderHeader(),
     renderRotationBar(container),
+    renderLayoutPicker(container),
     h('div.card',
       h('div.editor-toolbar',
-        h('div.tabs', ...TABS.map((tab) => h('button', {
-          class: `tab${state.activeTab === tab.key ? ' active' : ''}`,
-          type: 'button',
-          onClick: () => {
-            state.activeTab = tab.key;
-            paint(container);
-          },
-        }, tab.label,
-          h('span.tab-count', String(countOf(tab.key))),
-        ))),
+        // 独立子页面只显示一个页签时，不摆页签栏——摆着会让人以为还能切到别的部分。
+        // 换成「← 返回总览 + 当前分区名」，路径清楚，也不会误以为丢功能。
+        state.section
+          ? h('div.tabs',
+            h('a.tab', { href: sectionOverviewHref(state.section) },
+              t('profiles.editor.backToOverview')),
+            h('span.tab.active',
+              TABS.find((tab) => tab.key === state.section)?.label ?? '',
+              h('span.tab-count', String(countOf(state.section)))))
+          : h('div.tabs', ...TABS.map((tab) => h('button', {
+            class: `tab${state.activeTab === tab.key ? ' active' : ''}`,
+            type: 'button',
+            onClick: () => {
+              state.activeTab = tab.key;
+              paint(container);
+            },
+          }, tab.label,
+            h('span.tab-count', String(countOf(tab.key))),
+          ))),
         // 课表视图缩放（#54）：只切换 body 上的类名让 CSS 生效，**不重建 DOM**——
         // 编辑器里可能正有未保存的输入，重建会打断它。
         h('div.scale-switch', ...SCHED_SCALES.map((s) => h(

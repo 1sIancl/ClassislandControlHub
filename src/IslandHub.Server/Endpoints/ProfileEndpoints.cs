@@ -32,6 +32,11 @@ public static class ProfileEndpoints
         group.MapPost("/profiles/sample", CreateSampleAsync).RequirePermission(PermissionKeys.ProfilesWrite);
         group.MapGet("/profiles/{id}", GetAsync).RequirePermission(PermissionKeys.ProfilesRead);
         group.MapPut("/profiles/{id}", UpdateAsync).RequirePermission(PermissionKeys.ProfilesWrite);
+
+    // 全局时间表库（#136）：时间表是独立实体，多个档案的课表可以引用同一张。
+    group.MapGet("/time-layouts", ListTimeLayoutsAsync).RequirePermission(PermissionKeys.ProfilesRead);
+    group.MapGet("/time-layouts/{id}", GetTimeLayoutAsync).RequirePermission(PermissionKeys.ProfilesRead);
+    group.MapPut("/time-layouts/{id}", SaveTimeLayoutAsync).RequirePermission(PermissionKeys.ProfilesWrite);
         group.MapDelete("/profiles/{id}", DeleteAsync).RequirePermission(PermissionKeys.ProfilesWrite);
         group.MapPost("/profiles/{id}/default", SetDefaultAsync).RequirePermission(PermissionKeys.ProfilesWrite);
         group.MapPost("/profiles/{id}/push", PushAsync).RequirePermission(PermissionKeys.DeployWrite);
@@ -95,7 +100,96 @@ public static class ProfileEndpoints
         var profile = await store.GetProfileAsync(id, cancellationToken)
                       ?? throw HubException.NotFound("配置档案不存在。");
 
+        // 时间表库投影（#136）：档案里只存引用（timeLayoutIds），
+        // 这里把库里最新的时间表填回 content.timeLayouts——下游（下发 / 导入导出 / 编辑器）不用改。
+        // 好处是同一张时间表被多个档案引用时，改一次两边同时变。
+        profile.Content = await TimeLayoutLibrary.ProjectAsync(store, profile.Content, cancellationToken);
+
         return ApiResult<ProfileDto>.Success(ToDto(profile, includeContent: true));
+    }
+
+    /// <summary>
+    /// 列出全局时间表库（#136）。
+    ///
+    /// <para>
+    /// 时间表与档案解耦之后，它本身就是可以独立管理的实体：
+    /// 一份作息（比如"夏季作息"）只该存在一条记录，多个档案 / 多张课表引用它。
+    /// </para>
+    /// </summary>
+    private static async Task<ApiResult<List<TimeLayoutDto>>> ListTimeLayoutsAsync(
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        http.RequireAdminSession();
+        var rows = await store.GetTimeLayoutsAsync(cancellationToken);
+
+        return ApiResult<List<TimeLayoutDto>>.Success(rows.Select(row => new TimeLayoutDto
+        {
+            Id = row.Id,
+            Name = row.Name,
+            Items = HubJson.Deserialize<List<TimeLayoutItemDto>>(row.Items) ?? [],
+        }).ToList());
+    }
+
+    /// <summary>读一张全局时间表。</summary>
+    private static async Task<ApiResult<TimeLayoutDto>> GetTimeLayoutAsync(
+        string id,
+        HttpContext http,
+        HubStore store,
+        CancellationToken cancellationToken)
+    {
+        http.RequireAdminSession();
+        var row = await store.GetTimeLayoutAsync(id, cancellationToken)
+                  ?? throw HubException.NotFound("时间表不存在。");
+
+        return ApiResult<TimeLayoutDto>.Success(new TimeLayoutDto
+        {
+            Id = row.Id,
+            Name = row.Name,
+            Items = HubJson.Deserialize<List<TimeLayoutItemDto>>(row.Items) ?? [],
+        });
+    }
+
+    /// <summary>
+    /// 保存一张全局时间表。
+    ///
+    /// <para>
+    /// 存完要抬一次全局版本号：引用它的档案可能有好几份，各自的 revision 都没变，
+    /// 不抬版本设备端不会来拉——用户会看到"改了但教室端还是旧的"。
+    /// </para>
+    /// </summary>
+    private static async Task<ApiResult<TimeLayoutDto>> SaveTimeLayoutAsync(
+        string id,
+        TimeLayoutDto request,
+        HttpContext http,
+        HubStore store,
+        SyncService sync,
+        CancellationToken cancellationToken)
+    {
+        var session = http.RequireAdminSession();
+
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            throw HubException.Validation("时间表名称不能为空。");
+        }
+
+        var existing = await store.GetTimeLayoutAsync(id, cancellationToken);
+        await store.UpsertTimeLayoutAsync(
+            id, request.Name.Trim(), HubJson.Serialize(request.Items ?? []), cancellationToken);
+
+        await sync.BumpRevisionAsync(cancellationToken);
+        await store.AddAuditAsync(session.Username, "timeLayout.save", request.Name.Trim(),
+            $"{(existing is null ? "新建" : "修改")}全局时间表「{request.Name.Trim()}」"
+            + $"（{request.Items?.Count ?? 0} 个时间点）。",
+            http.GetClientIpAddress(), cancellationToken);
+
+        return ApiResult<TimeLayoutDto>.Success(new TimeLayoutDto
+        {
+            Id = id,
+            Name = request.Name.Trim(),
+            Items = request.Items ?? [],
+        });
     }
 
     /// <summary>新建空白档案。</summary>
@@ -146,6 +240,11 @@ public static class ProfileEndpoints
             : ContentNormalizer.Clone(request.Content);
         var notes = ContentNormalizer.Normalize(content);
 
+        // 提取进全局时间表库并回填引用（#136）：新建档案走的是同一条路，
+        // 否则「先建档案再保存一次」之前，它的时间表不在库里，别的档案引用不到。
+        var contentText = await TimeLayoutLibrary.ExtractAsync(
+            store, HubJson.Serialize(content), cancellationToken);
+
         var row = new ProfileRow
         {
             Id = HubChecksum.NewId(),
@@ -153,7 +252,7 @@ public static class ProfileEndpoints
             Description = request.Description?.Trim() ?? string.Empty,
             Code = await GenerateUniqueCodeAsync(store, cancellationToken),
             Revision = 1,
-            Content = HubJson.Serialize(content),
+            Content = contentText,
             IsDefault = await store.CountProfilesAsync(cancellationToken) == 0,
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
@@ -269,6 +368,10 @@ public static class ProfileEndpoints
             var content = ContentNormalizer.Clone(request.Content!);
             notes = ContentNormalizer.Normalize(content);
             contentText = HubJson.Serialize(content);
+
+            // 提取进全局时间表库并回填引用（#136）：库里是唯一来源，
+            // 档案里的 timeLayouts 只是投影快照（读的时候会被库里最新内容覆盖）。
+            contentText = await TimeLayoutLibrary.ExtractAsync(store, contentText, cancellationToken);
         }
 
         if (contentChanged)

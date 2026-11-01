@@ -5,6 +5,7 @@ using IslandHub.Server.Endpoints;
 using IslandHub.Server.Http;
 using IslandHub.Server.Options;
 using IslandHub.Server.Services;
+using IslandHub.Server.Services;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http.Json;
@@ -342,6 +343,15 @@ await using (var scope = app.Services.CreateAsyncScope())
 {
     var store = scope.ServiceProvider.GetRequiredService<HubStore>();
     await store.InitializeAsync();
+
+    // 时间表库迁移（#136）：把老档案里内嵌的时间表搬进全局库，并给档案写上引用。
+    // 幂等——已经有引用的档案直接跳过，重复启动不会重复搬，也不会造出重复条目。
+    var migratedLayouts = await TimeLayoutLibrary.MigrateAsync(store);
+    if (migratedLayouts > 0)
+    {
+        app.Logger.LogInformation(
+            "时间表库迁移完成：{Count} 份档案的内嵌时间表已提升为全局条目并建立引用。", migratedLayouts);
+    }
 
     // 静态敏感数据加密（#36）：把老库里的明文注册码 / 邀请码 / Webhook 密钥就地升级为密文（幂等）。
     var migration = await store.MigrateSecretsAsync();

@@ -285,8 +285,26 @@ public sealed class RotationSettingsDto
 /// </summary>
 public sealed class ContentBundleDto
 {
-    /// <summary>时间表集合。</summary>
+    /// <summary>
+    /// 时间表集合。
+    /// <para>
+    /// 从全局时间表库**投影**出来的快照（#136）：库里是唯一来源，
+    /// 这里的内容按 <see cref="TimeLayoutIds"/> 取最新值填进来，供下发 / 导出 / 编辑器直接使用。
+    /// </para>
+    /// </summary>
     public List<TimeLayoutDto> TimeLayouts { get; set; } = [];
+
+    /// <summary>
+    /// 引用全局时间表库的 ID 列表（#136）。
+    /// <para>
+    /// 这张表里存的是「引用」而不是副本——多个档案可以指向同一张时间表，
+    /// 于是在一处改作息，所有引用它的课表同时生效。
+    /// </para>
+    /// <para>
+    /// 注意：字段必须在这里声明，否则读写往返会把它丢掉（档案存进去了、读回来却没有）。
+    /// </para>
+    /// </summary>
+    public List<string> TimeLayoutIds { get; set; } = [];
 
     /// <summary>课表集合。</summary>
     public List<ClassPlanDto> ClassPlans { get; set; } = [];

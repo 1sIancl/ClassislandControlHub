@@ -119,6 +119,26 @@ public sealed class DeviceRow
 }
 
 /// <summary>配置档案。内容以 JSON 文本存储，便于结构与协议同步演进。</summary>
+/// <summary>
+/// 全局时间表库里的一个时间表（#136）。
+///
+/// <para>
+/// 与档案解耦后，它是**独立实体**：`Items` 是时间点数组的 JSON，
+/// 档案用 <c>content.timeLayoutIds</c> 引用、课表用 <c>timeLayoutId</c> 指向它。
+/// </para>
+/// </summary>
+public sealed class TimeLayoutRow
+{
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>时间点数组的 JSON（<c>TimeLayoutItemDto[]</c>）。</summary>
+    public string Items { get; set; } = "[]";
+
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 public sealed class ProfileRow
 {
     public string Id { get; set; } = string.Empty;

@@ -8,48 +8,74 @@
  *
  * <p>
  * 刻意**不新建一份时间表编辑逻辑**：时间表的数据属于档案（一个档案 = 一套时间表 + 课表 + 科目），
- * 复制一套编辑器会立刻产生两份真相，改一处忘另一处。这里只做**总览与跳转**，
- * 编辑仍回到档案编辑器的时间表页——数据完整性优先于"看起来更独立"。
+ * 复制一套编辑器会立刻产生两份真相，改一处忘另一处。总览只做**只读与跳转**，
+ * 编辑进入 `#/layouts/{档案}/{时间表}` 这个二级子页面（复用同一个编辑器模块，只是只显示该分区）。
  * </p>
  */
 
-import { api } from '../core/api.js?v=168';
-import { toastError, errorBlock } from '../core/errors.js?v=168';
-import { h, clear, toast, loadingBlock, emptyState } from '../core/ui.js?v=168';
-import { t } from './../core/i18n.js?v=168';
+import { api } from '../core/api.js?v=169';
+import { toastError, errorBlock } from '../core/errors.js?v=169';
+import { h, clear, loadingBlock, emptyState } from '../core/ui.js?v=169';
+import { t } from './../core/i18n.js?v=169';
 
 export const meta = {
   title: t('layouts.title'),
   subtitle: t('layouts.subtitle'),
 };
 
-/** 一张时间表在表格里的一行。拆成函数是为了不让 h() 嵌套到数不清括号。 */
-function layoutRow(profile, row) {
-  const editLink = h('a.btn.btn-sm', {
-    href: `#/profiles/${profile.id}`,
-    onClick: () => toast('ok', t('layouts.opening'), row.layout.name),
-  }, t('layouts.edit'));
+/**
+ * 一个档案绑定了哪些教室端（也就是「哪些班级在用」）。
+ *
+ * <p>
+ * 只看「被几张课表引用」不够——管理员想知道的是**哪几个班**在吃这套作息。
+ * 设备名就是班级名，绑定关系在设备的 `profileId` 上。
+ * </p>
+ */
+function classesOfProfile(devices, profileId) {
+  return devices
+    .filter((device) => device.profileId === profileId && !device.revoked)
+    .map((device) => device.name);
+}
 
-  const refsCell = row.refs > 0
-    ? h('span.badge.badge-accent', t('layouts.refsCount', { count: row.refs }))
-    : h('span.cell-sub', t('layouts.refsNone'));
+/** 班级列：最多列 3 个，其余折成「等 N 个」，避免一行撑爆。 */
+function classesCell(names) {
+  if (names.length === 0) {
+    return h('span.cell-sub', t('layouts.noClass'));
+  }
+
+  const shown = names.slice(0, 3).join('、');
+  const more = names.length > 3 ? t('layouts.classListMore', { rest: names.length - 3 }) : '';
+  return h('span', { title: names.join('、') }, shown + more);
+}
+
+/** 一张时间表在表格里的一行。拆成函数是为了不让 h() 嵌套到数不清括号。 */
+function layoutRow(profile, row, classes) {
+  // 编辑进**时间表自己的页面**（`#/layouts/{时间表}`），与档案无关。
+  const editLink = h('a.btn.btn-sm', {
+    href: `#/layouts/${row.layout.id}`,
+  }, t('layouts.edit'));
 
   return h('tr',
     h('td', row.layout.name),
     h('td', h('span.cell-sub', t('layouts.pointsCount', { count: row.points }))),
-    h('td', refsCell),
+    // 档案列：这份时间表属于哪份档案（同一档案下的时间表通常就是给这批班用的）。
+    h('td', profile.name),
+    h('td', classesCell(classes)),
+    h('td', h('span.cell-sub', t('layouts.refsCount', { count: row.refs }))),
     h('td', editLink));
 }
 
 /** 一个档案的卡片：标题（档案名 + 统计）+ 它的全部时间表。 */
-function profileCard(profile, rows) {
+function profileCard(profile, rows, classes) {
   const table = h('table.data.data-compact',
     h('thead', h('tr',
       h('th', t('layouts.name')),
-      h('th', { style: { width: '110px' } }, t('layouts.points')),
-      h('th', { style: { width: '140px' } }, t('layouts.refs')),
-      h('th', { style: { width: '110px' } }, ''))),
-    h('tbody', ...rows.map((row) => layoutRow(profile, row))));
+      h('th', { style: { width: '90px' } }, t('layouts.points')),
+      h('th', { style: { width: '150px' } }, t('layouts.profile')),
+      h('th', t('layouts.classes')),
+      h('th', { style: { width: '110px' } }, t('layouts.refs')),
+      h('th', { style: { width: '90px' } }, ''))),
+    h('tbody', ...rows.map((row) => layoutRow(profile, row, classes))));
 
   const layouts = (profile.content?.timeLayouts ?? []).length;
   const plans = (profile.content?.classPlans ?? []).length;
@@ -67,8 +93,13 @@ export async function render(container) {
   container.appendChild(loadingBlock(t('layouts.loading')));
 
   let profiles;
+  let devices;
   try {
-    profiles = await api('/admin/profiles');
+    // 设备列表用来回答「哪些班级在用这份作息」——只看课表张数答不了这个问题。
+    [profiles, devices] = await Promise.all([
+      api('/admin/profiles'),
+      api('/admin/devices').catch(() => []),
+    ]);
   } catch (error) {
     clear(container);
     container.appendChild(errorBlock(error, t('layouts.loadFailed')));
@@ -115,6 +146,8 @@ export async function render(container) {
 
       // 每张时间表被几张课表引用（轮换周次时往往多张共用一份）。
       const plans = profile.content?.classPlans ?? [];
+      const classes = classesOfProfile(devices ?? [], profile.id);
+
       const rows = layouts
         .map((layout) => ({
           layout,
@@ -123,14 +156,15 @@ export async function render(container) {
         }))
         .filter((row) => !keyword
           || row.layout.name.toLowerCase().includes(keyword)
-          || profile.name.toLowerCase().includes(keyword));
+          || profile.name.toLowerCase().includes(keyword)
+          || classes.some((name) => name.toLowerCase().includes(keyword)));
 
       if (rows.length === 0) {
         continue;
       }
 
       shown += rows.length;
-      listHost.appendChild(profileCard(profile, rows));
+      listHost.appendChild(profileCard(profile, rows, classes));
     }
 
     if (shown === 0) {
@@ -140,9 +174,31 @@ export async function render(container) {
 
   searchInput.oninput = paint;
 
+  // 新建时间表：时间表是全局实体，不需要先挑档案。
+  const newBtn = h('button.btn.btn-sm.btn-primary', {
+    type: 'button',
+    onClick: async () => {
+      const id = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : `layout-${Date.now()}`;
+
+      try {
+        await api(`/admin/time-layouts/${id}`, {
+          method: 'PUT',
+          body: { id, name: t('layouts.newLayoutName'), items: [] },
+        });
+        window.location.hash = `#/layouts/${id}`;
+      } catch (error) {
+        toastError(error, t('layouts.createFailed'));
+      }
+    },
+  }, t('layouts.newLayout'));
+
   const toolbar = h('div.toolbar',
     h('span.toolbar-label', t('layouts.searchLabel')),
-    searchInput);
+    searchInput,
+    h('div.spacer'),
+    newBtn);
 
   container.appendChild(h('div',
     h('p.card-desc', t('layouts.lead')),
