@@ -196,7 +196,7 @@ export async function render(container, params) {
           }
 
           markDirty();
-          paintRows();
+          paintView();
         });
       },
     }, h('span.kind-dot', { dataset: { kind: item.kind ?? 'class' } }), labels[item.kind ?? 'class']);
@@ -312,7 +312,7 @@ export async function render(container, params) {
 
         draft.items.splice(index, 1);
         markDirty();
-        paintRows();
+        paintView();
       },
     }, t('profiles.editor.delete'));
   }
@@ -355,7 +355,309 @@ export async function render(container, params) {
     return draft.items[index]?.kind === 'class' ? count : null;
   }
 
-  function paintRows() {
+// ────────────────────────── 时间轴（从档案编辑器移植）──────────────────────────
+//
+// 时间表独立成页面时漏了这一块：表格能改数值，但改不了手感。
+// 这段**整段搬自** profileEditor（拖动平移 / 拖边缘改时长 / 5 分钟吸附 / 相邻避让），
+// 只把 layout.items 换成 draft.items、markDirtyValues 换成 markDirty——
+// 重写一份会让两个页面的吸附与避让规则慢慢跑偏。
+/** 第 index 个时间点之前有几节「上课」（块标签显示「第 N 节」用）。 */
+function countClassBefore(layout, index) {
+  let count = 0;
+  for (let i = 0; i < index; i += 1) {
+    if (layout.items[i].kind === 'class') {
+      count += 1;
+    }
+  }
+
+  return count;
+}
+
+const TL_PX_PER_MIN = 1.2;
+
+/** 拖动吸附粒度（分钟）。 */
+const TL_SNAP_MIN = 5;
+
+/** 上课 / 课间的最短时长（分钟）：拖到更短会夹住，避免出现「0 分钟的一节课」。 */
+const TL_MIN_DURATION = 5;
+
+/** `HH:mm:ss` → 分钟；认不出来返回 null。 */
+function tlMinutes(time) {
+  const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(String(time || '').trim());
+  if (!m) return null;
+  const total = Number(m[1]) * 60 + Number(m[2]);
+  return total >= 0 && total <= 1439 ? total : null;
+}
+
+/** 分钟 → `HH:mm:ss`（夹在一天之内）。 */
+function tlTime(minutes) {
+  const clamped = Math.max(0, Math.min(1439, Math.round(minutes)));
+  const hh = String(Math.floor(clamped / 60)).padStart(2, '0');
+  const mm = String(clamped % 60).padStart(2, '0');
+  return `${hh}:${mm}:00`;
+}
+
+/** 吸附到 5 分钟。 */
+function tlSnap(minutes) {
+  return Math.round(minutes / TL_SNAP_MIN) * TL_SNAP_MIN;
+}
+
+/** 时间轴可见范围：至少覆盖 06:00–22:00，超出则按小时向外扩。 */
+function tlSpan(layout) {
+  const items = draft.items || [];
+  const starts = items.map((i) => tlMinutes(i.startTime)).filter((v) => v !== null);
+  const ends = items.map((i) => {
+    const start = tlMinutes(i.startTime);
+    const end = tlMinutes(i.endTime);
+    return end === null || start === null ? start : Math.max(start, end);
+  }).filter((v) => v !== null);
+  const from = Math.max(0, Math.floor(Math.min(360, ...starts) / 60) * 60);
+  const to = Math.min(1440, Math.ceil(Math.max(1320, ...ends) / 60) * 60);
+  return { from, to: to > from ? to : from + 60 };
+}
+
+/** 某个时间点（按数组下标）可平移的上下界（分钟）；边界不存在时为整天。 */
+function tlMoveBounds(layout, index) {
+  const items = draft.items || [];
+  const item = items[index];
+  const start = tlMinutes(item.startTime) ?? 0;
+  const end = tlMinutes(item.endTime) ?? start;
+  const duration = ['separator', 'action'].includes(item.kind) ? 0 : Math.max(0, end - start);
+
+  const prevEnd = index > 0 ? tlMinutes(items[index - 1].endTime) : 0;
+  const nextStart = index < items.length - 1 ? tlMinutes(items[index + 1].startTime) : 1440;
+  let lower = prevEnd === null ? 0 : prevEnd;
+  let upper = (nextStart === null ? 1440 : nextStart) - duration;
+
+  // 数据本身乱序 / 重叠时不要把用户卡死：退化成「整天」范围，让他能拖出来。
+  if (lower > upper) {
+    lower = 0;
+    upper = 1440 - duration;
+  }
+  return { lower: Math.max(0, lower), upper: Math.min(1440 - duration, upper), duration };
+}
+
+/** 平移一个时间点（结束时间同步平移，保持时长）；返回实际落地的新开始时间。 */
+function tlApplyMove(layout, index, minutes) {
+  const item = draft.items[index];
+  const { lower, upper, duration } = tlMoveBounds(layout, index);
+  const target = Math.max(lower, Math.min(upper, tlSnap(minutes)));
+  item.startTime = tlTime(target);
+  item.endTime = tlTime(target + duration);
+  return target;
+}
+
+/** 改一个时间点的结束时间（只对上课 / 课间有效）；返回实际落地的新结束时间。 */
+function tlApplyResize(layout, index, minutes) {
+  const items = draft.items || [];
+  const item = items[index];
+  const start = tlMinutes(item.startTime) ?? 0;
+  const nextStart = index < items.length - 1 ? tlMinutes(items[index + 1].startTime) : 1440;
+  const upper = Math.min(1440, nextStart === null ? 1440 : nextStart);
+  const lower = Math.min(start + TL_MIN_DURATION, upper);
+  const target = Math.max(lower, Math.min(upper, tlSnap(minutes)));
+  item.endTime = tlTime(target);
+  return target;
+}
+
+/** 时间点的时长（分钟）；分割线 / 行动算 0。 */
+function tlDuration(item) {
+  if (['separator', 'action'].includes(item.kind)) return 0;
+  const start = tlMinutes(item.startTime) ?? 0;
+  const end = tlMinutes(item.endTime) ?? start;
+  return Math.max(0, end - start);
+}
+
+/** 把一天画成一条可拖动的时间轴。 */
+function renderLayoutTimeline() {
+  const items = draft.items || [];
+  if (items.length === 0) return null;
+
+  const span = tlSpan(layout);
+  const height = Math.round((span.to - span.from) * TL_PX_PER_MIN);
+  const toY = (minutes) => (minutes - span.from) * TL_PX_PER_MIN;
+
+  const ticks = [];
+  for (let hour = span.from; hour <= span.to; hour += 60) {
+    ticks.push({ minutes: hour, label: `${String(Math.floor(hour / 60)).padStart(2, '0')}:00` });
+  }
+
+  const canvas = h('div.tl-canvas', { style: { height: `${height}px` } },
+    ...ticks.flatMap((tick) => [
+      h('div.tl-line', { style: { top: `${toY(tick.minutes)}px` } }),
+      h('div.tl-mark', { style: { top: `${toY(tick.minutes)}px` } }, tick.label),
+    ]),
+    ...items.map((item, index) => timelineBlock(layout, item, index, toY)),
+  );
+
+  return h('div.tl-wrap',
+    h('div.tl-title',
+      h('span', t('profiles.editor.timeline')),
+      h('span.tl-hint', t('profiles.editor.timelineHint'))),
+    h('div.tl-scroll', canvas),
+  );
+}
+
+/** 时间轴上的一个色块（含拖动交互）。 */
+function timelineBlock(layout, item, index, toY) {
+  const start = tlMinutes(item.startTime) ?? 0;
+  const duration = tlDuration(item);
+  const isPoint = item.kind === 'separator' || item.kind === 'action';
+  const blockHeight = isPoint ? 3 : Math.max(6, duration * TL_PX_PER_MIN);
+
+  const label = isPoint
+    ? t('profiles.editor.tlPointLabel', {
+      kind: TIME_KIND_LABEL[item.kind] || '',
+      time: tlTime(start).slice(0, 5),
+    }).trim()
+    : t('profiles.editor.tlBlockLabel', {
+      head: item.kind === 'class'
+        ? t('profiles.editor.periodHead', { n: countClassBefore(draft, index) + 1 })
+        : t('profiles.editor.breakHead'),
+      from: tlTime(start).slice(0, 5),
+      to: tlTime(start + duration).slice(0, 5),
+      minutes: duration,
+      name: item.breakName && item.kind === 'break'
+        ? t('profiles.editor.breakNameSuffix', { name: item.breakName })
+        : '',
+    });
+
+  const block = h('div', {
+    class: `tl-block kind-${item.kind}${item.isHideDefault ? ' hidden-point' : ''}`,
+    style: { top: `${toY(start)}px`, height: `${blockHeight}px` },
+    title: label,
+    'data-index': String(index),
+    'data-kind': item.kind,
+  }, h('span.tl-block-label', label));
+
+  if (!isPoint) {
+    block.appendChild(h('div.tl-grip', { title: t('profiles.editor.dragDuration') }));
+  }
+
+  block.addEventListener('pointerdown', (event) => {
+    // 抓下边缘 = 改时长；抓块体 = 平移（分割线 / 行动没有时长，只平移）。
+    const onGrip = event.target instanceof Element && event.target.classList.contains('tl-grip');
+    startTimelineDrag(event, layout, index, block, onGrip && !isPoint ? 'resize' : 'move', toY);
+  });
+
+  return block;
+}
+
+/** 拖动处理：实时更新色块位置与读数，松手后重绘（让下方的表格同步）。 */
+function startTimelineDrag(event, layout, index, block, mode, toY) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+
+  const item = draft.items[index];
+  const originStart = tlMinutes(item.startTime) ?? 0;
+  const originEnd = tlMinutes(item.endTime) ?? originStart;
+  const startY = event.clientY;
+
+  block.classList.add('dragging');
+  const tip = h('div.tl-tip', '');
+  block.appendChild(tip);
+
+  const isPointKind = ['separator', 'action'].includes(item.kind);
+  const paint = () => {
+    const start = tlMinutes(item.startTime) ?? 0;
+    const duration = tlDuration(item);
+    block.style.top = `${toY(start)}px`;
+    block.style.height = isPointKind ? '3px' : `${Math.max(6, duration * TL_PX_PER_MIN)}px`;
+    const text = t('profiles.editor.tlRange', { from: tlTime(start).slice(0, 5), to: tlTime(start + duration).slice(0, 5), minutes: duration });
+    tip.textContent = text;
+    block.querySelector('.tl-block-label').textContent = text;
+  };
+
+  const onMove = (moveEvent) => {
+    const deltaMinutes = (moveEvent.clientY - startY) / TL_PX_PER_MIN;
+    if (mode === 'resize') {
+      tlApplyResize(layout, index, originEnd + deltaMinutes);
+    } else {
+      tlApplyMove(layout, index, originStart + deltaMinutes);
+    }
+    paint();
+    markDirty();
+  };
+
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
+    block.classList.remove('dragging');
+    // 松手才重绘：拖动过程中重绘会把手里的元素换掉，拖到一半就断了。
+    markDirty();
+  };
+
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
+}
+
+function timeInput(value, onChange) {
+  const input = h('input', { type: 'time', step: '1', value: toTimeInputValue(value) });
+  input.addEventListener('change', () => onChange(normalizeTimeText(input.value)));
+  return input;
+}
+
+function toTimeInputValue(text) {
+  const t = normalizeTimeText(text);
+  return t ? t.slice(0, 5) : '';
+}
+
+/** 把 `HH:mm` 补成 `HH:mm:ss`。 */
+function normalizeTimeText(text) {
+  if (!text) return '00:00:00';
+  const parts = String(text).split(':');
+  const hh = (parts[0] || '00').padStart(2, '0');
+  const mm = (parts[1] || '00').padStart(2, '0');
+  const ss = (parts[2] || '00').padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+}
+
+function addItem(layout) {
+  const last = draft.items[draft.items.length - 1];
+  const start = last ? last.endTime : '08:00:00';
+  draft.items.push({
+    startTime: start,
+    endTime: addMinutes(start, 45),
+    kind: 'class',
+    breakName: null,
+    isHideDefault: false,
+    defaultSubjectId: null,
+  });
+  markDirty();
+}
+
+/** 给 `HH:mm:ss` 增加分钟数。 */
+function addMinutes(text, minutes) {
+  const [hh, mm, ss] = normalizeTimeText(text).split(':').map(Number);
+  const total = (hh * 3600 + mm * 60 + ss + minutes * 60) % 86400;
+  const h2 = Math.floor(total / 3600);
+  const m2 = Math.floor((total % 3600) / 60);
+  const s2 = total % 60;
+  return [h2, m2, s2].map((n) => String(n).padStart(2, '0')).join(':');
+}
+
+
+  /** 当前视图：时间线（可拖）或表格（精确改）。与档案编辑器保持一致，默认时间线。 */
+  let layoutView = 'timeline';
+
+  /** 按当前视图渲染主体。 */
+  function paintView() {
+    clear(listHost);
+    paintStats();
+
+    if (layoutView === 'table') {
+      paintTable();
+      return;
+    }
+
+    listHost.appendChild(draft.items.length === 0
+      ? h('p.card-desc', t('layoutEditor.empty'))
+      : renderLayoutTimeline());
+  }
+  function paintTable() {
     clear(listHost);
     paintStats();
 
@@ -436,7 +738,7 @@ export async function render(container, params) {
     });
 
     markDirty();
-    paintRows();
+    paintView();
   }
 
   const toolbar = h('div.toolbar',
@@ -445,6 +747,23 @@ export async function render(container, params) {
     nameInput,
     h('div.spacer'),
     dirtyMark,
+    // 视图切换（与档案编辑器一致）：时间线里拖、表格里精确改。
+    // 两个按钮不带 active 态刷新——toolbar 只在进入页面时构建一次，
+    // 为它重绘整页会打断正在编辑的输入框，得不偿失。
+    h('button.btn.btn-sm', {
+      type: 'button',
+      onClick: () => {
+        layoutView = 'timeline';
+        paintView();
+      },
+    }, t('profiles.editor.viewTimeline')),
+    h('button.btn.btn-sm', {
+      type: 'button',
+      onClick: () => {
+        layoutView = 'table';
+        paintView();
+      },
+    }, t('profiles.editor.viewTable')),
     h('button.btn.btn-sm', { type: 'button', onClick: () => addItem('class') },
       t('layoutEditor.addPoint')),
     h('button.btn.btn-sm', { type: 'button', onClick: () => addItem('break') },
@@ -458,5 +777,5 @@ export async function render(container, params) {
     statsHost,
     listHost));
 
-  paintRows();
+  paintView();
 }
