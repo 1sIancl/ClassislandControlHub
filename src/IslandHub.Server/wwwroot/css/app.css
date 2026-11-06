@@ -4808,3 +4808,73 @@ table.data-compact td input[type="text"] {
   background: var(--accent-soft);
   color: var(--accent);
 }
+
+/* ── 课表一屏（#140）──
+   原先 .grid-scroll 是 max-height:62vh + overflow:auto：10 节课必然要纵向滚。
+   这里让课表**专用**容器吃满「工具栏以下」的高度，行按 1fr 均分——
+   节数再多也在一屏内，代价是行高变小（配合紧凑字号仍可读）。
+   横向同理：8 列固定为「时间列 + 7 个等分」，不设 min-width，窄屏不会横向滚。 */
+.grid-scroll.sched-fit {
+  max-height: none;
+  overflow: hidden;
+}
+.grid-scroll.sched-fit .sched-grid {
+  grid-template-columns: 64px repeat(7, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 4px;
+  min-width: 0;
+  height: 100%;
+  /* 1fr 分配是精确的，但 9 行的 sub-pixel 取整会累积出几像素；
+     不裁的话 1366×768 下会多出 5px，正好够撑出一条滚动条。 */
+  max-height: 100%;
+  overflow: hidden;
+}
+.grid-scroll.sched-fit .sched-head {
+  position: static;
+  padding: 4px 2px;
+  font-size: 11px;
+}
+.grid-scroll.sched-fit .sched-head.corner {
+  padding-left: 6px;
+  font-size: 10.5px;
+}
+.grid-scroll.sched-fit .sched-period {
+  position: static;
+  padding: 3px 6px;
+  gap: 1px;
+}
+.grid-scroll.sched-fit .sched-period .no {
+  font-size: 11px;
+}
+.grid-scroll.sched-fit .sched-period .tm {
+  font-size: 9.5px;
+}
+.grid-scroll.sched-fit .sched-cell {
+  min-height: 0;
+  min-width: 0;
+  padding: 3px 4px;
+  font-size: 11.5px;
+  line-height: 1.25;
+  overflow: hidden;
+}
+/* 次要字段过长就省略，绝不让它把格子撑宽（撑宽 = 整张表横向滚） */
+.grid-scroll.sched-fit .sched-cell > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 1280px) {
+  .grid-scroll.sched-fit .sched-grid {
+    grid-template-columns: 56px repeat(7, minmax(0, 1fr));
+    gap: 3px;
+  }
+  .grid-scroll.sched-fit .sched-cell {
+    padding: 2px 3px;
+    font-size: 10.5px;
+  }
+  .grid-scroll.sched-fit .sched-period .tm {
+    font-size: 9px;
+  }
+}

@@ -3,14 +3,77 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=170';
-import { toastError } from '../core/errors.js?v=170';
+import { api } from '../core/api.js?v=171';
+import { toastError } from '../core/errors.js?v=171';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, icon, select,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=170';
-import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=170';
-import { t } from './../core/i18n.js?v=170';
+} from '../core/ui.js?v=171';
+import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=171';
+import { t } from './../core/i18n.js?v=171';
+
+// ── 课表铺满一屏（#140）────────────────────────────────────────────
+//
+// 课表网格是内联渲染的（没有独立 render 函数可挂钩），所以不插调用点，
+// 改用观察器：包含 .sched-fit 的节点一出现就按「顶部到视口底」实测高度。
+// 不写死 calc(100vh - 300px)：上面有提示条 / 轮换条会展开收起，写死的偏移必然算错。
+function fitScheduleHeight() {
+  const scroller = document.querySelector('.grid-scroll.sched-fit');
+  if (!scroller) {
+    return;
+  }
+
+  const top = Math.round(scroller.getBoundingClientRect().top);
+  // 幂等：同一个「视口高 + 顶部位置」不重复写样式，免得打断滚动或触发回流风暴。
+  const key = `${window.innerHeight}:${top}`;
+  if (scroller.dataset.fitKey === key) {
+    return;
+  }
+
+  // 扣掉父容器的下内边距：只减固定 12px 时，内容区自己的 padding 会把页面顶出
+  // 二十几像素（实测 1366x768 仍溢出 31px）。
+  const parent = scroller.parentElement;
+  const padBottom = parent
+    ? parseFloat(getComputedStyle(parent).paddingBottom) || 0
+    : 0;
+
+  // 再留 12px 呼吸位：贴到最底反而显得被切掉。
+  scroller.style.height = `${Math.max(220, window.innerHeight - top - padBottom - 12)}px`;
+  scroller.dataset.fitKey = key;
+
+  // 收敛修正：上面是估算，父链上零碎的 margin / 外边距在不同分辨率与缩放下各不相同，
+  // 估完多半还差十几到几十像素。直接量「页面现在溢出多少」再收同样多——
+  // 一次就够，因为改高度不会反过来改变别的块。
+  const overflow = document.documentElement.scrollHeight - window.innerHeight;
+  if (overflow > 0) {
+    const height = parseFloat(scroller.style.height) || 0;
+    scroller.style.height = `${Math.max(220, height - overflow - 2)}px`;
+  }
+}
+
+if (typeof window !== 'undefined') {
+  let scheduled = false;
+  const schedule = () => {
+    if (scheduled) {
+      return;
+    }
+
+    scheduled = true;
+    setTimeout(() => {
+      scheduled = false;
+      fitScheduleHeight();
+    }, 0);
+  };
+
+  // 用观察器而不是在渲染流程里插调用：课表可能因为切换页签、改时间表、
+  // 开关提示条被重建，挂在一个固定位置必然漏掉其中几条路径。
+  new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
+  window.addEventListener('resize', () => {
+    document.querySelectorAll('.grid-scroll.sched-fit').forEach((el) => { el.dataset.fitKey = ''; });
+    schedule();
+  });
+}
+
 
 export const meta = {
   title: t('profiles.editor.title'),
@@ -1886,13 +1949,13 @@ function generateSchedule(layout) {
 // ────────────────────────────── 课表 ──────────────────────────────
 
 const GRID_DAYS = [
-  { value: 1, label: t('profiles.editor.wdMon') },
-  { value: 2, label: t('profiles.editor.wdTue') },
-  { value: 3, label: t('profiles.editor.wdWed') },
-  { value: 4, label: t('profiles.editor.wdThu') },
-  { value: 5, label: t('profiles.editor.wdFri') },
-  { value: 6, label: t('profiles.editor.wdSat') },
-  { value: 0, label: t('profiles.editor.wdSun') },
+  { value: 1, label: t('profiles.editor.wdMon'), short: t('profiles.editor.wdMonShort') },
+  { value: 2, label: t('profiles.editor.wdTue'), short: t('profiles.editor.wdTueShort') },
+  { value: 3, label: t('profiles.editor.wdWed'), short: t('profiles.editor.wdWedShort') },
+  { value: 4, label: t('profiles.editor.wdThu'), short: t('profiles.editor.wdThuShort') },
+  { value: 5, label: t('profiles.editor.wdFri'), short: t('profiles.editor.wdFriShort') },
+  { value: 6, label: t('profiles.editor.wdSat'), short: t('profiles.editor.wdSatShort') },
+  { value: 0, label: t('profiles.editor.wdSun'), short: t('profiles.editor.wdSunShort') },
 ];
 
 function classPlanLayout() {
@@ -1980,10 +2043,11 @@ function renderClassPlans() {
       }, t('profiles.editor.batch')),
     ),
     renderPalette(periods.length),
-    h('div.grid-scroll',
+    // 课表铺满一屏（#140）：容器高度由下面的 fitScheduleHeight 实测。
+    h('div.grid-scroll.sched-fit',
       h('div.sched-grid',
         h('div.sched-head.corner', t('profiles.editor.periodTime')),
-        ...GRID_DAYS.map((d) => h('div.sched-head', d.label)),
+        ...GRID_DAYS.map((d) => h('div.sched-head', d.short ?? d.label)),
         ...periods.flatMap((period, index) => [
           h('div.sched-period',
             h('span.no', t('profiles.editor.periodN', { n: index + 1 })),

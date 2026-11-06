@@ -3359,5 +3359,14 @@ export default {
   'layouts.unusedDeleted': "时间表已删除",
   'layouts.unusedDeleteFailed': "删除时间表失败",
 
+  // 课表表头短名（#140）：一屏要塞下 7 列，长名字会把列撑宽
+  'profiles.editor.wdMonShort': "一",
+  'profiles.editor.wdTueShort': "二",
+  'profiles.editor.wdWedShort': "三",
+  'profiles.editor.wdThuShort': "四",
+  'profiles.editor.wdFriShort': "五",
+  'profiles.editor.wdSatShort': "六",
+  'profiles.editor.wdSunShort': "日",
+
 };
 

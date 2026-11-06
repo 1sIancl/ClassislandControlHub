@@ -3359,5 +3359,14 @@ export default {
   'layouts.unusedDeleted': "Layout deleted",
   'layouts.unusedDeleteFailed': "Failed to delete layout",
 
+  // 课表表头短名（#140）：一屏要塞下 7 列，长名字会把列撑宽
+  'profiles.editor.wdMonShort': "Mon",
+  'profiles.editor.wdTueShort': "Tue",
+  'profiles.editor.wdWedShort': "Wed",
+  'profiles.editor.wdThuShort': "Thu",
+  'profiles.editor.wdFriShort': "Fri",
+  'profiles.editor.wdSatShort': "Sat",
+  'profiles.editor.wdSunShort': "Sun",
+
 };
 
