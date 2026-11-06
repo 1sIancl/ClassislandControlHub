@@ -260,10 +260,17 @@ public static class ProfileEndpoints
         await store.UpsertTimeLayoutAsync(
             id, request.Name.Trim(), HubJson.Serialize(request.Items ?? []), cancellationToken);
 
+        // 重排引用它的档案（#139）：课表里每一节的开始时间是从时间点推出来的，
+        // 而这一步只在保存档案时发生。少了它，在时间表页把第一节拖到别处后，
+        // 档案里的课表槽位还停在旧时间——数据不错但课表页显示滞后，
+        // 用户会以为是"改了没生效"。
+        var resynced = await ResyncProfilesUsingLayoutAsync(store, id, cancellationToken);
+
         await sync.BumpRevisionAsync(cancellationToken);
         await store.AddAuditAsync(session.Username, "timeLayout.save", request.Name.Trim(),
             $"{(existing is null ? "新建" : "修改")}全局时间表「{request.Name.Trim()}」"
-            + $"（{request.Items?.Count ?? 0} 个时间点）。",
+            + $"（{request.Items?.Count ?? 0} 个时间点）"
+            + (resynced > 0 ? $"，并重排了 {resynced} 份引用它的档案的课表节次。" : "。"),
             http.GetClientIpAddress(), cancellationToken);
 
         return ApiResult<TimeLayoutDto>.Success(new TimeLayoutDto
@@ -272,6 +279,58 @@ public static class ProfileEndpoints
             Name = request.Name.Trim(),
             Items = request.Items ?? [],
         });
+    }
+
+    /// <summary>
+    /// 重排所有引用这张时间表的档案（#139），返回处理的档案数。
+    ///
+    /// <para>
+    /// 做的是：投影出最新时间表 → 反序列化 → 走一次 <see cref="ContentNormalizer"/> →
+    /// 提取回库 → 存档案（内容变更，revision 递增）。
+    /// 规范化是幂等的，所以即使只改了时间表名称，重排也不会动到别的数据。
+    /// </para>
+    ///
+    /// <para>
+    /// 只处理**真正引用了这张表**的档案：全量重排会在时间表数量多时拖慢保存，
+    /// 而且会给毫不相干的档案平白涨 revision、触发无谓的下发。
+    /// </para>
+    /// </summary>
+    private static async Task<int> ResyncProfilesUsingLayoutAsync(
+        HubStore store, string layoutId, CancellationToken cancellationToken)
+    {
+        var profiles = await store.GetProfilesAsync(cancellationToken);
+        var touched = 0;
+
+        foreach (var profile in profiles)
+        {
+            // 引用字段与内容快照**任一命中**都要重排：
+            // 只查 timeLayoutIds 会漏掉两类档案——老档案还没有引用字段，
+            // 以及引用字段与快照不同步的（例如脚本按快照建的档案）。
+            // 漏掉的后果是课表槽位停在旧时间，而界面上看不出原因。
+            var referenced = ReadLayoutIdsOfProfile(profile.Content)
+                                 .Contains(layoutId, StringComparer.OrdinalIgnoreCase)
+                             || profile.Content.Contains(layoutId, StringComparison.OrdinalIgnoreCase);
+
+            if (!referenced)
+            {
+                continue;
+            }
+
+            var projected = await TimeLayoutLibrary.ProjectAsync(store, profile.Content, cancellationToken);
+            var content = HubJson.DeserializeOrDefault(projected, new ContentBundleDto());
+
+            // 规范化会把课表槽位的开始时间对齐到时间点。
+            ContentNormalizer.Normalize(content);
+
+            var json = await TimeLayoutLibrary.ExtractAsync(
+                store, HubJson.Serialize(content), cancellationToken);
+
+            await store.UpdateProfileAsync(profile.Id, profile.Name, profile.Description,
+                json, contentChanged: true, cancellationToken);
+            touched += 1;
+        }
+
+        return touched;
     }
 
     /// <summary>
