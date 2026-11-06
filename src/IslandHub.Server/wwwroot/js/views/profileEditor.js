@@ -501,7 +501,10 @@ function paint(container) {
   container.appendChild(h('div',
     renderHeader(),
     renderRotationBar(container),
-    renderLayoutPicker(container),
+    // 课表专用页（#/timetables/{档案}）不显示「使用的时间表」：
+    // 那是档案级配置，在排课页面改它等于在排课途中换作息，容易误操作。
+    // 多周轮换则保留——它直接决定课表按第几周生效，是这个页面的核心信息。
+    state.section === 'classPlans' ? null : renderLayoutPicker(container),
     h('div.card',
       h('div.editor-toolbar',
         // 独立子页面只显示一个页签时，不摆页签栏——摆着会让人以为还能切到别的部分。
