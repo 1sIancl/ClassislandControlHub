@@ -3368,5 +3368,8 @@ export default {
   'profiles.editor.wdSatShort': "Sat",
   'profiles.editor.wdSunShort': "Sun",
 
+  // 课表页「作息时间表」收起态（#140）
+  'profiles.editor.switchLayout': "Switch",
+
 };
 

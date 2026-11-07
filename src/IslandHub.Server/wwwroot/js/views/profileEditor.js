@@ -537,9 +537,13 @@ function renderRotationBar(container) {
     h('div.card-head',
       h('div',
         h('h3', t('profiles.editor.rotation')),
-        h('p.card-desc', t('profiles.editor.rotationLead')
-          + t('profiles.editor.rotationBody')
-          + t('profiles.editor.rotationOffsetHint'))),
+        // 专用页省掉这三句说明：它们解释的是"轮换是什么"，排课时不需要再看一遍，
+        // 却实打实占两行（约 20px）——正好是一屏课表差的那几十像素。
+        state.section
+          ? null
+          : h('p.card-desc', t('profiles.editor.rotationLead')
+            + t('profiles.editor.rotationBody')
+            + t('profiles.editor.rotationOffsetHint'))),
       h('div.card-actions',
         h('span.badge' + (weeks < 2 ? '.badge-neutral' : '.badge-accent'),
           weeks < 2 ? t('profiles.editor.notEnabled') : t('profiles.editor.rotationSummary', { weeks })),
@@ -563,7 +567,9 @@ function paint(container) {
   // 页面标题由路由统一处理，这里只渲染内容。
   container.appendChild(h('div',
     renderHeader(),
-    renderRotationBar(container),
+    // 课表页不渲染档案级「多周轮换」说明条：周次切换在课表页有自己的 weekBar，
+    // 这条只解释"轮换是什么"，却实打实占 50px——正是课表挤的原因。
+    state.section === 'classPlans' ? null : renderRotationBar(container),
     // 课表专用页（#/timetables/{档案}）不显示「使用的时间表」：
     // 那是档案级配置，在排课页面改它等于在排课途中换作息，容易误操作。
     // 多周轮换则保留——它直接决定课表按第几周生效，是这个页面的核心信息。
@@ -640,10 +646,15 @@ function countOf(key) {
 }
 
 function renderHeader() {
+  // 课表 / 时间表专用页精简档案头：只留名称 + 版本 + 操作按钮。
+  // 「更新时间」属于偶尔核对的信息，在专用页占一整行不划算——
+  // 一屏课表差的就是这几十像素，而这行字平时没人看。
+  const compact = Boolean(state.section);
   return h('div', {
     style: {
-      display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap',
-      marginBottom: '16px', padding: '14px 16px',
+      display: 'flex', gap: compact ? '10px' : '14px', alignItems: 'center', flexWrap: 'wrap',
+      marginBottom: compact ? '8px' : '16px',
+      padding: compact ? '8px 12px' : '14px 16px',
       background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
     },
   },
@@ -654,8 +665,10 @@ function renderHeader() {
         h('span.badge.badge-neutral', t('profiles.editor.contentRevision', { revision: state.profile.revision })),
         h('span#dirtyFlag'),
       ),
-      h('div', { style: { fontSize: '12px', color: 'var(--text-faint)', marginTop: '3px' } },
-        t('profiles.editor.lastUpdated', { time: formatDateTime(state.profile.updatedAt) })),
+      compact
+        ? null
+        : h('div', { style: { fontSize: '12px', color: 'var(--text-faint)', marginTop: '3px' } },
+          t('profiles.editor.lastUpdated', { time: formatDateTime(state.profile.updatedAt) })),
     ),
     h('div.card-actions',
       h('button.btn.btn-sm', {
@@ -1967,16 +1980,30 @@ function renderClassPlans() {
   const layouts = state.content.timeLayouts;
   const layout = classPlanLayout();
 
-  const layoutBar = segmented(
-    layouts.map((l) => ({ id: l.id, label: t('profiles.editor.layoutOption', { name: l.name, count: classCount(l) }) })),
-    state.classPlanLayoutId,
-    (v) => {
-      state.classPlanLayoutId = v;
-      state.scheduleSelection = null;
-      repaintTab();
-    },
-    layouts.length === 0 ? t('profiles.editor.needLayout') : null,
-  );
+  // 「作息时间表」默认收起成一行：一个档案通常只有一两张作息，
+  // 常驻一整条 segmented 只为显示"当前用哪张"，占高度也占注意力。
+  const layoutBar = state.schedLayoutOpen
+    ? segmented(
+      layouts.map((l) => ({ id: l.id, label: t('profiles.editor.layoutOption', { name: l.name, count: classCount(l) }) })),
+      state.classPlanLayoutId,
+      (v) => {
+        state.classPlanLayoutId = v;
+        state.scheduleSelection = null;
+        state.schedLayoutOpen = false;
+        repaintTab();
+      },
+      layouts.length === 0 ? t('profiles.editor.needLayout') : null,
+    )
+    : h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } },
+      h('span.toolbar-label', t('profiles.editor.dailyLayout')),
+      h('strong', { style: { fontSize: '13px' } }, layout ? layout.name : t('profiles.editor.needLayout')),
+      h('button.btn.btn-sm.btn-ghost', {
+        type: 'button',
+        onClick: () => {
+          state.schedLayoutOpen = true;
+          repaintTab();
+        },
+      }, t('profiles.editor.switchLayout')));
 
   if (!layout) {
     return h('div',
@@ -2672,7 +2699,7 @@ function applyCellDrop(layout, day, index, periodCount) {
 /** 科目调色板：点选后点格子排课，或直接拖进格子。 */
 function renderPalette(periodCount) {
   if (state.content.subjects.length === 0) {
-    return h('div.sched-palette',
+    return h('div.sched-palette.sched-palette-one-line',
       h('span.palette-empty', t('profiles.editor.noSubjectsHint')));
   }
 
