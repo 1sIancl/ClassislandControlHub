@@ -13,12 +13,12 @@
  * </p>
  */
 
-import { api } from '../core/api.js?v=178';
-import { toastError, errorBlock } from '../core/errors.js?v=178';
+import { api } from '../core/api.js?v=179';
+import { toastError, errorBlock } from '../core/errors.js?v=179';
 import {
   h, clear, toast, loadingBlock, emptyState, confirmDialog,
-} from '../core/ui.js?v=178';
-import { t } from './../core/i18n.js?v=178';
+} from '../core/ui.js?v=179';
+import { t } from './../core/i18n.js?v=179';
 
 export const meta = {
   title: t('layouts.title'),

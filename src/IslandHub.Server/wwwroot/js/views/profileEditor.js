@@ -3,14 +3,14 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=178';
-import { toastError } from '../core/errors.js?v=178';
+import { api } from '../core/api.js?v=179';
+import { toastError } from '../core/errors.js?v=179';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, icon, select,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=178';
-import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=178';
-import { t } from './../core/i18n.js?v=178';
+} from '../core/ui.js?v=179';
+import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=179';
+import { t } from './../core/i18n.js?v=179';
 
 // ── 课表铺满一屏（#140）────────────────────────────────────────────
 //
@@ -168,6 +168,91 @@ let state = {
 /** 只显示一个页签时，「返回」该回到哪个总览页。 */
 function sectionOverviewHref(section) {
   return section === 'classPlans' ? '#/timetables' : '#/layouts';
+}
+
+/**
+ * 只挂载**课表编辑区**（拆分步骤 2+3，见 docs/timetable-editor-split.md）。
+ *
+ * <p>
+ * 独立课表页（`#/timetables/{档案}`）用它：不再渲染档案头、页签栏、
+ * 「使用的时间表」区块，屏幕上只有工具条 + 课表。
+ * </p>
+ *
+ * <p>
+ * 复用的是同一套渲染与交互函数——**代码只有一份**，
+ * 而不是把 schedCell 那五套逻辑（渲染/点击/双击/拖拽/右键）复制到新文件里。
+ * 重绘通过步骤 1 建立的 `setClassPlansRepaint` 钩子换成"就地重绘课表"。
+ * </p>
+ */
+export async function mountClassPlans(container, profileId) {
+  clear(container);
+  container.appendChild(loadingBlock(t('profiles.editor.loading')));
+
+  let profile;
+  let library;
+  try {
+    [profile, library] = await Promise.all([
+      api(`/admin/profiles/${profileId}`),
+      api('/admin/time-layouts').catch(() => []),
+    ]);
+  } catch (error) {
+    clear(container);
+    container.appendChild(h('div.notice.notice-warn', h('div', error.message)));
+    return;
+  }
+
+  const firstLayout = profile.content?.timeLayoutIds?.[0] ?? null;
+
+  state = {
+    profileId,
+    profile,
+    library,
+    content: profile.content,
+    activeTab: 'classPlans',
+    selectedLayoutId: firstLayout,
+    selectedPlanId: null,
+    classPlanLayoutId: firstLayout,
+    scheduleSelection: null,
+    armedSubjectId: null,
+    dirty: false,
+    section: 'classPlans',
+  };
+
+  const host = h('div');
+  clear(container);
+  container.appendChild(host);
+
+  const paintGrid = () => {
+    clear(host);
+    host.appendChild(renderToolbar());
+    host.appendChild(renderClassPlans());
+  };
+
+  // 关键：把「重绘什么」从"整个档案编辑器页"换成"只有课表这一块"。
+  setClassPlansRepaint(paintGrid);
+
+  /** 独立页自己的工具条：返回 + 保存。没有它编辑完没地方存。 */
+  function renderToolbar() {
+    const saveBtn = h('button.btn.btn-sm.btn-primary', {
+      type: 'button',
+      onClick: async () => {
+        saveBtn.disabled = true;
+        try {
+          await save();
+        } finally {
+          saveBtn.disabled = false;
+        }
+      },
+    }, t('profiles.editor.saveAndDeploy'));
+
+    return h('div.toolbar', { style: { marginBottom: '10px' } },
+      h('a.btn.btn-sm', { href: '#/timetables' }, t('profiles.editor.back')),
+      h('div.spacer'),
+      h('span.toolbar-hint', state.profile?.name ?? ''),
+      saveBtn);
+  }
+
+  paintGrid();
 }
 
 export async function render(container, params) {
