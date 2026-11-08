@@ -13,17 +13,17 @@
  * </p>
  */
 
-import { api } from '../core/api.js?v=184';
-import { toastError, errorBlock } from '../core/errors.js?v=184';
+import { api } from '../core/api.js?v=185';
+import { toastError, errorBlock } from '../core/errors.js?v=185';
 import {
   h, clear, toast, loadingBlock, confirmDialog,
-} from '../core/ui.js?v=184';
-import { t } from './../core/i18n.js?v=184';
+} from '../core/ui.js?v=185';
+import { t } from './../core/i18n.js?v=185';
 // 时间点的附加信息（插件附加设置 / 行动组）编辑：时间表独立后仍然要能编，
 // 所以和档案编辑器共用同一套弹窗，而不是各自复制一份。
 import {
   openAttachedDialog, openActionSetDialog, attachedCountOf, actionCountOf,
-} from './layoutItemDialogs.js?v=184';
+} from './layoutItemDialogs.js?v=185';
 
 export const meta = {
   title: t('layoutEditor.title'),

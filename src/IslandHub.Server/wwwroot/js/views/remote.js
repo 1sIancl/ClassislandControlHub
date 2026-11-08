@@ -3,14 +3,14 @@
  * 数据来自 A 端 /admin/devices、/admin/backups 等接口。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=184';
-import { toastError } from '../core/errors.js?v=184';
-import { hintForCode } from '../core/error-hints.js?v=184';
+import { api, fetchBlob } from '../core/api.js?v=185';
+import { toastError } from '../core/errors.js?v=185';
+import { hintForCode } from '../core/error-hints.js?v=185';
 import {
   h, clear, toast, loadingBlock, confirmDialog, field, select, emptyState, formatDateTime, modal,
   hintIcon,
-} from '../core/ui.js?v=184';
-import { t } from './../core/i18n.js?v=184';
+} from '../core/ui.js?v=185';
+import { t } from './../core/i18n.js?v=185';
 
 export const meta = {
   title: t('remote.title'),

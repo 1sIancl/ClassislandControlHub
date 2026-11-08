@@ -4826,9 +4826,11 @@ table.data-compact td input[type="text"] {
 }
 .grid-scroll.sched-fit .sched-grid {
   grid-template-columns: 64px repeat(7, minmax(0, 1fr));
-  /* 下限 30px：低于这个高度，一行课表就装不下两行字了。
-     节数多时宁可网格内部滚动，也不再把字号往下压。 */
-  grid-auto-rows: minmax(36px, 1fr);
+  /* 行高**无下限**：节数多时按可用高度均分压缩，保证每一节都能显示。
+     设下限（曾经是 36px）会让总高超过容器，而容器是 overflow:hidden，
+     结果是最后几节被直接裁掉——用户看到的就是"填了课表却显示不全"。
+     宁可字小一点，也不能让内容消失。 */
+  grid-auto-rows: minmax(0, 1fr);
   gap: 4px;
   min-width: 0;
   width: 100%;
@@ -4855,9 +4857,10 @@ table.data-compact td input[type="text"] {
   font-size: 9.5px;
 }
 .grid-scroll.sched-fit .sched-cell {
-  min-height: 36px;
+  /* 同样去掉最小高度：有下限就压不下去，最后几行会被容器裁掉。 */
+  min-height: 0;
   min-width: 0;
-  padding: 4px 7px;
+  padding: 2px 6px;
   /* 字号不再小于 11.5px：再小就真的看不清了，宁可让网格滚。 */
   font-size: 12px;
   line-height: 1.4;
