@@ -5055,7 +5055,8 @@ table.data-compact td input[type="text"] {
 }
 .classboard-clock {
   font-family: var(--mono);
-  font-size: clamp(72px, 13vw, 210px);
+  /* 档位由 --cb-clock-scale 控制（1 / 0.74 / 0.56），只改这一个数 */
+  font-size: calc(clamp(72px, 13vw, 210px) * var(--cb-clock-scale, 1));
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0.02em;
@@ -5231,4 +5232,164 @@ table.data-compact td input[type="text"] {
     animation: none;
     padding-left: 16px;
   }
+}
+
+/* ── 班级看板外观配置（#142）：老师在大屏那台机器上调，存在本机 ── */
+/* 主色只影响"强调"位置：当前节名称、星期、倒计时。整屏染色会失去层次。 */
+.classboard-week,
+.classboard-remain {
+  color: var(--cb-accent, #7fb0ff);
+}
+.classboard-row.active {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--cb-accent, #4f8cff) 42%, transparent), transparent);
+}
+/* 浅色主题：教室采光强或屏幕偏亮时用，避免深色反光看不清 */
+.classboard.theme-light {
+  background: linear-gradient(160deg, #f5f8ff 0%, #e8eefb 60%, #dfe7f8 100%);
+  color: #16213a;
+}
+.classboard.theme-light .classboard-clock {
+  text-shadow: none;
+}
+.classboard.theme-light .classboard-row {
+  background: rgb(22 33 58 / 5%);
+  /* 行文字必须一起换色：默认是浅蓝（#c7d3ef），落在浅背景上几乎看不见 */
+  color: #3a4a6b;
+}
+.classboard.theme-light .classboard-row.active {
+  color: #16213a;
+}
+.classboard.theme-light .classboard-row-time,
+.classboard.theme-light .classboard-now-teacher,
+.classboard.theme-light .classboard-now-time {
+  color: #5f6f8f;
+}
+.classboard.theme-light .classboard-now-subject {
+  color: #16213a;
+}
+.classboard.theme-light .classboard-notice {
+  color: #3a4a6b;
+}
+.classboard.theme-light .classboard-weather-text,
+.classboard.theme-light .classboard-weather-range {
+  color: #5f6f8f;
+}
+.classboard.theme-light .classboard-profile {
+  color: #6b7a99;
+}
+.classboard.theme-light .classboard-card {
+  background: rgb(255 255 255 / 78%);
+  border-color: rgb(22 33 58 / 8%);
+}
+.classboard.theme-light .classboard-now-label,
+.classboard.theme-light .classboard-card-title,
+.classboard.theme-light .classboard-row-no {
+  color: #5a6b8c;
+}
+.classboard.theme-light .classboard-exit {
+  color: rgb(22 33 58 / 24%);
+}
+/* 齿轮：右下角、半透明、够小——老师找得到，学生不会去点 */
+.classboard-config-host {
+  position: absolute;
+  right: clamp(10px, 1.2vw, 20px);
+  bottom: clamp(26px, 3vh, 46px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+.classboard-gear {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid rgb(255 255 255 / 14%);
+  background: rgb(255 255 255 / 6%);
+  color: rgb(255 255 255 / 45%);
+  font-size: 15px;
+  cursor: pointer;
+}
+.classboard-gear:hover {
+  color: #fff;
+  border-color: rgb(255 255 255 / 34%);
+}
+.classboard.theme-light .classboard-gear {
+  border-color: rgb(22 33 58 / 16%);
+  background: rgb(22 33 58 / 5%);
+  color: rgb(22 33 58 / 45%);
+}
+/* 面板：从齿轮上方展开 */
+.classboard-config {
+  width: clamp(240px, 22vw, 300px);
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #161d31;
+  border: 1px solid rgb(255 255 255 / 12%);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 45%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.classboard.theme-light .classboard-config {
+  background: #fff;
+  border-color: rgb(22 33 58 / 10%);
+  color: #16213a;
+}
+.classboard-config-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgb(255 255 255 / 62%);
+}
+.classboard.theme-light .classboard-config-title {
+  color: #5a6b8c;
+}
+.classboard-config-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.classboard-config-label {
+  font-size: 12px;
+  color: rgb(255 255 255 / 52%);
+  flex: none;
+}
+.classboard.theme-light .classboard-config-label {
+  color: #6b7a99;
+}
+.classboard-config-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.classboard-config-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgb(255 255 255 / 16%);
+  background: transparent;
+  color: rgb(255 255 255 / 62%);
+  font-size: 12px;
+  cursor: pointer;
+}
+.classboard.theme-light .classboard-config-chip {
+  border-color: rgb(22 33 58 / 16%);
+  color: #4a5876;
+}
+.classboard-config-chip.on {
+  background: var(--cb-accent, #4f8cff);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+}
+.classboard-config-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+.classboard-config-dot.on {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px var(--cb-accent, #4f8cff);
 }

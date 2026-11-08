@@ -3390,5 +3390,19 @@ export default {
   'classBoard.exit': "Exit board",
   'classBoard.otherDay': "Timetable for {day}",
   'classBoard.otherDayHint': "No lessons today · next is {day}",
+  // 班级看板外观配置（#142）
+  'classBoard.styleTitle': "Display (this screen only)",
+  'classBoard.styleTheme': "Theme",
+  'classBoard.styleDark': "Dark",
+  'classBoard.styleLight': "Light",
+  'classBoard.styleAccent': "Accent",
+  'classBoard.styleClock': "Clock size",
+  'classBoard.styleClockLarge': "Large",
+  'classBoard.styleClockMedium': "Medium",
+  'classBoard.styleClockSmall': "Small",
+  'classBoard.styleWeather': "Weather",
+  'classBoard.styleNotice': "Notice",
+  'classBoard.styleMarquee': "Ticker",
+
 };
 

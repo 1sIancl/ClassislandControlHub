@@ -3390,5 +3390,19 @@ export default {
   'classBoard.exit': "退出看板",
   'classBoard.otherDay': "{day}的课表",
   'classBoard.otherDayHint': "今天没课 · 下次是{day}",
+  // 班级看板外观配置（#142）
+  'classBoard.styleTitle': "显示设置（只影响这台机器）",
+  'classBoard.styleTheme': "主题",
+  'classBoard.styleDark': "深色",
+  'classBoard.styleLight': "浅色",
+  'classBoard.styleAccent': "主色",
+  'classBoard.styleClock': "时钟大小",
+  'classBoard.styleClockLarge': "大",
+  'classBoard.styleClockMedium': "中",
+  'classBoard.styleClockSmall': "小",
+  'classBoard.styleWeather': "天气",
+  'classBoard.styleNotice': "公告",
+  'classBoard.styleMarquee': "滚动条",
+
 };
 

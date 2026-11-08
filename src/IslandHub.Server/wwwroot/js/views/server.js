@@ -1,10 +1,10 @@
 /** 服务器信息视图（系统设置拆分而来）：运行参数、数据目录、部署与接入说明。 */
 
-import { api, session } from '../core/api.js?v=172';
-import { t } from '../core/i18n.js?v=172';
+import { api, session } from '../core/api.js?v=173';
+import { t } from '../core/i18n.js?v=173';
 import {
   h, clear, formatDateTime, formatDuration, toast, confirmDialog, copyText, loadingBlock, kvRow,
-} from '../core/ui.js?v=172';
+} from '../core/ui.js?v=173';
 
 export const meta = {
   title: t('server.title'),

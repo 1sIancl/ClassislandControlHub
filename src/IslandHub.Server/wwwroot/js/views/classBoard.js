@@ -15,9 +15,9 @@
  * </ul>
  */
 
-import { api } from '../core/api.js?v=172';
-import { h, clear } from '../core/ui.js?v=172';
-import { t } from '../core/i18n.js?v=172';
+import { api } from '../core/api.js?v=173';
+import { h, clear } from '../core/ui.js?v=173';
+import { t } from '../core/i18n.js?v=173';
 
 export const meta = {
   title: t('classBoard.title'),
@@ -26,6 +26,54 @@ export const meta = {
 
 /** 每 60 秒重取一次数据：课表与公告不该因为页面开着就不更新。 */
 const REFRESH_MS = 60000;
+
+/**
+ * 外观配置存在**本机**（localStorage），不进档案。
+ *
+ * <p>
+ * 理由：这是"这间教室那块屏"的偏好（亮不亮、字多大、要不要显示天气），
+ * 不是全班共用的教学配置。放进档案会让「改个配色」变成一次下发，
+ * 而且别的班跟着被改。老师在那台机器上设一次就够。
+ * </p>
+ */
+const STYLE_KEY = 'islandhub.classboard.style';
+
+/** 可选主色。都按深色底调过对比度，不像纯色那样刺眼。 */
+const ACCENTS = {
+  blue: '#4f8cff',
+  teal: '#2ec4b6',
+  amber: '#f2a03d',
+  violet: '#8b7bff',
+};
+
+const CLOCK_SIZES = { large: '1', medium: '0.74', small: '0.56' };
+
+const DEFAULT_STYLE = {
+  theme: 'dark',
+  accent: 'blue',
+  clock: 'large',
+  weather: true,
+  notice: true,
+  marquee: true,
+};
+
+function loadStyle() {
+  try {
+    const raw = window.localStorage.getItem(STYLE_KEY);
+    return raw ? { ...DEFAULT_STYLE, ...JSON.parse(raw) } : { ...DEFAULT_STYLE };
+  } catch {
+    // 存储被禁用 / 内容损坏：退回默认外观，不要让看板打不开。
+    return { ...DEFAULT_STYLE };
+  }
+}
+
+function saveStyle(style) {
+  try {
+    window.localStorage.setItem(STYLE_KEY, JSON.stringify(style));
+  } catch {
+    /* 存不进去只影响"下次还记得"，不影响本次显示 */
+  }
+}
 
 let clockTimer = null;
 let refreshTimer = null;
@@ -90,18 +138,35 @@ export async function render(container, params) {
   const host = h('div.classboard');
   container.appendChild(host);
 
+  // 外观配置：本机偏好，改了立刻重画，不用刷新也不用下发。
+  const style = loadStyle();
+
+  const applyStyle = () => {
+    host.className = `classboard theme-${style.theme} clock-${style.clock}`;
+    host.style.setProperty('--cb-accent', ACCENTS[style.accent] ?? ACCENTS.blue);
+    host.style.setProperty('--cb-clock-scale', CLOCK_SIZES[style.clock] ?? CLOCK_SIZES.large);
+  };
+
   const paint = () => {
     clear(host);
+    applyStyle();
 
     // 逐个判空后再 append：这块是**直接** appendChild，不经过 h() 的子节点过滤，
     // 没有公告时 renderMarquee 返回 null，appendChild(null) 会直接抛
     // "parameter 1 is not of type 'Node'"，整页白屏。
-    const blocks = [renderMarquee(data), renderTop(data), renderTick(data), renderMain(data)];
+    const blocks = [
+      style.marquee ? renderMarquee(data) : null,
+      renderTop(data),
+      renderTick(data),
+      renderMain(data, style),
+    ];
     for (const block of blocks) {
       if (block) {
         host.appendChild(block);
       }
     }
+
+    host.appendChild(renderConfigButton(style, () => paint()));
   };
 
   paint();
@@ -324,8 +389,89 @@ function remainText(profile) {
   return '';
 }
 
+/**
+ * 右上角的样式配置：极小、半透明，老师找得到、学生注意不到。
+ *
+ * <p>
+ * 直接改 localStorage 再回调重画，不刷新页面——大屏上刷新一次要黑屏半秒，
+ * 调个字号不该有这种动静。
+ * </p>
+ */
+function renderConfigButton(style, onChange) {
+  const toggle = (key) => {
+    style[key] = !style[key];
+    saveStyle(style);
+    onChange();
+  };
+
+  const pick = (key, value) => {
+    style[key] = value;
+    saveStyle(style);
+    onChange();
+  };
+
+  // options 传「内部值 + 显示文案」成对，**不要**拿文案反推内部值：
+  // 早先那样写，theme 被存成中文「浅色」、clock 存成「小」，
+  // 于是 className 变成 theme-浅色、字号变量查不到 → 两个开关都没生效（实测字号没变）。
+  const optionRow = (label, key, options) => h('div.classboard-config-row',
+    h('span.classboard-config-label', label),
+    h('div.classboard-config-values', ...options.map((opt) => h(
+      'button.classboard-config-chip' + (style[key] === opt.value ? '.on' : ''),
+      { type: 'button', onClick: () => pick(key, opt.value) },
+      opt.label,
+    ))));
+
+  const panel = h('div.classboard-config', { hidden: true },
+    h('div.classboard-config-title', t('classBoard.styleTitle')),
+    optionRow(t('classBoard.styleTheme'), 'theme', [
+      { value: 'dark', label: t('classBoard.styleDark') },
+      { value: 'light', label: t('classBoard.styleLight') },
+    ]),
+    h('div.classboard-config-row',
+      h('span.classboard-config-label', t('classBoard.styleAccent')),
+      h('div.classboard-config-values', ...Object.keys(ACCENTS).map((key) => h('button.classboard-config-dot', {
+        type: 'button',
+        title: key,
+        style: { background: ACCENTS[key] },
+        class: style.accent === key ? 'on' : '',
+        onClick: () => pick('accent', key),
+      })))),
+    optionRow(t('classBoard.styleClock'), 'clock', [
+      { value: 'large', label: t('classBoard.styleClockLarge') },
+      { value: 'medium', label: t('classBoard.styleClockMedium') },
+      { value: 'small', label: t('classBoard.styleClockSmall') },
+    ]),
+    h('div.classboard-config-row',
+      h('div.classboard-config-values', ...[
+        ['weather', t('classBoard.styleWeather')],
+        ['notice', t('classBoard.styleNotice')],
+        ['marquee', t('classBoard.styleMarquee')],
+      ].map(([key, label]) => h('button.classboard-config-chip' + (style[key] ? '.on' : ''), {
+        type: 'button',
+        onClick: () => toggle(key),
+      }, label)))));
+
+  const gear = h('button.classboard-gear', {
+    type: 'button',
+    title: t('classBoard.styleTitle'),
+  }, '⚙');
+
+  gear.onclick = () => {
+    panel.hidden = !panel.hidden;
+  };
+
+  // 面板开着时点空白处收起：大屏上没人会去找关闭按钮。
+  panel.addEventListener('click', (event) => {
+    if (event.target === panel) {
+      panel.hidden = true;
+    }
+  });
+
+  return h('div.classboard-config-host', gear, panel);
+}
+
 /** 主体：当前节 + 今日课表。 */
-function renderMain(data) {
+function renderMain(data, style) {
   const state = currentState(data.profile);
 
   const headline = (() => {
@@ -368,13 +514,14 @@ function renderMain(data) {
   return h('div.classboard-main',
     h('div.classboard-left', headline),
     h('div.classboard-list', ...rows),
-    renderSide(data));
+    renderSide(data, style));
 }
 
 /** 右栏：天气与公告。没有数据就整块不渲染，不留空框。 */
-function renderSide(data) {
-  const weather = data.weather;
-  const notice = data.profile?.content?.settings?.announcement;
+function renderSide(data, style) {
+  // 外观配置里关掉的模块直接不渲染，而不是留一个空卡片。
+  const weather = style?.weather === false ? null : data.weather;
+  const notice = style?.notice === false ? null : data.profile?.content?.settings?.announcement;
 
   if (!weather && !notice) {
     return null;
