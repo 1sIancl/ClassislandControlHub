@@ -17,10 +17,10 @@
  * </ul>
  */
 
-import { api, session } from '../core/api.js?v=180';
-import { toastError } from '../core/errors.js?v=180';
-import { h, clear, toast, copyText } from '../core/ui.js?v=180';
-import { t } from '../core/i18n.js?v=180';
+import { api, session } from '../core/api.js?v=181';
+import { toastError } from '../core/errors.js?v=181';
+import { h, clear, toast, copyText } from '../core/ui.js?v=181';
+import { t } from '../core/i18n.js?v=181';
 
 export const meta = {
   title: t('welcome.title'),

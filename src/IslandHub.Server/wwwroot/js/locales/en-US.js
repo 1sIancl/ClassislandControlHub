@@ -3405,5 +3405,6 @@ export default {
   'classBoard.styleMarquee': "Ticker",
 
   'classBoard.urgent': "URGENT",
+  'classBoard.switchProfile': "Profile",
 };
 

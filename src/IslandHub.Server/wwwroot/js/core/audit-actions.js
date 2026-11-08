@@ -1,4 +1,4 @@
-import { t } from './i18n.js?v=180';
+import { t } from './i18n.js?v=181';
 
 /**
  * 审计动作码 → 中文（#42）。

@@ -3,14 +3,14 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=180';
-import { toastError } from '../core/errors.js?v=180';
+import { api } from '../core/api.js?v=181';
+import { toastError } from '../core/errors.js?v=181';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, icon, select,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=180';
-import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=180';
-import { t } from './../core/i18n.js?v=180';
+} from '../core/ui.js?v=181';
+import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=181';
+import { t } from './../core/i18n.js?v=181';
 
 // ── 课表铺满一屏（#140）────────────────────────────────────────────
 //
@@ -163,6 +163,11 @@ let state = {
   // 只显示某一个页签（#135）：从「时间表 / 课表」的二级子页面进来时设置。
   // 为空表示完整编辑器（科目 + 自定义设置 + 两个编辑区）。
   section: null,
+
+  // 课表区域的重绘入口，**随 state 一起重建**。
+  // 曾经是模块级变量，结果独立课表页设置过之后，返回编辑器仍指向已卸载节点，
+  // 表现为「点了没反应、不报错」。放进 state 后每次进页面自动回到默认，不需要谁记得重置。
+  repaintClassPlans: () => repaintTab(),
 };
 
 /** 只显示一个页签时，「返回」该回到哪个总览页。 */
@@ -204,6 +209,9 @@ export async function mountClassPlans(container, profileId) {
   const firstLayout = profile.content?.timeLayoutIds?.[0] ?? null;
 
   state = {
+    // 重绘入口随 state 重建（见 state 默认值注释）；这两处是完整赋值，必须显式带上，
+    // 漏了就是 undefined，一改数据就 TypeError。
+    repaintClassPlans: () => repaintTab(),
     profileId,
     profile,
     library,
@@ -256,13 +264,8 @@ export async function mountClassPlans(container, profileId) {
 }
 
 export async function render(container, params) {
-  // 重置课表重绘钩子（拆分步骤 2 的配套）。
-  //
-  // `setClassPlansRepaint` 是模块级状态：独立课表页会把它指向自己的 host。
-  // 若不清掉，从 `#/timetables/{档案}` 返回后进入完整编辑器，
-  // 钩子仍指向**已卸载的节点** —— 课表页签里改数据会重绘到空气上，
-  // 表现为"点了没反应、也不报错"，比白屏难查得多。
-  setClassPlansRepaint(null);
+  // 重绘钩子随 state 重建，这里不需要手动重置（见 state.repaintClassPlans 的注释）。
+
 
   clear(container);
   container.appendChild(loadingBlock(t('profiles.editor.loading')));
@@ -272,6 +275,7 @@ export async function render(container, params) {
   const library = await api('/admin/time-layouts').catch(() => []);
 
   state = {
+    repaintClassPlans: () => repaintTab(),
     profileId: params.id,
     profile,
     library,
@@ -427,7 +431,7 @@ function setRotationWeeks(weeks) {
       rotation.weeks = 1;
       state.rotationWeek = 1;
       markDirty();
-      repaintClassPlans();
+      state.repaintClassPlans();
       toast('ok', t('profiles.editor.rotationOff'), doomed.length > 0
         ? t('profiles.editor.rotationOffDone', { count: doomed.length })
         : t('profiles.editor.rotationOffAll'));
@@ -494,7 +498,7 @@ function setRotationWeeks(weeks) {
     }
 
     markDirty();
-    repaintClassPlans();
+    state.repaintClassPlans();
     toast('ok', t('profiles.editor.rotationOnDone', { weeks }),
       copied > 0
         ? t('profiles.editor.rotationOnHint', { count: copied })
@@ -915,14 +919,17 @@ function renderTab() {
  * 有了这个钩子，schedCell / renderPalette / openBulkOps 里那几十处调用**不用改**。
  * </p>
  */
-// 注意：这里必须指向 repaintTab，不能指向自己。
-// （批量替换时曾把这一行也换成了 repaintClassPlans()，变成空转递归，
-// 表现为点格子后抛出 Maximum call stack size exceeded。）
-let repaintClassPlans = () => repaintTab();
-
-/** 供独立课表模块替换重绘实现（传入 null 恢复默认）。 */
+/**
+ * 替换课表区域的重绘实现（供独立课表页使用）。
+ *
+ * <p>
+ * 写进 <see name="state"/> 而不是模块级变量：
+ * 模块级变量的生命周期比页面长，独立页设置过之后返回编辑器仍指向已卸载节点，
+ * 表现为「点了没反应、不报错」。放进 state 后每次进页面自动回到默认。
+ * </p>
+ */
 export function setClassPlansRepaint(fn) {
-  repaintClassPlans = typeof fn === 'function' ? fn : () => repaintTab();
+  state.repaintClassPlans = typeof fn === 'function' ? fn : () => repaintTab();
 }
 
 function repaintTab() {
@@ -947,7 +954,7 @@ function renderTimeLayouts() {
         state.selectedLayoutId,
         (v) => {
           state.selectedLayoutId = v;
-          repaintClassPlans();
+          state.repaintClassPlans();
         },
         t('profiles.editor.noLayouts'),
       ),
@@ -962,7 +969,7 @@ function renderTimeLayouts() {
         state.layoutView,
         (v) => {
           state.layoutView = v;
-          repaintClassPlans();
+          state.repaintClassPlans();
         },
       ) : null,
 
@@ -1763,7 +1770,7 @@ function countClassBefore(layout, index) {
 
 function markDirtyValues() {
   state.dirty = true;
-  repaintClassPlans();
+  state.repaintClassPlans();
 }
 
 // ────────────────────────── 时间表可视化编辑（#56）──────────────────────────
@@ -2162,7 +2169,7 @@ function renderClassPlans() {
     (v) => {
       state.classPlanLayoutId = v;
       state.scheduleSelection = null;
-      repaintClassPlans();
+      state.repaintClassPlans();
     },
     layouts.length === 0 ? t('profiles.editor.needLayout') : null,
   );
@@ -2174,7 +2181,7 @@ function renderClassPlans() {
         t('profiles.editor.gridLead'),
         h('button.btn.btn-sm.btn-primary', {
           type: 'button',
-          onClick: () => { state.activeTab = 'timeLayouts'; repaintClassPlans(); },
+          onClick: () => { state.activeTab = 'timeLayouts'; state.repaintClassPlans(); },
         }, t('profiles.editor.createLayoutFirst'))),
     );
   }
@@ -2211,7 +2218,7 @@ function renderClassPlans() {
       (v) => {
         state.rotationWeek = Number(v);
         state.scheduleSelection = null;
-        repaintClassPlans();
+        state.repaintClassPlans();
       },
     ),
     h('div.spacer'),
@@ -2593,7 +2600,7 @@ function openBulkOps(layout, periodCount) {
     onConfirm: async () => {
       const code = () => {
         markDirty();
-        repaintClassPlans();
+        state.repaintClassPlans();
       };
 
       if (cfg.action === 'fromweek') {
@@ -2786,14 +2793,14 @@ function schedCell(layout, day, index, periodCount) {
     } else {
       state.scheduleSelection = { day, index };
     }
-    repaintClassPlans();
+    state.repaintClassPlans();
   });
 
   cell.addEventListener('dblclick', () => {
     writeSlot(layout, day, index, null);
     state.dirty = true;
     state.scheduleSelection = { day, index };
-    repaintClassPlans();
+    state.repaintClassPlans();
   });
 
   cell.addEventListener('keydown', (e) => {
@@ -2849,7 +2856,7 @@ function applyCellDrop(layout, day, index, periodCount) {
     writeSlot(layout, day, index, { subjectId: payload.subjectId, isEnabled: true });
     state.dirty = true;
     advanceSelection(day, index, periodCount);
-    repaintClassPlans();
+    state.repaintClassPlans();
     return;
   }
 
@@ -2864,7 +2871,7 @@ function applyCellDrop(layout, day, index, periodCount) {
   writeSlot(layout, day, index, source);
   state.dirty = true;
   state.scheduleSelection = { day, index };
-  repaintClassPlans();
+  state.repaintClassPlans();
 }
 
 /** 科目调色板：点选后点格子排课，或直接拖进格子。 */
@@ -2896,7 +2903,7 @@ function renderPalette(periodCount) {
       chip.addEventListener('click', () => {
         if (armed) {
           state.armedSubjectId = null;
-          repaintClassPlans();
+          state.repaintClassPlans();
           return;
         }
 
@@ -2908,7 +2915,7 @@ function renderPalette(periodCount) {
           state.dirty = true;
           advanceSelection(sel.day, sel.index, periodCount);
         }
-        repaintClassPlans();
+        state.repaintClassPlans();
       });
 
       chip.addEventListener('keydown', (e) => {

@@ -28,6 +28,16 @@ public sealed class WeatherConfigDto
 
     /// <summary>温度单位：<c>celsius</c> / <c>fahrenheit</c>。</summary>
     public string TemperatureUnit { get; set; } = "celsius";
+
+    /// <summary>
+    /// 气象预警数据地址（#142）。
+    /// <para>
+    /// 由 A 端配置下发，**不在代码里写死**：各地用的预警源不同
+    /// （有的是省级接口、有的是自建代理），换源不该改代码。
+    /// 留空 = 不抓预警，看板退回用公告承载警示信息。
+    /// </para>
+    /// </summary>
+    public string AlertUrl { get; set; } = string.Empty;
 }
 
 /// <summary>

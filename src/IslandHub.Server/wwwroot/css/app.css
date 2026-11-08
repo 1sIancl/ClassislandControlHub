@@ -5435,3 +5435,20 @@ table.data-compact td input[type="text"] {
   max-height: 66vh;
   overflow: hidden;
 }
+
+/* 档案切换下拉：放在配置面板里，不占看板正文 */
+.classboard-config-select {
+  height: 26px;
+  max-width: 132px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid rgb(255 255 255 / 16%);
+  background: #0f1526;
+  color: #cfe0ff;
+  font-size: 12px;
+}
+.classboard.theme-light .classboard-config-select {
+  background: #fff;
+  color: #16213a;
+  border-color: rgb(22 33 58 / 16%);
+}

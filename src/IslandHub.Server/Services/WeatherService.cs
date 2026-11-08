@@ -38,10 +38,13 @@ public sealed class WeatherService(
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
 
     /// <summary>
-    /// 中国气象局预警列表。**不是正式 API**（无文档、字段可能变），
-    /// 所以只做"能解析就用"的容错读取，绝不依赖它。
+    /// 预警地址留空时的兜底（中国气象局全国列表）。
+    /// <para>
+    /// 正常应由 A 端配置（<see cref="WeatherConfigDto.AlertUrl"/>）指定：
+    /// 各省接口不同、有的还走自建代理，写死在代码里等于让换源必须发版。
+    /// </para>
     /// </summary>
-    private const string NmcAlarmUrl = "http://www.nmc.cn/rest/findAlarm?pageNo=1&pageSize=10";
+    private const string DefaultAlertUrl = "http://www.nmc.cn/rest/findAlarm?pageNo=1&pageSize=10";
 
     /// <summary>一次最多展示几条预警：再多滚动条会跑到看不清。</summary>
     private const int MaxAlerts = 5;
@@ -270,7 +273,13 @@ public sealed class WeatherService(
 
         try
         {
-            using var response = await Http.GetAsync(NmcAlarmUrl, cancellationToken);
+            // 地址来自 A 端配置：各地预警源不同（省级接口 / 自建代理），
+            // 写死意味着换源必须发版。留空才用全国兜底。
+            var url = string.IsNullOrWhiteSpace(_state.Config.AlertUrl)
+                ? DefaultAlertUrl
+                : _state.Config.AlertUrl.Trim();
+
+            using var response = await Http.GetAsync(url, cancellationToken);
             if (response.IsSuccessStatusCode)
             {
                 var text = await response.Content.ReadAsStringAsync(cancellationToken);

@@ -3405,5 +3405,6 @@ export default {
   'classBoard.styleMarquee': "滚动条",
 
   'classBoard.urgent': "紧急通知",
+  'classBoard.switchProfile': "档案",
 };
 

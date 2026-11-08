@@ -1,11 +1,11 @@
 /** 系统维护视图（系统设置拆分而来）：自动更新、备份与数据库整理。 */
 
-import { api, hasPermission, fetchBlob } from '../core/api.js?v=180';
-import { toastError } from '../core/errors.js?v=180';
+import { api, hasPermission, fetchBlob } from '../core/api.js?v=181';
+import { toastError } from '../core/errors.js?v=181';
 import {
   h, clear, formatDateTime, toast, modal, confirmDialog, field, loadingBlock, kvRow,
-} from '../core/ui.js?v=180';
-import { t } from '../core/i18n.js?v=180';
+} from '../core/ui.js?v=181';
+import { t } from '../core/i18n.js?v=181';
 
 export const meta = {
   title: t('maint.title'),

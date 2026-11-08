@@ -15,9 +15,9 @@
  * </ul>
  */
 
-import { api } from '../core/api.js?v=180';
-import { h, clear } from '../core/ui.js?v=180';
-import { t } from '../core/i18n.js?v=180';
+import { api } from '../core/api.js?v=181';
+import { h, clear } from '../core/ui.js?v=181';
+import { t } from '../core/i18n.js?v=181';
 
 export const meta = {
   title: t('classBoard.title'),
@@ -129,13 +129,16 @@ function pad(num) {
 }
 
 async function loadBoard(profileId) {
-  const [profile, weather] = await Promise.all([
+  const [profile, weather, profiles] = await Promise.all([
     api(`/admin/profiles/${profileId}`).catch(() => null),
     api('/admin/weather').catch(() => null),
+    // 档案列表用于右上角切换：老师换班不需要去改 URL。
+    api('/admin/profiles').catch(() => []),
   ]);
 
   return {
     profile,
+    profiles: Array.isArray(profiles) ? profiles : [],
     weather: weather?.available ? weather : null,
     at: new Date(),
   };
@@ -212,7 +215,7 @@ export async function render(container, params) {
       }
     }
 
-    host.appendChild(renderConfigButton(style, () => paint()));
+    host.appendChild(renderConfigButton(data, style, () => paint()));
   };
 
   paint();
@@ -554,7 +557,7 @@ function remainText(profile) {
  * 调个字号不该有这种动静。
  * </p>
  */
-function renderConfigButton(style, onChange) {
+function renderConfigButton(data, style, onChange) {
   const toggle = (key) => {
     style[key] = !style[key];
     saveStyle(style);
@@ -580,6 +583,21 @@ function renderConfigButton(style, onChange) {
 
   const panel = h('div.classboard-config', { hidden: true },
     h('div.classboard-config-title', t('classBoard.styleTitle')),
+
+    // 档案切换：换了就直接跳 URL（会重新加载数据），不做局部替换——
+    // 课表、公告、轮换周次全都变了，局部刷新反而容易留下上一份的残影。
+    data.profiles?.length > 1
+      ? h('div.classboard-config-row',
+        h('span.classboard-config-label', t('classBoard.switchProfile')),
+        h('select.classboard-config-select', {
+          onChange: (event) => {
+            window.location.hash = `#/classboard/${event.target.value}`;
+          },
+        }, ...data.profiles.map((item) => h('option', {
+          value: item.id,
+          selected: item.id === data.profile?.id,
+        }, item.name))))
+      : null,
     optionRow(t('classBoard.styleTheme'), 'theme', [
       { value: 'dark', label: t('classBoard.styleDark') },
       { value: 'light', label: t('classBoard.styleLight') },
