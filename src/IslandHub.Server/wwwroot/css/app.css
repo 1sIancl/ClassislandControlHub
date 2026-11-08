@@ -1049,10 +1049,12 @@ input[type="checkbox"] {
 /* ────────────────────────── 标签页 ────────────────────────── */
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 16px;
-  overflow-x: auto;
+  /* 不滚动：页签多就换行。overflow-x: auto 即使内容不超也会留一条槽。 */
+  overflow: visible;
 }
 .tab {
   padding: 9px 15px;
@@ -4819,10 +4821,8 @@ table.data-compact td input[type="text"] {
   /* 左栏是纵向 flex：课表吃满剩余高度，从而与右栏等高。 */
   flex: 1 1 auto;
   min-height: 0;
-  /* 一屏放得下就不滚；放不下时**网格内部**滚。
-     之前为了强塞一屏把行高压到 19px、字号 10px，结果是字被裁得看不清——
-     那是把"不用滚"当成了比"看得清"更高的目标，本末倒置。 */
-  overflow: auto;
+  /* 不出滚动条：行高自适应到放得下，而不是留一条可滚的缝。 */
+  overflow: hidden;
 }
 .grid-scroll.sched-fit .sched-grid {
   grid-template-columns: 64px repeat(7, minmax(0, 1fr));
