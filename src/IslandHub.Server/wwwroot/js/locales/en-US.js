@@ -3404,5 +3404,6 @@ export default {
   'classBoard.styleNotice': "Notice",
   'classBoard.styleMarquee': "Ticker",
 
+  'classBoard.urgent': "URGENT",
 };
 

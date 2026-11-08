@@ -5400,3 +5400,38 @@ table.data-compact td input[type="text"] {
   border-color: #fff;
   box-shadow: 0 0 0 2px var(--cb-accent, #4f8cff);
 }
+
+/* ── 紧急插播（#143）：盖满整屏 10 秒后自己退场 ──
+   用 fixed 而不是 absolute：它要盖住看板里的所有东西，包括齿轮。 */
+.classboard-urgent {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(12px, 2vh, 30px);
+  padding: 6vw;
+  background: linear-gradient(160deg, rgb(192 57 43 / 97%), rgb(122 32 24 / 98%));
+  color: #fff;
+  text-align: center;
+  animation: classboard-urgent-in 0.28s ease-out;
+}
+@keyframes classboard-urgent-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.classboard-urgent-label {
+  font-size: clamp(14px, 1.6vw, 24px);
+  letter-spacing: 0.34em;
+  opacity: 0.82;
+}
+.classboard-urgent-text {
+  font-size: clamp(26px, 4.2vw, 72px);
+  font-weight: 800;
+  line-height: 1.35;
+  /* 极长内容也不许把按钮/边界顶出去——屏幕外的东西等于没有 */
+  max-height: 66vh;
+  overflow: hidden;
+}

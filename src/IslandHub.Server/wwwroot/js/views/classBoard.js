@@ -15,9 +15,9 @@
  * </ul>
  */
 
-import { api } from '../core/api.js?v=177';
-import { h, clear } from '../core/ui.js?v=177';
-import { t } from '../core/i18n.js?v=177';
+import { api } from '../core/api.js?v=178';
+import { h, clear } from '../core/ui.js?v=178';
+import { t } from '../core/i18n.js?v=178';
 
 export const meta = {
   title: t('classBoard.title'),
@@ -200,6 +200,7 @@ export async function render(container, params) {
     // 没有公告时 renderMarquee 返回 null，appendChild(null) 会直接抛
     // "parameter 1 is not of type 'Node'"，整页白屏。
     const blocks = [
+      renderUrgent(data),
       style.marquee ? renderMarquee(data) : null,
       renderTop(data),
       renderTick(data),
@@ -312,6 +313,44 @@ function renderTop(data) {
       })),
       h('span.classboard-week', WEEK_DAYS[now.getDay()])),
     name ? h('div.classboard-profile', `${name}${badge}`) : null);
+}
+
+/**
+ * 紧急插播：盖满整屏 10 秒，然后自己退场。
+ *
+ * <p>
+ * 触发条件是公告**以「【紧急】」开头**——不另开字段，因为老师发布紧急通知时
+ * 本来就会这样起头，多一个开关反而要多学一次。
+ * </p>
+ *
+ * <p>
+ * 必须限频：看板每 60 秒刷新一次，不限频就会每分钟弹一次，把上课内容挡掉。
+ * 用 sessionStorage 记「上次弹的时间」，一小时内最多一次；刷新页面重置会话，
+ * 所以关掉再开还能再看到。
+ * </p>
+ */
+function renderUrgent(data) {
+  const raw = String(data.profile?.content?.settings?.announcement ?? '').trim();
+  if (!raw.startsWith('【紧急】')) {
+    return null;
+  }
+
+  const key = 'islandhub.classboard.urgentAt';
+  const last = Number(window.sessionStorage.getItem(key) ?? 0);
+  if (Number.isFinite(last) && Date.now() - last < 60 * 60 * 1000) {
+    return null;
+  }
+
+  window.sessionStorage.setItem(key, String(Date.now()));
+
+  const text = raw.replace(/^【紧急】\s*/, '');
+  const overlay = h('div.classboard-urgent',
+    h('div.classboard-urgent-label', t('classBoard.urgent')),
+    h('div.classboard-urgent-text', text));
+
+  // 10 秒后自己消失：大屏上不该有"需要人点掉"的东西。
+  setTimeout(() => overlay.remove(), 10000);
+  return overlay;
 }
 
 /**

@@ -3404,5 +3404,6 @@ export default {
   'classBoard.styleNotice': "公告",
   'classBoard.styleMarquee': "滚动条",
 
+  'classBoard.urgent': "紧急通知",
 };
 
