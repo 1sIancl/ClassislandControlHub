@@ -38,7 +38,11 @@ function fitScheduleHeight() {
     : 0;
 
   // 再留 12px 呼吸位：贴到最底反而显得被切掉。
-  scroller.style.height = `${Math.max(220, window.innerHeight - top - padBottom - 12)}px`;
+  // 用 minHeight 而不是 height：右栏（作息 + 科目）可能比视口剩余更高，
+  // 设成固定高度课表就会比右栏矮一截。minHeight 保证至少吃满视口，
+  // 再由 flex 拉伸到与右栏等高。
+  scroller.style.minHeight = `${Math.max(220, window.innerHeight - top - padBottom - 12)}px`;
+  scroller.style.height = '';
   scroller.dataset.fitKey = key;
 
   // 收敛修正：上面是估算，父链上零碎的 margin / 外边距在不同分辨率与缩放下各不相同，
@@ -46,8 +50,8 @@ function fitScheduleHeight() {
   // 一次就够，因为改高度不会反过来改变别的块。
   const overflow = document.documentElement.scrollHeight - window.innerHeight;
   if (overflow > 0) {
-    const height = parseFloat(scroller.style.height) || 0;
-    scroller.style.height = `${Math.max(220, height - overflow - 2)}px`;
+    const min = parseFloat(scroller.style.minHeight) || 0;
+    scroller.style.minHeight = `${Math.max(220, min - overflow - 2)}px`;
   }
 }
 
@@ -408,13 +412,42 @@ function renderLayoutPicker(container) {
       ? state.content.timeLayoutIds
       : (state.content.timeLayouts ?? []).map((layout) => layout.id),
   );
+  // 默认收起成一行：这段只在"换作息"时才用，平时它是一整张卡片（说明 + 一串勾选框），
+  // 占掉小半屏却不参与日常编辑。
+  if (!state.layoutPickerOpen) {
+    const names = library
+      .filter((layout) => selected.has(layout.id))
+      .map((layout) => layout.name);
+
+    return h('div.card', { style: { marginBottom: '14px', padding: '9px 14px' } },
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' } },
+        h('h3', { style: { margin: 0, fontSize: '13.5px' } }, t('profiles.editor.usingLayouts')),
+        h('span.cell-sub', names.length > 0
+          ? names.join('、')
+          : t('profiles.editor.noLayoutSelected')),
+        h('div.spacer'),
+        h('button.btn.btn-sm', {
+          type: 'button',
+          onClick: () => {
+            state.layoutPickerOpen = true;
+            paint(container);
+          },
+        }, t('profiles.editor.changeLayouts'))));
+  }
 
   const head = h('div.card-head',
     h('div',
       h('h3', t('profiles.editor.usingLayouts')),
       h('p.card-desc', library.length === 0
         ? t('profiles.editor.noLibraryLayouts')
-        : t('profiles.editor.usingLayoutsLead'))));
+        : t('profiles.editor.usingLayoutsLead'))),
+    h('button.btn.btn-sm.btn-ghost', {
+      type: 'button',
+      onClick: () => {
+        state.layoutPickerOpen = false;
+        paint(container);
+      },
+    }, t('profiles.editor.collapseLayouts')));
 
   if (library.length === 0) {
     return h('div.card', { style: { marginBottom: '14px' } },
@@ -1982,28 +2015,16 @@ function renderClassPlans() {
 
   // 「作息时间表」默认收起成一行：一个档案通常只有一两张作息，
   // 常驻一整条 segmented 只为显示"当前用哪张"，占高度也占注意力。
-  const layoutBar = state.schedLayoutOpen
-    ? segmented(
-      layouts.map((l) => ({ id: l.id, label: t('profiles.editor.layoutOption', { name: l.name, count: classCount(l) }) })),
-      state.classPlanLayoutId,
-      (v) => {
-        state.classPlanLayoutId = v;
-        state.scheduleSelection = null;
-        state.schedLayoutOpen = false;
-        repaintTab();
-      },
-      layouts.length === 0 ? t('profiles.editor.needLayout') : null,
-    )
-    : h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } },
-      h('span.toolbar-label', t('profiles.editor.dailyLayout')),
-      h('strong', { style: { fontSize: '13px' } }, layout ? layout.name : t('profiles.editor.needLayout')),
-      h('button.btn.btn-sm.btn-ghost', {
-        type: 'button',
-        onClick: () => {
-          state.schedLayoutOpen = true;
-          repaintTab();
-        },
-      }, t('profiles.editor.switchLayout')));
+  const layoutBar = segmented(
+    layouts.map((l) => ({ id: l.id, label: t('profiles.editor.layoutOption', { name: l.name, count: classCount(l) }) })),
+    state.classPlanLayoutId,
+    (v) => {
+      state.classPlanLayoutId = v;
+      state.scheduleSelection = null;
+      repaintTab();
+    },
+    layouts.length === 0 ? t('profiles.editor.needLayout') : null,
+  );
 
   if (!layout) {
     return h('div',
@@ -2058,20 +2079,14 @@ function renderClassPlans() {
 
   return h('div',
     weekBar,
-    h('div.toolbar',
-      h('span.toolbar-label', t('profiles.editor.dailyLayout')),
-      layoutBar,
-      h('div.spacer'),
-      h('span.toolbar-hint', t('profiles.editor.gridHint')),
-      h('button.btn.btn-sm', {
-        type: 'button',
-        title: t('profiles.editor.batchHint'),
-        onClick: () => openBulkOps(layout, periods.length),
-      }, t('profiles.editor.batch')),
-    ),
-    renderPalette(periods.length),
-    // 课表铺满一屏（#140）：容器高度由下面的 fitScheduleHeight 实测。
-    h('div.grid-scroll.sched-fit',
+    // 左右分栏（#140）：课表在左，选择类控件在右。
+    // 原来它们上下叠着——「作息时间表」加两行科目调色板吃掉近 140px，
+    // 课表格子只能往下缩；挪到右边后，省下的高度全部归课表。
+    // align-items: stretch 让两栏等高（右栏多高，课表就多高）。
+    h('div', { style: { display: 'flex', gap: '12px', alignItems: 'stretch' } },
+      h('div', { style: { flex: '1 1 auto', minWidth: 0, display: 'flex', flexDirection: 'column' } },
+        // 课表铺满一屏：容器高度由 fitScheduleHeight 实测。
+        h('div.grid-scroll.sched-fit',
       h('div.sched-grid',
         h('div.sched-head.corner', t('profiles.editor.periodTime')),
         ...GRID_DAYS.map((d) => h('div.sched-head', d.short ?? d.label)),
@@ -2081,6 +2096,21 @@ function renderClassPlans() {
             h('span.tm', `${period.startTime.slice(0, 5)}–${period.endTime.slice(0, 5)}`)),
           ...GRID_DAYS.map((d) => schedCell(layout, d.value, index, periods.length)),
         ]),
+      ),
+        ),
+      ),
+      // 右栏：作息时间表 + 科目调色板 + 批量操作（竖排，窄栏放不下时各自滚动）
+      h('div.sched-side', { style: { flex: '0 0 196px', maxWidth: '196px' } },
+        h('div.sched-side-block',
+          h('span.toolbar-label', t('profiles.editor.dailyLayout')),
+          layoutBar),
+        h('div.sched-side-block',
+          renderPalette(periods.length)),
+        h('button.btn.btn-sm', {
+          type: 'button',
+          title: t('profiles.editor.batchHint'),
+          onClick: () => openBulkOps(layout, periods.length),
+        }, t('profiles.editor.batch')),
       ),
     ),
   );
@@ -2699,7 +2729,7 @@ function applyCellDrop(layout, day, index, periodCount) {
 /** 科目调色板：点选后点格子排课，或直接拖进格子。 */
 function renderPalette(periodCount) {
   if (state.content.subjects.length === 0) {
-    return h('div.sched-palette.sched-palette-one-line',
+    return h('div.sched-palette',
       h('span.palette-empty', t('profiles.editor.noSubjectsHint')));
   }
 

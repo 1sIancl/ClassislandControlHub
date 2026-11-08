@@ -3369,7 +3369,11 @@ export default {
   'profiles.editor.wdSunShort': "Sun",
 
   // 课表页「作息时间表」收起态（#140）
-  'profiles.editor.switchLayout': "Switch",
+
+  // 「使用的时间表」收起态（#140）
+  'profiles.editor.noLayoutSelected': "none selected",
+  'profiles.editor.changeLayouts': "Change",
+  'profiles.editor.collapseLayouts': "Collapse",
 
 };
 
