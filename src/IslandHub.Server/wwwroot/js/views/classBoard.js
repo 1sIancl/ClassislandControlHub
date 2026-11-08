@@ -277,7 +277,19 @@ function renderTop(data) {
  * </p>
  */
 function renderMarquee(data) {
-  const raw = data.profile?.content?.settings?.announcement;
+  // 预警优先于普通公告：预警是"必须被看见"里优先级最高的一类。
+  //
+  // 天气接口目前**不返回** alerts（Open-Meteo 没有预警数据），所以这里
+  // 探测到就用、探测不到就退回公告——**不做假数据占位**。
+  // 将来接上 NMC / 和风 / 彩云时，只要 DTO 里多一个 alerts 数组，这里零改动生效。
+  const alerts = Array.isArray(data.weather?.alerts) ? data.weather.alerts : [];
+  const raw = alerts.length > 0
+    ? alerts
+      .map((alert) => [alert?.title, alert?.text].filter(Boolean).join('：'))
+      .filter(Boolean)
+      .join('　　')
+    : data.profile?.content?.settings?.announcement;
+
   if (!raw) {
     return null;
   }
@@ -329,12 +341,25 @@ function lessonsOfDay(profile, day) {
   return classPoints.map((point, index) => {
     const slot = (plan.slots ?? []).find((s) => s.index === index);
     const subject = slot?.subjectId ? subjects.get(slot.subjectId) : null;
+
+    const startMin = minutesOf(point.startTime);
+    let endMin = minutesOf(point.endTime);
+
+    // 跨零点（如 23:50–00:20）：结束时间在数字上小于开始时间，其实落在第二天。
+    // 不做 +24h 修正，这段会被算成负时长，且凌晨那半小时永远匹配不到「上课中」——
+    // 寄宿学校 / 晚自习场景会稳定复现。
+    const crossesMidnight = startMin !== null && endMin !== null && endMin <= startMin;
+    if (crossesMidnight) {
+      endMin += 24 * 60;
+    }
+
     return {
       index,
       start: point.startTime,
       end: point.endTime,
-      startMin: minutesOf(point.startTime),
-      endMin: minutesOf(point.endTime),
+      startMin,
+      endMin,
+      crossesMidnight,
       subject: subject?.name ?? '',
       teacher: subject?.teacherName ?? '',
     };
@@ -378,12 +403,23 @@ function currentState(profile) {
   const now = new Date();
   const nowMin = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
 
-  const current = lessons.find((l) => nowMin >= l.startMin && nowMin < l.endMin);
+  // 跨零点的段：凌晨 00:10 要能与前一天 23:50 开始的那节对上，
+  // 所以判断时把「现在」临时补一天再比较。
+  const inRange = (lesson) => {
+    const probe = lesson.crossesMidnight && nowMin < lesson.startMin
+      ? nowMin + 24 * 60
+      : nowMin;
+
+    return lesson.startMin !== null && lesson.endMin !== null
+      && probe >= lesson.startMin && probe < lesson.endMin;
+  };
+
+  const current = lessons.find(inRange);
   if (current) {
     return { kind: 'in-class', current, lessons };
   }
 
-  const next = lessons.find((l) => l.startMin > nowMin);
+  const next = lessons.find((l) => l.startMin !== null && l.startMin > nowMin);
   if (next) {
     return { kind: 'before', next, lessons };
   }
@@ -398,7 +434,12 @@ function remainText(profile) {
   const nowMin = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
 
   if (state.kind === 'in-class') {
-    const left = Math.max(0, Math.ceil(state.current.endMin - nowMin));
+    // 跨零点时「现在」也要补一天，否则 00:10 对着 00:20 的结束会算出 1450 分钟。
+    const probe = state.current.crossesMidnight && nowMin < state.current.startMin
+      ? nowMin + 24 * 60
+      : nowMin;
+
+    const left = Math.max(0, Math.ceil(state.current.endMin - probe));
     return t('classBoard.leftMinutes', { minutes: left });
   }
 
