@@ -334,7 +334,7 @@ function setRotationWeeks(weeks) {
       rotation.weeks = 1;
       state.rotationWeek = 1;
       markDirty();
-      repaintTab();
+      repaintClassPlans();
       toast('ok', t('profiles.editor.rotationOff'), doomed.length > 0
         ? t('profiles.editor.rotationOffDone', { count: doomed.length })
         : t('profiles.editor.rotationOffAll'));
@@ -401,7 +401,7 @@ function setRotationWeeks(weeks) {
     }
 
     markDirty();
-    repaintTab();
+    repaintClassPlans();
     toast('ok', t('profiles.editor.rotationOnDone', { weeks }),
       copied > 0
         ? t('profiles.editor.rotationOnHint', { count: copied })
@@ -812,6 +812,26 @@ function renderTab() {
   }
 }
 
+/**
+ * 课表区域的**重绘入口**（拆分步骤 1，见 docs/timetable-editor-split.md）。
+ *
+ * <p>
+ * 默认就是重绘整个档案编辑器页，行为与之前完全一致。
+ * 抽出来的目的：课表将来要变成独立页面，那时没有"档案编辑器页面"可重绘，
+ * 需要换成"只重绘课表区域"。
+ * 有了这个钩子，schedCell / renderPalette / openBulkOps 里那几十处调用**不用改**。
+ * </p>
+ */
+// 注意：这里必须指向 repaintTab，不能指向自己。
+// （批量替换时曾把这一行也换成了 repaintClassPlans()，变成空转递归，
+// 表现为点格子后抛出 Maximum call stack size exceeded。）
+let repaintClassPlans = () => repaintTab();
+
+/** 供独立课表模块替换重绘实现（传入 null 恢复默认）。 */
+export function setClassPlansRepaint(fn) {
+  repaintClassPlans = typeof fn === 'function' ? fn : () => repaintTab();
+}
+
 function repaintTab() {
   paint(document.getElementById('content'));
 }
@@ -834,7 +854,7 @@ function renderTimeLayouts() {
         state.selectedLayoutId,
         (v) => {
           state.selectedLayoutId = v;
-          repaintTab();
+          repaintClassPlans();
         },
         t('profiles.editor.noLayouts'),
       ),
@@ -849,7 +869,7 @@ function renderTimeLayouts() {
         state.layoutView,
         (v) => {
           state.layoutView = v;
-          repaintTab();
+          repaintClassPlans();
         },
       ) : null,
 
@@ -1650,7 +1670,7 @@ function countClassBefore(layout, index) {
 
 function markDirtyValues() {
   state.dirty = true;
-  repaintTab();
+  repaintClassPlans();
 }
 
 // ────────────────────────── 时间表可视化编辑（#56）──────────────────────────
@@ -2049,7 +2069,7 @@ function renderClassPlans() {
     (v) => {
       state.classPlanLayoutId = v;
       state.scheduleSelection = null;
-      repaintTab();
+      repaintClassPlans();
     },
     layouts.length === 0 ? t('profiles.editor.needLayout') : null,
   );
@@ -2061,7 +2081,7 @@ function renderClassPlans() {
         t('profiles.editor.gridLead'),
         h('button.btn.btn-sm.btn-primary', {
           type: 'button',
-          onClick: () => { state.activeTab = 'timeLayouts'; repaintTab(); },
+          onClick: () => { state.activeTab = 'timeLayouts'; repaintClassPlans(); },
         }, t('profiles.editor.createLayoutFirst'))),
     );
   }
@@ -2098,7 +2118,7 @@ function renderClassPlans() {
       (v) => {
         state.rotationWeek = Number(v);
         state.scheduleSelection = null;
-        repaintTab();
+        repaintClassPlans();
       },
     ),
     h('div.spacer'),
@@ -2480,7 +2500,7 @@ function openBulkOps(layout, periodCount) {
     onConfirm: async () => {
       const code = () => {
         markDirty();
-        repaintTab();
+        repaintClassPlans();
       };
 
       if (cfg.action === 'fromweek') {
@@ -2673,14 +2693,14 @@ function schedCell(layout, day, index, periodCount) {
     } else {
       state.scheduleSelection = { day, index };
     }
-    repaintTab();
+    repaintClassPlans();
   });
 
   cell.addEventListener('dblclick', () => {
     writeSlot(layout, day, index, null);
     state.dirty = true;
     state.scheduleSelection = { day, index };
-    repaintTab();
+    repaintClassPlans();
   });
 
   cell.addEventListener('keydown', (e) => {
@@ -2736,7 +2756,7 @@ function applyCellDrop(layout, day, index, periodCount) {
     writeSlot(layout, day, index, { subjectId: payload.subjectId, isEnabled: true });
     state.dirty = true;
     advanceSelection(day, index, periodCount);
-    repaintTab();
+    repaintClassPlans();
     return;
   }
 
@@ -2751,7 +2771,7 @@ function applyCellDrop(layout, day, index, periodCount) {
   writeSlot(layout, day, index, source);
   state.dirty = true;
   state.scheduleSelection = { day, index };
-  repaintTab();
+  repaintClassPlans();
 }
 
 /** 科目调色板：点选后点格子排课，或直接拖进格子。 */
@@ -2783,7 +2803,7 @@ function renderPalette(periodCount) {
       chip.addEventListener('click', () => {
         if (armed) {
           state.armedSubjectId = null;
-          repaintTab();
+          repaintClassPlans();
           return;
         }
 
@@ -2795,7 +2815,7 @@ function renderPalette(periodCount) {
           state.dirty = true;
           advanceSelection(sel.day, sel.index, periodCount);
         }
-        repaintTab();
+        repaintClassPlans();
       });
 
       chip.addEventListener('keydown', (e) => {
