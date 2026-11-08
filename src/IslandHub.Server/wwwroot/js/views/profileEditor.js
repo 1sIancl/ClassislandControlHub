@@ -38,11 +38,27 @@ function fitScheduleHeight() {
     : 0;
 
   // 再留 12px 呼吸位：贴到最底反而显得被切掉。
-  // 用 minHeight 而不是 height：右栏（作息 + 科目）可能比视口剩余更高，
-  // 设成固定高度课表就会比右栏矮一截。minHeight 保证至少吃满视口，
-  // 再由 flex 拉伸到与右栏等高。
-  scroller.style.minHeight = `${Math.max(220, window.innerHeight - top - padBottom - 12)}px`;
-  scroller.style.height = '';
+  // 高度取「视口剩余」与「右栏高度」的较小值：
+  //  · 右栏矮 → 与右栏齐平（两栏等高，视觉整齐）
+  //  · 右栏高 → 吃到视口底，绝不让页面出现滚动条
+  // 不能用 minHeight：网格内容能越过它把整页撑高（档案编辑器里实测溢出 143px）。
+  const side = document.querySelector('.sched-side');
+  const sideHeight = side ? side.getBoundingClientRect().height : 0;
+  const available = window.innerHeight - top - padBottom - 12;
+  const target = sideHeight > 0 ? Math.min(available, Math.max(sideHeight, 220)) : available;
+
+  scroller.style.minHeight = '';
+  scroller.style.height = `${Math.max(220, target)}px`;
+  // 兜底上限：档案编辑器的课表页签上方内容更多，算出的高度可能超过真实可用空间
+  // （实测溢出 143px）。maxHeight 直接卡住，宁可网格内部滚，也不让整页出现滚动条。
+  scroller.style.maxHeight = `${Math.max(220, available)}px`;
+
+  // 右栏同样要卡住：它被撑高会把外层容器一起顶上去，
+  // 结果课表限制了、页面照样溢出（上一轮就是这么漏的）。
+  if (side) {
+    side.style.maxHeight = `${Math.max(220, available)}px`;
+    side.style.overflowY = 'auto';
+  }
   scroller.dataset.fitKey = key;
 
   // 收敛修正：上面是估算，父链上零碎的 margin / 外边距在不同分辨率与缩放下各不相同，
@@ -50,8 +66,15 @@ function fitScheduleHeight() {
   // 一次就够，因为改高度不会反过来改变别的块。
   const overflow = document.documentElement.scrollHeight - window.innerHeight;
   if (overflow > 0) {
-    const min = parseFloat(scroller.style.minHeight) || 0;
-    scroller.style.minHeight = `${Math.max(220, min - overflow - 2)}px`;
+    const height = parseFloat(scroller.style.height) || 0;
+    scroller.style.height = `${Math.max(220, height - overflow - 2)}px`;
+
+    // 右栏也要一起收：它比课表高的时候才是把页面顶出去的那一方，
+    // 只收课表只会把差距越拉越大（实测 143 → 31 就卡在这一步）。
+    if (side) {
+      const sideMax = parseFloat(side.style.maxHeight) || 0;
+      side.style.maxHeight = `${Math.max(220, sideMax - overflow - 2)}px`;
+    }
   }
 }
 
