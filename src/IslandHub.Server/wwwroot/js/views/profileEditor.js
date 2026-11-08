@@ -622,15 +622,19 @@ function paint(container) {
   clear(container);
 
   // 页面标题由路由统一处理，这里只渲染内容。
+  //
+  // 「在课表页上」有两个入口：独立页（section=classPlans）与完整编辑器里切到课表页签。
+  // 两者都要把档案级的说明条让开——否则课表区域只剩 344px，10 节课装不下，
+  // 而容器设了 overflow:hidden 就会**直接把最后两节裁掉**（比滚动条更糟）。
+  const onTimetable = state.section === 'classPlans' || state.activeTab === 'classPlans';
+
   container.appendChild(h('div',
     renderHeader(),
-    // 课表页不渲染档案级「多周轮换」说明条：周次切换在课表页有自己的 weekBar，
-    // 这条只解释"轮换是什么"，却实打实占 50px——正是课表挤的原因。
-    state.section === 'classPlans' ? null : renderRotationBar(container),
-    // 课表专用页（#/timetables/{档案}）不显示「使用的时间表」：
-    // 那是档案级配置，在排课页面改它等于在排课途中换作息，容易误操作。
-    // 多周轮换则保留——它直接决定课表按第几周生效，是这个页面的核心信息。
-    state.section === 'classPlans' ? null : renderLayoutPicker(container),
+    // 「多周轮换」说明条：周次切换在课表页有自己的 weekBar，这条只解释"轮换是什么"，
+    // 却实打实占 50px——正是课表挤的原因。
+    onTimetable ? null : renderRotationBar(container),
+    // 「使用的时间表」：档案级配置，在排课页面改它等于排课途中换作息，容易误操作。
+    onTimetable ? null : renderLayoutPicker(container),
     h('div.card',
       h('div.editor-toolbar',
         // 独立子页面只显示一个页签时，不摆页签栏——摆着会让人以为还能切到别的部分。
