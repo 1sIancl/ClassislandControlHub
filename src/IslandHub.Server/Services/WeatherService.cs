@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using IslandHub.Protocol;
 using IslandHub.Protocol.Dtos;
 using IslandHub.Server.Data;
@@ -35,6 +36,15 @@ public sealed class WeatherService(
     private const int MinRefreshMinutes = 10;
 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
+
+    /// <summary>
+    /// 中国气象局预警列表。**不是正式 API**（无文档、字段可能变），
+    /// 所以只做"能解析就用"的容错读取，绝不依赖它。
+    /// </summary>
+    private const string NmcAlarmUrl = "http://www.nmc.cn/rest/findAlarm?pageNo=1&pageSize=10";
+
+    /// <summary>一次最多展示几条预警：再多滚动条会跑到看不清。</summary>
+    private const int MaxAlerts = 5;
 
     private readonly SemaphoreSlim _gate = new(1, 1);
     private WeatherStateDto _state = new();
@@ -185,6 +195,11 @@ public sealed class WeatherService(
             _state.Error = null;
             RebuildSummary();
 
+            // 气象预警（#142）：独立抓、独立失败。
+            // 中国气象局的公开接口不是正式 API，随时可能变；抓不到就留空数组，
+            // 绝不能让"没有预警"变成"没有天气"。
+            await RefreshAlertsAsync(cancellationToken);
+
             // 缓存写回设置表：重启后立刻有数据，不必等第一次抓取。
             await store.SetSettingAsync(CacheKey, HubJson.Serialize(_state), cancellationToken);
             logger.LogInformation("天气已更新：{City} {Temp}{Unit}（code {Code}）。",
@@ -239,6 +254,63 @@ public sealed class WeatherService(
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// 抓中国气象局（NMC）的预警列表（#142）。
+    ///
+    /// <para>
+    /// 这个接口**不是正式 API**：没有文档、可能改结构、可能限流。所以整段都在 try 里，
+    /// 任何失败都只留空数组——预警是"有就用"的增强信息，缺了不该让天气整块消失。
+    /// </para>
+    /// </summary>
+    private async Task RefreshAlertsAsync(CancellationToken cancellationToken)
+    {
+        var alerts = new List<WeatherAlertDto>();
+
+        try
+        {
+            using var response = await Http.GetAsync(NmcAlarmUrl, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                var text = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                // 结构：{ code, data: { page: { list: [ { title, signaltype, signallevel, issuetime, content } ] } } }
+                if (JsonNode.Parse(text) is JsonObject root
+                    && root["data"]?["page"]?["list"] is JsonArray list)
+                {
+                    foreach (var item in list)
+                    {
+                        var title = item?["title"]?.GetValue<string>();
+                        if (string.IsNullOrWhiteSpace(title))
+                        {
+                            continue;
+                        }
+
+                        alerts.Add(new WeatherAlertDto
+                        {
+                            Title = title.Trim(),
+                            Type = item?["signaltype"]?.GetValue<string>()?.Trim() ?? string.Empty,
+                            Level = item?["signallevel"]?.GetValue<string>()?.Trim() ?? string.Empty,
+                            Text = item?["content"]?.GetValue<string>()?.Trim() ?? string.Empty,
+                            IssuedAt = item?["issuetime"]?.GetValue<string>()?.Trim() ?? string.Empty,
+                        });
+
+                        // 大屏只放得下几条：再多滚动条会跑到看不清。
+                        if (alerts.Count >= MaxAlerts)
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            logger.LogDebug(ex, "预警抓取失败（不影响天气主数据）。");
+        }
+
+        _state.Alerts = alerts;
     }
 
     /// <summary>拼一行摘要给教室端直接显示（插件不必懂 WMO 代码）。</summary>

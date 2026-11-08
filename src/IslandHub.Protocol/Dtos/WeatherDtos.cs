@@ -75,4 +75,32 @@ public sealed class WeatherStateDto
 
     /// <summary>一行式的天气摘要，供教室端大屏直接显示（服务端拼好，插件不必再懂天气代码）。</summary>
     public string Summary { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 气象预警（#142）。来源为中国气象局 NMC。
+    /// <para>
+    /// **抓不到时为空数组**，绝不因此让天气整块失败：预警是增强信息，
+    /// 没有它就少一行字，而不是连温度都看不到。
+    /// </para>
+    /// </summary>
+    public List<WeatherAlertDto> Alerts { get; set; } = [];
+}
+
+/// <summary>一条气象预警。</summary>
+public sealed class WeatherAlertDto
+{
+    /// <summary>标题，如「山东省气象台继续发布寒潮蓝色预警」。</summary>
+    public string Title { get; set; } = string.Empty;
+
+    /// <summary>预警类型（寒潮 / 大风 / 暴雨…）。</summary>
+    public string Type { get; set; } = string.Empty;
+
+    /// <summary>预警等级（蓝色 / 黄色 / 橙色 / 红色）。</summary>
+    public string Level { get; set; } = string.Empty;
+
+    /// <summary>正文。</summary>
+    public string Text { get; set; } = string.Empty;
+
+    /// <summary>发布时间（原样字符串，不做时区换算：预警时间以发布方为准）。</summary>
+    public string IssuedAt { get; set; } = string.Empty;
 }
