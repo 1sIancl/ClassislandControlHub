@@ -15,9 +15,9 @@
  * </ul>
  */
 
-import { api } from '../core/api.js?v=185';
-import { h, clear } from '../core/ui.js?v=185';
-import { t } from '../core/i18n.js?v=185';
+import { api } from '../core/api.js?v=186';
+import { h, clear } from '../core/ui.js?v=186';
+import { t } from '../core/i18n.js?v=186';
 
 export const meta = {
   title: t('classBoard.title'),

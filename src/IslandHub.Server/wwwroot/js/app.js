@@ -2,24 +2,24 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=185';
-import { toastError } from './core/errors.js?v=185';
-import { h, clear, toast, icon } from './core/ui.js?v=185';
-import { t, applyStatic, mountLocalePicker } from './core/i18n.js?v=185';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=186';
+import { toastError } from './core/errors.js?v=186';
+import { h, clear, toast, icon } from './core/ui.js?v=186';
+import { t, applyStatic, mountLocalePicker } from './core/i18n.js?v=186';
 // 个人外观（#127）：先用本地缓存铺上，避免"先白底再变色"闪一下。
 // ⚠️ 别名：`prefs.js` 也导出一个 `applyAppearance`（那是全站主题/密度），同名会冲突。
-import { bootstrapAppearance, applyAppearance as applyUiAppearance } from './core/appearance.js?v=185';
+import { bootstrapAppearance, applyAppearance as applyUiAppearance } from './core/appearance.js?v=186';
 import {
   initTheme,
   getSidebarCollapsed, setSidebarCollapsed,
   applyDensity,
   applyAppearance, setBrandingAccent,
   applyRemotePrefs, applySchedScale,
-} from './core/prefs.js?v=185';
-import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=185';
-import { initGlassHighlight } from './core/glass.js?v=185';
-import { initTopbar } from './topbar.js?v=185';
-import { openSearch } from './core/search.js?v=185';
+} from './core/prefs.js?v=186';
+import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=186';
+import { initGlassHighlight } from './core/glass.js?v=186';
+import { initTopbar } from './topbar.js?v=186';
+import { openSearch } from './core/search.js?v=186';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -168,43 +168,43 @@ const ROUTE_ALIASES = {
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=185'),
-  devices: () => import('./views/devices.js?v=185'),
+  dashboard: () => import('./views/dashboard.js?v=186'),
+  devices: () => import('./views/devices.js?v=186'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=185'),
-  profiles: () => import('./views/profiles.js?v=185'),
+  groups: () => import('./views/devices.js?v=186'),
+  profiles: () => import('./views/profiles.js?v=186'),
   // 时间表 / 课表独立入口（#134、#135）：数据仍在档案里，这里只是给它们各自的直达页。
-  layouts: () => import('./views/layouts.js?v=185'),
+  layouts: () => import('./views/layouts.js?v=186'),
   // 时间表编辑页（#136）：独立模块，不再借用档案编辑器。
-  layoutEditor: () => import('./views/layoutEditor.js?v=185'),
-  timetables: () => import('./views/timetables.js?v=185'),
+  layoutEditor: () => import('./views/layoutEditor.js?v=186'),
+  timetables: () => import('./views/timetables.js?v=186'),
   // 课表编辑页（#144）：独立模块，渲染与交互复用 profileEditor.mountClassPlans（代码只有一份）。
-  timetableEditor: () => import('./views/timetableEditor.js?v=185'),
-  profileEditor: () => import('./views/profileEditor.js?v=185'),
-  deploy: () => import('./views/deploy.js?v=185'),
-  remote: () => import('./views/remote.js?v=185'),
-  reminders: () => import('./views/reminders.js?v=185'),
-  examMode: () => import('./views/examMode.js?v=185'),
-  weather: () => import('./views/weather.js?v=185'),
-  profileSlots: () => import('./views/profileSlots.js?v=185'),
-  audit: () => import('./views/audit.js?v=185'),
-  reports: () => import('./views/reports.js?v=185'),
-  appearance: () => import('./views/appearance.js?v=185'),
+  timetableEditor: () => import('./views/timetableEditor.js?v=186'),
+  profileEditor: () => import('./views/profileEditor.js?v=186'),
+  deploy: () => import('./views/deploy.js?v=186'),
+  remote: () => import('./views/remote.js?v=186'),
+  reminders: () => import('./views/reminders.js?v=186'),
+  examMode: () => import('./views/examMode.js?v=186'),
+  weather: () => import('./views/weather.js?v=186'),
+  profileSlots: () => import('./views/profileSlots.js?v=186'),
+  audit: () => import('./views/audit.js?v=186'),
+  reports: () => import('./views/reports.js?v=186'),
+  appearance: () => import('./views/appearance.js?v=186'),
   // 「系统设置」拆成四页（原 settings.js 已按此拆分，见各文件头部说明）。
-  accounts: () => import('./views/accounts.js?v=185'),
-  server: () => import('./views/server.js?v=185'),
-  integrations: () => import('./views/integrations.js?v=185'),
-  maintenance: () => import('./views/maintenance.js?v=185'),
-  board: () => import('./views/board.js?v=185'),
+  accounts: () => import('./views/accounts.js?v=186'),
+  server: () => import('./views/server.js?v=186'),
+  integrations: () => import('./views/integrations.js?v=186'),
+  maintenance: () => import('./views/maintenance.js?v=186'),
+  board: () => import('./views/board.js?v=186'),
   // 班级看板（#141）：挂在教室大屏上，只看时钟 / 当前课 / 公告。
-  classboard: () => import('./views/classBoard.js?v=185'),
-  approvals: () => import('./views/approvals.js?v=185'),
-  timesync: () => import('./views/timesync.js?v=185'),
-  lessons: () => import('./views/lessons.js?v=185'),
-  plugins: () => import('./views/pluginMarket.js?v=185'),
+  classboard: () => import('./views/classBoard.js?v=186'),
+  approvals: () => import('./views/approvals.js?v=186'),
+  timesync: () => import('./views/timesync.js?v=186'),
+  lessons: () => import('./views/lessons.js?v=186'),
+  plugins: () => import('./views/pluginMarket.js?v=186'),
   // 首次使用引导（#126）：**故意不进 NAV**——它只在部署后第一次进来时出现，
   // 以及「页面设置 → 重新播放引导」时进入；放进侧边栏反而会变成一个"日常页面"。
-  welcome: () => import('./views/welcome.js?v=185'),
+  welcome: () => import('./views/welcome.js?v=186'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -734,7 +734,7 @@ async function handleApply(event) {
  */
 async function shouldShowWelcome() {
   try {
-    const { shouldShowWelcome: check } = await import('./views/welcome.js?v=185');
+    const { shouldShowWelcome: check } = await import('./views/welcome.js?v=186');
     return await check();
   } catch {
     // 视图模块加载失败（网络/缓存）时不要拦人。
@@ -777,7 +777,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=185');
+    const { startTour } = await import('./core/tour.js?v=186');
     startTour({
       onFinish: async (skipped) => {
         try {

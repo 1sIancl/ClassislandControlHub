@@ -4817,20 +4817,20 @@ table.data-compact td input[type="text"] {
    节数再多也在一屏内，代价是行高变小（配合紧凑字号仍可读）。
    横向同理：8 列固定为「时间列 + 7 个等分」，不设 min-width，窄屏不会横向滚。 */
 .grid-scroll.sched-fit {
+  /* 课表**不再自己滚也不自己裁**：高度由内容决定，超出视口就交给页面整体滚动。
+     大屏用户本来就在看整页，页面滚动条比分区块滚动条更符合直觉；
+     而 overflow:hidden 曾经把多出来的节次直接吃掉，比滚动糟得多。 */
   max-height: none;
-  /* 左栏是纵向 flex：课表吃满剩余高度，从而与右栏等高。 */
-  flex: 1 1 auto;
-  min-height: 0;
-  /* 不出滚动条：行高自适应到放得下，而不是留一条可滚的缝。 */
-  overflow: hidden;
+  height: auto;
+  flex: 0 0 auto;
+  overflow: visible;
 }
 .grid-scroll.sched-fit .sched-grid {
   grid-template-columns: 64px repeat(7, minmax(0, 1fr));
-  /* 行高**无下限**：节数多时按可用高度均分压缩，保证每一节都能显示。
-     设下限（曾经是 36px）会让总高超过容器，而容器是 overflow:hidden，
-     结果是最后几节被直接裁掉——用户看到的就是"填了课表却显示不全"。
-     宁可字小一点，也不能让内容消失。 */
-  grid-auto-rows: minmax(0, 1fr);
+  /* 行高有下限、可以往上长：节数多时**让页面变长**由页面滚动，
+     而不是把行压扁或把内容裁掉。
+     （之前是 minmax(0,1fr) 均分压缩，课时一多字就挤成一团。） */
+  grid-auto-rows: minmax(36px, auto);
   gap: 4px;
   min-width: 0;
   width: 100%;

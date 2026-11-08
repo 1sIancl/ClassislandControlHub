@@ -3,14 +3,14 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=185';
-import { toastError } from '../core/errors.js?v=185';
+import { api } from '../core/api.js?v=186';
+import { toastError } from '../core/errors.js?v=186';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, icon, select,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=185';
-import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=185';
-import { t } from './../core/i18n.js?v=185';
+} from '../core/ui.js?v=186';
+import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=186';
+import { t } from './../core/i18n.js?v=186';
 
 // ── 课表铺满一屏（#140）────────────────────────────────────────────
 //
@@ -22,6 +22,20 @@ function fitScheduleHeight() {
   if (!scroller) {
     return;
   }
+
+  // 课表改为「高度由内容决定，超出视口交给页面滚动」之后，这里不再设高度。
+  // 保留函数与观察器只是为了不打断既有调用点（删干净要动 MutationObserver，
+  // 收益不大且容易引入新问题）。显式清掉内联样式，避免旧逻辑残留把高度锁死。
+  scroller.style.height = '';
+  scroller.style.maxHeight = '';
+  scroller.style.minHeight = '';
+
+  if (scroller.dataset.fitMode === 'page-scroll') {
+    return;
+  }
+
+  scroller.dataset.fitMode = 'page-scroll';
+  return;
 
   const top = Math.round(scroller.getBoundingClientRect().top);
   // 幂等：同一个「视口高 + 顶部位置」不重复写样式，免得打断滚动或触发回流风暴。
