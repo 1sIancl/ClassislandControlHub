@@ -3413,5 +3413,6 @@ export default {
   'weather.alertRegion': "Alert regions",
   'weather.alertRegionHint': "Comma separated, e.g. \"Liaoning,Dalian\". Only alerts whose title or body matches are shown; empty means no filter.",
   'weather.alertRegionPlaceholder': "Liaoning,Dalian",
+  'classBoard.alert': "Weather alerts",
 };
 

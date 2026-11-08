@@ -285,41 +285,61 @@ public sealed class WeatherService(
                 var text = await response.Content.ReadAsStringAsync(cancellationToken);
 
                 // 结构：{ code, data: { page: { list: [ { title, signaltype, signallevel, issuetime, content } ] } } }
-                // 地区关键词：预警源通常是全国列表，不过滤就会把外省的暴雨预警
+                // 地区过滤（#142）：预警源通常是**全国列表**，不过滤会把外省的暴雨预警
                 // 推到本地大屏上，学生会以为本地要下暴雨。
+                //
+                // 默认直接用天气设置里的**城市**自动匹配，不需要用户再填关键词
+                // （同一份配置里已经有城市了，让人再填一遍是重复劳动且容易不一致）。
+                // AlertRegion 仅在需要更宽的范围（如整个省）时才填。
                 var regions = (_state.Config.AlertRegion ?? string.Empty)
                     .Split([',', '，', ' ', ';', '；'],
                         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
+                if (regions.Length == 0 && !string.IsNullOrWhiteSpace(_state.Config.City))
+                {
+                    regions = [_state.Config.City.Trim()];
+                }
+
                 if (JsonNode.Parse(text) is JsonObject root
                     && root["data"]?["page"]?["list"] is JsonArray list)
                 {
-                    foreach (var item in list)
-                    {
-                        var title = item?["title"]?.GetValue<string>();
-                        if (string.IsNullOrWhiteSpace(title))
+                    // 先解析成候选，再决定过滤策略——不能边遍历边判断，
+                    // 那样会出现"前面被跳过、后面才命中"的错误结果。
+                    var candidates = list
+                        .Select(item => new
                         {
-                            continue;
-                        }
+                            Title = item?["title"]?.GetValue<string>()?.Trim() ?? string.Empty,
+                            Type = item?["signaltype"]?.GetValue<string>()?.Trim() ?? string.Empty,
+                            Level = item?["signallevel"]?.GetValue<string>()?.Trim() ?? string.Empty,
+                            Text = item?["content"]?.GetValue<string>()?.Trim() ?? string.Empty,
+                            IssuedAt = item?["issuetime"]?.GetValue<string>()?.Trim() ?? string.Empty,
+                        })
+                        .Where(x => x.Title.Length > 0)
+                        .ToList();
 
-                        var content = item?["content"]?.GetValue<string>() ?? string.Empty;
+                    bool Matches(string title, string body) => regions.Length == 0
+                        || regions.Any(r => title.Contains(r, StringComparison.Ordinal)
+                            || body.Contains(r, StringComparison.Ordinal));
 
-                        // 只留所在地：配了关键词就必须命中标题或正文。
-                        // 一条都不匹配时宁可空着，也不把无关地区的预警放上去。
-                        if (regions.Length > 0
-                            && !regions.Any(r => title.Contains(r, StringComparison.Ordinal)
-                                || content.Contains(r, StringComparison.Ordinal)))
+                    // 城市名不一定出现在预警里（省级台发的是「辽宁省气象台…」，不会写「普兰店」）。
+                    // 所以先看有没有命中：有命中就只留命中的；全都没命中就保留全部，
+                    // 否则本地真有预警却一条不显示，比显示外地更糟。
+                    var anyHit = candidates.Any(x => Matches(x.Title, x.Text));
+
+                    foreach (var candidate in candidates)
+                    {
+                        if (anyHit && !Matches(candidate.Title, candidate.Text))
                         {
                             continue;
                         }
 
                         alerts.Add(new WeatherAlertDto
                         {
-                            Title = title.Trim(),
-                            Type = item?["signaltype"]?.GetValue<string>()?.Trim() ?? string.Empty,
-                            Level = item?["signallevel"]?.GetValue<string>()?.Trim() ?? string.Empty,
-                            Text = item?["content"]?.GetValue<string>()?.Trim() ?? string.Empty,
-                            IssuedAt = item?["issuetime"]?.GetValue<string>()?.Trim() ?? string.Empty,
+                            Title = candidate.Title,
+                            Type = candidate.Type,
+                            Level = candidate.Level,
+                            Text = candidate.Text,
+                            IssuedAt = candidate.IssuedAt,
                         });
 
                         // 大屏只放得下几条：再多滚动条会跑到看不清。

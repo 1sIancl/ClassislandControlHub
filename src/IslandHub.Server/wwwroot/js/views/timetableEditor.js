@@ -13,9 +13,9 @@
  * 短期看是"独立了"，长期必然改一处忘一处。
  * </p>
  */
-import { mountClassPlans } from './profileEditor.js?v=183';
-import { t } from '../core/i18n.js?v=183';
-import { clear } from '../core/ui.js?v=183';
+import { mountClassPlans } from './profileEditor.js?v=184';
+import { t } from '../core/i18n.js?v=184';
+import { clear } from '../core/ui.js?v=184';
 
 export const meta = {
   title: t('timetables.title'),

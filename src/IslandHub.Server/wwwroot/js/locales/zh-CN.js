@@ -3413,5 +3413,6 @@ export default {
   'weather.alertRegion': "地区关键词",
   'weather.alertRegionHint': "逗号分隔，如「辽宁,大连」。只显示标题或正文命中这些词的预警；留空则不过滤。",
   'weather.alertRegionPlaceholder': "辽宁,大连",
+  'classBoard.alert': "气象预警",
 };
 

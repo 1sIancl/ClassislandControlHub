@@ -5452,3 +5452,58 @@ table.data-compact td input[type="text"] {
   color: #16213a;
   border-color: rgb(22 33 58 / 16%);
 }
+
+/* 预警卡片（#142）：滚动条只给一句提醒，正文在这里读全 */
+.classboard-alert-card {
+  border-color: rgb(214 92 74 / 45%);
+  background: rgb(214 92 74 / 12%);
+  overflow-y: auto;
+}
+.classboard-alert {
+  margin-bottom: 10px;
+}
+.classboard-alert:last-child {
+  margin-bottom: 0;
+}
+.classboard-alert-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.classboard-alert-level {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #d65c4a;
+  color: #fff;
+  font-size: clamp(11px, 0.95vw, 15px);
+  font-weight: 700;
+}
+.classboard-alert-title {
+  font-size: clamp(13px, 1.05vw, 18px);
+  font-weight: 600;
+  color: #ffe7e2;
+}
+.classboard-alert-time {
+  font-size: clamp(11px, 0.9vw, 14px);
+  color: rgb(255 255 255 / 45%);
+}
+.classboard-alert-text {
+  font-size: clamp(12px, 1vw, 17px);
+  line-height: 1.55;
+  color: rgb(255 235 230 / 82%);
+  /* 正文可以长，但整块要能滚，不能把天气挤没 */
+  white-space: pre-wrap;
+}
+.classboard.theme-light .classboard-alert-card {
+  background: rgb(214 92 74 / 8%);
+  border-color: rgb(214 92 74 / 30%);
+}
+.classboard.theme-light .classboard-alert-title {
+  color: #8c2f22;
+}
+.classboard.theme-light .classboard-alert-text {
+  color: #5a3a34;
+}

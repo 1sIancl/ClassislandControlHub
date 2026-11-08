@@ -15,9 +15,9 @@
  * </ul>
  */
 
-import { api } from '../core/api.js?v=183';
-import { h, clear } from '../core/ui.js?v=183';
-import { t } from '../core/i18n.js?v=183';
+import { api } from '../core/api.js?v=184';
+import { h, clear } from '../core/ui.js?v=184';
+import { t } from '../core/i18n.js?v=184';
 
 export const meta = {
   title: t('classBoard.title'),
@@ -698,11 +698,28 @@ function renderSide(data, style) {
   const weather = style?.weather === false ? null : data.weather;
   const notice = style?.notice === false ? null : data.profile?.content?.settings?.announcement;
 
-  if (!weather && !notice) {
+  // 预警单独也算"有内容"：天气取不到时，预警更应该显示出来。
+  const hasAlerts = Array.isArray(data.weather?.alerts) && data.weather.alerts.length > 0;
+
+  if (!weather && !notice && !hasAlerts) {
     return null;
   }
 
+  // 预警卡片：滚动条只给"一句提醒"，正文要能读全。
+  // 标题 + 等级 + 发布时间 + 正文都铺出来，学生/老师不用再去别处查。
+  const alerts = Array.isArray(data.weather?.alerts) ? data.weather.alerts : [];
+
   return h('div.classboard-side',
+    alerts.length > 0
+      ? h('div.classboard-card.classboard-alert-card',
+        h('div.classboard-card-title', t('classBoard.alert')),
+        ...alerts.map((alert) => h('div.classboard-alert',
+          h('div.classboard-alert-head',
+            alert.level ? h('span.classboard-alert-level', alert.level) : null,
+            h('span.classboard-alert-title', alert.title || ''),
+            alert.issuedAt ? h('span.classboard-alert-time', alert.issuedAt) : null),
+          alert.text ? h('div.classboard-alert-text', alert.text) : null)))
+      : null,
     weather
       ? h('div.classboard-card',
         h('div.classboard-card-title', t('classBoard.weather')),
