@@ -38,6 +38,19 @@ public sealed class WeatherConfigDto
     /// </para>
     /// </summary>
     public string AlertUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 只看这些地区的预警（#142）。逗号分隔，如 <c>辽宁,大连</c>。
+    /// <para>
+    /// 预警源通常是**全国列表**，不过滤就会把外省的暴雨预警推到本地大屏上——
+    /// 学生会以为本地要下暴雨。所以这里按标题 / 正文关键词做包含匹配。
+    /// </para>
+    /// <para>
+    /// 留空 = 不过滤（保持旧行为）；填了但一条都不匹配 = 不显示任何预警，
+    /// 宁可不显示，也不显示无关地区的预警。
+    /// </para>
+    /// </summary>
+    public string AlertRegion { get; set; } = string.Empty;
 }
 
 /// <summary>

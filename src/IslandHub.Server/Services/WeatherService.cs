@@ -285,6 +285,12 @@ public sealed class WeatherService(
                 var text = await response.Content.ReadAsStringAsync(cancellationToken);
 
                 // 结构：{ code, data: { page: { list: [ { title, signaltype, signallevel, issuetime, content } ] } } }
+                // 地区关键词：预警源通常是全国列表，不过滤就会把外省的暴雨预警
+                // 推到本地大屏上，学生会以为本地要下暴雨。
+                var regions = (_state.Config.AlertRegion ?? string.Empty)
+                    .Split([',', '，', ' ', ';', '；'],
+                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
                 if (JsonNode.Parse(text) is JsonObject root
                     && root["data"]?["page"]?["list"] is JsonArray list)
                 {
@@ -292,6 +298,17 @@ public sealed class WeatherService(
                     {
                         var title = item?["title"]?.GetValue<string>();
                         if (string.IsNullOrWhiteSpace(title))
+                        {
+                            continue;
+                        }
+
+                        var content = item?["content"]?.GetValue<string>() ?? string.Empty;
+
+                        // 只留所在地：配了关键词就必须命中标题或正文。
+                        // 一条都不匹配时宁可空着，也不把无关地区的预警放上去。
+                        if (regions.Length > 0
+                            && !regions.Any(r => title.Contains(r, StringComparison.Ordinal)
+                                || content.Contains(r, StringComparison.Ordinal)))
                         {
                             continue;
                         }
