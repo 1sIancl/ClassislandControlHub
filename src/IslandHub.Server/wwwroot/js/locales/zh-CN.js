@@ -3375,5 +3375,20 @@ export default {
   'profiles.editor.collapseLayouts': "收起",
 
   'profiles.editor.paletteSearch': "搜索科目或教师…",
+  'classBoard.title': "班级看板",
+  'classBoard.subtitle': "挂在教室大屏上：几点、上什么、还剩多久",
+  'classBoard.noProfile': "还没有配置档案，先去「配置档案」建一个。",
+  'classBoard.date': "{year} 年 {month} 月 {day} 日",
+  'classBoard.inClass': "正在上课",
+  'classBoard.nextClass': "下一节",
+  'classBoard.noLessonToday': "今天没有课",
+  'classBoard.finished': "今天的课已结束",
+  'classBoard.leftMinutes': "还有 {minutes} 分钟下课",
+  'classBoard.beforeMinutes': "{minutes} 分钟后上课",
+  'classBoard.weather': "天气",
+  'classBoard.notice': "公告",
+  'classBoard.exit': "退出看板",
+  'classBoard.otherDay': "{day}的课表",
+  'classBoard.otherDayHint': "今天没课 · 下次是{day}",
 };
 

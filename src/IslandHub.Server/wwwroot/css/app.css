@@ -5006,3 +5006,229 @@ table.data-compact td input[type="text"] {
   outline: none;
   border-color: var(--accent);
 }
+
+/* ── 班级看板（#141）：教室大屏上只看三件事——几点、上什么、还剩多久 ──
+   整屏铺满盖掉侧栏与顶栏，字按视口缩放；不做操作入口，学生碰不到设置。 */
+.classboard {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(10px, 1.8vh, 26px);
+  padding: clamp(16px, 2.4vh, 36px) clamp(20px, 2.6vw, 56px);
+  background: radial-gradient(120% 120% at 50% 0%, #16203a 0%, #0b1020 55%, #070a14 100%);
+  color: #eef3ff;
+  overflow: hidden;
+}
+.classboard-top {
+  position: absolute;
+  /* 让开顶部滚动条（没有公告时这条也不高，不影响视觉）。 */
+  top: clamp(44px, 5.4vh, 66px);
+  left: clamp(20px, 2.6vw, 56px);
+  right: clamp(20px, 2.6vw, 56px);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  color: #a9b6d6;
+}
+.classboard-date {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  font-size: clamp(15px, 1.7vw, 26px);
+}
+.classboard-week {
+  font-size: clamp(15px, 1.7vw, 26px);
+  font-weight: 700;
+  color: #7fb0ff;
+}
+.classboard-profile {
+  font-size: clamp(14px, 1.4vw, 22px);
+  color: #6f7d9c;
+}
+.classboard-tick {
+  text-align: center;
+  margin-bottom: clamp(6px, 1.6vh, 22px);
+}
+.classboard-clock {
+  font-family: var(--mono);
+  font-size: clamp(72px, 13vw, 210px);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 60px rgb(88 140 255 / 35%);
+}
+.classboard-remain {
+  margin-top: clamp(6px, 1vh, 14px);
+  font-size: clamp(16px, 1.9vw, 30px);
+  color: #86a7ff;
+  min-height: 1.3em;
+}
+.classboard-main {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  gap: clamp(14px, 2vw, 44px);
+  align-items: center;
+}
+.classboard-left {
+  flex: 1 1 40%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.classboard-now {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(6px, 1vh, 14px);
+  text-align: center;
+}
+.classboard-now-label {
+  font-size: clamp(15px, 1.5vw, 24px);
+  color: #8fa3cc;
+  letter-spacing: 0.12em;
+}
+.classboard-now-subject {
+  font-size: clamp(46px, 7vw, 120px);
+  font-weight: 800;
+  line-height: 1.05;
+  color: #ffffff;
+}
+.classboard-now-teacher,
+.classboard-now-time {
+  font-size: clamp(16px, 1.8vw, 28px);
+  color: #9db2dd;
+}
+.classboard-list {
+  flex: 1 1 36%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(3px, 0.6vh, 8px);
+  min-height: 0;
+  overflow: hidden;
+}
+.classboard-row {
+  display: flex;
+  align-items: center;
+  gap: clamp(8px, 1vw, 18px);
+  padding: clamp(3px, 0.6vh, 9px) clamp(8px, 1vw, 16px);
+  border-radius: 10px;
+  font-size: clamp(14px, 1.35vw, 24px);
+  color: #c7d3ef;
+  background: rgb(255 255 255 / 4%);
+}
+.classboard-row.active {
+  background: linear-gradient(90deg, rgb(88 140 255 / 40%), rgb(88 140 255 / 12%));
+  color: #ffffff;
+  font-weight: 700;
+}
+.classboard-row.passed {
+  opacity: 0.38;
+}
+.classboard-row-no {
+  width: 2em;
+  color: #7f8fb3;
+  font-variant-numeric: tabular-nums;
+}
+.classboard-row-subject {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.classboard-row-time {
+  color: #8ea3cd;
+  font-variant-numeric: tabular-nums;
+}
+.classboard-side {
+  flex: 0 0 clamp(200px, 20vw, 340px);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(10px, 1.4vh, 20px);
+  min-height: 0;
+}
+.classboard-card {
+  padding: clamp(10px, 1.4vh, 20px) clamp(12px, 1.2vw, 22px);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 6%);
+  border: 1px solid rgb(255 255 255 / 8%);
+  min-height: 0;
+  overflow: hidden;
+}
+.classboard-card-title {
+  font-size: clamp(13px, 1.1vw, 18px);
+  color: #8ea3cd;
+  letter-spacing: 0.14em;
+  margin-bottom: 6px;
+}
+.classboard-weather-temp {
+  font-size: clamp(32px, 3.6vw, 64px);
+  font-weight: 700;
+}
+.classboard-weather-text,
+.classboard-weather-range {
+  font-size: clamp(13px, 1.1vw, 19px);
+  color: #a9bad9;
+}
+.classboard-notice {
+  font-size: clamp(13px, 1.1vw, 19px);
+  line-height: 1.55;
+  color: #d5deef;
+  white-space: pre-wrap;
+}
+.classboard-exit {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  font-size: 12px;
+  color: rgb(255 255 255 / 22%);
+  text-decoration: none;
+}
+.classboard-exit:hover {
+  color: rgb(255 255 255 / 60%);
+}
+
+/* 顶部滚动条（#141）：警示类信息必须被看见——
+   一条来不及看的通知放在角落里，等于没发。 */
+.classboard-marquee {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: clamp(30px, 3.4vh, 46px);
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  background: linear-gradient(90deg, #c0392b, #8e2a20 62%, #7a241c);
+  color: #fff;
+  font-size: clamp(13px, 1.15vw, 19px);
+  letter-spacing: 0.02em;
+}
+/* padding-left: 100% 让它从右侧屏外进入，读完再从头来 */
+.classboard-marquee-inner {
+  display: inline-flex;
+  gap: clamp(60px, 8vw, 140px);
+  white-space: nowrap;
+  padding-left: 100%;
+  animation: classboard-marquee-scroll 26s linear infinite;
+}
+/* 首尾各一份内容：滚到一半正好接上，不会出现空白再接第一批字 */
+@keyframes classboard-marquee-scroll {
+  to {
+    transform: translateX(-50%);
+  }
+}
+/* 系统开了「减少动态效果」时不要滚——大屏上持续横移对部分人不友好 */
+@media (prefers-reduced-motion: reduce) {
+  .classboard-marquee-inner {
+    animation: none;
+    padding-left: 16px;
+  }
+}

@@ -2,24 +2,24 @@
  * 应用入口：会话引导、导航渲染与哈希路由。
  */
 
-import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=171';
-import { toastError } from './core/errors.js?v=171';
-import { h, clear, toast, icon } from './core/ui.js?v=171';
-import { t, applyStatic, mountLocalePicker } from './core/i18n.js?v=171';
+import { api, session, saveToken, setSessionExpiredHandler, fetchServerInfo, hasPermission as can } from './core/api.js?v=172';
+import { toastError } from './core/errors.js?v=172';
+import { h, clear, toast, icon } from './core/ui.js?v=172';
+import { t, applyStatic, mountLocalePicker } from './core/i18n.js?v=172';
 // 个人外观（#127）：先用本地缓存铺上，避免"先白底再变色"闪一下。
 // ⚠️ 别名：`prefs.js` 也导出一个 `applyAppearance`（那是全站主题/密度），同名会冲突。
-import { bootstrapAppearance, applyAppearance as applyUiAppearance } from './core/appearance.js?v=171';
+import { bootstrapAppearance, applyAppearance as applyUiAppearance } from './core/appearance.js?v=172';
 import {
   initTheme,
   getSidebarCollapsed, setSidebarCollapsed,
   applyDensity,
   applyAppearance, setBrandingAccent,
   applyRemotePrefs, applySchedScale,
-} from './core/prefs.js?v=171';
-import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=171';
-import { initGlassHighlight } from './core/glass.js?v=171';
-import { initTopbar } from './topbar.js?v=171';
-import { openSearch } from './core/search.js?v=171';
+} from './core/prefs.js?v=172';
+import { initShortcuts, shortcutHint, setPageLister } from './core/shortcuts.js?v=172';
+import { initGlassHighlight } from './core/glass.js?v=172';
+import { initTopbar } from './topbar.js?v=172';
+import { openSearch } from './core/search.js?v=172';
 
 // ── 应用启动早期：应用主题 / 外观 / 布局偏好（避免闪烁） ──
 initTheme();
@@ -78,6 +78,8 @@ const NAV = [
       { key: 'dashboard', label: '仪表盘', icon: 'dashboard', hash: '#/dashboard' },
   // 大屏看板（#113）：挂在值班室大屏上的只读总览；放得离仪表盘近，找起来顺。
   { key: 'board', label: '大屏看板', icon: 'monitor', hash: '#/board', perm: 'devices.read' },
+  // 班级看板与「大屏看板」并列但用途不同：那个看设备，这个给学生看时间与课。
+  { key: 'classboard', label: '班级看板', icon: 'clock', hash: '#/classboard', perm: 'profiles.read' },
       { key: 'deploy', label: '配置下发', icon: 'send', hash: '#/deploy', perm: 'deploy.write' },
       { key: 'remote', label: '远程管理', icon: 'send', hash: '#/remote', perm: 'remote.read' },
     ],
@@ -166,39 +168,41 @@ const ROUTE_ALIASES = {
 
 /** 路由表：key → 视图模块加载器。 */
 const ROUTES = {
-  dashboard: () => import('./views/dashboard.js?v=171'),
-  devices: () => import('./views/devices.js?v=171'),
+  dashboard: () => import('./views/dashboard.js?v=172'),
+  devices: () => import('./views/devices.js?v=172'),
   // 「分组管理」已并入设备管理，旧链接继续可用。
-  groups: () => import('./views/devices.js?v=171'),
-  profiles: () => import('./views/profiles.js?v=171'),
+  groups: () => import('./views/devices.js?v=172'),
+  profiles: () => import('./views/profiles.js?v=172'),
   // 时间表 / 课表独立入口（#134、#135）：数据仍在档案里，这里只是给它们各自的直达页。
-  layouts: () => import('./views/layouts.js?v=171'),
+  layouts: () => import('./views/layouts.js?v=172'),
   // 时间表编辑页（#136）：独立模块，不再借用档案编辑器。
-  layoutEditor: () => import('./views/layoutEditor.js?v=171'),
-  timetables: () => import('./views/timetables.js?v=171'),
-  profileEditor: () => import('./views/profileEditor.js?v=171'),
-  deploy: () => import('./views/deploy.js?v=171'),
-  remote: () => import('./views/remote.js?v=171'),
-  reminders: () => import('./views/reminders.js?v=171'),
-  examMode: () => import('./views/examMode.js?v=171'),
-  weather: () => import('./views/weather.js?v=171'),
-  profileSlots: () => import('./views/profileSlots.js?v=171'),
-  audit: () => import('./views/audit.js?v=171'),
-  reports: () => import('./views/reports.js?v=171'),
-  appearance: () => import('./views/appearance.js?v=171'),
+  layoutEditor: () => import('./views/layoutEditor.js?v=172'),
+  timetables: () => import('./views/timetables.js?v=172'),
+  profileEditor: () => import('./views/profileEditor.js?v=172'),
+  deploy: () => import('./views/deploy.js?v=172'),
+  remote: () => import('./views/remote.js?v=172'),
+  reminders: () => import('./views/reminders.js?v=172'),
+  examMode: () => import('./views/examMode.js?v=172'),
+  weather: () => import('./views/weather.js?v=172'),
+  profileSlots: () => import('./views/profileSlots.js?v=172'),
+  audit: () => import('./views/audit.js?v=172'),
+  reports: () => import('./views/reports.js?v=172'),
+  appearance: () => import('./views/appearance.js?v=172'),
   // 「系统设置」拆成四页（原 settings.js 已按此拆分，见各文件头部说明）。
-  accounts: () => import('./views/accounts.js?v=171'),
-  server: () => import('./views/server.js?v=171'),
-  integrations: () => import('./views/integrations.js?v=171'),
-  maintenance: () => import('./views/maintenance.js?v=171'),
-  board: () => import('./views/board.js?v=171'),
-  approvals: () => import('./views/approvals.js?v=171'),
-  timesync: () => import('./views/timesync.js?v=171'),
-  lessons: () => import('./views/lessons.js?v=171'),
-  plugins: () => import('./views/pluginMarket.js?v=171'),
+  accounts: () => import('./views/accounts.js?v=172'),
+  server: () => import('./views/server.js?v=172'),
+  integrations: () => import('./views/integrations.js?v=172'),
+  maintenance: () => import('./views/maintenance.js?v=172'),
+  board: () => import('./views/board.js?v=172'),
+  // 班级看板（#141）：挂在教室大屏上，只看时钟 / 当前课 / 公告。
+  classboard: () => import('./views/classBoard.js?v=172'),
+  approvals: () => import('./views/approvals.js?v=172'),
+  timesync: () => import('./views/timesync.js?v=172'),
+  lessons: () => import('./views/lessons.js?v=172'),
+  plugins: () => import('./views/pluginMarket.js?v=172'),
   // 首次使用引导（#126）：**故意不进 NAV**——它只在部署后第一次进来时出现，
   // 以及「页面设置 → 重新播放引导」时进入；放进侧边栏反而会变成一个"日常页面"。
-  welcome: () => import('./views/welcome.js?v=171'),
+  welcome: () => import('./views/welcome.js?v=172'),
 };
 
 /** 各页面所需权限：直接敲 hash 进无权页面时给出明确提示，而不是让接口先报 403。 */
@@ -728,7 +732,7 @@ async function handleApply(event) {
  */
 async function shouldShowWelcome() {
   try {
-    const { shouldShowWelcome: check } = await import('./views/welcome.js?v=171');
+    const { shouldShowWelcome: check } = await import('./views/welcome.js?v=172');
     return await check();
   } catch {
     // 视图模块加载失败（网络/缓存）时不要拦人。
@@ -771,7 +775,7 @@ async function showApp() {
 
   // 新账号（或在设置里重置过引导的账号）第一次进来时放一遍新手引导，随时可跳过。
   if (me.onboardingDone === false) {
-    const { startTour } = await import('./core/tour.js?v=171');
+    const { startTour } = await import('./core/tour.js?v=172');
     startTour({
       onFinish: async (skipped) => {
         try {
@@ -1232,6 +1236,15 @@ function parseHash() {
   const params = {};
   for (const [key, value] of new URLSearchParams(queryPart)) {
     params[key] = value;
+  }
+
+  // 班级看板（#141）：`#/classboard` 用默认档案，`#/classboard/{profileId}` 指定档案。
+  if (segments[0] === 'classboard') {
+    return {
+      key: 'classboard',
+      module: ROUTES.classboard,
+      params: { ...params, profileId: segments[1] || '' },
+    };
   }
 
   if (segments[0] === 'profiles' && segments[1]) {

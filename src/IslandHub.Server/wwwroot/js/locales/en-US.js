@@ -3375,5 +3375,20 @@ export default {
   'profiles.editor.collapseLayouts': "Collapse",
 
   'profiles.editor.paletteSearch': "Search subject or teacher…",
+  'classBoard.title': "Class board",
+  'classBoard.subtitle': "On the classroom screen: time, current lesson, time left",
+  'classBoard.noProfile': "No profile yet — create one under Profiles.",
+  'classBoard.date': "{month}/{day}/{year}",
+  'classBoard.inClass': "In class",
+  'classBoard.nextClass': "Next",
+  'classBoard.noLessonToday': "No lessons today",
+  'classBoard.finished': "All lessons finished",
+  'classBoard.leftMinutes': "{minutes} min left",
+  'classBoard.beforeMinutes': "Starts in {minutes} min",
+  'classBoard.weather': "Weather",
+  'classBoard.notice': "Notice",
+  'classBoard.exit': "Exit board",
+  'classBoard.otherDay': "Timetable for {day}",
+  'classBoard.otherDayHint': "No lessons today · next is {day}",
 };
 
