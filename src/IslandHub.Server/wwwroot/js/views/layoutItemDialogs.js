@@ -13,8 +13,8 @@
  * </p>
  */
 
-import { h, clear, modal, confirmDialog, toast } from '../core/ui.js?v=179';
-import { t } from './../core/i18n.js?v=179';
+import { h, clear, modal, confirmDialog, toast } from '../core/ui.js?v=180';
+import { t } from './../core/i18n.js?v=180';
 
 /** 已知附加设置的 GUID → 名称与字段中文（依据真实 2.1.1.1 包统计，59 个时间点上稳定出现）。 */
 export const KNOWN_ATTACHED = {

@@ -3,14 +3,14 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=179';
-import { toastError } from '../core/errors.js?v=179';
+import { api } from '../core/api.js?v=180';
+import { toastError } from '../core/errors.js?v=180';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, icon, select,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=179';
-import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=179';
-import { t } from './../core/i18n.js?v=179';
+} from '../core/ui.js?v=180';
+import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=180';
+import { t } from './../core/i18n.js?v=180';
 
 // ── 课表铺满一屏（#140）────────────────────────────────────────────
 //
@@ -256,6 +256,14 @@ export async function mountClassPlans(container, profileId) {
 }
 
 export async function render(container, params) {
+  // 重置课表重绘钩子（拆分步骤 2 的配套）。
+  //
+  // `setClassPlansRepaint` 是模块级状态：独立课表页会把它指向自己的 host。
+  // 若不清掉，从 `#/timetables/{档案}` 返回后进入完整编辑器，
+  // 钩子仍指向**已卸载的节点** —— 课表页签里改数据会重绘到空气上，
+  // 表现为"点了没反应、也不报错"，比白屏难查得多。
+  setClassPlansRepaint(null);
+
   clear(container);
   container.appendChild(loadingBlock(t('profiles.editor.loading')));
 
