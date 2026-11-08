@@ -378,7 +378,6 @@ export default {
   'profiles.editor.layoutNoLessonsHint': "请先在「时间表」中添加至少一节课（上课类型），再回来排课。",
   'profiles.editor.rotationWeek': "轮换周次",
   'profiles.editor.editingWeek': "当前编辑第 {week} 周；这里的课表只在这一周生效。",
-  'profiles.editor.gridHint': "点格子选中后点科目，或把科目拖进格子；拖动已排课程可调课；双击格子清空",
   'profiles.editor.batchHint': "按节复制 / 批量清空 / 替换科目 / 课表模板",
   'profiles.editor.batch': "批量操作",
   'profiles.editor.periodTime': "节次 / 时间",
@@ -3375,5 +3374,6 @@ export default {
   'profiles.editor.changeLayouts': "更改",
   'profiles.editor.collapseLayouts': "收起",
 
+  'profiles.editor.paletteSearch': "搜索科目或教师…",
 };
 

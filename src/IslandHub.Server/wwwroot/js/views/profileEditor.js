@@ -57,7 +57,8 @@ function fitScheduleHeight() {
   // 结果课表限制了、页面照样溢出（上一轮就是这么漏的）。
   if (side) {
     side.style.maxHeight = `${Math.max(220, available)}px`;
-    side.style.overflowY = 'auto';
+    // 不让右栏滚动：滚动条是第二处视觉噪音，科目多靠换行与搜索解决。
+    side.style.overflowY = 'hidden';
   }
   scroller.dataset.fitKey = key;
 
@@ -2756,13 +2757,17 @@ function renderPalette(periodCount) {
       h('span.palette-empty', t('profiles.editor.noSubjectsHint')));
   }
 
-  return h('div.sched-palette',
+  const palette = h('div.sched-palette',
     ...state.content.subjects.map((subject) => {
       const armed = state.armedSubjectId === subject.id;
       const chip = h('div', {
         class: `sched-chip${armed ? ' armed' : ''}`,
         role: 'button',
         tabindex: '0',
+        // 过滤用：科目名 + 教师名一起匹配，找"张老师那门课"也能命中。
+        dataset: {
+          search: `${subject.name ?? ''} ${subject.teacherName ?? ''}`.toLowerCase(),
+        },
         title: armed ? t('profiles.editor.subjectToggleHint') : t('profiles.editor.subjectPickHint'),
       },
         h('b.sched-chip-initial', subjectShort(subject)),
@@ -2813,6 +2818,23 @@ function renderPalette(periodCount) {
       return chip;
     }),
   );
+
+  // 科目多时（常见 20+）竖排滚动找起来很累，给一个过滤框。
+  // 过滤直接改 DOM 显隐、**不重建整块**：重建会让输入框失焦，打字打到一半就断。
+  const search = state.content.subjects.length > 8
+    ? h('input.palette-filter', {
+      type: 'search',
+      placeholder: t('profiles.editor.paletteSearch'),
+      onInput: (event) => {
+        const query = event.target.value.trim().toLowerCase();
+        for (const chip of palette.querySelectorAll('.sched-chip')) {
+          chip.hidden = query.length > 0 && !(chip.dataset.search ?? '').includes(query);
+        }
+      },
+    })
+    : null;
+
+  return h('div.sched-side-block', search, palette);
 }
 
 // ────────────────────────────── 科目 ──────────────────────────────

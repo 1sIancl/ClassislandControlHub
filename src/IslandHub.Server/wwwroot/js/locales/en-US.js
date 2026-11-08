@@ -378,7 +378,6 @@ export default {
   'profiles.editor.layoutNoLessonsHint': "Add at least one period (lesson type) under \"Layouts\", then come back.",
   'profiles.editor.rotationWeek': "Rotation week",
   'profiles.editor.editingWeek': "Editing week {week}; this timetable applies to that week only.",
-  'profiles.editor.gridHint': "Select a cell then a subject, or drag a subject in; drag a placed lesson to move it; double-click clears a cell",
   'profiles.editor.batchHint': "Copy by period / bulk clear / replace subject / timetable template",
   'profiles.editor.batch': "Bulk actions",
   'profiles.editor.periodTime': "Period / time",
@@ -3375,5 +3374,6 @@ export default {
   'profiles.editor.changeLayouts': "Change",
   'profiles.editor.collapseLayouts': "Collapse",
 
+  'profiles.editor.paletteSearch': "Search subject or teacher…",
 };
 

@@ -1299,7 +1299,7 @@ input[type="checkbox"] {
   margin: 26px 0 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px 20px;
 }
 .feature-item {
@@ -4950,7 +4950,7 @@ table.data-compact td input[type="text"] {
 .sched-side {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 7px;
   min-width: 0;
 }
 .sched-side-block {
@@ -4969,19 +4969,40 @@ table.data-compact td input[type="text"] {
   text-align: center;
 }
 /* 调色板竖排 + 内部滚动：科目可能有二十几个 */
+/* 两列换行：单列竖排 26 个科目必然出滚动条，两列高度减半。
+   配合上面的搜索框，找科目不靠滚。 */
 .sched-side .sched-palette {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
-  max-height: 46vh;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 4px 6px;
+  display: grid;
+  /* 三列：26 个科目两列要 13 行，右栏装不下会裁掉最后一行。 */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 3px;
+  overflow: visible;
+  padding: 2px;
 }
 .sched-side .sched-chip {
   width: 100%;
-  justify-content: flex-start;
-  height: 26px;
-  font-size: 11.5px;
+  min-width: 0;
+  justify-content: center;
+  height: 22px;
+  font-size: 10.5px;
+  padding: 0 3px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 科目过滤框（#140）：右栏科目常见 20+ 个，竖排滚动找起来累。 */
+.palette-filter {
+  width: 100%;
+  height: 28px;
   padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel-2);
+  color: var(--text);
+  font-size: 12px;
+}
+.palette-filter:focus {
+  outline: none;
+  border-color: var(--accent);
 }
