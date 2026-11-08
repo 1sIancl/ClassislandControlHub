@@ -5183,6 +5183,13 @@ table.data-compact td input[type="text"] {
   line-height: 1.55;
   color: #d5deef;
   white-space: pre-wrap;
+  /* 超长公告限 6 行后省略：不限高会撑破右栏，把课表挤出屏幕。
+     完整内容在管理台能看到，大屏上只需要"有这件事"的提示。 */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+  line-clamp: 6;
+  overflow: hidden;
 }
 .classboard-exit {
   position: absolute;

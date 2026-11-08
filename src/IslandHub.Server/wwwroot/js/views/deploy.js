@@ -2,13 +2,13 @@
  * 配置下发视图：查看绑定关系、按范围推送，并跟踪客户端同步进度。
  */
 
-import { api, session } from '../core/api.js?v=173';
-import { toastError } from '../core/errors.js?v=173';
+import { api, session } from '../core/api.js?v=174';
+import { toastError } from '../core/errors.js?v=174';
 import {
   h, clear, relativeTime, toast, loadingBlock, modal, field, select,
   emptyState, confirmDialog, deviceStateBadge, syncBadge,
-} from '../core/ui.js?v=173';
-import { t } from '../core/i18n.js?v=173';
+} from '../core/ui.js?v=174';
+import { t } from '../core/i18n.js?v=174';
 
 export const meta = {
   title: t('deploy.title'),

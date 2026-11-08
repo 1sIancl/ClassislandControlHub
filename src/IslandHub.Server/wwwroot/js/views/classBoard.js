@@ -15,9 +15,9 @@
  * </ul>
  */
 
-import { api } from '../core/api.js?v=173';
-import { h, clear } from '../core/ui.js?v=173';
-import { t } from '../core/i18n.js?v=173';
+import { api } from '../core/api.js?v=174';
+import { h, clear } from '../core/ui.js?v=174';
+import { t } from '../core/i18n.js?v=174';
 
 export const meta = {
   title: t('classBoard.title'),
@@ -57,14 +57,40 @@ const DEFAULT_STYLE = {
   marquee: true,
 };
 
+/** 每个配置项允许的取值。写入前不校验，读到非法值就会让样式整体失效。 */
+const STYLE_VALUES = {
+  theme: ['dark', 'light'],
+  accent: Object.keys(ACCENTS),
+  clock: Object.keys(CLOCK_SIZES),
+};
+
 function loadStyle() {
+  let merged = { ...DEFAULT_STYLE };
+
   try {
     const raw = window.localStorage.getItem(STYLE_KEY);
-    return raw ? { ...DEFAULT_STYLE, ...JSON.parse(raw) } : { ...DEFAULT_STYLE };
+    if (raw) {
+      merged = { ...DEFAULT_STYLE, ...JSON.parse(raw) };
+    }
   } catch {
     // 存储被禁用 / 内容损坏：退回默认外观，不要让看板打不开。
     return { ...DEFAULT_STYLE };
   }
+
+  // 白名单校验：本地存过非法值（本轮就把 theme 写成过中文「浅色」），
+  // 不校验的话 className 会变成 theme-浅色、字号变量查不到，**样式整体失效且看不出原因**。
+  for (const [key, allowed] of Object.entries(STYLE_VALUES)) {
+    if (!allowed.includes(merged[key])) {
+      merged[key] = DEFAULT_STYLE[key];
+    }
+  }
+
+  // 开关只认布尔；其它类型（字符串 "false" 之类）一律按开处理。
+  for (const key of ['weather', 'notice', 'marquee']) {
+    merged[key] = merged[key] !== false;
+  }
+
+  return merged;
 }
 
 function saveStyle(style) {
@@ -533,8 +559,12 @@ function renderSide(data, style) {
         h('div.classboard-card-title', t('classBoard.weather')),
         // 用服务端拼好的 summary：天气代码到文案的映射服务端已有一份，
         // 前端再猜一遍会长出第二套说法（同一个 4° 两处显示不一样）。
+        // 温度缺失时显示 "--" 而不是 0：
+        // 数据异常时给出一个**具体的错误气温**，比承认没有数据更糟。
         h('div.classboard-weather-temp',
-          `${Math.round(weather.temperature ?? 0)}${weather.temperatureText ?? '°C'}`),
+          typeof weather.temperature === 'number'
+            ? `${Math.round(weather.temperature)}${weather.temperatureText ?? '°C'}`
+            : '--'),
         h('div.classboard-weather-text', weather.summary ?? ''),
         h('div.classboard-weather-range', weather.source ?? ''))
       : null,
