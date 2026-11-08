@@ -2765,6 +2765,7 @@ export default {
   'nav.group.system': '系统',
   'nav.dashboard': '仪表盘',
   'nav.board': '大屏看板',
+  'nav.classboard': "班级看板",
   'nav.deploy': '配置下发',
   'nav.remote': '远程管理',
   'nav.profiles': '配置档案',
@@ -3406,5 +3407,11 @@ export default {
 
   'classBoard.urgent': "紧急通知",
   'classBoard.switchProfile': "档案",
+  'weather.alertUrl': "预警地址",
+  'weather.alertUrlHint': "留空则用中国气象局全国列表；各地接口不同时可填本省地址。",
+  'weather.alertUrlPlaceholder': "http://www.nmc.cn/rest/findAlarm?pageNo=1&pageSize=10",
+  'weather.alertRegion': "地区关键词",
+  'weather.alertRegionHint': "逗号分隔，如「辽宁,大连」。只显示标题或正文命中这些词的预警；留空则不过滤。",
+  'weather.alertRegionPlaceholder': "辽宁,大连",
 };
 

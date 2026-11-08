@@ -6,10 +6,10 @@
  * 内网抓不到时**保留上一次数据**并把原因写在页面上——教室里看到旧一点的天气，也好过突然空白。
  * </para>
  */
-import { api } from '../core/api.js?v=181';
-import { toastError } from '../core/errors.js?v=181';
-import { h, clear, toast, loadingBlock, formatDateTime, field } from '../core/ui.js?v=181';
-import { t } from '../core/i18n.js?v=181';
+import { api } from '../core/api.js?v=183';
+import { toastError } from '../core/errors.js?v=183';
+import { h, clear, toast, loadingBlock, formatDateTime, field } from '../core/ui.js?v=183';
+import { t } from '../core/i18n.js?v=183';
 
 export const meta = {
   title: t('weather.title'),
@@ -158,6 +158,19 @@ function renderConfigCard(state, repaint) {
       return option;
     }));
 
+  // 预警源与地区（#142）：各地接口不同、预警又是全国列表，
+  // 这两项必须可配，否则换省份就得改代码。
+  const alertUrl = h('input', {
+    type: 'text',
+    value: config.alertUrl || '',
+    placeholder: t('weather.alertUrlPlaceholder'),
+  });
+  const alertRegion = h('input', {
+    type: 'text',
+    value: config.alertRegion || '',
+    placeholder: t('weather.alertRegionPlaceholder'),
+  });
+
   const saveBtn = h('button.btn.btn-primary.btn-sm', {
     type: 'button',
     onClick: async () => {
@@ -173,6 +186,8 @@ function renderConfigCard(state, repaint) {
             longitude: config.longitude || 0,
             refreshMinutes: Number(interval.value),
             temperatureUnit: unit.value,
+            alertUrl: alertUrl.value.trim(),
+            alertRegion: alertRegion.value.trim(),
           },
         });
         // 保存时会顺手抓一次：成功就直接说天气，失败把原因带出来（不要假装保存成功就万事大吉）。
@@ -206,6 +221,8 @@ function renderConfigCard(state, repaint) {
         field(t('weather.city'), city, t('weather.cityHint')),
         field(t('weather.interval'), interval, t('weather.intervalHint')),
         field(t('weather.unit'), unit),
+        field(t('weather.alertUrl'), alertUrl, t('weather.alertUrlHint')),
+        field(t('weather.alertRegion'), alertRegion, t('weather.alertRegionHint')),
       ),
       config.latitude
         ? h('div', { style: { fontSize: '12px', color: 'var(--text-faint)', marginTop: '8px' } },

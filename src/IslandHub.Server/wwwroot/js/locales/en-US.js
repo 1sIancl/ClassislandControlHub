@@ -2765,6 +2765,7 @@ export default {
   'nav.group.system': 'System',
   'nav.dashboard': 'Dashboard',
   'nav.board': 'Wall Board',
+  'nav.classboard': "Class board",
   'nav.deploy': 'Deploy Config',
   'nav.remote': 'Remote',
   'nav.profiles': 'Profiles',
@@ -3406,5 +3407,11 @@ export default {
 
   'classBoard.urgent': "URGENT",
   'classBoard.switchProfile': "Profile",
+  'weather.alertUrl': "Alert source URL",
+  'weather.alertUrlHint': "Leave empty to use the national NMС list; fill in a provincial endpoint if needed.",
+  'weather.alertUrlPlaceholder': "http://www.nmc.cn/rest/findAlarm?pageNo=1&pageSize=10",
+  'weather.alertRegion': "Alert regions",
+  'weather.alertRegionHint': "Comma separated, e.g. \"Liaoning,Dalian\". Only alerts whose title or body matches are shown; empty means no filter.",
+  'weather.alertRegionPlaceholder': "Liaoning,Dalian",
 };
 
