@@ -4,20 +4,20 @@
  * 并可切换到列表视图查看完整状态明细。注册码管理一并放在本页。
  */
 
-import { api, fetchBlob } from '../core/api.js?v=174';
-import { toastError, errorBlock } from '../core/errors.js?v=174';
+import { api, fetchBlob } from '../core/api.js?v=177';
+import { toastError, errorBlock } from '../core/errors.js?v=177';
 import {
   h, clear, formatDateTime, relativeTime, toast, loadingBlock, skeletonRows,
   modal, confirmDialog, deviceStateBadge, syncBadge,
   emptyState, field, select, copyText, append, undoBar,
-} from '../core/ui.js?v=174';
-import { showContextMenu } from '../core/contextmenu.js?v=174';
-import { getLayout, saveLayout } from '../core/prefs.js?v=174';
-import { auditTimelineSection } from '../core/audit-timeline.js?v=174';
+} from '../core/ui.js?v=177';
+import { showContextMenu } from '../core/contextmenu.js?v=177';
+import { getLayout, saveLayout } from '../core/prefs.js?v=177';
+import { auditTimelineSection } from '../core/audit-timeline.js?v=177';
 // 富内容预览（#11）：通知正文支持少量 Markdown，这里给它一个实时预览。
-import { createRichPreview } from '../core/markdown.js?v=174';
-import { selectionSummary } from '../core/batch-summary.js?v=174';
-import { t } from './../core/i18n.js?v=174';
+import { createRichPreview } from '../core/markdown.js?v=177';
+import { selectionSummary } from '../core/batch-summary.js?v=177';
+import { t } from './../core/i18n.js?v=177';
 
 export const meta = {
   title: t('devices.title'),

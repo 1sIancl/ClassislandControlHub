@@ -15,9 +15,9 @@
  * </ul>
  */
 
-import { api } from '../core/api.js?v=174';
-import { h, clear } from '../core/ui.js?v=174';
-import { t } from '../core/i18n.js?v=174';
+import { api } from '../core/api.js?v=177';
+import { h, clear } from '../core/ui.js?v=177';
+import { t } from '../core/i18n.js?v=177';
 
 export const meta = {
   title: t('classBoard.title'),
@@ -101,8 +101,12 @@ function saveStyle(style) {
   }
 }
 
+/** 轮播间隔：比刷新慢，免得屏幕一直在跳，学生看不清。 */
+const ROTATE_MS = 30000;
+
 let clockTimer = null;
 let refreshTimer = null;
+let rotateTimer = null;
 
 const WEEK_DAYS = [
   t('profiles.editor.wdSun'),
@@ -141,8 +145,15 @@ export async function render(container, params) {
   clear(container);
   stopTimers();
 
-  // 没传档案 ID 就用默认档案：看板通常是"这间教室那台设备用的档案"。
-  let profileId = params.profileId;
+  // 档案 ID 支持逗号分隔的多个值：`#/classboard/a,b,c`
+  // —— 一间教室挂多个班、或值班室轮巡几间教室时，屏幕自己轮着放，
+  // 不用开多个标签页各占一块屏。
+  const routeIds = String(params?.profileId ?? '')
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+
+  let profileId = routeIds[0];
   if (!profileId) {
     const profiles = await api('/admin/profiles').catch(() => []);
     profileId = profiles.find((p) => p.isDefault)?.id ?? profiles[0]?.id;
@@ -167,6 +178,10 @@ export async function render(container, params) {
   // 外观配置：本机偏好，改了立刻重画，不用刷新也不用下发。
   const style = loadStyle();
 
+  // 轮播游标必须在 paint 之前声明：paint 会读它，
+  // 声明在下面会踩 TDZ（Cannot access before initialization）。
+  let rotateIndex = 0;
+
   const applyStyle = () => {
     host.className = `classboard theme-${style.theme} clock-${style.clock}`;
     host.style.setProperty('--cb-accent', ACCENTS[style.accent] ?? ACCENTS.blue);
@@ -176,6 +191,10 @@ export async function render(container, params) {
   const paint = () => {
     clear(host);
     applyStyle();
+
+    // 把轮播位置挂在数据上再渲染：renderTop 只管画，不关心轮播状态存在哪。
+    data.rotateIndex = rotateIndex;
+    data.rotateTotal = routeIds.length;
 
     // 逐个判空后再 append：这块是**直接** appendChild，不经过 h() 的子节点过滤，
     // 没有公告时 renderMarquee 返回 null，appendChild(null) 会直接抛
@@ -217,6 +236,28 @@ export async function render(container, params) {
     }
   }, 1000);
 
+  // 轮播（仅当 URL 里给了多个档案）：每 ROTATE_MS 换下一个。
+  // 与 refreshTimer 分开，因为它们的职责不同——刷新是"同一份数据更新"，
+  // 轮播是"换一份数据"，节奏通常也不一样（刷新要频繁，轮播不要抢戏）。
+  if (routeIds.length > 1) {
+    rotateTimer = setInterval(async () => {
+      if (!container.isConnected) {
+        stopTimers();
+        return;
+      }
+
+      rotateIndex = (rotateIndex + 1) % routeIds.length;
+      profileId = routeIds[rotateIndex];
+
+      try {
+        data = await loadBoard(profileId);
+        paint();
+      } catch {
+        /* 单个档案取失败就停在这一屏，下一轮再试，不黑屏 */
+      }
+    }, ROTATE_MS);
+  }
+
   refreshTimer = setInterval(async () => {
     if (!container.isConnected) {
       stopTimers();
@@ -245,12 +286,22 @@ function stopTimers() {
     clearInterval(refreshTimer);
     refreshTimer = null;
   }
+
+  if (rotateTimer) {
+    clearInterval(rotateTimer);
+    rotateTimer = null;
+  }
 }
 
-/** 顶部：日期、星期、档案名。 */
+/** 顶部：日期、星期、档案名（轮播时带「第几张 / 共几张」）。 */
 function renderTop(data) {
   const now = data.at;
   const name = data.profile?.name ?? '';
+
+  // 轮播时必须看得出"还会换"，否则老师会以为屏幕串班了。
+  const badge = data.rotateTotal > 1
+    ? ` · ${data.rotateIndex + 1}/${data.rotateTotal}`
+    : '';
 
   return h('div.classboard-top',
     h('div.classboard-date',
@@ -260,7 +311,7 @@ function renderTop(data) {
         day: now.getDate(),
       })),
       h('span.classboard-week', WEEK_DAYS[now.getDay()])),
-    name ? h('div.classboard-profile', name) : null);
+    name ? h('div.classboard-profile', `${name}${badge}`) : null);
 }
 
 /**

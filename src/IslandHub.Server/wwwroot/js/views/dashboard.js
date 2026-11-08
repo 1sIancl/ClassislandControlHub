@@ -5,15 +5,15 @@
  * 同时同步到账号（见 core/prefs.js），换台电脑登录后布局保持一致。
  */
 
-import { api, session } from '../core/api.js?v=174';
+import { api, session } from '../core/api.js?v=177';
 import {
   h, clear, formatDateTime, formatDuration, relativeTime,
   loadingBlock, modal, append, icon, toast, guard,
-} from '../core/ui.js?v=174';
+} from '../core/ui.js?v=177';
 import {
   getLayout, saveLayout, getLayoutSyncState, onLayoutSyncChange,
-} from '../core/prefs.js?v=174';
-import { t } from '../core/i18n.js?v=174';
+} from '../core/prefs.js?v=177';
+import { t } from '../core/i18n.js?v=177';
 
 export const meta = {
   title: t('dashboard.title'),
