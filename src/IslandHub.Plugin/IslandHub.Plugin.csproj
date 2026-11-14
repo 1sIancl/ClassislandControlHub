@@ -8,7 +8,7 @@
     <RootNamespace>IslandHub.Plugin</RootNamespace>
     <AssemblyName>IslandHub.Plugin</AssemblyName>
     <Version>1.5.1.0</Version>
-    <ClassIslandPluginSdkVersion>2.1.1.1</ClassIslandPluginSdkVersion>
+    <ClassIslandPluginSdkVersion>2.1.2</ClassIslandPluginSdkVersion>
     <Description>ClassIsland IslandHub 系统 B 端客户端插件。</Description>
     <!-- 主程序集本地构建路径（用于编译期引用 SettingsService 修改时钟偏移；运行时由宿主 ClassIsland 提供）。 -->
     <ClassIslandAssemblyPath>$(MSBuildThisFileDirectory)..\..\..\ClassIsland2_src\ClassIsland\bin\Release\net10.0\ClassIsland.dll</ClassIslandAssemblyPath>
