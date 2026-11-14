@@ -136,7 +136,7 @@ public sealed class ClassIslandAdapter(IPublicProfileService profileService, ILo
             };
         }
 
-        profile.Subjects = ToOrderedDictionary(map);
+        SetProfileCollection(profile, nameof(Profile.Subjects), map);
     }
 
     private static void ReplaceTimeLayouts(Profile profile, List<TimeLayoutDto> layouts)
@@ -172,7 +172,7 @@ public sealed class ClassIslandAdapter(IPublicProfileService profileService, ILo
             map[ToGuid(dto.Id)] = layout;
         }
 
-        profile.TimeLayouts = ToOrderedDictionary(map);
+        SetProfileCollection(profile, nameof(Profile.TimeLayouts), map);
     }
 
     /// <summary>
@@ -249,7 +249,7 @@ public sealed class ClassIslandAdapter(IPublicProfileService profileService, ILo
             map[planId] = plan;
         }
 
-        profile.ClassPlans = ToOrderedDictionary(map);
+        SetProfileCollection(profile, nameof(Profile.ClassPlans), map);
     }
 
     private static TimeRule BuildTimeRule(ClassPlanDto dto)
@@ -293,16 +293,70 @@ public sealed class ClassIslandAdapter(IPublicProfileService profileService, ILo
     }
 
     /// <summary>把字典转换为 ClassIsland 的有序字典（按当前顺序保持稳定）。</summary>
-    private static ObservableOrderedDictionary<Guid, T> ToOrderedDictionary<T>(Dictionary<Guid, T> source)
+    /// <summary>
+    /// 把 id→实体 映射写成宿主能接受的集合（#148 同时兼容两代宿主）。
+    ///
+    /// <para>
+    /// 两代宿主的类型不同：
+    /// <list type="bullet">
+    /// <item>2.1.2.0+：`ObservableOrderedDictionary&lt;Guid, T&gt;`（有序字典）</item>
+    /// <item>2.1.0.x：`List&lt;T&gt;`</item>
+    /// </list>
+    /// 编译期只能绑定其中一个，所以这里按**属性实际类型**用反射构造——
+    /// 同一份 dll 才能既装进 2.1.0.1 稳定版，又装进 2.1.2.0 预览版。
+    /// </para>
+    /// </summary>
+    private static void SetProfileCollection<T>(Profile profile, string propertyName, Dictionary<Guid, T> source)
         where T : class
     {
-        var result = new ObservableOrderedDictionary<Guid, T>();
-        foreach (var (key, value) in source)
+        var property = typeof(Profile).GetProperty(propertyName);
+        if (property is null)
         {
-            result[key] = value;
+            return;
         }
 
-        return result;
+        var targetType = property.PropertyType;
+
+        // ① List<T>：2.1.0.x 的形态
+        var listType = typeof(List<>).MakeGenericType(typeof(T));
+        if (targetType == listType)
+        {
+            var list = (System.Collections.IList)Activator.CreateInstance(listType)!;
+            foreach (var value in source.Values)
+            {
+                list.Add(value);
+            }
+
+            property.SetValue(profile, list);
+            return;
+        }
+
+        // ② 有序字典：2.1.2.0 的形态，用索引器逐个写入以保留顺序
+        var instance = Activator.CreateInstance(targetType)!;
+        var indexer = targetType.GetProperty("Item", [typeof(Guid), typeof(T)]);
+
+        if (indexer is not null)
+        {
+            foreach (var (key, value) in source)
+            {
+                indexer.SetValue(instance, value, [key]);
+            }
+
+            property.SetValue(profile, instance);
+            return;
+        }
+
+        // ③ 退路：普通字典的 Add
+        var add = targetType.GetMethod("Add", [typeof(Guid), typeof(T)]);
+        if (add is not null)
+        {
+            foreach (var (key, value) in source)
+            {
+                add.Invoke(instance, [key, value]);
+            }
+        }
+
+        property.SetValue(profile, instance);
     }
 
     /// <summary>把协议中的 ID 字符串转换为稳定的 GUID。</summary>
