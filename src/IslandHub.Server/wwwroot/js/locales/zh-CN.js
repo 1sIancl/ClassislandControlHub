@@ -3416,5 +3416,10 @@ export default {
   'classBoard.humidity': "湿度",
   'classBoard.aqi': "空气质量",
   'classBoard.wind': "风力",
+  'weather.latitude': "纬度",
+  'weather.longitude': "经度",
+  'weather.latitudePlaceholder': "例如 16.839",
+  'weather.longitudePlaceholder': "例如 112.341",
+  'weather.coordHint': "留空则按城市名自动解析。中文小地名常被解析错（如「三沙」会指向广东），此时手填坐标最可靠。",
 };
 

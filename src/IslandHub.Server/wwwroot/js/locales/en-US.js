@@ -3416,5 +3416,10 @@ export default {
   'classBoard.humidity': "Humidity",
   'classBoard.aqi': "Air",
   'classBoard.wind': "Wind",
+  'weather.latitude': "Latitude",
+  'weather.longitude': "Longitude",
+  'weather.latitudePlaceholder': "e.g. 16.839",
+  'weather.longitudePlaceholder': "e.g. 112.341",
+  'weather.coordHint': "Leave empty to resolve from the city name. Chinese place names are often misresolved (e.g. \"三沙\" points to Guangdong); fill coordinates in that case.",
 };
 

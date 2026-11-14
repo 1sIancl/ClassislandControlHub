@@ -3,14 +3,14 @@
  * 修改先落在内存对象上，点「保存并下发」一次性提交。
  */
 
-import { api } from '../core/api.js?v=188';
-import { toastError } from '../core/errors.js?v=188';
+import { api } from '../core/api.js?v=189';
+import { toastError } from '../core/errors.js?v=189';
 import {
   h, clear, toast, loadingBlock, modal, confirmDialog, field, icon, select,
   emptyState, formatDateTime,
-} from '../core/ui.js?v=188';
-import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=188';
-import { t } from './../core/i18n.js?v=188';
+} from '../core/ui.js?v=189';
+import { SCHED_SCALES, getSchedScale, setSchedScale } from '../core/prefs.js?v=189';
+import { t } from './../core/i18n.js?v=189';
 
 // ── 课表铺满一屏（#140）────────────────────────────────────────────
 //

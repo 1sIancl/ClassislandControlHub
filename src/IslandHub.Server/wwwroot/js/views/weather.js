@@ -6,10 +6,10 @@
  * 内网抓不到时**保留上一次数据**并把原因写在页面上——教室里看到旧一点的天气，也好过突然空白。
  * </para>
  */
-import { api } from '../core/api.js?v=188';
-import { toastError } from '../core/errors.js?v=188';
-import { h, clear, toast, loadingBlock, formatDateTime, field } from '../core/ui.js?v=188';
-import { t } from '../core/i18n.js?v=188';
+import { api } from '../core/api.js?v=189';
+import { toastError } from '../core/errors.js?v=189';
+import { h, clear, toast, loadingBlock, formatDateTime, field } from '../core/ui.js?v=189';
+import { t } from '../core/i18n.js?v=189';
 
 export const meta = {
   title: t('weather.title'),
@@ -171,6 +171,22 @@ function renderConfigCard(state, repaint) {
     placeholder: t('weather.alertRegionPlaceholder'),
   });
 
+  // 经纬度可手填（#146）：Open-Meteo 的地名库对中文小地名很不准——
+  // 查「三沙」会返回广东的三个同名地，海南三沙只认英文 "Sansha"。
+  // 留空表示按城市名自动解析。
+  const latitude = h('input', {
+    type: 'number',
+    step: '0.000001',
+    value: config.latitude ? String(config.latitude) : '',
+    placeholder: t('weather.latitudePlaceholder'),
+  });
+  const longitude = h('input', {
+    type: 'number',
+    step: '0.000001',
+    value: config.longitude ? String(config.longitude) : '',
+    placeholder: t('weather.longitudePlaceholder'),
+  });
+
   const saveBtn = h('button.btn.btn-primary.btn-sm', {
     type: 'button',
     onClick: async () => {
@@ -182,8 +198,9 @@ function renderConfigCard(state, repaint) {
           body: {
             enabled: enabled.checked,
             city: city.value.trim(),
-            latitude: config.latitude || 0,
-            longitude: config.longitude || 0,
+            // 手填的坐标优先；留空传 0，服务端会按城市名重新解析
+            latitude: latitude.value.trim() ? Number(latitude.value) : 0,
+            longitude: longitude.value.trim() ? Number(longitude.value) : 0,
             refreshMinutes: Number(interval.value),
             temperatureUnit: unit.value,
             alertUrl: alertUrl.value.trim(),
@@ -223,6 +240,8 @@ function renderConfigCard(state, repaint) {
         field(t('weather.unit'), unit),
         field(t('weather.alertUrl'), alertUrl, t('weather.alertUrlHint')),
         field(t('weather.alertRegion'), alertRegion, t('weather.alertRegionHint')),
+        field(t('weather.latitude'), latitude, t('weather.coordHint')),
+        field(t('weather.longitude'), longitude, t('weather.coordHint')),
       ),
       config.latitude
         ? h('div', { style: { fontSize: '12px', color: 'var(--text-faint)', marginTop: '8px' } },

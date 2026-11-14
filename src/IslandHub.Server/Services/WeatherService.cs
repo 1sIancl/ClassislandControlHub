@@ -124,20 +124,40 @@ public sealed class WeatherService(
             throw HubException.Validation("启用天气必须填写城市名（例如「杭州」）。");
         }
 
-        // 只有**缺经纬度**时才去反查：显式给了坐标就直接用（内网没外网时，可以从别的机器上抄一份坐标过来，
-        // 这样保存不需要访问地理编码接口）。城市只是显示名，改了它不会触发一次网络往返。
-        if (city.Length > 0 && (config.Latitude == 0 || config.Longitude == 0))
+        // 城市名变了就必须重新解析坐标（#146）。
+        //
+        // 原实现只在「缺经纬度」时反查，注释写的理由是"城市只是显示名"——
+        // 但实际情况是：把城市从「普兰店」改成「三沙」，坐标仍是普兰店的，
+        // 于是城市显示三沙、温度却还是普兰店的 16°C，AQI 也是别处的 218。
+        // 界面上完全看不出来，比报错更难发现。
+        var cityChanged = city.Length > 0
+            && !string.Equals((_state.Config.City ?? string.Empty).Trim(), city, StringComparison.Ordinal);
+
+        if (city.Length > 0 && (cityChanged || config.Latitude == 0 || config.Longitude == 0))
         {
             var place = await GeocodeAsync(city, cancellationToken);
+
             if (place is null)
             {
-                throw HubException.Validation($"没找到城市「{city}」，换个写法（例如「杭州」而不是「杭州市西湖区」）再试。");
-            }
+                // 内网无外网时解析不了。已有坐标就沿用旧坐标继续跑（不能让天气整块挂掉），
+                // 但从零开始配置必须报错——否则会存进一个"有城市名没坐标"的配置。
+                if (config.Latitude == 0 || config.Longitude == 0)
+                {
+                    throw HubException.Validation(
+                        $"没找到城市「{city}」，换个写法（例如「杭州」而不是「杭州市西湖区」）再试。");
+                }
 
-            // 可空元组取值要走 `.Value`——直接 `.Name` 编译器会报「元组没有该成员」。
-            config.City = place.Value.Name;
-            config.Latitude = place.Value.Latitude;
-            config.Longitude = place.Value.Longitude;
+                logger.LogWarning(
+                    "城市改为 {City} 但解析坐标失败（可能没有外网），继续沿用原坐标 {Lat},{Lon}。",
+                    city, config.Latitude, config.Longitude);
+            }
+            else
+            {
+                // 可空元组取值要走 `.Value`——直接 `.Name` 编译器会报「元组没有该成员」。
+                config.City = place.Value.Name;
+                config.Latitude = place.Value.Latitude;
+                config.Longitude = place.Value.Longitude;
+            }
         }
 
         await store.SetSettingAsync(ConfigKey, HubJson.Serialize(config), cancellationToken);
