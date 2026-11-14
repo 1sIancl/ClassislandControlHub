@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Text.Json.Nodes;
 using IslandHub.Protocol;
 using IslandHub.Protocol.Dtos;
@@ -426,12 +427,23 @@ public sealed class WeatherService(
                         continue;
                     }
 
+                    // 列表接口**只有** alertid / issuetime / title / url / pic 五个字段：
+                    // 没有 content、没有 signaltype、没有 signallevel。
+                    // 所以"正文为空、等级为空"不是数据缺失，是**接口就不给**——
+                    // 详细内容在 url 指向的详情页里，必须单独抓一次。
+                    // 只对**已命中本地**的预警抓详情（最多 5 条），避免无谓请求。
+                    var detailUrl = item?["url"]?.GetValue<string>() ?? string.Empty;
+                    var alertText = string.IsNullOrWhiteSpace(body)
+                        ? await FetchAlertTextAsync(detailUrl, cancellationToken)
+                        : body;
+
                     alerts.Add(new WeatherAlertDto
                     {
                         Title = title,
-                        Type = item?["signaltype"]?.GetValue<string>()?.Trim() ?? string.Empty,
-                        Level = item?["signallevel"]?.GetValue<string>()?.Trim() ?? string.Empty,
-                        Text = body,
+                        // 类型与等级从标题解析（「…发布大雾橙色预警信号」）。
+                        Type = ParseAlertType(title),
+                        Level = ParseAlertLevel(title),
+                        Text = alertText,
                         IssuedAt = item?["issuetime"]?.GetValue<string>()?.Trim() ?? string.Empty,
                     });
                 }
@@ -444,6 +456,77 @@ public sealed class WeatherService(
         }
 
         _state.Alerts = alerts;
+    }
+
+    /// <summary>
+    /// 从预警详情页提取正文（#147）。
+    ///
+    /// <para>
+    /// 列表接口只给标题和 url，正文在详情页的 HTML 里，形如：
+    /// 「瑞安市气象台2026年11月14日12时30分发布大雾橙色预警信号：目前我市…请注意防范…」
+    /// 这里把 HTML 去标签、按行拆，取**含「预警信号：」且最长**的那一行——
+    /// 比按固定 class 选择器稳，页面改版也不容易失效。
+    /// </para>
+    /// </summary>
+    private async Task<string> FetchAlertTextAsync(string url, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            var full = url.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+                ? url
+                : "http://www.nmc.cn" + url;
+
+            using var response = await Http.GetAsync(full, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return string.Empty;
+            }
+
+            var html = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            var plain = Regex.Replace(html, "<script[\\s\\S]*?</script>|<style[\\s\\S]*?</style>",
+                " ", RegexOptions.IgnoreCase);
+            plain = Regex.Replace(plain, "<[^>]+>", "\n");
+
+            return plain
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Select(line => line.Trim())
+                .Where(line => line.Length > 20 && line.Contains("预警信号：", StringComparison.Ordinal))
+                .OrderByDescending(line => line.Length)
+                .FirstOrDefault() ?? string.Empty;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            // 详情抓不到就只显示标题——预警本身仍然有用。
+            logger.LogDebug(ex, "预警详情抓取失败：{Url}", url);
+            return string.Empty;
+        }
+    }
+
+    /// <summary>从标题解析预警等级（蓝 / 黄 / 橙 / 红）。</summary>
+    private static string ParseAlertLevel(string title)
+    {
+        foreach (var level in new[] { "红色", "橙色", "黄色", "蓝色" })
+        {
+            if (title.Contains(level, StringComparison.Ordinal))
+            {
+                return level;
+            }
+        }
+
+        return string.Empty;
+    }
+
+    /// <summary>从标题解析预警类型（大雾 / 大风 / 暴雨…）。</summary>
+    private static string ParseAlertType(string title)
+    {
+        var match = Regex.Match(title, "(?:发布)([\\u4e00-\\u9fa5]{2,8}?)(?:红色|橙色|黄色|蓝色)预警");
+        return match.Success ? match.Groups[1].Value : string.Empty;
     }
 
     /// <summary>拼一行摘要给教室端直接显示（插件不必懂 WMO 代码）。</summary>

@@ -15,9 +15,9 @@
  * </ul>
  */
 
-import { api } from '../core/api.js?v=189';
-import { h, clear } from '../core/ui.js?v=189';
-import { t } from '../core/i18n.js?v=189';
+import { api } from '../core/api.js?v=190';
+import { h, clear } from '../core/ui.js?v=190';
+import { t } from '../core/i18n.js?v=190';
 
 export const meta = {
   title: t('classBoard.title'),
@@ -378,7 +378,9 @@ function renderMarquee(data) {
   const alerts = Array.isArray(data.weather?.alerts) ? data.weather.alerts : [];
   const raw = alerts.length > 0
     ? alerts
-      .map((alert) => [alert?.title, alert?.text].filter(Boolean).join('：'))
+      // 正文里通常已经包含标题那句话（「瑞安市气象台…发布大雾橙色预警信号：目前…」），
+      // 再拼一次标题会在滚动条里念两遍。所以**有正文就只用正文**。
+      .map((alert) => String(alert?.text || alert?.title || '').trim())
       .filter(Boolean)
       .join('　　')
     : data.profile?.content?.settings?.announcement;
