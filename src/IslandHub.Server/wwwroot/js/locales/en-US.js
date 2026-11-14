@@ -3386,7 +3386,6 @@ export default {
   'classBoard.finished': "All lessons finished",
   'classBoard.leftMinutes': "{minutes} min left",
   'classBoard.beforeMinutes': "Starts in {minutes} min",
-  'classBoard.weather': "Weather",
   'classBoard.notice': "Notice",
   'classBoard.exit': "Exit board",
   'classBoard.otherDay': "Timetable for {day}",
@@ -3414,5 +3413,8 @@ export default {
   'weather.alertRegionHint': "Comma separated, e.g. \"Liaoning,Dalian\". Only alerts whose title or body matches are shown; empty means no filter.",
   'weather.alertRegionPlaceholder': "Liaoning,Dalian",
   'classBoard.alert': "Weather alerts",
+  'classBoard.humidity': "Humidity",
+  'classBoard.aqi': "Air",
+  'classBoard.wind': "Wind",
 };
 

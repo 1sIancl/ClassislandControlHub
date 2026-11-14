@@ -15,9 +15,9 @@
  * </ul>
  */
 
-import { api } from '../core/api.js?v=186';
-import { h, clear } from '../core/ui.js?v=186';
-import { t } from '../core/i18n.js?v=186';
+import { api } from '../core/api.js?v=188';
+import { h, clear } from '../core/ui.js?v=188';
+import { t } from '../core/i18n.js?v=188';
 
 export const meta = {
   title: t('classBoard.title'),
@@ -692,6 +692,27 @@ function renderMain(data, style) {
     renderSide(data, style));
 }
 
+/** 一项天气指标：标签在上、值在下；值为空则整项不渲染。 */
+function metric(label, value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  return h('div.classboard-metric',
+    h('span.classboard-metric-label', label),
+    h('span.classboard-metric-value', value));
+}
+
+/** 预警等级 → 颜色类名（蓝/黄/橙/红），用于给徽章上色。 */
+function levelClass(level) {
+  const text = String(level ?? '');
+  if (/红/.test(text)) return 'lv-red';
+  if (/橙/.test(text)) return 'lv-orange';
+  if (/黄/.test(text)) return 'lv-yellow';
+  if (/蓝/.test(text)) return 'lv-blue';
+  return '';
+}
+
 /** 右栏：天气与公告。没有数据就整块不渲染，不留空框。 */
 function renderSide(data, style) {
   // 外观配置里关掉的模块直接不渲染，而不是留一个空卡片。
@@ -713,16 +734,28 @@ function renderSide(data, style) {
     alerts.length > 0
       ? h('div.classboard-card.classboard-alert-card',
         h('div.classboard-card-title', t('classBoard.alert')),
-        ...alerts.map((alert) => h('div.classboard-alert',
-          h('div.classboard-alert-head',
-            alert.level ? h('span.classboard-alert-level', alert.level) : null,
+        // 用原生 <details>：折叠/展开零 JS，键盘也能操作，
+        // 大屏上只需要"一眼看到标题、需要时看到正文"。
+        ...alerts.map((alert) => h('details.classboard-alert',
+          h('summary.classboard-alert-head',
+            h('span.classboard-alert-level' + (levelClass(alert.level) ? `.${levelClass(alert.level)}` : ''),
+              alert.level || '预警'),
             h('span.classboard-alert-title', alert.title || ''),
             alert.issuedAt ? h('span.classboard-alert-time', alert.issuedAt) : null),
           alert.text ? h('div.classboard-alert-text', alert.text) : null)))
       : null,
     weather
-      ? h('div.classboard-card',
-        h('div.classboard-card-title', t('classBoard.weather')),
+      ? h('div.classboard-card.classboard-weather-card',
+        // 三项指标（湿度 / 空气质量 / 风力）横排，与温度分居两侧——
+        // 与参考样式一致：温度是主信息，指标是补充。
+        h('div.classboard-weather-metrics',
+          metric(t('classBoard.humidity'), weather.humidity == null
+            ? null : `${Math.round(weather.humidity)}%`),
+          // AQI 缺失时整项不渲染：显示 0 会被读成"空气极好"，是错的。
+          metric(t('classBoard.aqi'), weather.airQuality == null
+            ? null : String(Math.round(weather.airQuality))),
+          metric(t('classBoard.wind'), weather.windSpeed == null
+            ? null : `${Number(weather.windSpeed).toFixed(1)} km/h`)),
         // 用服务端拼好的 summary：天气代码到文案的映射服务端已有一份，
         // 前端再猜一遍会长出第二套说法（同一个 4° 两处显示不一样）。
         // 温度缺失时显示 "--" 而不是 0：

@@ -78,6 +78,15 @@ public sealed class WeatherStateDto
     /// <summary>相对湿度（百分比）。</summary>
     public int? Humidity { get; set; }
 
+    /// <summary>
+    /// 空气质量指数（#145）。用的是 US AQI，与国内常见的"良/轻度污染"分级能对上。
+    /// <para>
+    /// 独立于天气请求：Open-Meteo 的空气质量是另一个接口，抓不到时留 <c>null</c>，
+    /// 看板上就不显示这一项，而不是显示 0（0 是"空气极好"的意思，会误导）。
+    /// </para>
+    /// </summary>
+    public int? AirQuality { get; set; }
+
     /// <summary>风速（km/h）。</summary>
     public double? WindSpeed { get; set; }
 

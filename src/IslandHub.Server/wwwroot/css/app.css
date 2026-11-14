@@ -5460,6 +5460,8 @@ table.data-compact td input[type="text"] {
 .classboard-alert-card {
   border-color: rgb(214 92 74 / 45%);
   background: rgb(214 92 74 / 12%);
+  /* 限高：预警条数多时不能把天气卡片挤出屏幕 */
+  max-height: 38vh;
   overflow-y: auto;
 }
 .classboard-alert {
@@ -5509,4 +5511,53 @@ table.data-compact td input[type="text"] {
 }
 .classboard.theme-light .classboard-alert-text {
   color: #5a3a34;
+}
+
+/* 天气指标（#145）：湿度 / 空气质量 / 风力，与温度分居两侧 */
+.classboard-weather-metrics {
+  display: flex;
+  gap: clamp(10px, 1.4vw, 26px);
+  margin: 6px 0 8px;
+}
+.classboard-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.classboard-metric-label {
+  font-size: clamp(11px, 0.9vw, 14px);
+  color: #8ea3cd;
+}
+.classboard-metric-value {
+  font-size: clamp(15px, 1.3vw, 22px);
+  font-weight: 600;
+  color: #eef3ff;
+}
+.classboard.theme-light .classboard-metric-value {
+  color: #16213a;
+}
+.classboard.theme-light .classboard-metric-label {
+  color: #5f6f8f;
+}
+
+/* 预警折叠：标题一眼可见，正文按需展开 */
+.classboard-alert > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.classboard-alert > summary::-webkit-details-marker {
+  display: none;
+}
+/* 等级配色：蓝 < 黄 < 橙 < 红，颜色本身传递严重程度 */
+.classboard-alert-level.lv-blue {
+  background: #3b82f6;
+}
+.classboard-alert-level.lv-yellow {
+  background: #d9a521;
+}
+.classboard-alert-level.lv-orange {
+  background: #ef7c1a;
+}
+.classboard-alert-level.lv-red {
+  background: #d93636;
 }

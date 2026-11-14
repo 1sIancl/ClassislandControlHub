@@ -3386,7 +3386,6 @@ export default {
   'classBoard.finished': "今天的课已结束",
   'classBoard.leftMinutes': "还有 {minutes} 分钟下课",
   'classBoard.beforeMinutes': "{minutes} 分钟后上课",
-  'classBoard.weather': "天气",
   'classBoard.notice': "公告",
   'classBoard.exit': "退出看板",
   'classBoard.otherDay': "{day}的课表",
@@ -3414,5 +3413,8 @@ export default {
   'weather.alertRegionHint': "逗号分隔，如「辽宁,大连」。只显示标题或正文命中这些词的预警；留空则不过滤。",
   'weather.alertRegionPlaceholder': "辽宁,大连",
   'classBoard.alert': "气象预警",
+  'classBoard.humidity': "湿度",
+  'classBoard.aqi': "空气质量",
+  'classBoard.wind': "风力",
 };
 

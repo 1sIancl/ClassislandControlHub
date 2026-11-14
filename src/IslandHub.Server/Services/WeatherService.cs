@@ -198,6 +198,9 @@ public sealed class WeatherService(
             _state.Error = null;
             RebuildSummary();
 
+            // 空气质量（#145）：另一个接口，同样独立失败。
+            await RefreshAirQualityAsync(cancellationToken);
+
             // 气象预警（#142）：独立抓、独立失败。
             // 中国气象局的公开接口不是正式 API，随时可能变；抓不到就留空数组，
             // 绝不能让"没有预警"变成"没有天气"。
@@ -214,6 +217,16 @@ public sealed class WeatherService(
             // 内网没有外网时走到这里：**保留旧数据**，只记原因。
             _state.Error = "抓取失败（服务器可能没有外网，或天气服务暂时不可用）。";
             logger.LogWarning(ex, "天气抓取失败（保留上一次数据）。");
+
+            // 预警仍要单独试一次（#142）。
+            //
+            // 这里踩过一个很隐蔽的坑：预警抓取原本只写在**成功分支**里，
+            // 于是天气主数据抓不到时直接 return，预警永远停在旧缓存——
+            // 表现为"改了城市/地区，预警却一直是上次那几条"，而且界面上完全看不出原因。
+            // 预警源与天气源是两个地址，天气不通不代表预警不通。
+            await RefreshAirQualityAsync(cancellationToken);
+            await RefreshAlertsAsync(cancellationToken);
+
             return _state;
         }
         finally
@@ -256,6 +269,46 @@ public sealed class WeatherService(
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
             return null;
+        }
+    }
+
+    /// <summary>
+    /// 抓空气质量（#145）。
+    ///
+    /// <para>
+    /// Open-Meteo 的空气质量是**独立接口**（不是天气接口的一个字段），所以要单独请求。
+    /// 失败时留 <c>null</c>：看板上不显示这一项，而不是显示 0——
+    /// AQI 的 0 是"空气极好"的意思，用它表示"没数据"会直接误导。
+    /// </para>
+    /// </summary>
+    private async Task RefreshAirQualityAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var url = "https://air-quality-api.open-meteo.com/v1/air-quality"
+                + $"?latitude={_state.Config.Latitude.ToString(CultureInfo.InvariantCulture)}"
+                + $"&longitude={_state.Config.Longitude.ToString(CultureInfo.InvariantCulture)}"
+                + "&current=us_aqi";
+
+            using var response = await Http.GetAsync(url, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _state.AirQuality = null;
+                return;
+            }
+
+            var text = await response.Content.ReadAsStringAsync(cancellationToken);
+            var node = JsonNode.Parse(text)?["current"]?["us_aqi"];
+
+            // 接口给的是 double（可能带小数），AQI 展示取整。
+            _state.AirQuality = node is null
+                ? null
+                : (int?)Math.Round(node.GetValue<double>());
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            _state.AirQuality = null;
+            logger.LogDebug(ex, "空气质量抓取失败（不影响天气主数据）。");
         }
     }
 
@@ -321,14 +374,18 @@ public sealed class WeatherService(
                         || regions.Any(r => title.Contains(r, StringComparison.Ordinal)
                             || body.Contains(r, StringComparison.Ordinal));
 
-                    // 城市名不一定出现在预警里（省级台发的是「辽宁省气象台…」，不会写「普兰店」）。
-                    // 所以先看有没有命中：有命中就只留命中的；全都没命中就保留全部，
-                    // 否则本地真有预警却一条不显示，比显示外地更糟。
-                    var anyHit = candidates.Any(x => Matches(x.Title, x.Text));
-
+                    // 严格只留所在地。
+                    //
+                    // 曾经做过"全都没命中就保留全部"的兜底，结果很糟：
+                    // 城市名（如「普兰店」）往往不出现在预警标题里（省级台发的是
+                    // 「辽宁省气象台…」「大连市气象台…」），兜底就把**全国**预警全放了出来——
+                    // 看板上出现贵州、云南、江苏的预警，比空着危险得多。
+                    //
+                    // 所以宁可空着。要放宽范围，就在天气设置里把地区关键词填成
+                    // 「辽宁,大连」这种上级行政区。
                     foreach (var candidate in candidates)
                     {
-                        if (anyHit && !Matches(candidate.Title, candidate.Text))
+                        if (!Matches(candidate.Title, candidate.Text))
                         {
                             continue;
                         }
