@@ -35,7 +35,18 @@ public sealed class WeatherService(
     /// <summary>抓取间隔下限：天气变化没那么快，抓太勤只会让别人封我们的 IP。</summary>
     private const int MinRefreshMinutes = 10;
 
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
+    private static readonly HttpClient Http = new()
+    {
+        Timeout = TimeSpan.FromSeconds(15),
+
+        // 必须带 UA：中国气象局的接口对空 UA 的请求不返回 JSON
+        // （实测：带 UA 拿 200 + JSON，不带则报"抓取失败"）。
+        DefaultRequestHeaders =
+        {
+            { "User-Agent", "Mozilla/5.0 (compatible; IslandHub/1.5.1)" },
+            { "Referer", "http://www.nmc.cn/publish/alarm.html" },
+        },
+    };
 
     /// <summary>
     /// 预警地址留空时的兜底（中国气象局全国列表）。
@@ -348,88 +359,87 @@ public sealed class WeatherService(
         {
             // 地址来自 A 端配置：各地预警源不同（省级接口 / 自建代理），
             // 写死意味着换源必须发版。留空才用全国兜底。
-            var url = string.IsNullOrWhiteSpace(_state.Config.AlertUrl)
-                ? DefaultAlertUrl
-                : _state.Config.AlertUrl.Trim();
+            var custom = !string.IsNullOrWhiteSpace(_state.Config.AlertUrl);
+            var url = custom ? _state.Config.AlertUrl.Trim() : DefaultAlertUrl;
 
-            using var response = await Http.GetAsync(url, cancellationToken);
-            if (response.IsSuccessStatusCode)
+            // 全国列表按时间倒序，**一页固定 10 条**（pageSize 实测不生效）。
+            // 只抓第 1 页等于"只盯住刚发生的 10 条全国预警"：三沙那条要等它挤进前 10 才看得见，
+            // 绝大多数时候一条都匹配不到，看上去就像"预警功能坏了"。
+            // 所以翻 5 页（50 条）再筛。自定义地址由用户自控，只抓 1 页。
+            var pages = custom ? 1 : 5;
+
+            // 地区：优先用用户填的关键词，否则直接用天气设置里的城市。
+            var regions = (_state.Config.AlertRegion ?? string.Empty)
+                .Split([',', '，', ' ', ';', '；'],
+                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            if (regions.Length == 0 && !string.IsNullOrWhiteSpace(_state.Config.City))
             {
+                regions = [_state.Config.City.Trim()];
+            }
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+
+            for (var page = 1; page <= pages && alerts.Count < MaxAlerts; page += 1)
+            {
+                var pageUrl = custom ? url : $"{url}&pageNo={page}&pageSize=10";
+
+                using var response = await Http.GetAsync(pageUrl, cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    break;
+                }
+
                 var text = await response.Content.ReadAsStringAsync(cancellationToken);
 
                 // 结构：{ code, data: { page: { list: [ { title, signaltype, signallevel, issuetime, content } ] } } }
-                // 地区过滤（#142）：预警源通常是**全国列表**，不过滤会把外省的暴雨预警
-                // 推到本地大屏上，学生会以为本地要下暴雨。
-                //
-                // 默认直接用天气设置里的**城市**自动匹配，不需要用户再填关键词
-                // （同一份配置里已经有城市了，让人再填一遍是重复劳动且容易不一致）。
-                // AlertRegion 仅在需要更宽的范围（如整个省）时才填。
-                var regions = (_state.Config.AlertRegion ?? string.Empty)
-                    .Split([',', '，', ' ', ';', '；'],
-                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-                if (regions.Length == 0 && !string.IsNullOrWhiteSpace(_state.Config.City))
+                if (JsonNode.Parse(text)?["data"]?["page"]?["list"] is not JsonArray list)
                 {
-                    regions = [_state.Config.City.Trim()];
+                    break;
                 }
 
-                if (JsonNode.Parse(text) is JsonObject root
-                    && root["data"]?["page"]?["list"] is JsonArray list)
+                foreach (var item in list)
                 {
-                    // 先解析成候选，再决定过滤策略——不能边遍历边判断，
-                    // 那样会出现"前面被跳过、后面才命中"的错误结果。
-                    var candidates = list
-                        .Select(item => new
-                        {
-                            Title = item?["title"]?.GetValue<string>()?.Trim() ?? string.Empty,
-                            Type = item?["signaltype"]?.GetValue<string>()?.Trim() ?? string.Empty,
-                            Level = item?["signallevel"]?.GetValue<string>()?.Trim() ?? string.Empty,
-                            Text = item?["content"]?.GetValue<string>()?.Trim() ?? string.Empty,
-                            IssuedAt = item?["issuetime"]?.GetValue<string>()?.Trim() ?? string.Empty,
-                        })
-                        .Where(x => x.Title.Length > 0)
-                        .ToList();
+                    if (alerts.Count >= MaxAlerts)
+                    {
+                        break;
+                    }
 
-                    bool Matches(string title, string body) => regions.Length == 0
+                    var title = item?["title"]?.GetValue<string>()?.Trim() ?? string.Empty;
+                    if (title.Length == 0 || !seen.Add(title))
+                    {
+                        continue;
+                    }
+
+                    var body = item?["content"]?.GetValue<string>()?.Trim() ?? string.Empty;
+
+                    // 严格只留所在地：标题或正文必须命中地区词。
+                    //
+                    // 不做"没命中就全放"的兜底——那样会把全国预警推到本地大屏上
+                    // （曾实测出现过锦州、贵州、云南、江苏一起上屏），比空着危险得多。
+                    var hit = regions.Length == 0
                         || regions.Any(r => title.Contains(r, StringComparison.Ordinal)
                             || body.Contains(r, StringComparison.Ordinal));
 
-                    // 严格只留所在地。
-                    //
-                    // 曾经做过"全都没命中就保留全部"的兜底，结果很糟：
-                    // 城市名（如「普兰店」）往往不出现在预警标题里（省级台发的是
-                    // 「辽宁省气象台…」「大连市气象台…」），兜底就把**全国**预警全放了出来——
-                    // 看板上出现贵州、云南、江苏的预警，比空着危险得多。
-                    //
-                    // 所以宁可空着。要放宽范围，就在天气设置里把地区关键词填成
-                    // 「辽宁,大连」这种上级行政区。
-                    foreach (var candidate in candidates)
+                    if (!hit)
                     {
-                        if (!Matches(candidate.Title, candidate.Text))
-                        {
-                            continue;
-                        }
-
-                        alerts.Add(new WeatherAlertDto
-                        {
-                            Title = candidate.Title,
-                            Type = candidate.Type,
-                            Level = candidate.Level,
-                            Text = candidate.Text,
-                            IssuedAt = candidate.IssuedAt,
-                        });
-
-                        // 大屏只放得下几条：再多滚动条会跑到看不清。
-                        if (alerts.Count >= MaxAlerts)
-                        {
-                            break;
-                        }
+                        continue;
                     }
+
+                    alerts.Add(new WeatherAlertDto
+                    {
+                        Title = title,
+                        Type = item?["signaltype"]?.GetValue<string>()?.Trim() ?? string.Empty,
+                        Level = item?["signallevel"]?.GetValue<string>()?.Trim() ?? string.Empty,
+                        Text = body,
+                        IssuedAt = item?["issuetime"]?.GetValue<string>()?.Trim() ?? string.Empty,
+                    });
                 }
             }
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
+            // 抓不到就留空数组：预警是增强信息，缺了不该让天气整块消失。
             logger.LogDebug(ex, "预警抓取失败（不影响天气主数据）。");
         }
 
