@@ -13,17 +13,17 @@
  * </p>
  */
 
-import { api } from '../core/api.js?v=190';
-import { toastError, errorBlock } from '../core/errors.js?v=190';
+import { api } from '../core/api.js?v=191';
+import { toastError, errorBlock } from '../core/errors.js?v=191';
 import {
   h, clear, toast, loadingBlock, confirmDialog,
-} from '../core/ui.js?v=190';
-import { t } from './../core/i18n.js?v=190';
+} from '../core/ui.js?v=191';
+import { t } from './../core/i18n.js?v=191';
 // 时间点的附加信息（插件附加设置 / 行动组）编辑：时间表独立后仍然要能编，
 // 所以和档案编辑器共用同一套弹窗，而不是各自复制一份。
 import {
   openAttachedDialog, openActionSetDialog, attachedCountOf, actionCountOf,
-} from './layoutItemDialogs.js?v=190';
+} from './layoutItemDialogs.js?v=191';
 
 export const meta = {
   title: t('layoutEditor.title'),
@@ -497,6 +497,22 @@ function renderLayoutTimeline() {
     h('div.tl-scroll', canvas),
   );
 }
+
+/**
+ * 时间点类型 → 中文名。
+ *
+ * <p>
+ * 这里**必须自己定义一份**：`profileEditor.js` 里也有同名常量，但那是那个模块的
+ * 局部 const，跨模块引用会直接 `TIME_KIND_LABEL is not defined`，整页白屏。
+ * 两个模块各自持有文案是最省事的做法（文案本身走 i18n，不存在两套说法）。
+ * </p>
+ */
+const TIME_KIND_LABEL = {
+  class: t('profiles.editor.kindClass'),
+  break: t('profiles.editor.kindBreak'),
+  separator: t('profiles.editor.kindSeparator'),
+  action: t('profiles.editor.kindAction'),
+};
 
 /** 时间轴上的一个色块（含拖动交互）。 */
 function timelineBlock(layout, item, index, toY) {
