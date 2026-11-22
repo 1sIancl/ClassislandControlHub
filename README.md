@@ -12,6 +12,31 @@
 - **A 端（服务器）**：ASP.NET Core + SQLite + Web 管理界面。装在校园内网或服务器上，统一管课表、作息、设备与下发。
 - **B 端（接收端）**：ClassIsland 插件，装在教室机上，自动接收并应用课表 / 作息 / 科目 / 自定义设置。
 
+## 两个包怎么选
+
+从 `1.5.2.0` 起，同一份源码构建两个插件包，因为 ClassIsland 两代宿主的 API 不兼容：
+
+| 文件 | 适用宿主 | 说明 |
+| --- | --- | --- |
+| `ControlHub.Plugin-2.1.2.cipx` | ClassIsland **2.1.2.x** | 功能完整 |
+| `ControlHub.Plugin-2.1.0.cipx` | ClassIsland **2.1.0.x**（官方稳定线） | 不含时钟同步、不写轮换偏移 |
+
+**为什么不能合成一个包**：`SettingsService` 是宿主内部类型，两代绑定的 Avalonia 大版本不同
+（11 与 12），强类型引用无法同时满足，降级成反射会让核心链路失去编译期检查。
+
+**2.1.0 包的差异**：
+
+- 不做「让宿主跟着 A 端对时」——教室端用自己的 NTP 设置即可
+- 不写「第几周算第 1 周」的偏移——多周轮换本身仍工作，起始周由教室端自行决定
+- 其余功能（课表/时间表/科目下发、设备注册、心跳、远程命令）完全一致
+
+构建方式：
+
+```powershell
+powershell -File sh/build-plugin-dual.ps1
+# 产物在 dist/：ControlHub.Plugin-2.1.2.cipx 与 ControlHub.Plugin-2.1.0.cipx
+```
+
 ## 功能
 
 | 功能 | 说明 |
@@ -75,7 +100,7 @@ dotnet run --project src/IslandHub.Server -c Release
 
 ### 三、B 端（教室端）
 
-1. 在教室电脑安装 ClassIsland（2.1.1.1 及以上）。
+1. 在教室电脑安装 ClassIsland（2.1.0.1 稳定版或 2.1.2.0 预览版，见下方「两个包怎么选」）。
 2. 装插件：在 ClassIsland 插件市场搜「IslandHub 接收端」，或把 Release 里的 `.cipx` 放进插件目录。
 3. A 端「设备管理 → 生成注册码」，复制注册码。
 4. 教室里打开【应用设置 → IslandHub 接收端】→ 自动发现服务器或手填地址 → 填注册码 → 保存 → 立即同步。
@@ -89,12 +114,12 @@ dotnet run --project src/IslandHub.Server -c Release
 
 | IslandHub 版本 | 插件包 | 支持的 ClassIsland | 状态 |
 |---|---|---|---|
-| A 端 `1.5.2` / 插件 `1.5.2.0` | `ControlHub.Plugin.cipx` `1.5.2.0` | `2.1.1.1 及以上`（`apiVersion 2.1.1.1`） | ✅ **当前已发布版本** |
-| A 端 `1.4.10` / 插件 `1.4.10.0` | `ControlHub.Plugin.cipx` `1.4.10.0` | `2.1.1.1 及以上`（`apiVersion 2.1.1.1`） | ⚠️ 上一版本 |
-| A 端 `1.4.9` / 插件 `1.4.9.0` | `ControlHub.Plugin.cipx` `1.4.9.0` | `2.1.1.1 及以上`（`apiVersion 2.1.1.1`） | ⚠️ 上一版本 |
-| A 端 `1.4.8` / 插件 `1.4.8.0` | `ControlHub.Plugin.cipx` `1.4.8.0` | `2.1.1.1 及以上`（`apiVersion 2.1.1.1`） | 旧版本 |
-| A 端 `1.4.7` / 插件 `1.4.7.0` | `ControlHub.Plugin.cipx` `1.4.7.0` | `2.1.1.1 及以上`（`apiVersion 2.1.1.1`） | ⚠️ 上一版本 |
-| A 端 `1.4.6` / 插件 `1.4.6.0` | `ControlHub.Plugin.cipx` `1.4.6.0` | `2.1.1.1 及以上`（`apiVersion 2.1.1.1`） | ⚠️ 旧版本 |
+| A 端 `1.5.2` / 插件 `1.5.2.0` | `ControlHub.Plugin.cipx` `1.5.2.0` | `2.1.2.0`（`apiVersion 2.1.1.1`） | ✅ **当前已发布版本** |
+| A 端 `1.4.10` / 插件 `1.4.10.0` | `ControlHub.Plugin.cipx` `1.4.10.0` | `2.1.2.0`（`apiVersion 2.1.1.1`） | ⚠️ 上一版本 |
+| A 端 `1.4.9` / 插件 `1.4.9.0` | `ControlHub.Plugin.cipx` `1.4.9.0` | `2.1.2.0`（`apiVersion 2.1.1.1`） | ⚠️ 上一版本 |
+| A 端 `1.4.8` / 插件 `1.4.8.0` | `ControlHub.Plugin.cipx` `1.4.8.0` | `2.1.2.0`（`apiVersion 2.1.1.1`） | 旧版本 |
+| A 端 `1.4.7` / 插件 `1.4.7.0` | `ControlHub.Plugin.cipx` `1.4.7.0` | `2.1.2.0`（`apiVersion 2.1.1.1`） | ⚠️ 上一版本 |
+| A 端 `1.4.6` / 插件 `1.4.6.0` | `ControlHub.Plugin.cipx` `1.4.6.0` | `2.1.2.0`（`apiVersion 2.1.1.1`） | ⚠️ 旧版本 |
 | A 端 `1.3.8` ~ `1.4.5` | 对应版本 `.cipx` | `2.1.1.1 及以上` | ⚠️ 旧版本，建议升级 |
 | A 端 `1.0` ~ `1.3.7` | 对应版本 `.cipx` | `2.1.1.1 及以上`（部分为 `apiVersion 2.1.0.0`） | ⚠️ 早期版本 |
 
@@ -102,7 +127,7 @@ dotnet run --project src/IslandHub.Server -c Release
 说明：
 
 - 插件 `manifest.yml` 声明 `apiVersion: 2.1.1.1`、`supportedOSPlatforms: [Windows]`，即**只支持 Windows 教室端**。
-- 所有版本都用 `ClassIsland.PluginSdk 2.1.1.1` 编译，所以真实下限**始终是 2.1.1.1**；`apiVersion` 自 `1.3.8` 起与之一致。
+- 自 `1.5.2.0` 起按两代宿主分别编译（详见下方「两个包怎么选」），此前的版本均用 `ClassIsland.PluginSdk 2.1.1.1` 编译；`apiVersion` 自 `1.3.8` 起与之一致。
 - ClassIsland 2.2 与当前 SDK 是同期技术栈（Avalonia 12 / .NET 10），预期可用但**尚未实测**。
 - A 端需要 .NET 10 运行时（一键脚本会自动装）；插件随 ClassIsland 进程运行，不需要单独装。
 - 插件市场一列的含义：Release 带 `.cipx` 资产、标签符合 `tagPattern: "1.*.*.*"` 即可在市场搜到并安装；
