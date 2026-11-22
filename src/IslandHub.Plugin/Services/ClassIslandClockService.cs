@@ -1,3 +1,27 @@
+#if CI210
+// 兼容版（ClassIsland 2.1.0.x）：不含时钟同步。
+// 那一代宿主的 SettingsService 绑定的 Avalonia 版本与本包不同，强类型引用会在编译期冲突；
+// 这里给同签名的降级实现，调用方无需区分版本。功能降级只影响「让宿主跟着 A 端对时」，
+// 课表下发与显示完全不受影响。
+using Microsoft.Extensions.Logging;
+
+namespace IslandHub.Plugin.Services;
+
+/// <summary>时钟同步（兼容版：无操作）。</summary>
+public sealed class ClassIslandClockService(ILogger<ClassIslandClockService> logger)
+{
+    /// <summary>兼容版不支持，返回说明文字。</summary>
+    public string ConfigureNtpSync(string ntpHost)
+    {
+        logger.LogInformation("当前为 ClassIsland 2.1.0 兼容版，跳过时钟同步。");
+        return "当前插件为 ClassIsland 2.1.0 兼容版，未包含时钟同步功能（课表下发不受影响）。";
+    }
+
+    /// <summary>兼容版没有可读的 NTP 服务器。</summary>
+    public string GetExactTimeServer() => string.Empty;
+}
+
+#else
 using ClassIsland.Core.Abstractions.Services;
 using ClassIsland.Services;
 using ClassIsland.Shared;
@@ -177,3 +201,5 @@ public sealed class ClassIslandClockService(ILogger<ClassIslandClockService> log
     }
 #pragma warning restore CA1849
 }
+
+#endif

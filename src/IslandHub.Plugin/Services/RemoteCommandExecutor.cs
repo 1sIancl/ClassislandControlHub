@@ -11,7 +11,10 @@ using Avalonia.Controls;
 using Avalonia.Media;
 using ClassIsland.Core;
 using ClassIsland.Core.Abstractions.Services;
+// 2.1.0 兼容版不引用宿主内部命名空间（它绑 Avalonia 11，与本包的 12 冲突）。
+#if !CI210
 using ClassIsland.Services;
+#endif
 using ClassIsland.Shared;
 using IslandHub.Plugin.Models;
 using IslandHub.Protocol;
@@ -579,13 +582,19 @@ public sealed class RemoteCommandExecutor(
         // ① SetTheme 只改运行时主题、**不写设置**，宿主随后会用 Settings.Theme / ColorSource / PrimaryColor
         //    覆盖回去（表现为「提示已应用、界面没变化，重启就还原」）；
         // ② 改 Settings.* 会立即生效并自动落盘，与宿主自己的设置页行为一致。
+        // 2.1.0 兼容版：宿主的 SettingsService 类型在那代绑 Avalonia 11，与本包的 12 冲突，
+        // 不能强类型引用，只能用反射拿到再以 dynamic 访问。2.1.2 走原来的强类型路径，一字未改。
+#if CI210
+        dynamic? settings = ResolveSettingsService();
+        dynamic? s = settings?.GetType().GetProperty("Settings")?.GetValue(settings);
+#else
         var settings = IAppHost.TryGetService<SettingsService>();
-        if (settings is null)
+        var s = settings?.Settings;
+#endif
+        if (s is null)
         {
             return Fail(command, CommandErrorCodes.HostApiUnavailable, "无法获取 ClassIsland 设置服务（IAppHost 未就绪）。");
         }
-
-        var s = settings.Settings;
         var applied = new List<string>();
         var skipped = new List<string>();
 
@@ -840,9 +849,19 @@ public sealed class RemoteCommandExecutor(
     /// 直接写类型名会编译失败（CS7069），因此按数值写入：0=亚克力、1=Liquid Glass、2=Mica。
     /// 宿主不支持该设置时**如实写进结果**，而不是假装成功。</para>
     /// </summary>
+#if CI210
+    private static string ApplyBackgroundMaterial(object settings, int value, string label)
+    {
+        dynamic? s = settings.GetType().GetProperty("Settings")?.GetValue(settings);
+        if (s is null)
+        {
+            return $"背景材质={label}（拿不到宿主设置，未生效）";
+        }
+#else
     private static string ApplyBackgroundMaterial(SettingsService settings, int value, string label)
     {
         var s = settings.Settings;
+#endif
         if (!TrySetSetting(s, "IsMainWindowBackgroundMaterialEnabled", true))
         {
             return $"背景材质={label}（当前 ClassIsland 版本不支持该设置，未生效）";
@@ -1006,6 +1025,18 @@ public sealed class RemoteCommandExecutor(
 
         if (payload.Visible is { } visible)
         {
+#if CI210
+            // 2.1.0 兼容版：同 582 行处的理由，强类型拿不到，改用反射 + dynamic。
+            dynamic? settingsViaReflection = ResolveSettingsService();
+            dynamic? hostSettings = settingsViaReflection?.GetType().GetProperty("Settings")?.GetValue(settingsViaReflection);
+            if (hostSettings is null)
+            {
+                return Fail(command, CommandErrorCodes.HostApiUnavailable,
+                    "拿不到宿主的设置服务，无法改主界面显示状态。");
+            }
+
+            hostSettings.IsMainWindowVisible = visible;
+#else
             var settings = IAppHost.TryGetService<SettingsService>();
             if (settings is null)
             {
@@ -1014,6 +1045,7 @@ public sealed class RemoteCommandExecutor(
             }
 
             settings.Settings.IsMainWindowVisible = visible;
+#endif
             applied.Add(visible ? "显示" : "隐藏");
 
             // 设置变更由宿主自己应用；窗口已经建好时再兜一下（避免设置生效慢半拍）。

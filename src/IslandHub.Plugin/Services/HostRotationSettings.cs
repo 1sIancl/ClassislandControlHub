@@ -1,3 +1,29 @@
+#if CI210
+// 兼容版（ClassIsland 2.1.0.x）：不写宿主的轮换偏移设置。
+// 多周轮换本身仍然工作（课表里带了周期与序号），只是「第几周算第 1 周」不跟着 A 端对齐，
+// 由教室端自己的宿主设置决定。
+using IslandHub.Protocol.Dtos;
+using Microsoft.Extensions.Logging;
+
+namespace IslandHub.Plugin.Services;
+
+/// <summary>宿主轮换设置（兼容版：只读不写）。</summary>
+internal static class HostRotationSettings
+{
+    public static string? Apply(RotationSettingsDto? rotation,
+        List<ClassPlanDto> plans,
+        ILogger? logger = null)
+    {
+        logger?.LogInformation("当前为 ClassIsland 2.1.0 兼容版，跳过轮换偏移写入。");
+        return null;
+    }
+
+    /// <summary>兼容版：读不到宿主设置，按「第 1 周」算（周期数仍来自课表本身）。</summary>
+    public static (int Week, int Weeks) ReadCurrentWeek(int cycle, DateOnly today)
+        => (1, Math.Max(1, cycle));
+}
+
+#else
 using System.Collections;
 using System.Globalization;
 using ClassIsland.Services;
@@ -288,3 +314,5 @@ public static class HostRotationSettings
         }
     }
 }
+
+#endif

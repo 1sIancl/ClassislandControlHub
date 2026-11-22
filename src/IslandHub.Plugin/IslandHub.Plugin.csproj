@@ -29,7 +29,8 @@
 
   <ItemGroup>
     <!-- 引用 ClassIsland 主程序集，仅用于编译（Private=false 不打进插件包，运行时宿主已加载）。 -->
-    <Reference Include="ClassIsland">
+    <!-- 2.1.0 构建不引用本地宿主程序集：它绑 Avalonia 12，与 2.1.0 用的 Avalonia 11 冲突（CS1705）。 -->
+  <Reference Include="ClassIsland" Condition="'$(CiVersion)' != '2.1.0'">
       <HintPath>$(ClassIslandAssemblyPath)</HintPath>
       <Private>false</Private>
     </Reference>
