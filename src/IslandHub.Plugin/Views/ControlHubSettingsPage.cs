@@ -126,9 +126,17 @@ public partial class IslandHubSettingsPage : SettingsPageBase
 
     private Control BuildServerCard()
     {
+        // Avalonia 11（ClassIsland 2.1.0.x）的属性名是 Watermark，12 才改成 PlaceholderText。
+        // 两代宿主要各自编译，所以这里分版本写（见 csproj 的 CiVersion，issue #150）。
+#if CI210
+        _serverUrlBox = new TextBox { Watermark = "http://192.168.1.5:29800" };
+        _enrollCodeBox = new TextBox { Watermark = "注册码，例如 8 位大写字母数字" };
+        _deviceNameBox = new TextBox { Watermark = "留空则使用本机机器名，例如 高一(3)班" };
+#else
         _serverUrlBox = new TextBox { PlaceholderText = "http://192.168.1.5:29800" };
         _enrollCodeBox = new TextBox { PlaceholderText = "注册码，例如 8 位大写字母数字" };
         _deviceNameBox = new TextBox { PlaceholderText = "留空则使用本机机器名，例如 高一(3)班" };
+#endif
 
         var discoverButton = new Button { Content = "自动发现服务器" };
         discoverButton.Click += async (_, _) =>

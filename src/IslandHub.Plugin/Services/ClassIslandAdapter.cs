@@ -272,9 +272,13 @@ public sealed class ClassIslandAdapter(IPublicProfileService profileService, ILo
             }
         }
 
+        // TimeRule.Type / TimeRuleType 是 2.1.2 才有的（周规则的类型枚举）。
+        // 2.1.0.x 没有这个成员，写上去直接编译失败——分版本编译（issue #150）。
         var rule = new TimeRule
         {
+#if !CI210
             Type = TimeRule.TimeRuleType.Weekly,
+#endif
         };
 
         // 单张课表对应一个星期几；多天课表请在下发端拆分为多张课表。

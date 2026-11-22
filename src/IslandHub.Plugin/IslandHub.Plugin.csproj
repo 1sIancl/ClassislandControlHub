@@ -8,7 +8,20 @@
     <RootNamespace>IslandHub.Plugin</RootNamespace>
     <AssemblyName>IslandHub.Plugin</AssemblyName>
     <Version>1.5.1.0</Version>
-    <ClassIslandPluginSdkVersion>2.1.2</ClassIslandPluginSdkVersion>
+    <!--
+      双版本构建（#150）：ClassIsland 2.1.0.x（稳定）与 2.1.2.0（预览）的宿主 API 不完全兼容，
+      一份二进制无法同时装进两代宿主。这里用同一个源文件打两个包：
+
+        dotnet build -p:CiVersion=2.1.0    → SDK 2.1.0.1，apiVersion 2.1.0.1，定义 CI210
+        dotnet build                       → SDK 2.1.2，  apiVersion 2.1.2.0（默认）
+
+      差异只有两处（Avalonia 的 PlaceholderText/Watermark、TimeRule.Type），
+      用 #if CI210 分开即可，不必复制工程。
+    -->
+    <CiVersion Condition="'$(CiVersion)' == ''">2.1.2</CiVersion>
+    <ClassIslandPluginSdkVersion Condition="'$(CiVersion)' == '2.1.0'">2.1.0.1</ClassIslandPluginSdkVersion>
+    <ClassIslandPluginSdkVersion Condition="'$(CiVersion)' != '2.1.0'">2.1.2</ClassIslandPluginSdkVersion>
+    <DefineConstants Condition="'$(CiVersion)' == '2.1.0'">$(DefineConstants);CI210</DefineConstants>
     <Description>ClassIsland IslandHub 系统 B 端客户端插件。</Description>
     <!-- 主程序集本地构建路径（用于编译期引用 SettingsService 修改时钟偏移；运行时由宿主 ClassIsland 提供）。 -->
     <ClassIslandAssemblyPath>$(MSBuildThisFileDirectory)..\..\..\ClassIsland2_src\ClassIsland\bin\Release\net10.0\ClassIsland.dll</ClassIslandAssemblyPath>
