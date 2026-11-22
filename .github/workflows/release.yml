@@ -122,11 +122,35 @@ jobs:
           fi
           echo "CLASSISLAND_ASSEMBLY=$PWD/$dll" >> "$GITHUB_ENV"
 
+      # 两个插件包（详见 README「两个包怎么选」）。
+      # 注意：`ControlHub.Plugin.cipx` 这个**文件名不能改**——插件市场按它抓取。
+      # 2.1.0 版另起一个名字，不占用市场那个位置。
       - name: 构建插件并打包 .cipx
         run: |
+          set -euo pipefail
+
+          # ① 2.1.2（功能完整，市场同款，保持原文件名）
           dotnet build src/IslandHub.Plugin/IslandHub.Plugin.csproj -c Release \
             -p:CreateCipx=true \
             -p:ClassIslandAssemblyPath="$CLASSISLAND_ASSEMBLY"
+          cp src/IslandHub.Plugin/cipx/ControlHub.Plugin.cipx dist/ControlHub.Plugin.cipx
+
+          # ② 2.1.0（降级版；不需要宿主程序集，csproj 已按 CiVersion 条件化掉该引用）
+          dotnet build src/IslandHub.Plugin/IslandHub.Plugin.csproj -c Release \
+            -p:CiVersion=2.1.0 -p:CreateCipx=true
+
+          # manifest.yml 是源文件，apiVersion 必须落盘后改，否则 2.1.0 宿主会拒绝加载。
+          rm -rf /tmp/cipx210 && mkdir -p /tmp/cipx210
+          unzip -q src/IslandHub.Plugin/cipx/ControlHub.Plugin.cipx -d /tmp/cipx210
+          sed -i 's/^apiVersion:.*/apiVersion: 2.1.0.1/' /tmp/cipx210/manifest.yml
+          (cd /tmp/cipx210 && zip -qr "$GITHUB_WORKSPACE/dist/ControlHub.Plugin-2.1.0.cipx" .)
+
+          actual="$(unzip -p dist/ControlHub.Plugin-2.1.0.cipx manifest.yml | grep '^apiVersion:' | tr -d '\r')"
+          echo "2.1.0 包 apiVersion: $actual"
+          case "$actual" in
+            *2.1.0.1*) ;;
+            *) echo "::error::2.1.0 包的 apiVersion 未改成 2.1.0.1（实际：$actual）"; exit 1 ;;
+          esac
 
       - name: 取回桌面外壳包
         uses: actions/download-artifact@v4
@@ -137,7 +161,6 @@ jobs:
       - name: 整理发布资产
         run: |
           set -euo pipefail
-          cp src/IslandHub.Plugin/cipx/ControlHub.Plugin.cipx dist/
           ls -lh dist/
 
       - name: 创建 Release
@@ -149,6 +172,7 @@ jobs:
             --title "IslandHub $VERSION" \
             --generate-notes \
             "dist/ControlHub.Plugin.cipx" \
+            "dist/ControlHub.Plugin-2.1.0.cipx" \
             dist/controlhub-server-linux-x64-"$VERSION".zip \
             dist/controlhub-server-linux-x64-full-"$VERSION".zip \
             dist/controlhub-server-win-x64-"$VERSION".zip \
@@ -171,7 +195,8 @@ jobs:
 
           | 资产 | 说明 | 适合谁 |
           |---|---|---|
-          | `ControlHub.Plugin.cipx` | 教室端插件（与插件市场同款） | 每台教室机 |
+          | `ControlHub.Plugin.cipx` | 教室端插件（与插件市场同款，需 ClassIsland 2.1.2.x） | 每台教室机 |
+          | `ControlHub.Plugin-2.1.0.cipx` | 同上但适配 ClassIsland 2.1.0.x（官方稳定线）；不含时钟同步、不写轮换偏移 | 装的是 2.1.0.x 时用 |
           | `controlhub-server-<平台>-<版本>.zip` | A 端，**框架依赖**：体积小，但目标机需先装 **.NET 10 运行时** | 已装 .NET 10，或用 `sh/main.sh` 自动安装的服务器 |
           | `controlhub-server-<平台>-full-<版本>.zip` | A 端，**自带运行时**：体积大，解压即可运行 | 不想在服务器上装运行时的场景（多数学校选它） |
           | `classislandcontrolhub-shell-win-x64-<版本>.zip` | Windows 桌面外壳（内置 A 端，双击即用） | 只有一台 Windows 机器、不想记命令的场景 |

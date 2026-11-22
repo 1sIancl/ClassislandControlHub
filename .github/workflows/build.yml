@@ -152,15 +152,43 @@ jobs:
           echo "CLASSISLAND_ASSEMBLY=$PWD/$dll" >> "$GITHUB_ENV"
           echo "使用 ClassIsland 主程序集：$PWD/$dll"
 
-      - name: 构建插件并打包 .cipx
+      # 两个包，因为两代宿主的 API 不兼容（详见 README「两个包怎么选」）：
+      #   2.1.2 包：功能完整，需要宿主程序集参与编译（强类型用 SettingsService）
+      #   2.1.0 包：降级版，**不需要**宿主程序集（csproj 里该引用已按 CiVersion 条件化）
+      - name: 构建插件 2.1.2（功能完整）
         run: |
+          mkdir -p dist
           dotnet build src/IslandHub.Plugin/IslandHub.Plugin.csproj -c Release \
             -p:CreateCipx=true \
             -p:ClassIslandAssemblyPath="$CLASSISLAND_ASSEMBLY"
+
+          cp src/IslandHub.Plugin/cipx/ControlHub.Plugin.cipx dist/ControlHub.Plugin-2.1.2.cipx
+
+      - name: 构建插件 2.1.0（降级：无时钟同步 / 不写轮换偏移）
+        run: |
+          set -euo pipefail
+
+          dotnet build src/IslandHub.Plugin/IslandHub.Plugin.csproj -c Release \
+            -p:CiVersion=2.1.0 -p:CreateCipx=true
+
+          # manifest.yml 是源文件，不会随构建配置变值；apiVersion 必须落盘后改，
+          # 否则仍是 2.1.2.0，2.1.0 宿主会直接拒绝加载（包等于白做）。
+          rm -rf /tmp/cipx210 && mkdir -p /tmp/cipx210
+          unzip -q src/IslandHub.Plugin/cipx/ControlHub.Plugin.cipx -d /tmp/cipx210
+          sed -i 's/^apiVersion:.*/apiVersion: 2.1.0.1/' /tmp/cipx210/manifest.yml
+          (cd /tmp/cipx210 && zip -qr "$GITHUB_WORKSPACE/dist/ControlHub.Plugin-2.1.0.cipx" .)
+
+          # 自校验：改没改上是这一步唯一能验证的地方，不要等到用户装不上才发现。
+          actual="$(unzip -p dist/ControlHub.Plugin-2.1.0.cipx manifest.yml | grep '^apiVersion:' | tr -d '\r')"
+          echo "2.1.0 包 apiVersion: $actual"
+          case "$actual" in
+            *2.1.0.1*) ;;
+            *) echo "::error::2.1.0 包的 apiVersion 未改成 2.1.0.1（实际：$actual）"; exit 1 ;;
+          esac
 
       - name: 上传插件包
         uses: actions/upload-artifact@v4
         with:
           name: plugin-cipx
-          path: src/IslandHub.Plugin/cipx/ControlHub.Plugin.cipx
+          path: dist/*.cipx
           retention-days: 7
