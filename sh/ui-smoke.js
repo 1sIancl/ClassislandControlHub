@@ -2738,6 +2738,75 @@ function check(name, ok, extra = '') {
       && slotText.includes('配置这台教室的规则'),
     `标题命中=${slotText.includes('走班制时段规则')}`);
 
+  // ── 全路由巡检（#149）：逐个打开页面，断言「没有脚本异常」且「正文字数够」 ──
+  //
+  // 存在的理由：曾经有个页面引用了另一个模块的局部常量（TIME_KIND_LABEL），
+  // 语法检查、i18n 检查、导入检查**全都通过**，只有真的打开那页才整屏白掉。
+  // 这类问题必须由"逐页打开"来兜，静态检查无能为力。
+  const routeErrors = [];
+  const routeErrorHandler = (e) => routeErrors.push(e.message);
+  page.on('pageerror', routeErrorHandler);
+
+  try {
+    const token = await page.evaluate(() => localStorage.getItem('controlhub.admin.token'));
+    const auth = { Authorization: `Bearer ${token}` };
+    const firstId = async (path) => {
+      const list = await page.evaluate(async (p, h) => {
+        const r = await fetch(p, { headers: h });
+        const j = await r.json();
+        return Array.isArray(j.data) ? (j.data[0]?.id ?? '') : '';
+      }, `${BASE}/api/v1${path}`, auth);
+      return list;
+    };
+
+    const profileId = await firstId('/admin/profiles');
+    const layoutId = await firstId('/admin/time-layouts');
+
+    const ROUTES = [
+      ['#/dashboard', '仪表盘'],
+      ['#/profiles', '配置档案'],
+      ['#/timetables', '课表总览'],
+      ['#/layouts', '时间表总览'],
+      ['#/subjects', '科目'],
+      ['#/devices', '设备'],
+      ['#/board', '大屏看板'],
+      ['#/classboard', '班级看板'],
+      ['#/weather', '天气'],
+      ['#/plugins', '插件'],
+      ['#/timelayouts', '定时提醒'],
+      ['#/exams', '考试模式'],
+    ];
+
+    // 带参数的详情页：这些最容易因为"引用了别处的常量/函数"而白屏。
+    if (profileId) {
+      ROUTES.push([`#/profiles/${profileId}`, '档案编辑器']);
+      ROUTES.push([`#/timetables/${profileId}`, '课表编辑']);
+    }
+    if (layoutId) {
+      ROUTES.push([`#/layouts/${layoutId}`, '时间表编辑']);
+    }
+
+    for (const [hash, name] of ROUTES) {
+      routeErrors.length = 0;
+      await page.goto(`${BASE}/${hash}`, { waitUntil: 'networkidle2' });
+      await sleep(1600);
+
+      const state = await page.evaluate(() => ({
+        len: (document.getElementById('content')?.innerText ?? '').trim().length,
+        hash: location.hash,
+      }));
+
+      // 正文太短 ≈ 白屏或只剩骨架；同时要求没有任何 pageerror。
+      const ok = state.len > 20 && routeErrors.length === 0;
+      check(`全路由巡检：${name} 无异常且有内容（#149）`, ok,
+        routeErrors.length
+          ? routeErrors[0].slice(0, 60)
+          : `正文 ${state.len} 字`);
+    }
+  } finally {
+    page.off('pageerror', routeErrorHandler);
+  }
+
   await page.setViewport({ width: 1600, height: 1000 });
   await sleep(700);
 
